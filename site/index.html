@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lage-Tools</title>
+<meta name="description" content="Lagejournal und Übungsauswertung auf swisstopo-Karten mit Führungsraster" />
+<style>
+  :root { --ink:#1d1d1d; --muted:#5f5f5f; --paper:#fff; --line:#d6d6d6; --soft:#f2f2f2; --red:#c8102e; font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; color: var(--ink); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink:#f2f2f2; --muted:#b0b0b0; --paper:#161616; --line:#3a3a3a; --soft:#262626; } }
+  :root[data-theme="dark"] { --ink:#f2f2f2; --muted:#b0b0b0; --paper:#161616; --line:#3a3a3a; --soft:#262626; }
+  body { margin: 0; background: var(--paper); }
+  main { max-width: 880px; margin: 0 auto; padding: 48px 16px; }
+  h1 { font-size: 34px; margin: 0 0 8px; }
+  p.lead { color: var(--muted); font-size: 18px; margin: 0 0 32px; max-width: 60ch; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  a.card { display: block; padding: 22px; border: 1px solid var(--line); border-radius: 10px; text-decoration: none; color: var(--ink); background: var(--soft); }
+  a.card:hover { border-color: var(--ink); }
+  a.card h2 { margin: 0 0 6px; font-size: 22px; }
+  a.card p { margin: 0; color: var(--muted); line-height: 1.45; }
+  .k { display:inline-block; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--red); margin-bottom: 10px; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lage-Tools</h1>
+  <p class="lead">Führungsraster, Lageverfolgung und Übungsauswertung auf swisstopo-Karten. Alle Daten bleiben auf deinem Gerät.</p>
+  <div class="grid">
+    <a class="card" href="lagejournal/"><span class="k">Produkt 1</span><h2>Lagejournal</h2><p>Meldungen im LVZ erfassen – Text, Bild oder Sprache. Zeichen, Ort und Zeit werden automatisch gesetzt. Funktioniert offline.</p></a>
+    <a class="card" href="uebungsauswertung/"><span class="k">Produkt 2</span><h2>Übungsauswertung</h2><p>Journale Rot und Blau zusammenführen, auswerten und den AAR mit Folien und Lagekarte auf zwei Bildschirmen führen.</p></a>
+  </div>
+  <footer>Vorschau · Karten © swisstopo · Keine Übungsdaten auf dieser Seite gespeichert.</footer>
+</main>
+</body>
+</html>

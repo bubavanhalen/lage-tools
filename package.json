@@ -1,0 +1,21 @@
+{
+  "name": "lage-tools",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Lagejournal (LVZ-Lageverfolgung) und Übungsauswertung (AAR) auf swisstopo-Karten mit Führungsraster",
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev:lagejournal": "npm run dev -w @lage/lagejournal",
+    "dev:auswertung": "npm run dev -w @lage/uebungsauswertung",
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build": "npm run build -w @lage/lagejournal && npm run build -w @lage/uebungsauswertung && node scripts/assemble-site.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "3.2.7"
+  },
+  "engines": { "node": ">=20" }
+}

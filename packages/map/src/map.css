@@ -1,0 +1,17 @@
+@import "leaflet/dist/leaflet.css";
+
+.lt-edge span,
+.lt-cell span {
+  position: absolute;
+  white-space: nowrap;
+  font: 700 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: #1d1d1d;
+  text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff;
+  pointer-events: none;
+}
+.lt-edge.top span { transform: translate(-50%, -150%); }
+.lt-edge.bottom span { transform: translate(-50%, 50%); }
+.lt-edge.left span { transform: translate(-130%, -50%); }
+.lt-edge.right span { transform: translate(30%, -50%); }
+.lt-cell span { transform: translate(4px, 4px); font-size: 11px; font-weight: 600; opacity: 0.85; }
+.leaflet-container { background: #e9ece6; font: inherit; }
