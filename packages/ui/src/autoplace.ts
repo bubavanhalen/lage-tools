@@ -19,6 +19,8 @@ export interface PlaceResult {
   t: Affine;
   /** Übereinstimmung 0…1 */
   score: number;
+  /** Landeskarte unter dem Bild (für den Vergleich Bild ↔ Karte) */
+  ref?: { img: ImageData; res: number; minE: number; maxN: number };
 }
 
 type Progress = (p: number, what: string) => void;
@@ -63,7 +65,9 @@ async function refine(img: Gray, t0: Affine, onProgress: Progress, p0: number, p
   const best = await drive(locateFine(search, mid, { k: k0 }, { range: 0.07, step: 0.007 }), (p) => onProgress(p0 + (p1 - p0) * (0.4 + 0.6 * p), "Feinabgleich …"));
   if (!best) return null;
   const s = (best.k * m1x * mid.width) / img.width;
-  return { t: { a: s, b: 0, c: c.minE + best.x * m1x, d: 0, e: -s, f: c.maxN - best.y * m1x }, score: best.score };
+  const ctx = tiles.canvas.getContext("2d", { willReadFrequently: true })!;
+  const ref = { img: ctx.getImageData(0, 0, tiles.canvas.width, tiles.canvas.height), res: tiles.res, minE: c.minE, maxN: c.maxN };
+  return { t: { a: s, b: 0, c: c.minE + best.x * m1x, d: 0, e: -s, f: c.maxN - best.y * m1x }, score: best.score, ref };
 }
 
 /**

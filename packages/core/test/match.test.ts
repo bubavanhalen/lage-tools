@@ -3,6 +3,7 @@ import {
   boxBlur,
   cropGray,
   detectAllOutlines,
+  overlayColor,
   fitScaleShift,
   locateCoarse,
   locateFine,
@@ -87,5 +88,23 @@ describe("Alle NAI erkennen", () => {
     const img: RGBAImage = { width: w, height: h, data };
     const rings = detectAllOutlines(img, [60, 150, 245], { lineWidth: 3 });
     expect(rings.length).toBe(2);
+  });
+});
+
+describe("Linienfarbe aus dem Vergleich mit der Karte", () => {
+  it("findet die eingezeichnete Farbe, nicht die Kartenfarben", () => {
+    const w = 200, h = 150;
+    const ref = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      const x = i % w;
+      const green = (x >> 3) % 2 === 0; // Wald-Streifen und gelbe Strasse
+      ref.set(green ? [120, 190, 90, 255] : (x % 50 < 3 ? [240, 200, 40, 255] : [245, 245, 240, 255]), i * 4);
+    }
+    const img = new Uint8ClampedArray(ref);
+    for (let y = 30; y < 120; y++) for (let x = 40; x < 160; x++) {
+      if (x - 40 < 3 || 159 - x < 3 || y - 30 < 3 || 119 - y < 3) img.set([200, 30, 30, 255], (y * w + x) * 4);
+    }
+    const c = overlayColor({ width: w, height: h, data: img }, { width: w, height: h, data: ref }, (x, y) => ({ x, y }), 1);
+    expect(c).toEqual([200, 30, 30]);
   });
 });

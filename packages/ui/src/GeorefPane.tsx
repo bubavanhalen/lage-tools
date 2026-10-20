@@ -14,6 +14,7 @@ import {
   fitAffine,
   fitScaleShift,
   invertAffine,
+  overlayColor,
   pointInRing,
   residualsOf,
   ringCentroid,
@@ -24,7 +25,7 @@ import {
 } from "@lage/core";
 import { AffineImageLayer, toLatLng, toLv95 } from "@lage/map";
 import { imageDataOf, type Candidate } from "./imageimport";
-import { autoPlace, refinePlace } from "./autoplace";
+import { autoPlace, refinePlace, type PlaceResult } from "./autoplace";
 
 interface Props {
   candidates: Candidate[];
@@ -50,7 +51,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
   const [doneCount, setDoneCount] = useState(0);
   const [taken, setTaken] = useState(0);
   const [mode, setMode] = useState<Mode>("place");
-  const [place, setPlace] = useState<{ t: Affine; score?: number } | null>(null);
+  const [place, setPlace] = useState<PlaceResult | { t: Affine; score?: number; ref?: undefined } | null>(null);
   const [busy, setBusy] = useState<{ p: number; what: string } | null>(null);
   const [pairs, setPairs] = useState<Pair[]>([{}, {}]);
   const [active, setActive] = useState(0);
@@ -225,8 +226,32 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
     if (mode === "points" && t) setPlace({ t });
     setMode("nai");
     setShowImg(false);
-    if (lineColor) detectAll(lineColor, lineWidth, tol);
-    else { setPickColor(true); setMsg("Auf eine NAI-Linie im Bild klicken – so weiss ich, welche Farbe die NAI haben."); }
+    // Linienfarbe: Bild mit der Landeskarte vergleichen – was nicht zur Karte gehört, ist die Zeichnung
+    const ref = mode === "place" ? place?.ref : undefined;
+    let c = lineColor;
+    if (ref && t) {
+      const toRef = (x: number, y: number) => { const p = applyAffine(t, { x, y }); return { x: (p.x - ref.minE) / ref.res, y: (ref.maxN - p.y) / ref.res }; };
+      c = overlayColor(imgData, ref.img, toRef) ?? c;
+    }
+    if (c) {
+      const w = lineWidthOf(c);
+      setLineColor(c); saveColor(c); setLineWidth(w);
+      detectAll(c, w, tol);
+    } else { setPickColor(true); setMsg("Auf eine NAI-Linie im Bild klicken – so weiss ich, welche Farbe die NAI haben."); }
+  };
+
+  /** typische Linienbreite: häufigste Lauflänge der Linienfarbe (waagrecht und senkrecht) */
+  const lineWidthOf = (c: RGB) => {
+    const m = colorMask(imgData, c, tol);
+    const counts = new Array(32).fill(0) as number[];
+    const scan = (n: number, len: number, at: (i: number, k: number) => number) => {
+      for (let i = 0; i < n; i += 3) { let run = 0; for (let k = 0; k <= len; k++) { if (k < len && m.data[at(i, k)]) run++; else { if (run > 0 && run < 32) counts[run]!++; run = 0; } } }
+    };
+    scan(m.height, m.width, (i, k) => i * m.width + k);
+    scan(m.width, m.height, (i, k) => k * m.width + i);
+    let best = 3;
+    counts.forEach((v, i) => { if (i >= 1 && v > counts[best]!) best = i; });
+    return Math.max(2, Math.min(20, best));
   };
 
   const naming = (rings: LV95[][], start: number): Area[] => {
@@ -256,7 +281,9 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
     const x = Math.round(p.x), y = Math.round(p.y);
     let c: RGB = [255, 255, 255];
     let best = -1;
-    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    const zoom = viewer.current?.getZoom() ?? 0;
+    const R = Math.max(3, Math.min(25, Math.ceil(6 / 2 ** zoom))); // ca. 6 Bildschirmpixel
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
       const xx = x + dx, yy = y + dy;
       if (xx < 0 || yy < 0 || xx >= imgData.width || yy >= imgData.height) continue;
       const k = (yy * imgData.width + xx) * 4;
@@ -265,9 +292,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
       if (sat > best) { best = sat; c = px; }
     }
     if (Math.max(...c) - Math.min(...c) < 40) { setMsg("Das ist keine farbige Linie. Bitte genau auf die farbige NAI-Umrandung klicken (im Bild hineinzoomen)."); return; }
-    const m = colorMask(imgData, c, tol);
-    const run = (dx: number, dy: number) => { let k = 0, xx = x, yy = y; while (xx >= 0 && yy >= 0 && xx < m.width && yy < m.height && m.data[yy * m.width + xx]) { k++; xx += dx; yy += dy; } return k; };
-    const w = Math.min(20, Math.max(2, Math.min(run(1, 0) + run(-1, 0), run(0, 1) + run(0, -1)) - 1));
+    const w = lineWidthOf(c);
     setLineColor(c); saveColor(c); setLineWidth(w); setPickColor(false);
     detectAll(c, w, tol);
   };

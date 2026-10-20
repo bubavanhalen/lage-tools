@@ -199,6 +199,44 @@ export function detectAllOutlines(
   return rings.sort((a, b) => b.area - a.area).map((r) => r.ring);
 }
 
+/**
+ * Farbe der eingezeichneten Linien bestimmen: Bild mit der eingepassten Originalkarte vergleichen.
+ * Pixel, die in der Karte (3×3-Umgebung) nicht vorkommen und farbig sind, gehören zur Zeichnung;
+ * die häufigste solche Farbe ist die NAI-Farbe.
+ * @param toRef Bildpixel → Pixel im Referenzbild (oder null ausserhalb)
+ * @returns Farbe oder null, wenn nichts Eindeutiges gefunden wurde
+ */
+export function overlayColor(img: RGBAImage, ref: RGBAImage, toRef: (x: number, y: number) => XY | null, step = 2): [number, number, number] | null {
+  const bins = new Map<number, { n: number; r: number; g: number; b: number }>();
+  let samples = 0;
+  for (let y = 1; y < img.height - 1; y += step) for (let x = 1; x < img.width - 1; x += step) {
+    const k = (y * img.width + x) * 4;
+    const r = img.data[k]!, g = img.data[k + 1]!, b = img.data[k + 2]!;
+    const sat = Math.max(r, g, b) - Math.min(r, g, b);
+    const q = toRef(x, y);
+    if (!q) continue;
+    samples++;
+    if (sat < 60) continue;
+    const rx = Math.round(q.x), ry = Math.round(q.y);
+    if (rx < 1 || ry < 1 || rx >= ref.width - 1 || ry >= ref.height - 1) continue;
+    let near = Infinity;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const j = ((ry + dy) * ref.width + rx + dx) * 4;
+      const d = (ref.data[j]! - r) ** 2 + (ref.data[j + 1]! - g) ** 2 + (ref.data[j + 2]! - b) ** 2;
+      if (d < near) near = d;
+    }
+    if (near < 70 * 70) continue;
+    const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+    const e = bins.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+    e.n++; e.r += r; e.g += g; e.b += b;
+    bins.set(key, e);
+  }
+  let best: { n: number; r: number; g: number; b: number } | null = null;
+  for (const e of bins.values()) if (!best || e.n > best.n) best = e;
+  if (!best || best.n < Math.max(20, samples * 0.002)) return null;
+  return [Math.round(best.r / best.n), Math.round(best.g / best.n), Math.round(best.b / best.n)];
+}
+
 /** Schätzt die Linienbreite: kleinster Lauf der Linienfarbe nahe dem Klick (horizontal und vertikal). */
 export function estimateLineWidth(walls: Mask, x: number, y: number, radius = 200): number {
   const { width: w, height: h } = walls;
