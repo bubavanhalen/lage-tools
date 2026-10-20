@@ -23,6 +23,8 @@ export function newExercise(name = "Neue Übung"): Exercise {
     sheets: [],
     areas: [],
     units: { rot: [], blau: [], ul: [] },
+    events: [],
+    places: [],
   };
 }
 
@@ -39,6 +41,8 @@ export function exerciseFromFile(text: string): Exercise {
   ex.sheets ??= [];
   ex.areas ??= [];
   ex.units ??= { rot: [], blau: [], ul: [] };
+  ex.events ??= [];
+  ex.places ??= [];
   return ex;
 }
 

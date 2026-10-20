@@ -18,3 +18,9 @@
 .lt-drawing, .lt-drawing .leaflet-interactive { cursor: crosshair !important; }
 .lt-picking, .lt-picking .leaflet-interactive { cursor: crosshair !important; }
 .lt-area-lbl span { position: absolute; transform: translate(-50%, -130%); white-space: nowrap; font: 700 13px/1 ui-monospace, Menlo, Consolas, monospace; text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff; pointer-events: none; }
+
+/* Taktische Zeichen */
+.lt-sym { background: none; border: 0; }
+.lt-sym svg { display: block; overflow: visible; }
+.lt-sym.sel svg { filter: drop-shadow(0 0 2px #ffd400) drop-shadow(0 0 4px #ffd400); }
+.lt-sym-lbl { position: absolute; top: 2px; font: 700 12px Arial, sans-serif; color: #000; white-space: nowrap; text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff; }

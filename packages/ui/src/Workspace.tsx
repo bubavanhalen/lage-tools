@@ -8,12 +8,15 @@ import {
   feldFromRect,
   formatLv95,
   makeBlattSheet,
+  journalToCsv,
   makeFeldSheet,
+  newDeviceId,
   newExercise,
   nextPrefix,
   niceCellSize,
   referencePoint,
   sheetBounds,
+  situationAt,
   type Area,
   type Exercise,
   type LV95,
@@ -35,13 +38,25 @@ import { currentExerciseId, downloadText, listExercises, loadExercise, pickFile,
 import { NaiPanel } from "./NaiPanel";
 import { GeorefPane } from "./GeorefPane";
 import type { Candidate } from "./imageimport";
+import { JournalPanel } from "./JournalPanel";
+import { OfflineBox } from "./OfflineBox";
+import { Timeline, isoLocal } from "./Timeline";
+import { journalLayer } from "./journalLayer";
+
+function deviceId(): string {
+  try {
+    let d = localStorage.getItem("lage-tools.device");
+    if (!d) { d = newDeviceId(); localStorage.setItem("lage-tools.device", d); }
+    return d;
+  } catch { return "dev-unbekannt"; }
+}
 
 interface Props {
   product: string;
   tagline: string;
 }
 
-type Tab = "raster" | "nai";
+type Tab = "journal" | "raster" | "nai";
 type SheetPatch = Partial<{ name: string; prefix: string; cellSize: number; cols: number; rows: number; basemap: "lk" | "img"; classification: string; quadrants: boolean }>;
 
 export function Workspace({ product, tagline }: Props) {
@@ -50,7 +65,18 @@ export function Workspace({ product, tagline }: Props) {
   const layerRef = useRef<L.LayerGroup | null>(null);
   const [ex, setEx] = useState<Exercise | null>(null);
   const [saved, setSaved] = useState<Array<{ id: string; name: string }>>([]);
-  const [tab, setTab] = useState<Tab>("raster");
+  const [tab, setTab] = useState<Tab>(product === "Lagejournal" ? "journal" : "raster");
+  const [tCursor, setTCursor] = useState<string | null>(null);
+  const [tracks, setTracks] = useState(true);
+  const [selEvent, setSelEvent] = useState<string | null>(null);
+  const journalRef = useRef<L.LayerGroup | null>(null);
+  const device = useRef(deviceId()).current;
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const on = () => setOnline(navigator.onLine);
+    window.addEventListener("online", on); window.addEventListener("offline", on);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); };
+  }, []);
   const [basemap, setBasemap] = useState<Basemap>("lk");
   const [selSheet, setSelSheet] = useState<string | null>(null);
   const [selArea, setSelArea] = useState<string | null>(null);
@@ -108,6 +134,34 @@ export function Workspace({ product, tagline }: Props) {
     g.addTo(s.map);
     layerRef.current = g;
   }, [ex, selSheet, selArea, mapReady]);
+
+  // Lage zum Zeitpunkt
+  useEffect(() => {
+    const s = sm.current;
+    if (!s || !ex) return;
+    journalRef.current?.remove();
+    // Live: jetzt – oder, wenn die Übung vorbei ist, die letzte Meldung
+    let t = tCursor;
+    if (!t) {
+      const last = (ex.events ?? []).filter((e) => !e.deleted).reduce((m, e) => (e.t > m ? e.t : m), "");
+      const now = isoLocal(Date.now());
+      t = !last || Date.now() - Date.parse(last) < 12 * 3600000 ? (now > last ? now : last) : last;
+    }
+    const st = situationAt(ex.events ?? [], t);
+    const g = journalLayer(st, { tracks, selectedId: selEvent, onClick: (e) => { setTab("journal"); setSelEvent(e.id); } });
+    g.addTo(s.map);
+    journalRef.current = g;
+  }, [ex?.events, tCursor, tracks, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const exportJournal = async (kind: "csv" | "pdf") => {
+    if (!ex) return;
+    if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days), "text/csv;charset=utf-8"); return; }
+    const { journalPdf } = await import("./journalpdf");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN"));
+    a.download = `Lagejournal_${safeFileName(ex.name)}.pdf`;
+    a.click();
+  };
 
   const fitSheet = (sh: RasterSheet) => {
     const b = sheetBounds(sh);
@@ -214,6 +268,7 @@ export function Workspace({ product, tagline }: Props) {
         <div className="brand">
           <strong>{product}</strong>
           <span className="tag">{tagline}</span>
+          {!online && <span className="netbadge" title="Kein Netz – Journal und gespeicherte Karten funktionieren weiter">offline</span>}
         </div>
         <div className="tools">
           <input className="exname" value={ex.name} onChange={(e) => update((x) => { x.name = e.target.value; return x; })} aria-label="Name der Übung" />
@@ -234,11 +289,17 @@ export function Workspace({ product, tagline }: Props) {
       <div className="work">
         <aside className="side">
           <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={tab === "journal"} onClick={() => setTab("journal")}>Journal</button>
             <button role="tab" aria-selected={tab === "raster"} onClick={() => setTab("raster")}>Führungsraster</button>
             <button role="tab" aria-selected={tab === "nai"} onClick={() => setTab("nai")}>NAI / BNB</button>
           </div>
           {georef ? (
             <GeorefPane candidates={georef} map={sm.current!.map} existing={ex.areas} onAreas={onGeorefAreas} onClose={() => { setGeoref(null); setTab("nai"); }} />
+          ) : !mapReady || !sm.current ? (
+            <div className="panel"><p className="help">Karte wird geladen …</p></div>
+          ) : tab === "journal" ? (
+            <JournalPanel ex={ex} map={sm.current!.map} device={device} selected={selEvent}
+              onSelect={(id) => { setSelEvent(id); const e = (ex.events ?? []).find((x) => x.id === id); if (e && tCursor) setTCursor(e.t); }} update={update} say={say} onExport={exportJournal} />
           ) : tab === "raster" ? (
             <div className="panel">
               {ex.sheets.length === 0 && (
@@ -262,6 +323,7 @@ export function Workspace({ product, tagline }: Props) {
               </ul>
               {sel && <SheetForm sheet={sel} onPatch={(p) => patchSheet(sel.id, p)} onPdf={(paper) => pdf(sel, paper)}
                 onDelete={() => { update((x) => { x.sheets = x.sheets.filter((s) => s.id !== sel.id); return x; }); setSelSheet(null); }} />}
+              <OfflineBox ex={ex} map={sm.current.map} />
             </div>
           ) : (
             <NaiPanel exercise={ex} selected={selArea} onSelect={(id) => setSelArea(id)} map={sm.current!.map}
@@ -271,6 +333,13 @@ export function Workspace({ product, tagline }: Props) {
           )}
         </aside>
         <main className="mapwrap">
+          {(tab === "journal" || (ex.events ?? []).some((e) => !e.deleted)) && (
+            <div className="tlwrap">
+              <Timeline events={ex.events ?? []} days={ex.days} value={tCursor} onChange={setTCursor} />
+              <label className="check tl-opt"><input type="checkbox" checked={tracks} onChange={(e) => setTracks(e.target.checked)} /> Spuren</label>
+            </div>
+          )}
+          <div className="mapbox">
           <div ref={el} className="map" />
           <div className="maptools">
             <PlaceSearch onGo={(p) => sm.current?.map.setView(toLatLng(p), 21)} />
@@ -285,6 +354,7 @@ export function Workspace({ product, tagline }: Props) {
           {drawing && <div className="hint">{drawing} · Esc = Abbrechen</div>}
           <div className="status mono" aria-live="polite">
             {cursor ? <>{formatLv95(cursor)}{cell ? <> · <b>{cell.label}</b></> : null}</> : "Maus über die Karte bewegen"}
+          </div>
           </div>
         </main>
       </div>

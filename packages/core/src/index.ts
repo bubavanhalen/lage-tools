@@ -8,3 +8,4 @@ export * from "./imageops";
 export * from "./gis";
 export * from "./exercise";
 export * from "./match";
+export * from "./journal";

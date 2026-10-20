@@ -44,6 +44,12 @@ export interface LageEvent {
   cells?: string[];
   /** NAI / Raum, z. B. «NAI 5» */
   nai?: string;
+  /** Anzahl (z. B. 2 Fahrzeuge), wird beim Zeichen angeschrieben */
+  count?: number;
+  /** Bewegungsrichtung in Grad (0 = Nord) */
+  dir?: number;
+  /** Herkunft des Standorts, z. B. «NAI 3», «UK7 C», «Koordinate», «Karte» */
+  where?: string;
   source?: SourceRef;
   /** Vom Benutzer bestätigt (sonst Vorschlag der Erkennung) */
   confirmed: boolean;
@@ -73,6 +79,12 @@ export interface Overlay {
   visible: boolean;
 }
 
+/** Bekannter Ort (Standort, nachgeschlagener Ortsname) */
+export interface Place {
+  name: string;
+  pos: LV95;
+}
+
 export interface Exercise {
   id: string;
   name: string;
@@ -82,6 +94,9 @@ export interface Exercise {
   areas: Area[];
   overlays?: Overlay[];
   units: { rot: string[]; blau: string[]; ul: string[] };
+  /** Lagejournal */
+  events?: LageEvent[];
+  places?: Place[];
 }
 
 /** Sortierbare, eindeutige ID (Zeit + Zufall), ohne Abhängigkeiten. */

@@ -15,17 +15,19 @@ export interface SymbolDef {
   keywords: string[];
   /** Als Dreieck darstellen (Späher / Beob Posten), nicht als milsymbol */
   triangle?: boolean;
+  /** Tätigkeit (Ereignis am Ort), nicht das Element selbst – z. B. Kontakt, Sperre */
+  activity?: boolean;
 }
 
 /** Reihenfolge = Priorität der Erkennung (spezifisch vor allgemein). */
 export const SYMBOLS: SymbolDef[] = [
-  { key: "hinterhalt", name: "Hinterhalt", sidc: "G?OPVU----****X", keywords: ["hinterhalt", "überfall"] },
-  { key: "sperre", name: "Strassensperre", sidc: "G?OPPR----****X", keywords: ["strassensperre", "sperre"] },
-  { key: "kontrollposten", name: "Kontrollposten", sidc: "G?GPGPPK-------X", keywords: ["checkpoint", "kontrollposten", "kontrollpunkt", "\\bcp\\b"] },
-  { key: "mun_lager", name: "Übergabe / Munitionslager", sidc: "G?OPVC----****X", keywords: ["übergabe", "munition", "\\bmun\\b", "gefangenenübergabe"] },
-  { key: "kontakt", name: "Kurzer Kontakt", sidc: "G?CPOXUB--****X", keywords: ["kontakt mit", "feuerkontakt", "beschuss", "schüsse", "entdeckt"] },
+  { key: "hinterhalt", name: "Hinterhalt", sidc: "G?OPVU----****X", keywords: ["hinterhalt", "überfall"], activity: true },
+  { key: "sperre", name: "Strassensperre", sidc: "G?OPPR----****X", keywords: ["strassensperre", "sperre"], activity: true },
+  { key: "kontrollposten", name: "Kontrollposten", sidc: "G?GPGPPK-------X", keywords: ["checkpoint", "kontrollposten", "kontrollpunkt", "\\bcp\\b"], activity: true },
+  { key: "mun_lager", name: "Übergabe / Munitionslager", sidc: "G?OPVC----****X", keywords: ["übergabe", "munition", "\\bmun\\b", "gefangenenübergabe"], activity: true },
+  { key: "kontakt", name: "Kurzer Kontakt", sidc: "G?CPOXUB--****X", keywords: ["kontakt mit", "feuerkontakt", "beschuss", "schüsse", "entdeckt"], activity: true },
   { key: "drohne", name: "Drohne", sidc: "S?APMFQ--------", keywords: ["drohne", "\\buav\\b"] },
-  { key: "beob_aufkl", name: "Späher-Trupp (Beob Posten)", sidc: "G?CPMMPOR-****X", keywords: ["späher", "beob\\s?posten", "beobachtungsposten", "beob\\s?stao"], triangle: true },
+  { key: "beob_aufkl", name: "Späher-Trupp (Beob Posten)", sidc: "G?CPMMPOR-****X", keywords: ["späher", "beob?\\s?posten", "beobachtungsposten", "beob?\\s?stao", "\\bbeob?\\b"], triangle: true },
   { key: "patrouille", name: "Patrouille", sidc: "G?OPPT----****X", keywords: ["patrouille", "\\bpatr\\b"] },
   { key: "lw", name: "Lastwagen", sidc: "S?GPEVUL-------", keywords: ["lastwagen", "\\blkw\\b", "\\bduro\\b"] },
   { key: "fz", name: "Fahrzeug", sidc: "S?GPEVU--------", keywords: ["g-?klasse", "g-?wagen", "fahrzeug", "\\bfz\\b", "\\bpw\\b", "\\bauto\\b", "puch"] },
