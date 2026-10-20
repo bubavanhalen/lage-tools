@@ -8,6 +8,7 @@ import {
   eventFromDraft,
   formatLv95,
   isoOf,
+  kindLabel,
   lastPosition,
   minutesOf,
   parseMeldung,
@@ -16,13 +17,13 @@ import {
   symbolDef,
   type Draft,
   type Exercise,
+  type Kind,
   type LageEvent,
   type LV95,
   type Side,
 } from "@lage/core";
 import { pickPoint, symbolSvg, toLatLng, toLv95 } from "@lage/map";
 import { dayLabel } from "./Timeline";
-import { SIDE_COLOR } from "./journalLayer";
 
 interface Props {
   ex: Exercise;
@@ -35,8 +36,9 @@ interface Props {
   onExport: (kind: "csv" | "pdf") => void;
 }
 
-const SIDES: Array<[Side, string]> = [["rot", "Rot"], ["blau", "Blau"], ["ul", "UL"]];
-const sideName = (s: Side) => (s === "rot" ? "Rot" : s === "blau" ? "Blau" : "UL");
+const KINDS: Array<[Kind, string]> = [["eigen", "Eigene"], ["feind", "Feind"], ["unklar", "Unklar"]];
+export const KIND_COLOR: Record<Kind, string> = { eigen: "#1f5fb8", feind: "#c8102e", unklar: "#b8860b" };
+const kindOf = (e: Pick<LageEvent, "side" | "aff">): Kind => (e.side === "blau" ? "eigen" : e.aff === "U" ? "unklar" : "feind");
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 /** Bereich der Übung (Raster, NAI) – für die Ortssuche */
@@ -67,13 +69,13 @@ function SymbolMini({ k, aff }: { k: string; aff: LageEvent["aff"] }) {
 
 export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport }: Props) {
   const events = ex.events ?? [];
-  const [side, setSide] = useState<Side>("rot");
+  const [kindOverride, setKindOverride] = useState<Kind | null>(null);
   const [day, setDay] = useState(() => (ex.days.includes(todayIso()) ? todayIso() : ex.days[ex.days.length - 1] ?? todayIso()));
   const [text, setText] = useState("");
   const [manualPos, setManualPos] = useState<LV95 | null>(null);
   const [found, setFound] = useState<{ q: string; name: string; pos: LV95 } | null>(null);
   const [picking, setPicking] = useState(false);
-  const [filter, setFilter] = useState<"alle" | Side>("alle");
+  const [filter, setFilter] = useState<"alle" | Kind>("alle");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -81,9 +83,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   useEffect(() => { if (!ex.days.includes(day)) setDay(ex.days[ex.days.length - 1] ?? todayIso()); }, [ex.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctx = useMemo(() => ({
-    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], side, days: ex.days, day, now: new Date(),
+    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now: new Date(),
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
-  }), [ex, side, day, events]);
+  }), [ex, kindOverride, day, events]);
   const draft: Draft | null = useMemo(() => (text.trim() ? parseMeldung(text, ctx) : null), [text, ctx]);
 
   // Ortsname online nachschlagen (nur wenn sonst kein Ort erkannt wurde)
@@ -118,11 +120,13 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     update((x) => {
       x.events = [...(x.events ?? []), ev];
       if (!x.days.includes(ev.t.slice(0, 10))) x.days = [...x.days, ev.t.slice(0, 10)].sort();
-      if (ev.unit && !x.units[ev.side].some((u) => u.toLowerCase() === ev.unit.toLowerCase())) x.units[ev.side] = [...x.units[ev.side], ev.unit];
+      const remember = (side: Side, u?: string) => { if (u && !x.units[side].some((v) => v.toLowerCase() === u.toLowerCase())) x.units[side] = [...x.units[side], u]; };
+      remember("blau", ev.melder);
+      remember(ev.side, ev.unit);
       if (found && effPos === found.pos && !(x.places ?? []).some((p) => p.name === found.name)) x.places = [...(x.places ?? []), { name: found.name, pos: found.pos }];
       return x;
     });
-    setText(""); setManualPos(null); setFound(null);
+    setText(""); setManualPos(null); setFound(null); setKindOverride(null);
     onSelect(ev.id);
     if (ev.pos && !map.getBounds().contains(toLatLng(ev.pos))) map.panTo(toLatLng(ev.pos));
     if (!ev.pos) say("Eingetragen – ohne Ort. Mit ✎ kann der Ort später auf der Karte gesetzt werden.");
@@ -135,7 +139,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     return events
-      .filter((e) => !e.deleted && (filter === "alle" || e.side === filter) && (!q || `${e.unit} ${e.text} ${e.where ?? ""}`.toLowerCase().includes(q)))
+      .filter((e) => !e.deleted && (filter === "alle" || kindOf(e) === filter) && (!q || `${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")}`.toLowerCase().includes(q)))
       .sort((a, b) => b.t.localeCompare(a.t) || b.id.localeCompare(a.id));
   }, [events, filter, search]);
 
@@ -149,31 +153,34 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
 
   return (
     <div className="panel journal">
-      <div className="entry" style={{ borderColor: SIDE_COLOR[draft?.side ?? side] }}>
+      <div className="entry" style={{ borderColor: draft ? KIND_COLOR[draft.kind] : undefined }}>
         <div className="btnrow">
-          <div className="seg sides" role="group" aria-label="Seite">
-            {SIDES.map(([s, l]) => <button key={s} className={s} aria-pressed={side === s} onClick={() => { setSide(s); inputRef.current?.focus(); }}>{l}</button>)}
-          </div>
+          <b className="entry-title">Meldung</b>
           <select value={day} onChange={(e) => (e.target.value === "__add" ? addDay() : setDay(e.target.value))} aria-label="Übungstag">
             {ex.days.map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.</option>)}
             <option value="__add">+ Tag</option>
           </select>
         </div>
         <input ref={inputRef} className="msg" value={text} autoFocus placeholder="z. B. 1015 2 Fz in NAI 3 Rtg N" aria-label="Meldung"
-          onChange={(e) => { setText(e.target.value); if (!e.target.value) setManualPos(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } if (e.key === "Escape") { setText(""); setManualPos(null); } }} />
+          onChange={(e) => { setText(e.target.value); if (!e.target.value) { setManualPos(null); setKindOverride(null); } }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } if (e.key === "Escape") { setText(""); setManualPos(null); setKindOverride(null); } }} />
         {draft ? (
           <div className="preview">
             <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}>{dayLabel(draft.t, ex.days)} {draft.t.slice(11, 16)}</span>
-            <span className="chip side" style={{ background: SIDE_COLOR[draft.side] }}>{sideName(draft.side)}</span>
-            {draft.unit && <span className="chip"><b>{draft.unit}</b></span>}
+            {draft.melder && <span className="chip" title="eigenes Element, das meldet">Melder <b>{draft.melder}</b></span>}
+            <span className="seg kinds" role="group" aria-label="Einordnung" title={draft.kindFrom === "inhalt" ? "aus dem Inhalt erkannt – zum Ändern anklicken" : undefined}>
+              {KINDS.map(([k, l]) => (
+                <button key={k} className={k} aria-pressed={draft.kind === k} onClick={() => { setKindOverride(k); inputRef.current?.focus(); }}>{l}</button>
+              ))}
+            </span>
+            {draft.kind !== "eigen" && draft.unit && <span className="chip"><b>{draft.unit}</b></span>}
             <span className="chip"><SymbolMini k={draft.sym} aff={draft.aff} /> {symbolDef(draft.sym).name}{draft.count && draft.count > 1 ? ` ×${draft.count}` : ""}</span>
             {(draft.dir !== undefined || draft.dirLabel) && <span className="chip">{draft.dirLabel ?? `Rtg ${["N", "NO", "O", "SO", "S", "SW", "W", "NW"][Math.round(draft.dir! / 45) % 8]}`}</span>}
             {effPos ? <span className="chip where">📍 {effWhere}</span> : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
           </div>
         ) : (
-          <p className="help">Zeit · (Rot/Blau) · Element · was · wo. Ort als Planquadrat, NAI, Koordinate oder Ortsname. <b>Enter</b> = eintragen.</p>
+          <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen.</p>
         )}
         <div className="btnrow">
           <button className="primary" disabled={!draft} onClick={add}>Eintragen</button>
@@ -183,7 +190,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
 
       <div className="btnrow filters">
         <div className="seg" role="group" aria-label="Filter">
-          {(["alle", "rot", "blau", "ul"] as const).map((f) => <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === "alle" ? "Alle" : sideName(f)}</button>)}
+          {(["alle", "eigen", "feind", "unklar"] as const).map((f) => <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === "alle" ? "Alle" : KINDS.find((k) => k[0] === f)![1]}</button>)}
         </div>
         <input className="aname" placeholder="Suchen …" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Journal durchsuchen" />
       </div>
@@ -195,11 +202,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
           {list.map((e) => editing === e.id ? (
             <EditRow key={e.id} e={e} ex={ex} map={map} onCancel={() => setEditing(null)} onSave={(p) => { patch(e.id, p); setEditing(null); }} />
           ) : (
-            <li key={e.id} className={(e.id === selected ? "sel " : "") + e.side} onClick={() => { onSelect(e.id); if (e.pos) map.panTo(toLatLng(e.pos)); }}>
-              <span className="sbar" style={{ background: SIDE_COLOR[e.side] }} />
+            <li key={e.id} className={(e.id === selected ? "sel " : "") + kindOf(e)} onClick={() => { onSelect(e.id); if (e.pos) map.panTo(toLatLng(e.pos)); }}>
+              <span className="sbar" style={{ background: KIND_COLOR[kindOf(e)] }} />
               <span className="time mono">{dayLabel(e.t, ex.days)}<br />{e.t.slice(11, 16)}</span>
               <span className="body">
-                <span className="head"><SymbolMini k={e.sym} aff={e.aff} />{e.unit && <b>{e.unit}</b>}{e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>}</span>
+                <span className="head"><SymbolMini k={e.sym} aff={e.aff} /><span className="kindtag" style={{ color: KIND_COLOR[kindOf(e)] }}>{kindLabel(e)}</span>{e.unit && <b>{e.unit}</b>}{e.melder && e.melder !== e.unit && <span className="wh">via {e.melder}</span>}{e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>}</span>
                 <span className="txt">{e.text}</span>
               </span>
               <span className="acts">
@@ -223,8 +230,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
 function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise; map: L.Map; onCancel: () => void; onSave: (p: Partial<LageEvent>) => void }) {
   const [time, setTime] = useState(e.t.slice(11, 16));
   const [day, setDay] = useState(e.t.slice(0, 10));
-  const [side, setSide] = useState<Side>(e.side);
+  const [kind, setKind] = useState<Kind>(kindOf(e));
   const [unit, setUnit] = useState(e.unit);
+  const [melder, setMelder] = useState(e.melder ?? "");
   const [text, setText] = useState(e.text);
   const [sym, setSym] = useState(e.sym);
   const [count, setCount] = useState(e.count ?? 0);
@@ -236,8 +244,8 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
     const m = /^(\d{1,2})[:.]?(\d{2})$/.exec(time.trim());
     const minutes = m ? Math.min(23, +m[1]!) * 60 + Math.min(59, +m[2]!) : minutesOf(e.t);
     onSave({
-      t: isoOf(day, minutes), side, unit: unit.trim(), text, sym, count: count > 0 ? count : undefined, label: count > 1 ? String(count) : undefined,
-      aff: e.aff === "U" ? "U" : side === "rot" ? "H" : side === "blau" ? "F" : "N", pos, where,
+      t: isoOf(day, minutes), side: kind === "eigen" ? "blau" : "rot", unit: unit.trim(), melder: melder.trim() || undefined, text, sym, count: count > 0 ? count : undefined, label: count > 1 ? String(count) : undefined,
+      aff: kind === "eigen" ? "F" : kind === "feind" ? "H" : "U", pos, where,
     });
   };
   return (
@@ -248,8 +256,12 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
           <label>Tag<select value={day} onChange={(x) => setDay(x.target.value)}>{days.map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.</option>)}</select></label>
         </div>
         <div className="two">
-          <label>Seite<select value={side} onChange={(x) => setSide(x.target.value as Side)}>{SIDES.map(([s, l]) => <option key={s} value={s}>{l}</option>)}</select></label>
-          <label>Element<input value={unit} onChange={(x) => setUnit(x.target.value)} /></label>
+          <label>Art<select value={kind} onChange={(x) => setKind(x.target.value as Kind)}>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label>Melder<input value={melder} onChange={(x) => setMelder(x.target.value)} /></label>
+        </div>
+        <div className="two">
+          <label>Element auf der Karte<input value={unit} onChange={(x) => setUnit(x.target.value)} placeholder={kind === "eigen" ? "= Melder" : "leer = einzelne Sichtung"} /></label>
+          <span />
         </div>
         <label>Meldung<input value={text} onChange={(x) => setText(x.target.value)} /></label>
         <div className="two">

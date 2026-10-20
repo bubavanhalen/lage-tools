@@ -282,7 +282,9 @@ export function situationAt(events: LageEvent[], t: string, maxAgeMin = Infinity
       const track = cur ? [...cur.track] : [];
       const last = track[track.length - 1];
       if (!last || last.e !== e.pos.e || last.n !== e.pos.n) track.push(e.pos);
-      byUnit.set(k, { key: k, unit: e.unit, side: e.side, event: e, pos: e.pos, track });
+      // allgemeines Zeichen («rollt», «verschiebt») ersetzt kein bekanntes Zeichen
+      const ev = cur && e.sym === "einheit" ? { ...e, sym: cur.event.sym } : e;
+      byUnit.set(k, { key: k, unit: e.unit, side: e.side, event: ev, pos: e.pos, track });
     } else if (cur) {
       // Meldung ohne Ort: Element bleibt am letzten Standort, Zeichen/Text werden aktualisiert
       byUnit.set(k, { ...cur, event: { ...e, pos: cur.pos, sym: e.sym === "einheit" ? cur.event.sym : e.sym } });

@@ -137,9 +137,12 @@ button:disabled { opacity: .45; cursor: default; }
 .journal { gap: 10px; }
 .entry { display: grid; gap: 8px; padding: 10px; border: 2px solid var(--line); border-radius: 10px; background: var(--soft); }
 .entry .msg { font: inherit; font-size: 16px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; min-height: 42px; width: 100%; }
-.sides button.rot[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
-.sides button.blau[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: #fff; }
-.sides button.ul[aria-pressed="true"] { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+.entry-title { font-size: 14px; margin-right: auto; }
+.kinds button { min-height: 26px; padding: 2px 8px; font-size: 12.5px; }
+.kinds button.feind[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
+.kinds button.eigen[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: #fff; }
+.kinds button.unklar[aria-pressed="true"] { background: #b8860b; border-color: #b8860b; color: #fff; }
+.kindtag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .preview { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; padding: 3px 7px; border-radius: 999px; background: var(--paper); border: 1px solid var(--line); }
 .chip.soft { color: var(--muted); border-style: dashed; }

@@ -11,6 +11,7 @@ import {
   journalToCsv,
   makeFeldSheet,
   newDeviceId,
+  demoExercise,
   newExercise,
   nextPrefix,
   niceCellSize,
@@ -275,11 +276,13 @@ export function Workspace({ product, tagline }: Props) {
           <select aria-label="Gespeicherte Übungen" value="" onChange={async (e) => {
             const v = e.target.value;
             if (v === "__new") { const x = newExercise(); setEx(x); setSelSheet(null); return; }
+            if (v === "__demo") { const x = demoExercise(); setEx(x); setSelSheet(null); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); return; }
             const x = await loadExercise(v);
             if (x) { setEx(x); setSelSheet(null); }
           }}>
             <option value="" disabled>Übungen …</option>
             <option value="__new">+ Neue Übung</option>
+            <option value="__demo">Beispiel (fiktiv) laden</option>
             {saved.filter((s) => s.id !== ex.id).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <button onClick={openFile}>Öffnen</button>

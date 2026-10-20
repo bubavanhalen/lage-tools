@@ -2,13 +2,13 @@
  * Lagejournal als PDF (A4 hoch): Zeit, Seite, Element, Meldung, Ort – chronologisch.
  */
 import { jsPDF } from "jspdf";
-import type { Exercise } from "@lage/core";
+import { kindLabel, type Exercise } from "@lage/core";
 
 export function journalPdf(ex: Exercise, classification = "INTERN"): Blob {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210, M = 12;
   const cols = [
-    { h: "Tag", w: 10 }, { h: "Zeit", w: 13 }, { h: "Seite", w: 13 }, { h: "Element", w: 24 }, { h: "Meldung", w: 92 }, { h: "Ort", w: 34 },
+    { h: "Tag", w: 10 }, { h: "Zeit", w: 12 }, { h: "Art", w: 14 }, { h: "Melder", w: 18 }, { h: "Element", w: 18 }, { h: "Meldung", w: 80 }, { h: "Ort", w: 34 },
   ];
   const events = (ex.events ?? []).filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t));
   let page = 1;
@@ -31,13 +31,14 @@ export function journalPdf(ex: Exercise, classification = "INTERN"): Blob {
   for (const e of events) {
     const di = ex.days.indexOf(e.t.slice(0, 10));
     const cells = [
-      di >= 0 ? `T${di + 1}` : e.t.slice(5, 10), e.t.slice(11, 16), e.side === "rot" ? "Rot" : e.side === "blau" ? "Blau" : "UL", e.unit, e.text,
+      di >= 0 ? `T${di + 1}` : e.t.slice(5, 10), e.t.slice(11, 16), kindLabel(e), e.melder ?? "", e.side === "blau" && e.unit === e.melder ? "" : e.unit, e.text,
       [e.where, ...(e.cells ?? []).filter((c) => c !== e.where)].filter(Boolean).join(", "),
     ];
     const lines = cells.map((c, i) => doc.splitTextToSize(c, cols[i]!.w - 2) as string[]);
     const h = Math.max(...lines.map((l) => l.length)) * 3.6 + 1.6;
     if (y + h > 285) { doc.addPage(); page++; header(); }
-    if (e.side === "rot") { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
+    if (e.side === "rot" && e.aff === "U") { doc.setFillColor(252, 244, 214); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
+    else if (e.side === "rot") { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
     else if (e.side === "blau") { doc.setFillColor(232, 240, 252); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
     let x = M + 1;
     lines.forEach((l, i) => { doc.text(l, x, y); x += cols[i]!.w; });
