@@ -4,7 +4,7 @@
  * Ablauf: Linienfarbe wählen → Maske «Linie» → von einem Klickpunkt aus fluten (Linien sind Wände)
  * → Fläche um halbe Linienbreite erweitern → Kontur verfolgen → vereinfachen.
  */
-import { simplifyRing, type XY } from "./geo";
+import { pointInRing, ringArea, ringCentroid, simplifyRing, type XY } from "./geo";
 
 export interface RGBAImage {
   width: number;
@@ -152,7 +152,7 @@ export function detectAllOutlines(
   let walls = colorMask(img, lineColor, opts.tolerance ?? 70);
   const gaps = opts.closeGaps ?? 1;
   if (gaps) walls = dilate(walls, gaps);
-  const minArea = opts.minArea ?? Math.max(300, w * h * 0.0015);
+  const minArea = opts.minArea ?? Math.max(150, w * h * 0.0003);
   const maxArea = w * h * (opts.maxFraction ?? 0.7);
   const grow = Math.round((opts.lineWidth ?? 4) / 2 + gaps);
   const label = new Int32Array(w * h);
@@ -195,6 +195,42 @@ export function detectAllOutlines(
     if (contour.length < 4) continue;
     const ring = simplifyRing(contour.map((p) => ({ x: p.x + ox, y: p.y + oy })), opts.simplify ?? 1.5);
     if (ring.length >= 3) rings.push({ ring, area });
+  }
+  // Gefüllte Flächen (z. B. halbtransparent eingefärbte NAI): kompakte Flecken der Linienfarbe selbst
+  const seen = new Uint8Array(w * h);
+  for (let start = 0; start < w * h; start++) {
+    if (!walls.data[start] || seen[start]) continue;
+    let qh = 0, qt = 0;
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    queue[qt++] = start;
+    seen[start] = 1;
+    while (qh < qt) {
+      const i = queue[qh++]!;
+      const x = i % w, y = (i - x) / w;
+      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x > 0 && walls.data[i - 1] && !seen[i - 1]) { seen[i - 1] = 1; queue[qt++] = i - 1; }
+      if (x < w - 1 && walls.data[i + 1] && !seen[i + 1]) { seen[i + 1] = 1; queue[qt++] = i + 1; }
+      if (y > 0 && walls.data[i - w] && !seen[i - w]) { seen[i - w] = 1; queue[qt++] = i - w; }
+      if (y < h - 1 && walls.data[i + w] && !seen[i + w]) { seen[i + w] = 1; queue[qt++] = i + w; }
+    }
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    // dünne Linienzüge (Umrandungen, Strassen) haben eine kleine Dichte – nur kompakte Flecken
+    if (qt < minArea * 2 || qt > maxArea || qt / (bw * bh) < 0.35 || Math.min(bw, bh) < 10) continue;
+    const ox = Math.max(0, minX - 1), oy = Math.max(0, minY - 1);
+    const cw = Math.min(w, maxX + 2) - ox, ch = Math.min(h, maxY + 2) - oy;
+    const sub = new Uint8Array(cw * ch);
+    for (let k = 0; k < qt; k++) {
+      const i = queue[k]!;
+      const x = i % w, y = (i - x) / w;
+      sub[(y - oy) * cw + (x - ox)] = 1;
+    }
+    const contour = traceContour({ width: cw, height: ch, data: sub });
+    if (contour.length < 4) continue;
+    const ring = simplifyRing(contour.map((p) => ({ x: p.x + ox, y: p.y + oy })), opts.simplify ?? 1.5);
+    const area = Math.abs(ringArea(ring));
+    const c = ringCentroid(ring);
+    const dup = rings.some((r) => { const ra = Math.abs(ringArea(r.ring)); return pointInRing(c, r.ring) && area / ra > 0.6 && area / ra < 1.6; });
+    if (!dup && ring.length >= 3) rings.push({ ring, area: qt });
   }
   return rings.sort((a, b) => b.area - a.area).map((r) => r.ring);
 }
