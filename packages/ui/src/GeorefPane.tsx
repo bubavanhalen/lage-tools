@@ -58,7 +58,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
   const [distorted, setDistorted] = useState(false);
   const [lineColor, setLineColor] = useState<RGB | null>(loadColor);
   const [lineWidth, setLineWidth] = useState(4);
-  const [tol, setTol] = useState(70);
+  const [tol, setTol] = useState(20);
   const [pickColor, setPickColor] = useState(false);
   const [found, setFound] = useState<Found[]>([]);
   const [showImg, setShowImg] = useState(true);
@@ -393,7 +393,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
           <div className="btnrow">
             <button className={pickColor ? "primary" : ""} onClick={() => { setPickColor(true); setMsg("Auf eine NAI-Linie im Bild klicken."); }}>Linienfarbe wählen</button>
             {lineColor && <span className="swatch" style={{ background: `rgb(${lineColor.join(",")})` }} title={`Linienbreite ≈ ${lineWidth} px`} />}
-            <label className="field">Toleranz<input type="range" min={20} max={140} value={tol} onChange={(e) => setTol(+e.target.value)} onPointerUp={() => lineColor && detectAll(lineColor, lineWidth, tol)} onKeyUp={() => lineColor && detectAll(lineColor, lineWidth, tol)} /></label>
+            <label className="field">Toleranz<input type="range" min={10} max={140} value={tol} onChange={(e) => setTol(+e.target.value)} onPointerUp={() => lineColor && detectAll(lineColor, lineWidth, tol)} onKeyUp={() => lineColor && detectAll(lineColor, lineWidth, tol)} /></label>
           </div>
           {msg && <p className="help">{msg}</p>}
           <ul className="list">
