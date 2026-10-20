@@ -1,0 +1,161 @@
+/* Lagekarte: Zeichen, Zeitlabels, Tooltip, Meldungsbanner, Legende (Spez. 4.4–4.9). */
+
+/* ---------- Zeichen auf der Karte (Karte bleibt hell → feste Kartenfarben) ---------- */
+.lt-ev { background: none; border: 0; cursor: pointer; }
+.lt-ev svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff); }
+.lt-ev.sel svg { filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px #F2B705) drop-shadow(0 0 2px #F2B705); }
+.lt-ev .lt-ud { left: var(--x); }
+.lt-ev.left .lt-ud { left: auto; right: var(--x); }
+.lt-ev.sel .lt-ud { font-weight: 700; }
+.lt-tl {
+  position: absolute;
+  top: -16px;
+  left: var(--x);
+  font: 600 12px/14px var(--f-mono, "IBM Plex Mono", ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  color: #101414;
+  background: rgba(255, 255, 255, .88);
+  border: 1px solid rgba(0, 0, 0, .15);
+  border-radius: 3px;
+  padding: 0 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.lt-ev.left .lt-tl { left: auto; right: var(--x); }
+.lt-ev.sel .lt-tl { background: #101414; color: #fff; border-color: #101414; }
+.lt-selcell { pointer-events: none; }
+
+/* ---------- Tooltip (hell, auch im Dunkelmodus, weil die Karte hell bleibt) ---------- */
+.leaflet-tooltip.lt-tip {
+  white-space: normal;
+  width: max-content;
+  max-width: 300px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, .15);
+  background: rgba(255, 255, 255, .97);
+  color: #1B2320;
+  font: 400 13px/1.35 var(--f-body, "IBM Plex Sans", system-ui, sans-serif);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .25);
+}
+.lt-tip-h { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.lt-tip-h b.tnum { font-family: var(--f-mono, ui-monospace, monospace); font-weight: 600; }
+.lt-tip-u { font-family: var(--f-display, "Arial Narrow", sans-serif); font-size: 15px; font-weight: 600; }
+.lt-tip-t { margin-top: 2px; }
+.lt-tip-m { margin-top: 2px; font: 500 11.5px var(--f-mono, ui-monospace, monospace); color: #5B655F; }
+.lt-kind {
+  font: 600 10.5px/1.4 var(--f-mono, ui-monospace, monospace);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 5px;
+}
+.lt-kind.k-eigen { color: #1F5FB8; }
+.lt-kind.k-feind { color: #B8292F; }
+.lt-kind.k-unklar { color: #A86F12; }
+.lt-kind.k-ul { color: #5B655F; }
+
+/* ---------- Meldungsbanner (oben links neben dem Zoom) ---------- */
+.mo-banner {
+  position: absolute;
+  top: 10px;
+  left: 54px;
+  z-index: 520;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  max-width: min(900px, calc(100% - 66px));
+  padding: 7px 34px 7px 12px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+  font-size: 14px;
+  color: var(--ink);
+}
+.mo-time { font: 600 14px var(--f-mono); font-variant-numeric: tabular-nums; }
+.mo-kind {
+  font: 600 11px/1.45 var(--f-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 6px;
+  align-self: center;
+}
+.mo-kind.k-eigen { color: var(--blau); }
+.mo-kind.k-feind { color: var(--rot); }
+.mo-kind.k-unklar { color: var(--unklar); }
+.mo-kind.k-ul { color: var(--muted); }
+.mo-sym { display: inline-flex; align-self: center; }
+.mo-sym svg { height: 18px; width: auto; display: block; }
+.mo-unit { font: 600 16px/1.1 var(--f-display); white-space: nowrap; }
+.mo-via { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.mo-pq { font: 500 12px var(--f-mono); border: 1px solid var(--line); border-radius: 3px; padding: 0 6px; white-space: nowrap; }
+.mo-msg { min-width: 0; overflow-wrap: anywhere; flex: 1 1 180px; }
+.mo-banner .mo-btn { min-height: 0; padding: 1px 8px; font-size: 13px; border-radius: 4px; align-self: center; }
+.mo-banner .mo-x {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-height: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+}
+.mo-banner .mo-x:hover { background: var(--grid); color: var(--ink); }
+
+/* ---------- Legende (unten links, über der Koordinatenanzeige) ---------- */
+.mo-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 54px;
+  z-index: 510;
+  max-width: min(560px, calc(100% - 24px));
+  max-height: calc(100% - 140px);
+  overflow: auto;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.mo-legend.folded { max-width: none; }
+.mo-legend .mo-legend-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  width: 100%;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: 600 12px var(--f-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+}
+.mo-legend .mo-legend-h:hover { color: var(--ink); }
+.mo-chev { margin-left: auto; font-size: 11px; }
+.mo-legend-l { list-style: none; margin: 0; padding: 2px 12px 8px; display: flex; flex-wrap: wrap; gap: 5px 16px; }
+.mo-legend-l li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.mo-ic { display: inline-flex; justify-content: center; align-items: center; min-width: 24px; height: 20px; }
+.mo-ic .mo-sym svg { height: 18px; }
+.mo-tl {
+  font: 600 10.5px/13px var(--f-mono);
+  color: #101414;
+  background: rgba(255, 255, 255, .88);
+  border: 1px solid rgba(0, 0, 0, .15);
+  border-radius: 3px;
+  padding: 0 3px;
+}

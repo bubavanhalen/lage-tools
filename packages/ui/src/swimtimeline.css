@@ -1,0 +1,159 @@
+/* Zeitstrahl mit Schwimmbahnen – Gestaltung nach Lagebild-Prototyp (Spez. Kap. 3), nur Tokens aus theme.css */
+.swt {
+  position: relative;
+  flex: none;
+  --swt-bg: var(--card);
+  background: var(--swt-bg);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--f-body);
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 2;
+  container-type: inline-size;
+}
+
+/* ---------- Kopfzeile ---------- */
+.swt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.swt.collapsed .swt-bar { border-bottom-color: transparent; padding-bottom: 6px; }
+.swt-play {
+  flex: none; width: 40px; height: 40px; min-height: 0; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; background: var(--ink); color: var(--paper); border: 0;
+}
+.swt-play:hover { background: color-mix(in srgb, var(--ink) 86%, var(--blau)); }
+.swt-play svg { width: 15px; height: 15px; fill: currentColor; }
+.swt-play:disabled { opacity: .35; }
+.swt-now {
+  flex: none; min-width: 120px; white-space: nowrap;
+  font-family: var(--f-display); font-weight: 600; font-size: 22px; line-height: 1.1; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+}
+.swt-now .tnum { font-family: var(--f-display); }
+.swt-day { color: var(--muted); }
+
+/* Schieberegler: dicke Spur in Blau wie im Prototyp */
+.swt-range {
+  flex: 1 1 140px; min-width: 100px; height: 22px; margin: 0; background: transparent; cursor: pointer;
+  -webkit-appearance: none; appearance: none; accent-color: var(--blau);
+  --p: 100%;
+}
+.swt-range::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px;
+  background: linear-gradient(to right, var(--blau) 0 var(--p), var(--line) var(--p) 100%);
+}
+.swt-range::-moz-range-track { height: 6px; border-radius: 3px; background: var(--line); }
+.swt-range::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--blau); }
+.swt-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -5px; border-radius: 50%;
+  background: var(--blau); border: 2px solid var(--swt-bg); box-shadow: 0 0 0 1px var(--blau);
+}
+.swt-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--blau); border: 2px solid var(--swt-bg); }
+.swt-range:disabled { opacity: .4; cursor: default; }
+
+.swt-speed { flex: none; min-height: 32px; padding: 4px 6px; font-size: 13px; border-radius: 999px; background: var(--card); }
+.swt-chip {
+  flex: none; min-height: 32px; padding: 4px 12px; border-radius: 999px;
+  font-family: var(--f-body); font-weight: 500; font-size: 13px; line-height: 1.2;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); white-space: nowrap;
+}
+.swt-chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.swt-live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.swt-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: .6; }
+.swt-live[aria-pressed="true"] i { background: var(--ok); opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: swt-pulse 2s ease-out infinite; }
+@keyframes swt-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 70%, transparent); } 70%, 100% { box-shadow: 0 0 0 7px transparent; } }
+.swt-fold { flex: none; width: 32px; height: 32px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 50%; border-color: transparent; background: transparent; margin-left: auto; }
+.swt-fold:hover { border-color: var(--line); background: var(--card); }
+.swt-fold svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Zeichenfläche ---------- */
+.swt-chart { position: relative; cursor: col-resize; touch-action: pan-y; outline: none; padding-top: 2px; }
+.swt-chart:focus-visible { outline: none; }
+.swt-chart:focus-visible:not([data-maus]) { box-shadow: inset 0 0 0 2px var(--blau); }
+.swt-chart svg { display: block; overflow: visible; }
+.swt-body {
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin;
+  /* Schatten oben/unten zeigen, dass weitere Spuren folgen */
+  background:
+    linear-gradient(var(--swt-bg) 30%, transparent) top / 100% 14px no-repeat local,
+    linear-gradient(transparent, var(--swt-bg) 70%) bottom / 100% 14px no-repeat local,
+    linear-gradient(color-mix(in srgb, var(--ink) 16%, transparent), transparent) top / 100% 6px no-repeat scroll,
+    linear-gradient(transparent, color-mix(in srgb, var(--ink) 16%, transparent)) bottom / 100% 6px no-repeat scroll;
+}
+.swt-plotbg { fill: transparent; }
+.swt-axis text { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 12px; fill: var(--muted); text-anchor: middle; }
+.swt-major { stroke: var(--line); stroke-width: 1; }
+.swt-minor { stroke: var(--grid); stroke-width: 1; }
+.swt-sep { stroke: var(--grid); stroke-width: 1; }
+.swt-lane text { font-family: var(--f-display); font-weight: 600; fill: var(--ink); }
+.swt-lane.sammel text { fill: var(--muted); font-style: italic; }
+.swt-lane.leer text { fill: var(--muted); }
+.swt-veil { fill: var(--swt-bg); opacity: .62; pointer-events: none; }
+.swt-cursor { stroke: var(--blau); stroke-width: 2; pointer-events: none; }
+.swt-curlabel { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 600; fill: var(--blau); text-anchor: middle; }
+.swt-zoomnote { font-family: var(--f-mono); font-size: 11px; fill: var(--muted); text-anchor: end; }
+
+.swt-dot, .swt-melder, .swt-badge { cursor: pointer; }
+.swt-dot .hit, .swt-melder .hit { fill: transparent; stroke: none; }
+.swt-dot:hover circle:last-child { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--ink) 45%, transparent)); }
+.swt-selring { fill: none; stroke: var(--ink); stroke-width: 2; }
+.swt-link { stroke: var(--ok); stroke-width: 1.3; stroke-dasharray: 3 3; opacity: .8; pointer-events: none; }
+.swt-link.sel { stroke-width: 2; opacity: 1; stroke-dasharray: 4 2; }
+.swt-melder circle:last-child { fill: var(--swt-bg); stroke: var(--ok); stroke-width: 1.5; }
+.swt-melder.sel circle:last-child { stroke-width: 2.4; }
+.swt-badge circle { fill: var(--ink); stroke: var(--swt-bg); stroke-width: 1.5; }
+.swt-badge text { font-family: var(--f-mono); font-size: 9px; font-weight: 600; fill: var(--paper); text-anchor: middle; }
+
+.swt-mini { padding: 0 0 6px; }
+.swt-mini circle { cursor: pointer; }
+
+.swt-empty {
+  margin: 10px 14px 12px; padding: 10px 14px; border: 1.5px dashed var(--line); border-radius: 6px;
+  font-size: 13px; color: var(--muted);
+}
+.swt-empty b { color: var(--ink); font-weight: 600; }
+
+/* ---------- Tooltip ---------- */
+.swt-tip {
+  position: absolute; z-index: 1200; transform: translate(-50%, -100%); pointer-events: none;
+  max-width: 300px; min-width: 160px; padding: 7px 10px; border-radius: 6px;
+  background: var(--card); border: 1px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, .16);
+  font-size: 13px; line-height: 1.35;
+}
+.swt-tip.below { transform: translate(-50%, 0); }
+.swt-tip-h { display: flex; gap: 8px; align-items: baseline; }
+.swt-tip-h .tnum { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 600; }
+.swt-tip-h b { font-family: var(--f-display); font-weight: 600; font-size: 16px; }
+.swt-kind { margin-left: auto; font-family: var(--f-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.swt-tip-t { margin-top: 2px; overflow-wrap: anywhere; }
+.swt-tip-m { margin-top: 3px; font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); }
+
+/* ---------- Präsentation / kompakt ---------- */
+.swt.compact { --swt-bg: var(--paper); box-shadow: 0 2px 8px rgba(0, 0, 0, .18); border-bottom: 0; }
+.swt.compact .swt-bar { padding: 5px 10px; gap: 6px 8px; border-bottom: 0; }
+.swt.compact .swt-play { width: 34px; height: 34px; }
+.swt.compact .swt-now { font-size: 19px; min-width: 100px; }
+.swt.compact .swt-chip, .swt.compact .swt-speed { min-height: 28px; padding-top: 2px; padding-bottom: 2px; }
+.swt.compact .swt-axis text { font-size: 11px; }
+.swt.compact .swt-lane text { font-family: var(--f-body); font-weight: 500; }
+
+/* ---------- schmal (Tablet: Zeitstrahl neben der Seitenleiste ca. 600 px) ---------- */
+@container (max-width: 700px) {
+  .swt-bar { gap: 6px 8px; padding: 8px 10px; }
+  .swt-now { min-width: 0; font-size: 21px; }
+  .swt-range { min-width: 70px; flex-basis: 80px; }
+  .swt-chip { padding: 4px 10px; }
+}
+@container (max-width: 520px) {
+  .swt-range { order: 10; flex-basis: 100%; }
+}
+/* ---------- schmal (Telefon) ---------- */
+@media (max-width: 760px) {
+  .swt-bar { padding: 8px 10px; gap: 6px 8px; }
+  .swt-now { font-size: 19px; min-width: 0; }
+  .swt-range { order: 10; flex-basis: 100%; }
+  .swt-speed { display: none; }
+}
+@media (pointer: coarse) {
+  .swt-chip, .swt-speed { min-height: 38px; }
+  .swt-fold { width: 40px; height: 40px; }
+}
