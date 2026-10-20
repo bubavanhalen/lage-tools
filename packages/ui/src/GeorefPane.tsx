@@ -195,7 +195,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
     try {
       const r = await autoPlace(cand.canvas, view, (p, what) => setBusy({ p, what }));
       if (!r || r.score < 0.4) {
-        setMsg("Nicht gefunden. Karte so verschieben/zoomen, dass das Gebiet des Bildes sichtbar ist, und nochmals versuchen – oder Passpunkte setzen.");
+        setMsg("Nicht gefunden. Näher an den Ort des Bildes zoomen – die Karte sollte etwa gleich viel Gelände zeigen wie das Bild, höchstens etwa zehnmal so viel – und nochmals versuchen. Oder von Hand mit Passpunkten.");
         setPlace(null);
       } else {
         setPlace(r);
@@ -340,7 +340,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
       {mode === "place" && (
         <>
           {!place ? (
-            <p className="help">Karte ungefähr auf das Gebiet des Bildes stellen (oben rechts <b>Ort suchen</b>, das ganze Gebiet sollte sichtbar sein), dann <b>Automatisch einpassen</b>.</p>
+            <p className="help">Karte auf den Ort des Bildes stellen (oben rechts <b>Ort suchen</b>) und so weit zoomen, dass die Karte <b>etwa gleich viel Gelände</b> zeigt wie das Bild. Dann <b>Automatisch einpassen</b>.</p>
           ) : (
             <p className="help">Gefunden{place.score !== undefined ? ` (Übereinstimmung ${Math.round(place.score * 100)} %)` : ""}. Liegt das Bild deckungsgleich auf der Karte?</p>
           )}

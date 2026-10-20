@@ -146,13 +146,13 @@ export function detectOutline(
 export function detectAllOutlines(
   img: RGBAImage,
   lineColor: [number, number, number],
-  opts: { tolerance?: number; lineWidth?: number; simplify?: number; closeGaps?: number; minArea?: number; maxFraction?: number } = {},
+  opts: { tolerance?: number; lineWidth?: number; simplify?: number; closeGaps?: number; minArea?: number; maxFraction?: number; minCompactness?: number } = {},
 ): XY[][] {
   const { width: w, height: h } = img;
   let walls = colorMask(img, lineColor, opts.tolerance ?? 70);
   const gaps = opts.closeGaps ?? 1;
   if (gaps) walls = dilate(walls, gaps);
-  const minArea = opts.minArea ?? Math.max(150, w * h * 0.0003);
+  const minArea = opts.minArea ?? Math.max(400, w * h * 0.0005);
   const maxArea = w * h * (opts.maxFraction ?? 0.7);
   const grow = Math.round((opts.lineWidth ?? 4) / 2 + gaps);
   const label = new Int32Array(w * h);
@@ -194,7 +194,8 @@ export function detectAllOutlines(
     const contour = traceContour(dilate({ width: cw, height: ch, data: sub }, grow));
     if (contour.length < 4) continue;
     const ring = simplifyRing(contour.map((p) => ({ x: p.x + ox, y: p.y + oy })), opts.simplify ?? 1.5);
-    if (ring.length >= 3) rings.push({ ring, area });
+    // lange, schmale Gebilde (Flussläufe zwischen zwei Uferlinien, Strassen) sind keine NAI
+    if (ring.length >= 3 && compactness(ring) >= (opts.minCompactness ?? 0.2)) rings.push({ ring, area });
   }
   // Gefüllte Flächen (z. B. halbtransparent eingefärbte NAI): kompakte Flecken der Linienfarbe selbst
   const seen = new Uint8Array(w * h);
@@ -233,6 +234,13 @@ export function detectAllOutlines(
     if (!dup && ring.length >= 3) rings.push({ ring, area: qt });
   }
   return rings.sort((a, b) => b.area - a.area).map((r) => r.ring);
+}
+
+/** Rundheit 4πA/U² (Kreis = 1, Quadrat ≈ 0.785, langer Streifen → 0). */
+export function compactness(ring: XY[]): number {
+  let per = 0;
+  for (let i = 0; i < ring.length; i++) { const a = ring[i]!, b = ring[(i + 1) % ring.length]!; per += Math.hypot(b.x - a.x, b.y - a.y); }
+  return per > 0 ? (4 * Math.PI * Math.abs(ringArea(ring))) / (per * per) : 0;
 }
 
 /**

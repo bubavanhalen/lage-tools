@@ -273,7 +273,7 @@ export function Workspace({ product, tagline }: Props) {
         <main className="mapwrap">
           <div ref={el} className="map" />
           <div className="maptools">
-            <PlaceSearch onGo={(p) => sm.current?.map.setView(toLatLng(p), 20)} />
+            <PlaceSearch onGo={(p) => sm.current?.map.setView(toLatLng(p), 21)} />
             <div className="seg" role="group" aria-label="Kartengrundlage">
               {(["lk", "img", "grau"] as Basemap[]).map((b) => (
                 <button key={b} aria-pressed={basemap === b} onClick={() => { setBasemap(b); sm.current?.setBasemap(b); }}>
