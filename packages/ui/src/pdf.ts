@@ -9,61 +9,15 @@ import {
   type Area,
   type RasterSheet,
 } from "@lage/core";
-import { RESOLUTIONS } from "@lage/map";
+import { renderTiles, tileLevel } from "./tiles";
 
 export type Paper = "A4" | "A3";
-
-const LAYER: Record<RasterSheet["basemap"], string> = {
-  lk: "ch.swisstopo.pixelkarte-farbe",
-  img: "ch.swisstopo.swissimage",
-};
-const TILE = 256;
-const ORIGIN_E = 2420000, ORIGIN_N = 1350000;
 
 /** Lädt die swisstopo-Kacheln für das Blatt und setzt sie zu einem Bild zusammen. */
 async function mapImage(sheet: RasterSheet, metersPerPx: number, onProgress?: (p: number) => void): Promise<HTMLCanvasElement> {
   const b = sheetBounds(sheet);
-  const maxZ = sheet.basemap === "img" ? 28 : 27;
-  // feinste Stufe, die nicht feiner als nötig ist (und höchstens ~400 Kacheln)
-  let z = RESOLUTIONS.findIndex((r) => r <= metersPerPx);
-  if (z < 0) z = RESOLUTIONS.length - 1;
-  z = Math.min(z, maxZ);
-  const tilesFor = (zz: number) => {
-    const r = RESOLUTIONS[zz]!;
-    return Math.ceil((b.maxE - b.minE) / (TILE * r) + 1) * Math.ceil((b.maxN - b.minN) / (TILE * r) + 1);
-  };
-  while (z > 14 && tilesFor(z) > 400) z--;
-  const res = RESOLUTIONS[z]!;
-  const x0 = Math.floor((b.minE - ORIGIN_E) / (TILE * res)), x1 = Math.floor((b.maxE - ORIGIN_E) / (TILE * res));
-  const y0 = Math.floor((ORIGIN_N - b.maxN) / (TILE * res)), y1 = Math.floor((ORIGIN_N - b.minN) / (TILE * res));
-  const cv = document.createElement("canvas");
-  cv.width = Math.round((b.maxE - b.minE) / res);
-  cv.height = Math.round((b.maxN - b.minN) / res);
-  const ctx = cv.getContext("2d")!;
-  ctx.fillStyle = "#eef0ea";
-  ctx.fillRect(0, 0, cv.width, cv.height);
-  const jobs: Array<() => Promise<void>> = [];
-  for (let ty = y0; ty <= y1; ty++)
-    for (let tx = x0; tx <= x1; tx++)
-      jobs.push(async () => {
-        const url = `https://wmts.geo.admin.ch/1.0.0/${LAYER[sheet.basemap]}/default/current/2056/${z}/${tx}/${ty}.jpeg`;
-        try {
-          const r = await fetch(url);
-          if (!r.ok) return;
-          const bmp = await createImageBitmap(await r.blob());
-          const e = ORIGIN_E + tx * TILE * res, n = ORIGIN_N - ty * TILE * res;
-          ctx.drawImage(bmp, Math.round((e - b.minE) / res), Math.round((b.maxN - n) / res));
-        } catch { /* Kachel fehlt – Rest trotzdem drucken */ }
-      });
-  let done = 0;
-  const workers = Array.from({ length: 6 }, async () => {
-    while (jobs.length) {
-      await jobs.shift()!();
-      onProgress?.(++done / ((x1 - x0 + 1) * (y1 - y0 + 1)));
-    }
-  });
-  await Promise.all(workers);
-  return cv;
+  const z = tileLevel(b, metersPerPx, { maxZ: sheet.basemap === "img" ? 28 : 27, maxTiles: 400 });
+  return (await renderTiles(b, z, sheet.basemap, onProgress)).canvas;
 }
 
 export interface PrintOptions {

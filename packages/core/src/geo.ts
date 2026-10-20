@@ -55,6 +55,39 @@ export function fitAffine(src: XY[], dst: XY[]): { t: Affine; rms: number } {
   return { t, rms };
 }
 
+/**
+ * Kartenausschnitt (nordausgerichtet, gleicher Massstab in x und y): nur Massstab und Verschiebung.
+ * Bild-y zeigt nach unten, Nord nach oben: X = s*x + c ; Y = -s*y + f. Ab 2 Punktpaaren.
+ * @returns Transformation, mittlerer Restfehler und Restfehler pro Punkt (Zieleinheiten)
+ */
+export function fitScaleShift(src: XY[], dst: XY[]): { t: Affine; rms: number; residuals: number[] } {
+  if (src.length !== dst.length || src.length < 2) throw new Error("Mindestens 2 Punktpaare nötig");
+  const n = src.length;
+  const mx = src.reduce((s, p) => s + p.x, 0) / n, my = src.reduce((s, p) => s + p.y, 0) / n;
+  const mX = dst.reduce((s, p) => s + p.x, 0) / n, mY = dst.reduce((s, p) => s + p.y, 0) / n;
+  let num = 0, den = 0;
+  src.forEach((p, i) => {
+    const dx = p.x - mx, dy = p.y - my;
+    num += dx * (dst[i]!.x - mX) - dy * (dst[i]!.y - mY);
+    den += dx * dx + dy * dy;
+  });
+  if (den < 1e-9) throw new Error("Punkte liegen aufeinander – bitte weiter auseinander wählen");
+  const s = num / den;
+  if (!(s > 0)) throw new Error("Punkte vertauscht – bitte prüfen");
+  const t: Affine = { a: s, b: 0, c: mX - s * mx, d: 0, e: -s, f: mY + s * my };
+  return { t, ...residualsOf(t, src, dst) };
+}
+
+/** Restfehler einer Transformation pro Punkt und als RMS. */
+export function residualsOf(t: Affine, src: XY[], dst: XY[]): { rms: number; residuals: number[] } {
+  const residuals = src.map((p, i) => {
+    const q = applyAffine(t, p);
+    return Math.hypot(q.x - dst[i]!.x, q.y - dst[i]!.y);
+  });
+  const rms = Math.sqrt(residuals.reduce((s, r) => s + r * r, 0) / Math.max(1, residuals.length));
+  return { rms, residuals };
+}
+
 function solve3(m: number[][], v: number[]): [number, number, number] {
   const A = m.map((r, i) => [...r, v[i]!]);
   for (let col = 0; col < 3; col++) {

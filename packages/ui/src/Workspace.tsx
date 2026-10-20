@@ -33,7 +33,7 @@ import {
 } from "@lage/map";
 import { currentExerciseId, downloadText, listExercises, loadExercise, pickFile, safeFileName, saveExercise } from "./store";
 import { NaiPanel } from "./NaiPanel";
-import { GeorefPane, type GeorefResult } from "./GeorefPane";
+import { GeorefPane } from "./GeorefPane";
 import type { Candidate } from "./imageimport";
 
 interface Props {
@@ -198,15 +198,9 @@ export function Workspace({ product, tagline }: Props) {
     }
   };
 
-  const onGeorefDone = (r: GeorefResult | null) => {
-    setGeoref(null);
-    if (!r) return;
-    update((x) => {
-      x.overlays = [...(x.overlays ?? []), r.overlay];
-      x.areas.push(...r.areas);
-      return x;
-    });
-    say(`${r.areas.length} NAI übernommen`);
+  const onGeorefAreas = (areas: Area[]) => {
+    update((x) => { x.areas.push(...areas); return x; });
+    say(`${areas.length} Fläche${areas.length === 1 ? "" : "n"} übernommen`);
   };
 
   if (!ex) return <div className="app"><div className="loading">Wird geladen …</div></div>;
@@ -244,7 +238,7 @@ export function Workspace({ product, tagline }: Props) {
             <button role="tab" aria-selected={tab === "nai"} onClick={() => setTab("nai")}>NAI / BNB</button>
           </div>
           {georef ? (
-            <GeorefPane candidates={georef} map={sm.current!.map} existing={ex.areas} onDone={onGeorefDone} />
+            <GeorefPane candidates={georef} map={sm.current!.map} existing={ex.areas} onAreas={onGeorefAreas} onClose={() => { setGeoref(null); setTab("nai"); }} />
           ) : tab === "raster" ? (
             <div className="panel">
               {ex.sheets.length === 0 && (

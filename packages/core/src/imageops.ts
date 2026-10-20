@@ -138,6 +138,67 @@ export function detectOutline(
   return simplifyRing(ring, opts.simplify ?? 1.5);
 }
 
+/**
+ * Findet alle geschlossenen Flächen, die von Linien der Farbe `lineColor` umrandet sind
+ * (berühren den Bildrand nicht, nicht zu klein, nicht zu gross). Buchstaben-Innenräume fallen weg.
+ * @returns Ringe in Bildpixeln, grösste zuerst
+ */
+export function detectAllOutlines(
+  img: RGBAImage,
+  lineColor: [number, number, number],
+  opts: { tolerance?: number; lineWidth?: number; simplify?: number; closeGaps?: number; minArea?: number; maxFraction?: number } = {},
+): XY[][] {
+  const { width: w, height: h } = img;
+  let walls = colorMask(img, lineColor, opts.tolerance ?? 70);
+  const gaps = opts.closeGaps ?? 1;
+  if (gaps) walls = dilate(walls, gaps);
+  const minArea = opts.minArea ?? Math.max(300, w * h * 0.0015);
+  const maxArea = w * h * (opts.maxFraction ?? 0.7);
+  const grow = Math.round((opts.lineWidth ?? 4) / 2 + gaps);
+  const label = new Int32Array(w * h);
+  const queue = new Int32Array(w * h);
+  const rings: Array<{ ring: XY[]; area: number }> = [];
+  let next = 0;
+  for (let start = 0; start < w * h; start++) {
+    if (walls.data[start] || label[start]) continue;
+    const id = ++next;
+    let qh = 0, qt = 0, open = false;
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    queue[qt++] = start;
+    label[start] = id;
+    while (qh < qt) {
+      const i = queue[qh++]!;
+      const x = i % w, y = (i - x) / w;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) open = true;
+      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x > 0 && !walls.data[i - 1] && !label[i - 1]) { label[i - 1] = id; queue[qt++] = i - 1; }
+      if (x < w - 1 && !walls.data[i + 1] && !label[i + 1]) { label[i + 1] = id; queue[qt++] = i + 1; }
+      if (y > 0 && !walls.data[i - w] && !label[i - w]) { label[i - w] = id; queue[qt++] = i - w; }
+      if (y < h - 1 && !walls.data[i + w] && !label[i + w]) { label[i + w] = id; queue[qt++] = i + w; }
+    }
+    const area = qt;
+    if (open || area < minArea || area > maxArea) continue;
+    // schmale Gebilde (Strassenstücke zwischen zwei Linien) verwerfen
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    if (area / (bw * bh) < 0.08 || Math.min(bw, bh) < 8) continue;
+    // Maske nur im Ausschnitt um die Fläche, dann bis Linienmitte erweitern
+    const m = grow + 2;
+    const ox = Math.max(0, minX - m), oy = Math.max(0, minY - m);
+    const cw = Math.min(w, maxX + m + 1) - ox, ch = Math.min(h, maxY + m + 1) - oy;
+    const sub = new Uint8Array(cw * ch);
+    for (let k = 0; k < qt; k++) {
+      const i = queue[k]!;
+      const x = i % w, y = (i - x) / w;
+      sub[(y - oy) * cw + (x - ox)] = 1;
+    }
+    const contour = traceContour(dilate({ width: cw, height: ch, data: sub }, grow));
+    if (contour.length < 4) continue;
+    const ring = simplifyRing(contour.map((p) => ({ x: p.x + ox, y: p.y + oy })), opts.simplify ?? 1.5);
+    if (ring.length >= 3) rings.push({ ring, area });
+  }
+  return rings.sort((a, b) => b.area - a.area).map((r) => r.ring);
+}
+
 /** Schätzt die Linienbreite: kleinster Lauf der Linienfarbe nahe dem Klick (horizontal und vertikal). */
 export function estimateLineWidth(walls: Mask, x: number, y: number, radius = 200): number {
   const { width: w, height: h } = walls;

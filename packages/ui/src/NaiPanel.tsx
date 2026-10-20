@@ -92,7 +92,7 @@ export function NaiPanel({ exercise, map, selected, onSelect, onChange, onOverla
       </div>
 
       {areas.length === 0 ? (
-        <div className="empty"><p>Noch keine NAI. Lade eine BNB-Skizze (Bild/PDF/Word) – du setzt 3 Passpunkte und klickst dann in jedes NAI – oder eine GIS-Datei.</p></div>
+        <div className="empty"><p>Noch keine NAI. Lade eine BNB-Skizze (Bild, PDF oder Word mit Kartenausschnitten): Sie wird automatisch auf der Karte eingepasst, die NAI werden als Linien übernommen. Oder eine GIS-Datei bzw. einen Link aus map.geo.admin.ch.</p></div>
       ) : (
         <ul className="list">
           {areas.map((a) => (

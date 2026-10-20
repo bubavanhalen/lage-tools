@@ -79,12 +79,22 @@ button:disabled { opacity: .45; cursor: default; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3000; background: var(--ink); color: var(--paper); border-radius: 8px; padding: 10px 16px; font-size: 14px; max-width: min(640px, 92vw); }
 /* Georeferenzierung */
 .georef .viewer { height: 300px; border: 1px solid var(--line); border-radius: 8px; background: #fafafa; }
+.georef .viewer.big { position: fixed !important; z-index: 900; top: 56px; bottom: 0; left: 380px; width: calc((100vw - 380px) / 2); height: auto; border-radius: 0; border-width: 0 3px 0 0; border-color: #c8102e; box-shadow: 4px 0 12px rgba(0,0,0,.25); }
 .georef .help { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink); }
+.georef .help.warn { color: #b3261e; }
+.georef .foot { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.georef .check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.steps .count { margin-left: auto; border: 0; }
+.progress { position: relative; height: 26px; border-radius: 6px; background: var(--soft); overflow: hidden; }
+.progress > div { position: absolute; inset: 0 auto 0 0; background: #c8102e; opacity: .35; transition: width .15s; }
+.progress > span { position: relative; display: block; padding: 4px 10px; font-size: 13px; font-weight: 600; }
+.pairs .res { font-size: 12px; color: var(--muted); min-width: 44px; text-align: right; }
+.pairs .res.bad { color: #b3261e; font-weight: 700; }
 .steps { display: flex; gap: 8px; font-size: 13px; }
 .steps span { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .steps span.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .pairs { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
-.pairs li { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 8px; align-items: center; font-size: 13px; padding: 2px; border-radius: 6px; }
+.pairs li { display: grid; grid-template-columns: auto 1fr 1fr auto auto; gap: 8px; align-items: center; font-size: 13px; padding: 2px; border-radius: 6px; }
 .pairs li.act { background: var(--soft); }
 .pairs button { min-height: 28px; padding: 2px 8px; }
 .fitinfo { font-size: 13px; color: var(--muted); }
@@ -98,6 +108,7 @@ button:disabled { opacity: .45; cursor: default; }
 @media (max-width: 760px) {
   .work { grid-template-columns: 1fr; grid-template-rows: auto minmax(55vh, 1fr); }
   .side { border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
+  .georef .viewer.big { left: 0; width: 100vw; top: auto; bottom: 0; height: 40vh; border-width: 3px 0 0 0; }
   .exname { width: 160px; }
 }
 .maptools { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; }
