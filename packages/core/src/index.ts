@@ -3,3 +3,7 @@ export * from "./raster";
 export * from "./symbols";
 export * from "./model";
 export * from "./time";
+export * from "./geo";
+export * from "./imageops";
+export * from "./gis";
+export * from "./exercise";

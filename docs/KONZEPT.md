@@ -26,7 +26,7 @@
 
 ## Etappen
 1. Projektgerüst, Kern, Karten-Shell, GitHub Pages ✅
-2. Führungsraster-Editor (beide Varianten, PDF-Export) und NAI-Import
+2. Führungsraster-Editor (beide Varianten, PDF-Export) und NAI-Import ✅
 3. Lagejournal: Texteingabe, Karte, Zeitstrahl, offline (Kartenpakete)
 4. Lagejournal: Foto- und Spracheingabe, Hinweise zu Rot, KI optional
 5. Übungsauswertung: Import, Auswertung, AAR-Regie

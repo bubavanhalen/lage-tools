@@ -59,6 +59,20 @@ export interface Area {
   color?: string;
 }
 
+/** Georeferenziertes Bild (z. B. BNB-Skizze, Kartenausschnitt) */
+export interface Overlay {
+  id: string;
+  name: string;
+  /** Bild als Data-URL (JPEG/PNG) */
+  dataUrl: string;
+  width: number;
+  height: number;
+  /** Bildpixel (x nach rechts, y nach unten) → LV95 (x = E, y = N) */
+  affine: import("./geo").Affine;
+  opacity: number;
+  visible: boolean;
+}
+
 export interface Exercise {
   id: string;
   name: string;
@@ -66,6 +80,7 @@ export interface Exercise {
   days: string[];
   sheets: RasterSheet[];
   areas: Area[];
+  overlays?: Overlay[];
   units: { rot: string[]; blau: string[]; ul: string[] };
 }
 
