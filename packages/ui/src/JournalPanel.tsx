@@ -233,7 +233,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             const hour = e.t.slice(0, 13);
             const head = i === 0 || list[i - 1]!.t.slice(0, 13) !== hour;
             const k = kindOf(e);
-            const fresh = Date.now() - Date.parse(e.updatedAt) < 10 * 60000;
+            const age = Date.now() - Date.parse(e.updatedAt);
+            const fresh = age >= 0 && age < 10 * 60000;
             return (
               <Fragment key={e.id}>
                 {head && <li className="hourhead" aria-hidden="true">{dayLabel(e.t, ex.days)} {e.t.slice(11, 13)}:00</li>}

@@ -189,9 +189,12 @@ export function Workspace({ product, tagline }: Props) {
       const b = cellBounds(sh, c.col, c.row, c.quadrant);
       const pad = Math.max(b.maxE - b.minE, b.maxN - b.minN) * 1.2;
       map.flyToBounds(L.latLngBounds(toLatLng({ e: b.minE - pad, n: b.minN - pad }), toLatLng({ e: b.maxE + pad, n: b.maxN + pad })), { duration: 0.6, maxZoom: 22 });
+    } else if (e.nai && ex.areas.some((a) => a.name === e.nai)) {
+      const a = ex.areas.find((x) => x.name === e.nai)!;
+      map.flyToBounds(L.latLngBounds(a.ring.map(toLatLng)).pad(0.6), { duration: 0.6, maxZoom: 22 });
     } else if (e.pos) {
       const ll = toLatLng(e.pos);
-      if (!map.getBounds().pad(-0.15).contains(ll)) map.flyTo(ll, Math.max(map.getZoom(), 19), { duration: 0.6 });
+      map.flyTo(ll, Math.max(map.getZoom(), 20), { duration: 0.6 });
     }
   };
   const selectEvent = (id: string | null) => {
@@ -347,9 +350,8 @@ export function Workspace({ product, tagline }: Props) {
     <div className={"app" + (present ? " present" : "") + (night ? " night" : "")}>
       <header className="bar">
         <div className="brand">
-          <strong>{product}</strong>
-          <span className="tag">{tagline}</span>
-          <Stats events={ex.events ?? []} />
+          <strong title={tagline}>{product}</strong>
+          {(ex.events ?? []).some((e) => !e.deleted) ? <Stats events={ex.events ?? []} /> : <span className="tag">{tagline}</span>}
           {!online && <span className="netbadge" title="Kein Netz – Journal und gespeicherte Karten funktionieren weiter">offline</span>}
         </div>
         <div className="tools">

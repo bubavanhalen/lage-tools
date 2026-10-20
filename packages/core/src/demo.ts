@@ -48,7 +48,9 @@ export function demoExercise(): Exercise {
       sheets: ex.sheets, areas: ex.areas, units: ex.units, days: ex.days, day: ex.days[1]!, now,
       lastPos: (u, s) => lastPosition(events, s, u),
     });
-    events.push(eventFromDraft(d, "dev-beispiel", now));
+    const ev = eventFromDraft(d, "dev-beispiel", now);
+    ev.updatedAt = new Date(Date.parse(ev.t)).toISOString();
+    events.push(ev);
   }
   ex.events = events;
   return ex;
