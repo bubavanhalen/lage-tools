@@ -1,0 +1,65 @@
+/* Gestaltung der Lage-Tools – übernommen vom Lagebild-Prototyp («Papier», Tinte, Rot/Blau), Schriften lokal (offline). */
+@import "@fontsource/barlow-condensed/latin-500.css";
+@import "@fontsource/barlow-condensed/latin-600.css";
+@import "@fontsource/barlow-condensed/latin-700.css";
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+@import "@fontsource/ibm-plex-mono/latin-600.css";
+
+:root {
+  --f-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+
+  --paper: #EEF0EB;   /* Seitenhintergrund, leicht grünliches Grau */
+  --card: #F9FAF7;    /* Panels, Chips, Kacheln */
+  --ink: #1B2320;     /* Text, aktive Schalter */
+  --muted: #5B655F;
+  --line: #D2D7CF;
+  --grid: #E3E6E0;    /* Nebenlinien, Hover */
+  --hi: #FFF1BF;      /* Aufblitzen */
+  --rot: #B8292F;
+  --rot-soft: #F6E1E0;
+  --blau: #2457A6;
+  --blau-soft: #E0E8F5;
+  --ok: #2D7A4B;
+  --warn: #A86F12;
+  --unklar: #A86F12;
+
+  /* Karte (bleibt auch im Dunkelmodus hell) */
+  --m-rot: #D3262D;
+  --m-blau: #1F5FB8;
+  --m-ink: #101414;
+  --m-grid: #111111;
+  --m-nai: #1F78D1;
+  --m-ao: #0B3D91;
+  --m-flash: #F2B705;
+
+  /* ältere Namen */
+  --soft: var(--grid);
+  --red: var(--rot);
+  --blue: var(--blau);
+
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111614; --card: #181F1C; --ink: #E3E8E3; --muted: #98A39C; --line: #2C3531; --grid: #212925; --hi: #3A3418;
+    --rot: #F07A7E; --rot-soft: #3A1F21; --blau: #86AEEA; --blau-soft: #1C2740; --ok: #6CC795; --warn: #E1AE4E; --unklar: #E1AE4E;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111614; --card: #181F1C; --ink: #E3E8E3; --muted: #98A39C; --line: #2C3531; --grid: #212925; --hi: #3A3418;
+  --rot: #F07A7E; --rot-soft: #3A1F21; --blau: #86AEEA; --blau-soft: #1C2740; --ok: #6CC795; --warn: #E1AE4E; --unklar: #E1AE4E;
+}
+.mono, .tnum { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.display { font-family: var(--f-display); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+:focus-visible { outline: 2px solid var(--blau); outline-offset: 2px; }

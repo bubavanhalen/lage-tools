@@ -119,6 +119,9 @@ export function Workspace({ product, tagline }: Props) {
     const s = createSwissMap(el.current, { center: { e: 2660000, n: 1190000 }, zoom: 16 });
     sm.current = s;
     s.map.on("mousemove", (ev: L.LeafletMouseEvent) => setCursor(toLv95(ev.latlng)));
+    // Grösse der Karte ändert sich (Zeitstrahl ein/aus, Fenster, Seitenleiste) → Leaflet informieren
+    const ro = new ResizeObserver(() => s.map.invalidateSize({ pan: false }));
+    ro.observe(el.current);
     setMapReady(true);
   }, [ex === null]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { sm.current?.map.remove(); sm.current = null; }, []);
