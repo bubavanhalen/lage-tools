@@ -78,24 +78,34 @@ export async function autoPlace(cv: HTMLCanvasElement, view: Bounds, onProgress:
   const w = view.maxE - view.minE, h = view.maxN - view.minN;
   const b: Bounds = { minE: view.minE - 0.25 * w, maxE: view.maxE + 0.25 * w, minN: view.minN - 0.25 * h, maxN: view.maxN + 0.25 * h };
   const bw = b.maxE - b.minE;
-  const z = tileLevel(b, bw / 1100, { maxTiles: 80 });
+  const z = tileLevel(b, bw / 2000, { maxTiles: 200 });
   onProgress(0, "Karte laden …");
-  const tiles = await renderTiles(b, z, "lk", (p) => onProgress(0.15 * p, "Karte laden …"));
-  const mapG = fitMax(grayOf(tiles.canvas), 480);
-  const m0 = bw / mapG.width;
+  const tiles = await renderTiles(b, z, "lk", (p) => onProgress(0.1 * p, "Karte laden …"));
+  const full = grayOf(tiles.canvas);
   const img = grayOf(cv);
-  const small = fitMax(img, 480);
-  const search = prepareSearch(mapG);
-  const cands: Match[] = await drive(locateCoarse(search, small, { minFrac: 0.06, maxFrac: 0.95, step: 1.04, keep: 3 }), (p) => onProgress(0.15 + 0.45 * p, "Ort suchen …"));
   let best: PlaceResult | null = null;
-  for (let i = 0; i < cands.length; i++) {
-    const m = cands[i]!;
-    const s = (m.k * m0 * small.width) / img.width;
-    const t0: Affine = { a: s, b: 0, c: b.minE + m.x * m0, d: 0, e: -s, f: b.maxN - m.y * m0 };
-    const span = 0.4 / cands.length;
-    const r = await refine(img, t0, onProgress, 0.6 + span * i, 0.6 + span * (i + 1));
-    if (r && (!best || r.score > best.score)) best = r;
-    if (best && best.score > 0.75) break;
+  // Stufe 1: grosse Bildausschnitte (grob), Stufe 2: kleine Ausschnitte (feiner gerechnet)
+  const stages = [
+    { side: 480, minFrac: 0.12, maxFrac: 0.95, p0: 0.1, p1: 0.5 },
+    { side: 960, minFrac: 0.03, maxFrac: 0.14, p0: 0.5, p1: 1 },
+  ];
+  for (const st of stages) {
+    const mapG = fitMax(full, st.side);
+    const m0 = bw / mapG.width;
+    const small = fitMax(img, st.side);
+    const search = prepareSearch(mapG);
+    const span = st.p1 - st.p0;
+    const cands: Match[] = await drive(locateCoarse(search, small, { minFrac: st.minFrac, maxFrac: st.maxFrac, step: 1.04, keep: 3 }), (p) => onProgress(st.p0 + span * 0.6 * p, "Ort suchen …"));
+    for (let i = 0; i < cands.length; i++) {
+      const m = cands[i]!;
+      const s = (m.k * m0 * small.width) / img.width;
+      const t0: Affine = { a: s, b: 0, c: b.minE + m.x * m0, d: 0, e: -s, f: b.maxN - m.y * m0 };
+      const q0 = st.p0 + span * (0.6 + (0.4 * i) / cands.length), q1 = st.p0 + span * (0.6 + (0.4 * (i + 1)) / cands.length);
+      const r = await refine(img, t0, onProgress, q0, q1);
+      if (r && (!best || r.score > best.score)) best = r;
+      if (best && best.score > 0.75) break;
+    }
+    if (best && best.score > 0.6) break;
   }
   onProgress(1, "");
   return best;
