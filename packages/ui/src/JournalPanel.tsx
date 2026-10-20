@@ -1,7 +1,7 @@
 /**
  * Lagejournal: Meldungen eingeben (eine Zeile pro Meldung), Erkennung prüfen, Liste führen.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
   SYMBOLS,
@@ -137,7 +137,27 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   };
 
   const patch = (id: string, p: Partial<LageEvent>) => update((x) => { x.events = (x.events ?? []).map((e) => (e.id === id ? reviseEvent(e, p, device) : e)); return x; });
-  const remove = (id: string) => patch(id, { deleted: true });
+  const [undo, setUndo] = useState<string | null>(null);
+  const undoTimer = useRef<number | undefined>(undefined);
+  const removeWithUndo = (id: string) => {
+    patch(id, { deleted: true });
+    setUndo(id);
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setUndo(null), 6000);
+  };
+  // Auswahl von aussen (Karte, Zeitstrahl): Zeile zeigen und kurz aufblitzen
+  const listRef = useRef<HTMLOListElement>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selected) return;
+    const li = listRef.current?.querySelector<HTMLElement>(`li[data-id="${selected}"]`);
+    if (!li) return;
+    const r = li.getBoundingClientRect(), pr = listRef.current!.closest(".side")?.getBoundingClientRect();
+    if (!pr || r.top < pr.top + 40 || r.bottom > pr.bottom) li.scrollIntoView({ block: "center", behavior: "smooth" });
+    setFlashId(selected);
+    const t = window.setTimeout(() => setFlashId(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [selected]);
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -164,9 +184,16 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             <option value="__add">+ Tag</option>
           </select>
         </div>
-        <input ref={inputRef} className="msg" value={text} autoFocus placeholder="z. B. 1015 2 Fz in NAI 3 Rtg N" aria-label="Meldung"
+        <input ref={inputRef} className="msg" value={text} autoFocus placeholder="z. B. 1015 H04 2 Fz in NAI 3 Rtg N" aria-label="Meldung"
           onChange={(e) => { setText(e.target.value); if (!e.target.value) { setManualPos(null); setKindOverride(null); } }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } if (e.key === "Escape") { setText(""); setManualPos(null); setKindOverride(null); } }} />
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); add(); }
+            if (e.key === "Escape") { setText(""); setManualPos(null); setKindOverride(null); }
+            // ↑ in leerer Zeile: letzte Meldung zum Korrigieren öffnen
+            if (e.key === "ArrowUp" && !text) { const last = [...events].filter((x) => !x.deleted).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]; if (last) { e.preventDefault(); setEditing(last.id); onSelect(last.id); } }
+            // Alt+1/2/3: Einordnung festlegen
+            if (e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setKindOverride(KINDS[+e.key - 1]![0]); }
+          }} />
         {draft ? (
           <div className="preview">
             <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}>{dayLabel(draft.t, ex.days)} {draft.t.slice(11, 16)}</span>
@@ -201,24 +228,52 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       {list.length === 0 ? (
         <div className="empty"><p>{events.length ? "Keine Einträge für diesen Filter." : "Noch keine Meldungen. Oben eintippen und Enter drücken."}</p></div>
       ) : (
-        <ol className="jlist">
-          {list.map((e) => editing === e.id ? (
-            <EditRow key={e.id} e={e} ex={ex} map={map} onCancel={() => setEditing(null)} onSave={(p) => { patch(e.id, p); setEditing(null); }} />
-          ) : (
-            <li key={e.id} className={(e.id === selected ? "sel " : "") + kindOf(e)} onClick={() => { onSelect(e.id); if (e.pos) map.panTo(toLatLng(e.pos)); }}>
-              <span className="sbar" style={{ background: KIND_COLOR[kindOf(e)] }} />
-              <span className="time mono">{dayLabel(e.t, ex.days)}<br />{e.t.slice(11, 16)}</span>
-              <span className="body">
-                <span className="head"><SymbolMini k={e.sym} aff={e.aff} /><span className="kindtag" style={{ color: KIND_COLOR[kindOf(e)] }}>{kindLabel(e)}</span>{e.unit && <b>{e.unit}</b>}{e.melder && e.melder !== e.unit && <span className="wh">via {e.melder}</span>}{e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>}</span>
-                <span className="txt">{e.text}</span>
-              </span>
-              <span className="acts">
-                <button title="Bearbeiten" onClick={(ev) => { ev.stopPropagation(); setEditing(e.id); }}>✎</button>
-                <button title="Löschen" className="danger" onClick={(ev) => { ev.stopPropagation(); if (window.confirm("Eintrag löschen?")) remove(e.id); }}>✕</button>
-              </span>
-            </li>
-          ))}
+        <ol className="jlist" ref={listRef}>
+          {list.map((e, i) => {
+            const hour = e.t.slice(0, 13);
+            const head = i === 0 || list[i - 1]!.t.slice(0, 13) !== hour;
+            const k = kindOf(e);
+            const fresh = Date.now() - Date.parse(e.updatedAt) < 10 * 60000;
+            return (
+              <Fragment key={e.id}>
+                {head && <li className="hourhead" aria-hidden="true">{dayLabel(e.t, ex.days)} {e.t.slice(11, 13)}:00</li>}
+                {editing === e.id ? (
+                  <EditRow e={e} ex={ex} map={map} onCancel={() => setEditing(null)} onSave={(p) => { patch(e.id, p); setEditing(null); }} />
+                ) : (
+                  <li data-id={e.id} className={"jrow " + k + (e.id === selected ? " sel" : "") + (e.id === flashId ? " flash" : "")} tabIndex={0}
+                    onClick={() => onSelect(e.id)} onKeyDown={(ev) => { if (ev.key === "Enter") onSelect(e.id); }}>
+                    <span className="sbar" style={{ background: KIND_COLOR[k] }} />
+                    <span className="jt tnum">{e.t.slice(11, 16)}</span>
+                    <span className="ju">
+                      <b style={{ color: k === "eigen" ? "var(--blau)" : k === "feind" ? "var(--rot)" : "var(--unklar)" }}>{e.unit || (k === "eigen" ? e.melder : kindLabel(e))}</b>
+                      {e.melder && e.melder !== e.unit && <small>via {e.melder}</small>}
+                    </span>
+                    <span className="jb">
+                      <span className="jtext"><SymbolMini k={e.sym} aff={e.aff} />{e.text}</span>
+                      <span className="jmeta">
+                        {(e.cells ?? []).slice(0, 2).map((c) => <span key={c} className="pq">{c}</span>)}
+                        {e.nai && <span className="naichip">{e.nai}</span>}
+                        {!e.cells?.length && !e.nai && (e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>)}
+                        {fresh && <span className="newdot" title="in den letzten 10 Minuten erfasst">neu</span>}
+                      </span>
+                    </span>
+                    <span className="acts">
+                      <button title="Bearbeiten" onClick={(ev) => { ev.stopPropagation(); setEditing(e.id); }}>✎</button>
+                      <button title="Löschen" className="danger" onClick={(ev) => { ev.stopPropagation(); removeWithUndo(e.id); }}>✕</button>
+                    </span>
+                  </li>
+                )}
+              </Fragment>
+            );
+          })}
         </ol>
+      )}
+
+      {undo && (
+        <div className="undobar" role="status">
+          <span>Eintrag gelöscht</span>
+          <button onClick={() => { patch(undo, { deleted: false }); setUndo(null); }}>Rückgängig</button>
+        </div>
       )}
 
       <div className="btnrow foot">

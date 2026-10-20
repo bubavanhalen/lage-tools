@@ -9,6 +9,8 @@ import {
   formatLv95,
   makeBlattSheet,
   journalToCsv,
+  findCells,
+  cellBounds,
   makeFeldSheet,
   newDeviceId,
   demoExercise,
@@ -20,6 +22,7 @@ import {
   situationAt,
   type Area,
   type Exercise,
+  type LageEvent,
   type LV95,
   type RasterSheet,
   wgs84ToLv95,
@@ -78,6 +81,9 @@ export function Workspace({ product, tagline }: Props) {
   const [flags, setFlagsState] = useState<LayerFlags>(loadFlags);
   const setFlags = (f: LayerFlags) => { setFlagsState(f); saveFlags(f); };
   const [reportAt, setReportAt] = useState<{ pos: LV95; n: number } | null>(null);
+  const [present, setPresent] = useState(false);
+  const [night, setNight] = useState(() => { try { return localStorage.getItem("lage-tools.night") === "1"; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem("lage-tools.night", night ? "1" : "0"); } catch { /* egal */ } }, [night]);
   const [selEvent, setSelEvent] = useState<string | null>(null);
   const journalRef = useRef<L.LayerGroup | null>(null);
   const device = useRef(deviceId()).current;
@@ -173,10 +179,26 @@ export function Workspace({ product, tagline }: Props) {
     journalRef.current = g;
   }, [ex?.events, ex?.sheets, tNow, flags, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Karte auf eine Meldung: Planquadrat (bzw. Unterquadrant) mit Rand, sonst Ort */
+  const focusEvent = (e: LageEvent) => {
+    const map = sm.current?.map;
+    if (!map || !ex) return;
+    const c = e.cells?.[0] ? findCells(e.cells[0], ex.sheets)[0] : undefined;
+    const sh = c ? ex.sheets.find((x) => x.id === c.sheetId) : undefined;
+    if (c && sh) {
+      const b = cellBounds(sh, c.col, c.row, c.quadrant);
+      const pad = Math.max(b.maxE - b.minE, b.maxN - b.minN) * 1.2;
+      map.flyToBounds(L.latLngBounds(toLatLng({ e: b.minE - pad, n: b.minN - pad }), toLatLng({ e: b.maxE + pad, n: b.maxN + pad })), { duration: 0.6, maxZoom: 22 });
+    } else if (e.pos) {
+      const ll = toLatLng(e.pos);
+      if (!map.getBounds().pad(-0.15).contains(ll)) map.flyTo(ll, Math.max(map.getZoom(), 19), { duration: 0.6 });
+    }
+  };
   const selectEvent = (id: string | null) => {
     setSelEvent(id);
     const e = (ex?.events ?? []).find((x) => x.id === id);
     if (e && tCursor && e.t > tCursor) setTCursor(e.t);
+    if (e) focusEvent(e);
   };
 
   const exportJournal = async (kind: "csv" | "pdf") => {
@@ -285,17 +307,49 @@ export function Workspace({ product, tagline }: Props) {
     say(`${areas.length} Fläche${areas.length === 1 ? "" : "n"} übernommen`);
   };
 
+  const togglePresent = (on: boolean) => {
+    setPresent(on);
+    try {
+      if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+      if (!on && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    } catch { /* egal */ }
+    window.setTimeout(() => sm.current?.map.invalidateSize(), 80);
+  };
+  // Präsentation: Esc beendet, ←/→ vorherige/nächste Meldung
+  useEffect(() => {
+    if (!present) return;
+    const key = (ev: KeyboardEvent) => {
+      const tag = (ev.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (ev.key === "Escape") { togglePresent(false); return; }
+      if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
+        const list = (ex?.events ?? []).filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t) || a.id.localeCompare(b.id));
+        if (!list.length) return;
+        const i = list.findIndex((e) => e.id === selEvent);
+        const j = i < 0 ? (ev.key === "ArrowRight" ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, i + (ev.key === "ArrowRight" ? 1 : -1)));
+        const e = list[j]!;
+        setSelEvent(e.id); setTCursor(e.t); focusEvent(e);
+        ev.preventDefault();
+      }
+    };
+    const fs = () => { if (!document.fullscreenElement) window.setTimeout(() => sm.current?.map.invalidateSize(), 80); };
+    window.addEventListener("keydown", key);
+    document.addEventListener("fullscreenchange", fs);
+    return () => { window.removeEventListener("keydown", key); document.removeEventListener("fullscreenchange", fs); };
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!ex) return <div className="app"><div className="loading">Wird geladen …</div></div>;
   const cell = cursor ? cellAtAny(ex.sheets, cursor) : null;
   const sel = ex.sheets.find((s) => s.id === selSheet) ?? null;
   const hasBlatt = ex.sheets.some((s) => s.variant === "blatt");
 
   return (
-    <div className="app">
+    <div className={"app" + (present ? " present" : "") + (night ? " night" : "")}>
       <header className="bar">
         <div className="brand">
           <strong>{product}</strong>
           <span className="tag">{tagline}</span>
+          <Stats events={ex.events ?? []} />
           {!online && <span className="netbadge" title="Kein Netz – Journal und gespeicherte Karten funktionieren weiter">offline</span>}
         </div>
         <div className="tools">
@@ -314,6 +368,8 @@ export function Workspace({ product, tagline }: Props) {
           </select>
           <button onClick={openFile}>Öffnen</button>
           <button onClick={saveFile}>Speichern</button>
+          <button className={"iconbtn" + (night ? " on" : "")} onClick={() => setNight(!night)} title="Nachtbetrieb: Karte abdunkeln" aria-pressed={night}>☾</button>
+          <button className="primary" onClick={() => togglePresent(true)} title="Karte im Vollbild, Zeitstrahl oben (Esc beendet)">▶ Präsentation</button>
         </div>
       </header>
       <div className="work">
@@ -365,7 +421,9 @@ export function Workspace({ product, tagline }: Props) {
         <main className="mapwrap">
           {(tab === "journal" || (ex.events ?? []).some((e) => !e.deleted)) && (
             <SwimTimeline events={ex.events ?? []} days={ex.days} units={ex.units} value={tCursor} onChange={setTCursor}
-              selectedId={selEvent} onSelect={(id) => { setSelEvent(id); setTab("journal"); const e = (ex.events ?? []).find((x) => x.id === id); if (e) setTCursor(e.t); }} />
+              selectedId={selEvent} compact={present}
+              onSelect={(id) => { setSelEvent(id); setTab("journal"); const e = (ex.events ?? []).find((x) => x.id === id); if (e) { setTCursor(e.t); focusEvent(e); } }}
+              extra={present ? <button className="presx" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button> : undefined} />
           )}
           <div className="mapbox">
           <div ref={el} className="map" />
@@ -433,5 +491,25 @@ function SheetForm({ sheet, onPatch, onPdf, onDelete }: {
         <button className="danger" onClick={onDelete}>Löschen</button>
       </div>
     </div>
+  );
+}
+
+/** Kopfzahlen für das LVZ: Meldungen, eigene Elemente, Sichtungen, letzte Meldung */
+function Stats({ events }: { events: LageEvent[] }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(id); }, []);
+  const live = events.filter((e) => !e.deleted);
+  if (!live.length) return null;
+  const own = new Set(live.filter((e) => e.side === "blau" && e.unit).map((e) => e.unit.toLowerCase())).size;
+  const sight = live.filter((e) => e.side === "rot").length;
+  const last = live.reduce((m, e) => (e.t > m ? e.t : m), "");
+  const ago = Math.round((now - Date.parse(last)) / 60000);
+  return (
+    <span className="stats" aria-label="Kopfzahlen">
+      <span><b className="tnum">{live.length}</b> Meldungen</span>
+      <span><b className="tnum">{own}</b> eigene Elemente</span>
+      <span><b className="tnum">{sight}</b> Sichtungen</span>
+      {ago >= 0 && ago < 24 * 60 && <span>letzte vor <b className="tnum">{ago < 60 ? `${ago}′` : `${Math.floor(ago / 60)} h ${ago % 60}′`}</b></span>}
+    </span>
   );
 }
