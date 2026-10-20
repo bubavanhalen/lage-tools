@@ -29,6 +29,7 @@ import {
   areasLayer,
   toLatLng,
   createSwissMap,
+  enableCellZoom,
   drawRect,
   rasterLayer,
   toLv95,
@@ -41,8 +42,14 @@ import { GeorefPane } from "./GeorefPane";
 import type { Candidate } from "./imageimport";
 import { JournalPanel } from "./JournalPanel";
 import { OfflineBox } from "./OfflineBox";
-import { Timeline, isoLocal } from "./Timeline";
-import { journalLayer } from "./journalLayer";
+import { isoLocal } from "./Timeline";
+import { SwimTimeline } from "./SwimTimeline";
+import { situationLayer } from "./situationLayer";
+import { EventBanner, Legend } from "./MapOverlays";
+import { MapSearch } from "./MapSearch";
+import { MapToolbar } from "./MapToolbar";
+import { MapContextMenu } from "./MapContextMenu";
+import { loadFlags, saveFlags, type LayerFlags } from "./layers";
 
 function deviceId(): string {
   try {
@@ -68,7 +75,9 @@ export function Workspace({ product, tagline }: Props) {
   const [saved, setSaved] = useState<Array<{ id: string; name: string }>>([]);
   const [tab, setTab] = useState<Tab>(product === "Lagejournal" ? "journal" : "raster");
   const [tCursor, setTCursor] = useState<string | null>(null);
-  const [tracks, setTracks] = useState(true);
+  const [flags, setFlagsState] = useState<LayerFlags>(loadFlags);
+  const setFlags = (f: LayerFlags) => { setFlagsState(f); saveFlags(f); };
+  const [reportAt, setReportAt] = useState<{ pos: LV95; n: number } | null>(null);
   const [selEvent, setSelEvent] = useState<string | null>(null);
   const journalRef = useRef<L.LayerGroup | null>(null);
   const device = useRef(deviceId()).current;
@@ -122,6 +131,8 @@ export function Workspace({ product, tagline }: Props) {
     // Grösse der Karte ändert sich (Zeitstrahl ein/aus, Fenster, Seitenleiste) → Leaflet informieren
     const ro = new ResizeObserver(() => s.map.invalidateSize({ pan: false }));
     ro.observe(el.current);
+    s.map.doubleClickZoom.disable();
+    enableCellZoom(s.map, () => exRef.current?.sheets ?? []);
     setMapReady(true);
   }, [ex === null]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { sm.current?.map.remove(); sm.current = null; }, []);
@@ -133,29 +144,40 @@ export function Workspace({ product, tagline }: Props) {
     layerRef.current?.remove();
     const g = L.layerGroup();
     for (const o of ex.overlays ?? []) if (o.visible) g.addLayer(new AffineImageLayer(o.dataUrl, o.width, o.height, o.affine, o.opacity));
-    for (const sh of ex.sheets) g.addLayer(rasterLayer(s.map, sh, { color: sh.id === selSheet ? "#c8102e" : "#1d1d1d" }));
-    g.addLayer(areasLayer(ex.areas, { selectedId: selArea ?? undefined, onClick: (a) => { setTab("nai"); setSelArea(a.id); } }));
+    if (flags.raster || tab === "raster") for (const sh of ex.sheets) g.addLayer(rasterLayer(s.map, sh, { color: sh.id === selSheet ? "#c8102e" : "#111111" }));
+    if (flags.nai || tab === "nai") g.addLayer(areasLayer(ex.areas, { selectedId: selArea ?? undefined, onClick: (a) => { setTab("nai"); setSelArea(a.id); } }));
     g.addTo(s.map);
     layerRef.current = g;
-  }, [ex, selSheet, selArea, mapReady]);
+  }, [ex, selSheet, selArea, mapReady, flags.raster, flags.nai, tab]);
+
+  // Zeitpunkt der Lage: gewählt oder Live (jetzt – oder, wenn die Übung vorbei ist, die letzte Meldung)
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => { const id = window.setInterval(() => setClock(Date.now()), 30000); return () => window.clearInterval(id); }, []);
+  const tNow = (() => {
+    if (tCursor) return tCursor;
+    const last = (ex?.events ?? []).filter((e) => !e.deleted).reduce((m, e) => (e.t > m ? e.t : m), "");
+    const now = isoLocal(clock);
+    return !last || clock - Date.parse(last) < 12 * 3600000 ? (now > last ? now : last) : last;
+  })();
 
   // Lage zum Zeitpunkt
   useEffect(() => {
     const s = sm.current;
     if (!s || !ex) return;
     journalRef.current?.remove();
-    // Live: jetzt – oder, wenn die Übung vorbei ist, die letzte Meldung
-    let t = tCursor;
-    if (!t) {
-      const last = (ex.events ?? []).filter((e) => !e.deleted).reduce((m, e) => (e.t > m ? e.t : m), "");
-      const now = isoLocal(Date.now());
-      t = !last || Date.now() - Date.parse(last) < 12 * 3600000 ? (now > last ? now : last) : last;
-    }
-    const st = situationAt(ex.events ?? [], t);
-    const g = journalLayer(st, { tracks, selectedId: selEvent, onClick: (e) => { setTab("journal"); setSelEvent(e.id); } });
+    const g = situationLayer(s.map, ex.events ?? [], {
+      t: tNow, flags, selectedId: selEvent, sheets: ex.sheets,
+      onClick: (e) => { setTab("journal"); setSelEvent(e.id); },
+    });
     g.addTo(s.map);
     journalRef.current = g;
-  }, [ex?.events, tCursor, tracks, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ex?.events, ex?.sheets, tNow, flags, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectEvent = (id: string | null) => {
+    setSelEvent(id);
+    const e = (ex?.events ?? []).find((x) => x.id === id);
+    if (e && tCursor && e.t > tCursor) setTCursor(e.t);
+  };
 
   const exportJournal = async (kind: "csv" | "pdf") => {
     if (!ex) return;
@@ -181,6 +203,8 @@ export function Workspace({ product, tagline }: Props) {
   useEffect(() => { if (ex && sm.current) fitAll(ex); /* nur beim Laden */ // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ex?.id, mapReady]);
 
+  const exRef = useRef<Exercise | null>(null);
+  exRef.current = ex;
   const update = (f: (x: Exercise) => Exercise) => setEx((x) => (x ? f(structuredClone(x)) : x));
 
   // ---------- Raster ----------
@@ -305,7 +329,7 @@ export function Workspace({ product, tagline }: Props) {
             <div className="panel"><p className="help">Karte wird geladen …</p></div>
           ) : tab === "journal" ? (
             <JournalPanel ex={ex} map={sm.current!.map} device={device} selected={selEvent}
-              onSelect={(id) => { setSelEvent(id); const e = (ex.events ?? []).find((x) => x.id === id); if (e && tCursor) setTCursor(e.t); }} update={update} say={say} onExport={exportJournal} />
+              onSelect={selectEvent} reportAt={reportAt} update={update} say={say} onExport={exportJournal} />
           ) : tab === "raster" ? (
             <div className="panel">
               {ex.sheets.length === 0 && (
@@ -340,23 +364,23 @@ export function Workspace({ product, tagline }: Props) {
         </aside>
         <main className="mapwrap">
           {(tab === "journal" || (ex.events ?? []).some((e) => !e.deleted)) && (
-            <div className="tlwrap">
-              <Timeline events={ex.events ?? []} days={ex.days} value={tCursor} onChange={setTCursor} />
-              <label className="check tl-opt"><input type="checkbox" checked={tracks} onChange={(e) => setTracks(e.target.checked)} /> Spuren</label>
-            </div>
+            <SwimTimeline events={ex.events ?? []} days={ex.days} units={ex.units} value={tCursor} onChange={setTCursor}
+              selectedId={selEvent} onSelect={(id) => { setSelEvent(id); setTab("journal"); const e = (ex.events ?? []).find((x) => x.id === id); if (e) setTCursor(e.t); }} />
           )}
           <div className="mapbox">
           <div ref={el} className="map" />
-          <div className="maptools">
-            <PlaceSearch onGo={(p) => sm.current?.map.setView(toLatLng(p), 21)} />
-            <div className="seg" role="group" aria-label="Kartengrundlage">
-              {(["lk", "img", "grau"] as Basemap[]).map((b) => (
-                <button key={b} aria-pressed={basemap === b} onClick={() => { setBasemap(b); sm.current?.setBasemap(b); }}>
-                  {b === "lk" ? "Landeskarte" : b === "img" ? "Luftbild" : "Grau"}
-                </button>
-              ))}
-            </div>
-          </div>
+          {mapReady && sm.current && (
+            <>
+              <div className="maptools">
+                <MapSearch ex={ex} map={sm.current.map} onSelectEvent={(id) => { setTab("journal"); selectEvent(id); }} />
+                <MapToolbar map={sm.current.map} basemap={basemap} onBasemap={(b) => { setBasemap(b); sm.current?.setBasemap(b); }}
+                  flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} />
+              </div>
+              <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)} />
+              {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} />}
+              <MapContextMenu map={sm.current.map} sheets={ex.sheets} onReportHere={(pos) => { setTab("journal"); setReportAt({ pos, n: Date.now() }); }} />
+            </>
+          )}
           {drawing && <div className="hint">{drawing} · Esc = Abbrechen</div>}
           <div className="status mono" aria-live="polite">
             {cursor ? <>{formatLv95(cursor)}{cell ? <> · <b>{cell.label}</b></> : null}</> : "Maus über die Karte bewegen"}
@@ -366,39 +390,6 @@ export function Workspace({ product, tagline }: Props) {
       </div>
       {busy && <div className="busy"><div>{busy}</div></div>}
       {toast && <div className="toast" role="status">{toast}</div>}
-    </div>
-  );
-}
-
-/** Ortssuche über den Suchdienst von swisstopo (nur online). */
-function PlaceSearch({ onGo }: { onGo: (p: LV95) => void }) {
-  const [q, setQ] = useState("");
-  const [hits, setHits] = useState<Array<{ label: string; p: LV95 }>>([]);
-  const chosen = useRef<string | null>(null);
-  useEffect(() => {
-    if (q.trim().length < 2 || q === chosen.current) { setHits([]); return; }
-    const ctl = new AbortController();
-    const t = window.setTimeout(async () => {
-      try {
-        const r = await fetch(`https://api3.geo.admin.ch/rest/services/api/SearchServer?type=locations&limit=8&searchText=${encodeURIComponent(q)}`, { signal: ctl.signal });
-        const j = await r.json();
-        setHits((j.results ?? []).map((x: { attrs: { label: string; lat: number; lon: number } }) => ({
-          label: x.attrs.label.replace(/<[^>]+>/g, ""),
-          p: wgs84ToLv95({ lat: x.attrs.lat, lon: x.attrs.lon }),
-        })));
-      } catch { /* offline */ }
-    }, 250);
-    return () => { ctl.abort(); window.clearTimeout(t); };
-  }, [q]);
-  return (
-    <div className="search">
-      <input placeholder="Ort suchen …" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Ort suchen"
-        onKeyDown={(e) => { if (e.key === "Escape") setHits([]); if (e.key === "Enter" && hits[0]) { chosen.current = hits[0].label; onGo(hits[0].p); setHits([]); setQ(hits[0].label); } }} />
-      {hits.length > 0 && (
-        <ul className="hits">
-          {hits.map((h, i) => <li key={i}><button onClick={() => { chosen.current = h.label; onGo(h.p); setHits([]); setQ(h.label); }}>{h.label}</button></li>)}
-        </ul>
-      )}
     </div>
   );
 }

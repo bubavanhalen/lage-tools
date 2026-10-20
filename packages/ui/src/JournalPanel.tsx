@@ -34,6 +34,8 @@ interface Props {
   update: (f: (x: Exercise) => Exercise) => void;
   say: (t: string) => void;
   onExport: (kind: "csv" | "pdf") => void;
+  /** «Meldung hier» aus dem Kontextmenü der Karte: Ort vorbelegen */
+  reportAt?: { pos: LV95; n: number } | null;
 }
 
 const KINDS: Array<[Kind, string]> = [["eigen", "Eigene"], ["feind", "Feind"], ["unklar", "Unklar"]];
@@ -67,7 +69,7 @@ function SymbolMini({ k, aff }: { k: string; aff: LageEvent["aff"] }) {
   return <span className="symmini" dangerouslySetInnerHTML={{ __html: s.svg }} />;
 }
 
-export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport }: Props) {
+export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt }: Props) {
   const events = ex.events ?? [];
   const [kindOverride, setKindOverride] = useState<Kind | null>(null);
   const [day, setDay] = useState(() => (ex.days.includes(todayIso()) ? todayIso() : ex.days[ex.days.length - 1] ?? todayIso()));
@@ -80,6 +82,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const [editing, setEditing] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => { if (reportAt) { setManualPos(reportAt.pos); inputRef.current?.focus(); } }, [reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!ex.days.includes(day)) setDay(ex.days[ex.days.length - 1] ?? todayIso()); }, [ex.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctx = useMemo(() => ({
