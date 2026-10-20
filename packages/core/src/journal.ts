@@ -17,8 +17,8 @@ export interface JournalContext {
   units: { rot: string[]; blau: string[]; ul: string[] };
   /** bekannte Orte (z. B. Standorte, früher gefundene Ortsnamen) */
   places?: Place[];
-  /** Seite, wenn im Text keine genannt ist (Umschalter in der Eingabe) */
-  side: Side;
+  /** erzwingt die Einordnung (Umschalter in der Vorschau); sonst entscheidet der Inhalt */
+  kind?: Kind;
   /** Übungstage (ISO-Datum), für «T1», «T2» */
   days: string[];
   /** Tag, wenn keiner genannt ist */
@@ -29,7 +29,9 @@ export interface JournalContext {
   lastPos?: (unit: string, side: Side) => LV95 | undefined;
 }
 
-export type WhereKind = "koordinate" | "raster" | "nai" | "ort" | "zuletzt" | "karte";
+export type WhereKind = "koordinate" | "raster" | "nai" | "ort" | "zuletzt" | "melder" | "karte";
+/** Lageverfolgung: eigene Lage (Melder selbst) oder Sichtung (Feind / unklar) */
+export type Kind = "eigen" | "feind" | "unklar";
 
 export interface Draft {
   /** Minuten seit Mitternacht */
@@ -38,7 +40,13 @@ export interface Draft {
   /** ISO lokal, z. B. «2026-10-20T10:15» */
   t: string;
   timeFromText: boolean;
+  kind: Kind;
+  /** wie wurde eingeordnet (für die Vorschau) */
+  kindFrom: "text" | "inhalt" | "vorgabe";
   side: Side;
+  /** eigenes Element, das meldet (z. B. «H04») */
+  melder: string;
+  /** Element auf der Karte: bei «eigen» der Melder, bei Sichtungen ein bekanntes Feindelement oder leer */
   unit: string;
   sym: string;
   aff: Affiliation;
@@ -57,11 +65,16 @@ export interface Draft {
   text: string;
 }
 
-const SIDE_WORDS: Array<[RegExp, Side]> = [
-  [/^(?:seite\s+)?(?:rot|gegner|feind|fe)\b[:,]?\s*/i, "rot"],
-  [/^(?:seite\s+)?(?:blau|eigen|eig)\b[:,]?\s*/i, "blau"],
-  [/^(?:ul|übungsleitung|schiri)\b[:,]?\s*/i, "ul"],
+const KIND_WORDS: Array<[RegExp, Kind]> = [
+  [/^(?:seite\s+)?(?:rot|gegner|feind|fe)\b[:,]?\s*/i, "feind"],
+  [/^(?:seite\s+)?(?:blau|eigen|eig)\b[:,]?\s*/i, "eigen"],
+  [/^(?:unklar|unbekannt)\b[:,]?\s*/i, "unklar"],
 ];
+const UNCLEAR_RE = /\b(unklar|unbekannt|nicht erkennbar|zivil\??|evtl\.?|vermutlich|möglicherweise)\b/i;
+const ENEMY_RE = /\b(gegner|feind|fe|rot|verdächtig|bewaffnet|fremde?)\b/i;
+/** Zeichen, die in LVZ-Meldungen fast immer eine Sichtung sind */
+const SIGHTING_SYMS = new Set(["fz", "lw", "inf_gr", "inf_trp", "drohne", "patrouille", "hinterhalt", "sperre", "kontrollposten", "mun_lager", "kontakt"]);
+const sideOf = (k: Kind): Side => (k === "eigen" ? "blau" : "rot");
 
 /** Gängige Elementbezeichnungen: H04, Det 2, Zug 1, Gr 3, Trp 2, Pat 1, Kp, Zfhr … */
 const UNIT_RE = /(?<![\wÄÖÜäöü])(H\d{1,3}|Det\.?\s?\d{1,2}|Zug\s?\d{1,2}|Z\s?\d|Gr\.?\s?\d{1,2}|Trp\.?\s?\d{1,2}|Pat\.?\s?\d{1,2}|Patr\.?\s?\d{1,2}|Zfhr|Kdt|Kp|LVZ|KP)(?![\wÄÖÜäöü])/i;
@@ -121,38 +134,49 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     timeFromText = true;
   }
 
-  // ---- Seite am Anfang
-  let side: Side | null = null;
-  for (const [re, s] of SIDE_WORDS) {
+  // ---- ausdrückliche Einordnung am Anfang («Rot …», «Feind …», «Eigen …»)
+  let kind: Kind | null = null;
+  for (const [re, k] of KIND_WORDS) {
     const m = re.exec(rest);
-    if (m) { side = s; rest = rest.slice(m[0].length); break; }
+    if (m) { kind = k; rest = rest.slice(m[0].length); break; }
   }
+  const explicit = kind !== null;
   const text = rest.trim();
 
-  // ---- Element
+  // ---- Elemente: Melder (eigen) und ggf. bekanntes Feindelement
   const known: Array<[string, Side]> = [
     ...ctx.units.rot.map((u) => [u, "rot"] as [string, Side]),
     ...ctx.units.blau.map((u) => [u, "blau"] as [string, Side]),
-    ...ctx.units.ul.map((u) => [u, "ul"] as [string, Side]),
   ].sort((a, b) => b[0].length - a[0].length);
-  let unit = "";
-  let unitIndex = -1;
-  for (const [u, s] of known) {
+  const hits: Array<{ u: string; side: Side | null; index: number }> = [];
+  for (const [u, sd] of known) {
     const m = flexRe(u).exec(text);
-    if (m && (unitIndex < 0 || m.index < unitIndex)) {
-      unit = u; unitIndex = m.index;
-      if (!side) side = s;
-    }
+    if (m && !hits.some((h) => m.index >= h.index && m.index < h.index + h.u.length)) hits.push({ u, side: sd, index: m.index });
   }
-  if (!unit) {
-    const m = UNIT_RE.exec(text);
-    if (m) { unit = m[1]!.replace(/\.\s?|\s+/g, " ").replace(/^(\D+?)\s?(\d)/, (_, a: string, d: string) => (a.length > 1 ? `${a} ${d}` : a + d)).trim(); unitIndex = m.index; }
+  for (const m of text.matchAll(new RegExp(UNIT_RE.source, "gi"))) {
+    const u = m[1]!.replace(/\.\s?|\s+/g, " ").replace(/^(\D+?)\s?(\d)/, (_, a: string, d: string) => (a.length > 1 ? `${a} ${d}` : a + d)).trim();
+    if (!hits.some((h) => Math.abs(h.index - m.index!) < 2 || norm(h.u) === norm(u))) hits.push({ u, side: null, index: m.index! });
   }
-  side ??= ctx.side;
+  hits.sort((a, b) => a.index - b.index);
+  const melderHit = hits.find((h) => h.side !== "rot");
+  const enemyHit = hits.find((h) => h.side === "rot");
+  const melder = melderHit?.u ?? "";
 
-  // ---- Anzahl, Richtung
+  // ---- Anzahl, Zeichen, Einordnung
   const cm = COUNT_RE.exec(text);
   const count = cm ? +cm[1]! : undefined;
+  const sym = detectSymbol(text);
+  let kindFrom: Draft["kindFrom"] = explicit ? "text" : "inhalt";
+  if (ctx.kind) { kind = ctx.kind; kindFrom = "vorgabe"; }
+  if (!kind) {
+    if (UNCLEAR_RE.test(text)) kind = "unklar";
+    else if (enemyHit || ENEMY_RE.test(text) || count !== undefined || SIGHTING_SYMS.has(sym)) kind = "feind";
+    else kind = "eigen";
+  }
+  const side = sideOf(kind);
+  const unit = kind === "eigen" ? melder : enemyHit?.u ?? "";
+  const unitIndex = kind === "eigen" ? melderHit?.index ?? -1 : enemyHit?.index ?? -1;
+  void unitIndex;
   let dir: number | undefined;
   let dirLabel: string | undefined;
   const rm = /\b(?:rtg|richtung|fahrtrichtung|in\s+rtg)\.?\s+([A-Za-zÄÖÜäöü][\wÄÖÜäöü\-]*)/i.exec(text);
@@ -173,7 +197,7 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     pos = coords[0].lv95;
     where = { kind: "koordinate", label: "Koordinate" };
   }
-  const exclude = [...known.map(([u]) => u), ...(unit ? [unit] : [])].map((u) => u.replace(/\s/g, ""));
+  const exclude = [...known.map(([u]) => u), ...hits.map((h) => h.u)].map((u) => u.replace(/\s/g, ""));
   const found = findCells(text, ctx.sheets, { exclude });
   if (found.length) {
     cells = found.map((c) => c.label);
@@ -200,16 +224,20 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     // Ortsname nach einer Präposition, z. B. «angekommen in Wabern», «bei Bümpliz»
     const pm = /\b(?:in|bei|beim|ab|an|auf|nach|bis|vor|höhe|richtung|rtg|ausgang|eingang|ortseingang|ortsausgang)\.?\s+([A-ZÄÖÜ][\wäöüÄÖÜß'’\-]+(?:\s+[A-ZÄÖÜ][\wäöüÄÖÜß'’\-]+)?)/.exec(text);
     if (pm && !/^(NAI|PQ|Rtg|Richtung|Rot|Blau)$/i.test(pm[1]!)) placeQuery = pm[1]!.replace(/[’']$/, "");
-    const last = unit ? ctx.lastPos?.(unit, side) : undefined;
-    if (last) { pos = last; where = { kind: "zuletzt", label: "letzter Standort" }; }
+    if (kind === "eigen") {
+      const last = melder ? ctx.lastPos?.(melder, "blau") : undefined;
+      if (last) { pos = last; where = { kind: "zuletzt", label: "letzter Standort" }; }
+    } else {
+      // Sichtung ohne Ort: beim bekannten Feindelement, sonst beim Melder
+      const lastEnemy = unit ? ctx.lastPos?.(unit, "rot") : undefined;
+      const atMelder = melder ? ctx.lastPos?.(melder, "blau") : undefined;
+      if (lastEnemy) { pos = lastEnemy; where = { kind: "zuletzt", label: "letzter Standort" }; }
+      else if (atMelder) { pos = atMelder; where = { kind: "melder", label: `bei ${melder}` }; }
+    }
   }
 
-  // ---- Zeichen und Zugehörigkeit
-  const sym = detectSymbol(text);
-  const unknown = /\b(unklar|unbekannt|nicht erkennbar)\b/i.test(text);
-  const aff: Affiliation = unknown ? "U" : side === "rot" ? "H" : side === "blau" ? "F" : "N";
-
-  return { minutes, day, t: isoOf(day, minutes), timeFromText, side, unit, sym, aff, count, dir, dirLabel, pos, where, cells, nai, placeQuery, text: text || input.trim() };
+  const aff: Affiliation = kind === "eigen" ? "F" : kind === "feind" ? "H" : "U";
+  return { minutes, day, t: isoOf(day, minutes), timeFromText, kind, kindFrom, side, melder, unit, sym, aff, count, dir, dirLabel, pos, where, cells, nai, placeQuery, text: text || input.trim() };
 }
 
 /** Lage zum Zeitpunkt: pro Element die letzte Meldung mit Standort (bis einschliesslich `t`). */
@@ -230,7 +258,7 @@ export function unitKey(side: Side, unit: string): string {
 /**
  * @param maxAgeMin Meldungen ohne Element werden nur so lange gezeigt (Minuten)
  */
-export function situationAt(events: LageEvent[], t: string, maxAgeMin = 120): { units: UnitState[]; loose: LageEvent[] } {
+export function situationAt(events: LageEvent[], t: string, maxAgeMin = Infinity): { units: UnitState[]; loose: LageEvent[] } {
   const live = events.filter((e) => !e.deleted && e.t <= t).sort((a, b) => a.t.localeCompare(b.t) || a.id.localeCompare(b.id));
   const byUnit = new Map<string, UnitState>();
   const loose: LageEvent[] = [];
@@ -277,14 +305,21 @@ export function lastPosition(events: LageEvent[], side: Side, unit: string, befo
 
 // ---------- Export ----------
 
+/** «Eigene», «Feind», «Unklar» (bzw. «UL») */
+export function kindLabel(e: Pick<LageEvent, "side" | "aff">): string {
+  if (e.side === "blau") return "Eigene";
+  if (e.side === "ul") return "UL";
+  return e.aff === "U" ? "Unklar" : "Feind";
+}
+
 const csvCell = (v: string) => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
 export function journalToCsv(events: LageEvent[], days: string[]): string {
-  const head = ["Tag", "Zeit", "Seite", "Element", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N"];
+  const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N"];
   const rows = events.filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t)).map((e) => {
     const d = e.t.slice(0, 10);
     const tag = days.indexOf(d) >= 0 ? `T${days.indexOf(d) + 1}` : d;
-    return [tag, e.t.slice(11, 16), e.side === "rot" ? "Rot" : e.side === "blau" ? "Blau" : "UL", e.unit, e.text, e.sym, e.where ?? "", (e.cells ?? []).join(" "), e.nai ?? "",
+    return [tag, e.t.slice(11, 16), kindLabel(e), e.unit, e.melder ?? "", e.text, e.sym, e.where ?? "", (e.cells ?? []).join(" "), e.nai ?? "",
       e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : ""];
   });
   return "﻿" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
@@ -300,6 +335,7 @@ export function eventFromDraft(d: Draft, device: string, now = new Date()): Lage
     t: d.t,
     side: d.side,
     unit: d.unit,
+    melder: d.melder || undefined,
     text: d.text,
     label: d.count ? String(d.count) : undefined,
     sym: d.sym,

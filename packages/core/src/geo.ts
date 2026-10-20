@@ -160,3 +160,10 @@ export function pointInRing(p: XY, ring: XY[]): boolean {
   }
   return inside;
 }
+
+/** Distanz (m) und Azimut (Grad und Artilleriepromille, 6400 ‰ = Vollkreis) von a nach b, in LV95 (Gitternord). */
+export function distanceAzimuth(a: { e: number; n: number }, b: { e: number; n: number }): { m: number; deg: number; mils: number } {
+  const de = b.e - a.e, dn = b.n - a.n;
+  const deg = ((Math.atan2(de, dn) * 180) / Math.PI + 360) % 360;
+  return { m: Math.hypot(de, dn), deg, mils: (deg * 6400) / 360 };
+}

@@ -21,18 +21,19 @@ const ctx = (over: Partial<JournalContext> = {}): JournalContext => ({
   areas: [nai3],
   units: { rot: ["Det 2"], blau: ["H04", "H10"], ul: [] },
   places: [{ name: "Bümpliz", pos: { e: 2595500, n: 1199300 } }],
-  side: "blau",
   days: ["2030-05-14", "2030-05-15"],
   day: "2030-05-15",
   now: new Date(2030, 4, 15, 14, 7),
   ...over,
 });
 
-describe("Meldung erkennen", () => {
-  it("Zeit, Seite, Anzahl, NAI, Richtung", () => {
+describe("Meldung erkennen (Lageverfolgung: Melder + Inhalt)", () => {
+  it("Sichtung ohne Melder: Zeit, Anzahl, NAI, Richtung", () => {
     const d = parseMeldung("1015 Rot 2 Fz in NAI 3 Rtg N", ctx());
     expect(d.t).toBe("2030-05-15T10:15");
     expect(d.timeFromText).toBe(true);
+    expect(d.kind).toBe("feind");
+    expect(d.kindFrom).toBe("text");
     expect(d.side).toBe("rot");
     expect(d.aff).toBe("H");
     expect(d.count).toBe(2);
@@ -44,56 +45,78 @@ describe("Meldung erkennen", () => {
     expect(d.text).toBe("2 Fz in NAI 3 Rtg N");
   });
 
-  it("bekanntes Element bestimmt die Seite, Planquadrat mit Unterquadrant", () => {
-    const d = parseMeldung("09:55 H04 Beo Stao C12 D", ctx({ side: "rot" }));
+  it("eigene Lage: Melder bezieht Beo Stao im Unterquadranten", () => {
+    const d = parseMeldung("09:55 H04 Beo Stao C12 D", ctx());
+    expect(d.kind).toBe("eigen");
     expect(d.side).toBe("blau");
+    expect(d.melder).toBe("H04");
     expect(d.unit).toBe("H04");
     expect(d.sym).toBe("beob_aufkl");
     expect(d.cells).toEqual(["C12 D"]);
-    expect(d.where?.kind).toBe("raster");
     // C12: Zeile C (3.), Spalte 12 → Feld 2'597'500–2'598'000 / 1'205'000–1'204'500, Quadrant D = unten links
     expect(d.pos).toEqual({ e: 2597625, n: 1204625 });
   });
 
-  it("Tag T1, Element «Det 2» ohne Ort → letzter Standort", () => {
-    const d = parseMeldung("T1 2330 Det 2 rollt", ctx({ lastPos: (u) => (u === "Det 2" ? { e: 2599000, n: 1201000 } : undefined) }));
+  it("Sichtung eines Melders: Feind am genannten Ort, Melder bleibt Melder", () => {
+    const d = parseMeldung("1020 H04: 2 Fz in NAI 3 Rtg Bern", ctx());
+    expect(d.kind).toBe("feind");
+    expect(d.kindFrom).toBe("inhalt");
+    expect(d.melder).toBe("H04");
+    expect(d.unit).toBe("");
+    expect(d.where?.label).toBe("NAI 3");
+    expect(d.dirLabel).toBe("Rtg Bern");
+  });
+
+  it("unklare Sichtung ohne Ort: beim Melder", () => {
+    const d = parseMeldung("1030 H04 3 Pers, Zugehörigkeit unklar", ctx({ lastPos: (u, s) => (u === "H04" && s === "blau" ? { e: 2597000, n: 1204000 } : undefined) }));
+    expect(d.kind).toBe("unklar");
+    expect(d.aff).toBe("U");
+    expect(d.where).toEqual({ kind: "melder", label: "bei H04" });
+    expect(d.pos).toEqual({ e: 2597000, n: 1204000 });
+  });
+
+  it("bekanntes Feindelement: Tag T1, ohne Ort → letzter Standort des Feindelements", () => {
+    const d = parseMeldung("T1 2330 Det 2 rollt", ctx({ lastPos: (u, s) => (u === "Det 2" && s === "rot" ? { e: 2599000, n: 1201000 } : undefined) }));
     expect(d.day).toBe("2030-05-14");
     expect(d.t).toBe("2030-05-14T23:30");
-    expect(d.side).toBe("rot");
+    expect(d.kind).toBe("feind");
     expect(d.unit).toBe("Det 2");
     expect(d.where?.kind).toBe("zuletzt");
   });
 
-  it("ohne Zeit: jetzt; neues Element wird erkannt; Ort aus Liste und Ortsname zum Nachschlagen", () => {
-    const a = parseMeldung("Det 5 bei Bümpliz", ctx());
+  it("ohne Zeit: jetzt; neues eigenes Element; Ort aus Liste und Ortsname zum Nachschlagen", () => {
+    const a = parseMeldung("Gr 5 bei Bümpliz", ctx());
     expect(a.t).toBe("2030-05-15T14:07");
     expect(a.timeFromText).toBe(false);
-    expect(a.unit).toBe("Det 5");
+    expect(a.kind).toBe("eigen");
+    expect(a.melder).toBe("Gr 5");
     expect(a.where).toEqual({ kind: "ort", label: "Bümpliz" });
     const b = parseMeldung("Gr 3 angekommen in Wabern", ctx());
-    expect(b.unit).toBe("Gr 3");
+    expect(b.melder).toBe("Gr 3");
     expect(b.pos).toBeUndefined();
     expect(b.placeQuery).toBe("Wabern");
   });
 
-  it("Koordinate hat Vorrang, H10 ist kein Planquadrat", () => {
+  it("Kontakt: Sichtung mit Koordinate, H10 ist kein Planquadrat; Vorgabe übersteuert", () => {
     const d = parseMeldung("1100 H10 Kontakt mit Gegner 2'598'100 / 1'201'200", ctx());
-    expect(d.unit).toBe("H10");
+    expect(d.melder).toBe("H10");
+    expect(d.kind).toBe("feind");
     expect(d.sym).toBe("kontakt");
     expect(d.pos).toEqual({ e: 2598100, n: 1201200 });
     expect(d.cells).toBeUndefined();
+    expect(parseMeldung("1100 H10 Kontakt mit Gegner", ctx({ kind: "unklar" })).kind).toBe("unklar");
   });
 });
 
 describe("Lage zum Zeitpunkt", () => {
   const mk = (line: string, c = ctx()) => eventFromDraft(parseMeldung(line, c), "dev-test", new Date(2030, 4, 15, 12));
   const evs = [
-    mk("0900 Rot Det 2 2 Fz in NAI 3"),
+    mk("0900 Det 2 2 Fz in NAI 3"),
     mk("0930 Det 2 2 Fz C12"),
     mk("1000 Det 2 halt"),
-    mk("0945 Rot 3 Pers bei Bümpliz"),
+    mk("0945 H04 3 Pers bei Bümpliz"),
   ];
-  // «1000 Det 2 halt» hat keinen Ort (ohne lastPos im Kontext)
+  // «Det 2» ist als Feindelement bekannt; «1000 Det 2 halt» hat keinen Ort (ohne lastPos im Kontext)
   it("Element bleibt am letzten Standort, Spur wächst", () => {
     const s = situationAt(evs, "2030-05-15T10:05");
     expect(s.units).toHaveLength(1);
@@ -101,18 +124,23 @@ describe("Lage zum Zeitpunkt", () => {
     expect(s.units[0]!.event.text).toBe("Det 2 halt");
     expect(s.loose).toHaveLength(1);
     expect(situationAt(evs, "2030-05-15T09:10").units[0]!.track).toHaveLength(1);
-    expect(situationAt(evs, "2030-05-15T13:00").loose).toHaveLength(0); // älter als 2 h
+    expect(situationAt(evs, "2030-05-15T13:00", 120).loose).toHaveLength(0); // älter als 2 h
+    expect(situationAt(evs, "2030-05-15T13:00").loose).toHaveLength(1);
   });
   it("Tätigkeit (Kontakt) wird eigenes Zeichen, Element behält sein Zeichen", () => {
     const c = ctx();
     const a = eventFromDraft(parseMeldung("0900 H04 Beo Stao C12", c), "d");
     const k = eventFromDraft(parseMeldung("0910 H04 Kontakt mit Gegner", { ...c, lastPos: () => a.pos }), "d");
+    expect(k.melder).toBe("H04");
     const s = situationAt([a, k], "2030-05-15T09:15");
+    expect(s.units).toHaveLength(1);
     expect(s.units[0]!.event.sym).toBe("beob_aufkl");
     expect(s.loose.map((e) => e.sym)).toEqual(["kontakt"]);
   });
   it("letzter Standort und Revision", () => {
     expect(lastPosition(evs, "rot", "Det 2")).toEqual(evs[1]!.pos);
+    expect(evs[3]!.melder).toBe("H04");
+    expect(evs[3]!.side).toBe("rot");
     const r = reviseEvent(evs[0]!, { text: "neu" }, "dev-b");
     expect(r.rev).toBe(2);
     expect(r.device).toBe("dev-b");
@@ -120,6 +148,16 @@ describe("Lage zum Zeitpunkt", () => {
   it("CSV mit Übungstag", () => {
     const csv = journalToCsv(evs, ["2030-05-14", "2030-05-15"]);
     expect(csv.split("\r\n")).toHaveLength(5);
-    expect(csv).toContain("T2;09:00;Rot;Det 2;");
+    expect(csv).toContain("T2;09:00;Feind;Det 2;");
+  });
+});
+
+import { distanceAzimuth } from "../src";
+describe("Messen", () => {
+  it("Distanz und Azimut in Grad und Promille", () => {
+    const r = distanceAzimuth({ e: 2600000, n: 1200000 }, { e: 2601000, n: 1199000 });
+    expect(Math.round(r.m)).toBe(1414);
+    expect(r.deg).toBeCloseTo(135, 6);
+    expect(r.mils).toBeCloseTo(2400, 6);
   });
 });

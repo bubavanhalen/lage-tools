@@ -30,8 +30,10 @@ export interface LageEvent {
   /** Zeitpunkt der Meldung (ISO), falls abweichend */
   tReported?: string;
   side: Side;
-  /** Element, z. B. «H04», «Det 2», «LVZ» */
+  /** Element auf der Karte, z. B. «H04», «Det 2» (leer bei Sichtungen ohne bekanntes Element) */
   unit: string;
+  /** Eigenes Element, das gemeldet hat (Lageverfolgung) */
+  melder?: string;
   /** Meldungstext (Originaltext bleibt erhalten) */
   text: string;
   /** Kurzbeschriftung auf der Karte, z. B. «2×G» */
