@@ -6,9 +6,10 @@
  */
 import { pointInRing, ringCentroid } from "./geo";
 import { findCoordinates, type LV95 } from "./lv95";
-import { newEventId, type Area, type LageEvent, type Place, type Side } from "./model";
+import { newEventId, type Area, type LageEvent, type Place, type RoadHint, type Side } from "./model";
 import { boundsCenter, cellBounds, findCells, type RasterSheet } from "./raster";
-import { detectSymbol, symbolDef, type Affiliation } from "./symbols";
+import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
+import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
 
 export interface JournalContext {
@@ -50,11 +51,25 @@ export interface Draft {
   unit: string;
   sym: string;
   aff: Affiliation;
+  /** vollständiger SIDC (Zeichen, Zugehörigkeit, Stufe, Status) */
+  sidc: string;
+  /** Stufe, z. B. «hz» (aus «1 gn hz inf») */
+  echelon?: Echelon;
+  /** «anticipated» = vermutet/möglich (gestrichelt) */
+  status: Status;
+  /** ausgeschriebener Sinn, z. B. «1 gegnerischer Halbzug Infanterie» */
+  desc?: string;
   count?: number;
   /** Bewegungsrichtung in Grad (0 = Nord) */
   dir?: number;
   /** Richtung als Text, z. B. «Rtg Bern» */
   dirLabel?: string;
+  /** Herkunft in Grad (0 = Nord), z. B. «Schuss aus Rtg O» → 90 (kein Bewegungspfeil) */
+  from?: number;
+  /** Herkunft als Text, z. B. «aus Rtg Bern» */
+  fromLabel?: string;
+  /** Strassenart aus dem Text («auf Hauptstrasse» → haupt, «auf Autobahn» / «A1» → autobahn) */
+  roadHint?: RoadHint;
   pos?: LV95;
   where?: { kind: WhereKind; label: string };
   cells?: string[];
@@ -70,10 +85,14 @@ const KIND_WORDS: Array<[RegExp, Kind]> = [
   [/^(?:seite\s+)?(?:blau|eigen|eig)\b[:,]?\s*/i, "eigen"],
   [/^(?:unklar|unbekannt)\b[:,]?\s*/i, "unklar"],
 ];
-const UNCLEAR_RE = /\b(unklar|unbekannt|nicht erkennbar|zivil\??|evtl\.?|vermutlich|möglicherweise)\b/i;
-const ENEMY_RE = /\b(gegner|feind|fe|rot|verdächtig|bewaffnet|fremde?)\b/i;
-/** Zeichen, die in LVZ-Meldungen fast immer eine Sichtung sind */
-const SIGHTING_SYMS = new Set(["fz", "lw", "inf_gr", "inf_trp", "drohne", "patrouille", "hinterhalt", "sperre", "kontrollposten", "mun_lager", "kontakt"]);
+const W = "[\\wÄÖÜäöü]";
+/** Zugehörigkeit ausdrücklich unklar («verdächtig» = gesichtet, Zugehörigkeit unklar, nicht gestrichelt) */
+const UNCLEAR_RE = new RegExp(`(?<!${W})(unklar\\w*|unbekannt\\w*|nicht erkennbar|verdacht|verdächtig\\w*)(?!${W})`, "i");
+/** ausdrücklich gegnerisch: «gn», «gegn.», «Gegner», «feindl.» */
+const STRONG_ENEMY_RE = new RegExp(`(?<!${W})(gn|gegn|gegner\\w*|gegnerisch\\w*|feindl\\w*)(?!${W})`, "i");
+/** vermutet / möglich → gestrichelt; Feind bei inhärent feindlichen Zeichen (IED, Minen, Sperre …), sonst unklar */
+const MAYBE_RE = new RegExp(`(?<!${W})(zivil\\??|evtl|eventuell|vermutlich|vmtl|vermutl|verm|vermutet\\w*|möglicherweise|mögl|möglich\\w*|mutmasslich\\w*|wahrscheinlich|allenfalls)(?!${W})`, "i");
+const ENEMY_RE = new RegExp(`(?<!${W})(gegner|feind|fe|rot|bewaffnet\\w*|fremde?)(?!${W})`, "i");
 const sideOf = (k: Kind): Side => (k === "eigen" ? "blau" : "rot");
 
 /** Gängige Elementbezeichnungen: H04, Det 2, Zug 1, Gr 3, Trp 2, Pat 1, Kp, Zfhr … */
@@ -85,7 +104,19 @@ const DIRS: Record<string, number> = {
   W: 270, WEST: 270, WESTEN: 270, NW: 315, NORDWEST: 315, NORDWESTEN: 315,
 };
 
-const COUNT_RE = /(?<![\d'’.:])(\d{1,3})\s*(?:x|×)?\s*(fz|fahrzeuge?|pw|lw|lastwagen|g-?klasse|duros?|pers(?:onen)?\.?|mann|sdt|soldaten|ag|angehörige|drohnen?|motorräder|töff)\b/i;
+/** «3 Pers», «2 Fz» – nicht in Elementnamen wie «H05», «Det 2» (Lookbehind: kein Buchstabe/Ziffer davor) */
+const COUNT_RE = /(?<![\p{L}\d'’.:])(\d{1,3})\s*(?:x|×)?\s*(fz|fahrzeuge?|pw|lw|lastwagen|g-?klasse|duros?|pers(?:onen)?\.?|mann|sdt|soldaten|ag|angehörige|drohnen?|motorräder|töff)(?![\p{L}\d])/giu;
+
+/** Herkunft: «aus Rtg O», «aus Richtung Bern», «von N», «aus W» (keine Bewegungsrichtung) */
+const FROM_RE = /(?<![\p{L}\d])(?:aus|von)\s+(?:der\s+)?(?:(rtg|richtung)\.?\s+)?([\p{L}][\p{L}\d\-]*)/iu;
+/** Strassenart: «auf Hauptstrasse», «auf der HS», «auf Autobahn», «auf A1» – geht nicht in die Ortssuche */
+const ROAD_HAUPT_RE = /(?<![\p{L}\d])(?:(?:auf|entlang)\s+(?:der\s+|die\s+)?)?haupt(?:strasse|straße|trasse|achse|verkehrsstrasse|verkehrsachse)(?![\p{L}\d])|(?<![\p{L}\d])auf\s+(?:der\s+)?hs(?![\p{L}\d])/iu;
+const ROAD_AB_RE = /(?<![\p{L}\d])(?:(?:auf|entlang)\s+(?:der\s+|die\s+)?)?(?:autobahn|autostrasse)(?![\p{L}\d])|(?<![\p{L}\d])auf\s+(?:der\s+)?(?:ab|a\s?\d{1,2})(?![\p{L}\d])/iu;
+/** Elementnamen, die immer Namen sind (nie Anzahl/Stufe): «H05», «Det 2» */
+const NAME_ALWAYS_RE = /^(?:H\d|Det)/i;
+
+/** Textstelle durch Leerzeichen ersetzen (Länge bleibt, damit Positionen stimmen) */
+const blank = (s: string, a: number, b: number) => s.slice(0, a) + " ".repeat(b - a) + s.slice(b);
 
 const pad = (n: number) => String(n).padStart(2, "0");
 export const isoOf = (day: string, minutes: number) => `${day}T${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
@@ -148,14 +179,28 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     ...ctx.units.rot.map((u) => [u, "rot"] as [string, Side]),
     ...ctx.units.blau.map((u) => [u, "blau"] as [string, Side]),
   ].sort((a, b) => b[0].length - a[0].length);
-  const hits: Array<{ u: string; side: Side | null; index: number }> = [];
+  const hits: Array<{ u: string; side: Side | null; index: number; len: number }> = [];
   for (const [u, sd] of known) {
     const m = flexRe(u).exec(text);
-    if (m && !hits.some((h) => m.index >= h.index && m.index < h.index + h.u.length)) hits.push({ u, side: sd, index: m.index });
+    if (m && !hits.some((h) => m.index >= h.index && m.index < h.index + h.len)) hits.push({ u, side: sd, index: m.index, len: m[0].length });
   }
+  // Elementnamen mit Nummer sind keine Anzahl: «H05 Drohne» ≠ 5 Drohnen, «Det 2 Patrouille», «Zug 1», «Gr 3».
+  // Ausnahme: Zahl vor einer Einheit / einem Gerät («Pat 3 Pers» = Patrouille mit 3 Personen).
+  const skip: Array<[number, number]> = hits.map((h) => [h.index, h.index + h.len]);
   for (const m of text.matchAll(new RegExp(UNIT_RE.source, "gi"))) {
+    const raw = m[1]!;
+    if (!/\d/.test(raw)) continue;
+    const a = m.index!, b = a + raw.length;
+    if (skip.some(([x, y]) => a < y && b > x)) continue;
+    const next = /^\s*([\p{L}][\p{L}\d]*)/u.exec(text.slice(b))?.[1];
+    if (NAME_ALWAYS_RE.test(raw) || !next || !isCountableWord(next)) skip.push([a, b]);
+  }
+  // taktische Begriffe zuerst lesen: «Kp» in «1 Kp Pz» ist eine Stufe, kein Melder
+  const reading = readTactical(text, { skip });
+  for (const m of text.matchAll(new RegExp(UNIT_RE.source, "gi"))) {
+    if (reading?.spans.some(([a, b]) => m.index! >= a && m.index! < b)) continue;
     const u = m[1]!.replace(/\.\s?|\s+/g, " ").replace(/^(\D+?)\s?(\d)/, (_, a: string, d: string) => (a.length > 1 ? `${a} ${d}` : a + d)).trim();
-    if (!hits.some((h) => Math.abs(h.index - m.index!) < 2 || norm(h.u) === norm(u))) hits.push({ u, side: null, index: m.index! });
+    if (!hits.some((h) => Math.abs(h.index - m.index!) < 2 || norm(h.u) === norm(u))) hits.push({ u, side: null, index: m.index!, len: m[1]!.length });
   }
   hits.sort((a, b) => a.index - b.index);
   const melderHit = hits.find((h) => h.side !== "rot");
@@ -163,28 +208,49 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const melder = melderHit?.u ?? "";
 
   // ---- Anzahl, Zeichen, Einordnung
-  const cm = COUNT_RE.exec(text);
-  const count = cm ? +cm[1]! : undefined;
-  const sym = detectSymbol(text);
+  const sym = reading?.key ?? "einheit";
+  const entry = catalogEntry(sym) ?? catalogEntry("einheit")!;
+  const isElement = entry.kind === "einheit" || entry.kind === "geraet";
+  // Anzahl aus der Erkennung; sonst (nur bei Elementen) «3 Pers», «2 Fz» irgendwo im Text (nicht in Elementnamen)
+  let cmCount: number | undefined;
+  if (!reading) {
+    for (const m of text.matchAll(COUNT_RE)) {
+      if (skip.some(([a, b]) => m.index! < b && m.index! + m[0].length > a)) continue;
+      cmCount = +m[1]!;
+      break;
+    }
+  }
+  const count = reading?.count ?? cmCount;
   let kindFrom: Draft["kindFrom"] = explicit ? "text" : "inhalt";
   if (ctx.kind) { kind = ctx.kind; kindFrom = "vorgabe"; }
-  if (!kind) {
-    if (UNCLEAR_RE.test(text)) kind = "unklar";
-    else if (enemyHit || ENEMY_RE.test(text) || count !== undefined || SIGHTING_SYMS.has(sym)) kind = "feind";
-    // eigene Lage nur mit Melder; ohne Melder und ohne Hinweis bleibt es unklar
-    else kind = melder ? "eigen" : "unklar";
-  }
+  if (!kind) kind = kindOf(text, reading, entry, { melder, enemy: !!enemyHit, count });
   const side = sideOf(kind);
   const unit = kind === "eigen" ? melder : enemyHit?.u ?? "";
-  const unitIndex = kind === "eigen" ? melderHit?.index ?? -1 : enemyHit?.index ?? -1;
-  void unitIndex;
+
+  // ---- Herkunft und Richtung: «aus Rtg O» = Herkunft (kein Pfeil), «Rtg N» = Bewegungsrichtung
+  let locText = text;
+  let from: number | undefined;
+  let fromLabel: string | undefined;
+  const fm = FROM_RE.exec(text);
+  if (fm) {
+    const w = fm[2]!.toUpperCase();
+    if (w in DIRS) from = DIRS[w];
+    else if (fm[1]) fromLabel = `aus Rtg ${fm[2]}`;
+    if (from !== undefined || fromLabel) locText = blank(locText, fm.index, fm.index + fm[0].length);
+  }
   let dir: number | undefined;
   let dirLabel: string | undefined;
-  const rm = /\b(?:rtg|richtung|fahrtrichtung|in\s+rtg)\.?\s+([A-Za-zÄÖÜäöü][\wÄÖÜäöü\-]*)/i.exec(text);
+  const rm = /\b(?:rtg|richtung|fahrtrichtung|in\s+rtg)\.?\s+([A-Za-zÄÖÜäöü][\wÄÖÜäöü\-]*)/i.exec(locText);
   if (rm) {
     const w = rm[1]!.toUpperCase();
     if (w in DIRS) dir = DIRS[w];
     else dirLabel = `Rtg ${rm[1]}`;
+  }
+  // ---- Strassenart («auf Hauptstrasse», «auf Autobahn», «auf A1»): Hinweis für die Lage auf der Strasse
+  let roadHint: RoadHint | undefined;
+  for (const [re, h] of [[ROAD_AB_RE, "autobahn"], [ROAD_HAUPT_RE, "haupt"]] as Array<[RegExp, RoadHint]>) {
+    const m = re.exec(locText);
+    if (m) { roadHint ??= h; locText = blank(locText, m.index, m.index + m[0].length); }
   }
 
   // ---- Ort
@@ -193,13 +259,13 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   let cells: string[] | undefined;
   let nai: string | undefined;
   let placeQuery: string | undefined;
-  const coords = findCoordinates(text);
+  const coords = findCoordinates(locText);
   if (coords[0]) {
     pos = coords[0].lv95;
     where = { kind: "koordinate", label: "Koordinate" };
   }
   const exclude = [...known.map(([u]) => u), ...hits.map((h) => h.u)].map((u) => u.replace(/\s/g, ""));
-  const found = findCells(text, ctx.sheets, { exclude });
+  const found = findCells(locText, ctx.sheets, { exclude });
   if (found.length) {
     cells = found.map((c) => c.label);
     if (!pos) {
@@ -210,7 +276,7 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     }
   }
   const areaHits = ctx.areas
-    .map((a) => ({ a, m: flexRe(a.name).exec(text) }))
+    .map((a) => ({ a, m: flexRe(a.name).exec(locText) }))
     .filter((x) => x.m)
     .sort((x, y) => x.m!.index - y.m!.index || y.a.name.length - x.a.name.length);
   if (areaHits[0]) {
@@ -218,13 +284,17 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     if (!pos) { pos = areaCenter(areaHits[0].a); where = { kind: "nai", label: nai }; }
   }
   if (!pos && ctx.places?.length) {
-    const p = [...ctx.places].sort((a, b) => b.name.length - a.name.length).find((pl) => flexRe(pl.name).test(text));
+    const p = [...ctx.places].sort((a, b) => b.name.length - a.name.length).find((pl) => flexRe(pl.name).test(locText));
     if (p) { pos = p.pos; where = { kind: "ort", label: p.name }; }
   }
   if (!pos) {
-    // Ortsname nach einer Präposition, z. B. «angekommen in Wabern», «bei Bümpliz»
-    const pm = /\b(?:in|bei|beim|ab|an|auf|nach|bis|vor|höhe|richtung|rtg|ausgang|eingang|ortseingang|ortsausgang)\.?\s+([A-ZÄÖÜ][\wäöüÄÖÜß'’\-]+(?:\s+[A-ZÄÖÜ][\wäöüÄÖÜß'’\-]+)?)/.exec(text);
-    if (pm && !/^(NAI|PQ|Rtg|Richtung|Rot|Blau)$/i.test(pm[1]!)) placeQuery = pm[1]!.replace(/[’']$/, "");
+    // Ortsname nach einer Präposition, z. B. «angekommen in Wabern», «bei Bümpliz», «Dorfeingang Wabern»
+    const pm = /\b(?:in|bei|beim|ab|an|auf|nach|bis|vor|höhe|richtung|rtg|(?:[Oo]rts|[Dd]orf)?(?:[Ee]in|[Aa]us)gang)\.?\s+([A-ZÄÖÜ][\wäöüÄÖÜß'’\-]+)(?:\s+([A-ZÄÖÜ][\wäöüÄÖÜß'’\-]+))?/.exec(locText);
+    const isUnit = (w: string) => hits.some((h) => norm(h.u) === norm(w)) || UNIT_RE.test(w) && /\d/.test(w);
+    if (pm && /^[A-ZÄÖÜ]/.test(pm[1]!) && !/^(NAI|PQ|Rtg|Richtung|Rot|Blau)$/i.test(pm[1]!) && !isUnit(pm[1]!) && !isTacticalWord(pm[1]!, ["e", "ech", "st", "act", "aff"])) {
+      const second = pm[2] && /^[A-ZÄÖÜ]/.test(pm[2]) && !isTacticalWord(pm[2], ["e", "ech", "st", "act", "aff"]) && !isUnit(pm[2]) ? ` ${pm[2]}` : "";
+      placeQuery = (pm[1]! + second).replace(/[’']$/, "");
+    }
     if (kind === "eigen") {
       const last = melder ? ctx.lastPos?.(melder, "blau") : undefined;
       if (last) { pos = last; where = { kind: "zuletzt", label: "letzter Standort" }; }
@@ -238,7 +308,40 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   }
 
   const aff: Affiliation = kind === "eigen" ? "F" : kind === "feind" ? "H" : "U";
-  return { minutes, day, t: isoOf(day, minutes), timeFromText, kind, kindFrom, side, melder, unit, sym, aff, count, dir, dirLabel, pos, where, cells, nai, placeQuery, text: text || input.trim() };
+  const status: Status = reading?.status ?? "present";
+  const echelon = reading?.echelon;
+  const sidcEntry = reading?.of ? catalogEntry(reading.of) ?? entry : entry;
+  const sidc = buildSidc(sidcEntry, aff, { echelon, status });
+  // Adjektiv «gegnerisch»: bei Elementen (Einheit/Gerät) immer, sonst nur, wenn «gn» im Text steht; «eigen» nur ausdrücklich
+  const adjAff: Affiliation | null = kind === "feind" && (isElement || (reading?.explicitAff && reading.aff === "H")) ? "H" : kind === "eigen" && reading?.aff === "F" ? "F" : null;
+  const desc = reading ? describeTactical({ ...reading, count }, adjAff) : undefined;
+  return {
+    minutes, day, t: isoOf(day, minutes), timeFromText, kind, kindFrom, side, melder, unit, sym, aff, sidc, echelon, status, desc, count,
+    dir, dirLabel, from, fromLabel, roadHint, pos, where, cells, nai, placeQuery, text: text || input.trim(),
+  };
+}
+
+/**
+ * Einordnung nach Inhalt (Lageverfolgung):
+ * - «unklar», «verdächtig» → unklar; «gn» → Feind; «eig» → eigen;
+ * - «möglich/vermutet»: Feind bei inhärent feindlichen Zeichen (IED, Minen, Sperre, Hinterhalt …), sonst unklar;
+ * - Ereignis/Tätigkeit/Anlage/Grafik: nie eigen ohne «eig» (ausser eigene Lage wie Beo Stao, Stellung); sonst unklar,
+ *   Feind bei inhärent feindlichen Zeichen oder bekanntem Feindelement. Eine Anzahl macht nur Einheiten/Geräte zu Feind.
+ */
+function kindOf(text: string, reading: ReturnType<typeof readTactical>, entry: CatalogEntry, o: { melder: string; enemy: boolean; count?: number }): Kind {
+  if (UNCLEAR_RE.test(text)) return "unklar";
+  if (STRONG_ENEMY_RE.test(text) || reading?.aff === "H" && reading.status !== "anticipated") return "feind";
+  if (reading?.aff === "F") return "eigen";
+  if (reading?.status === "anticipated" || MAYBE_RE.test(text)) return entry.hostile || o.enemy ? "feind" : "unklar";
+  if (entry.kind === "einheit" || entry.kind === "geraet") {
+    if (entry.lean === "unklar" && !o.enemy) return "unklar";
+    if (o.enemy || ENEMY_RE.test(text) || o.count !== undefined || entry.lean === "feind") return "feind";
+    // eigene Lage nur mit Melder; ohne Melder und ohne Hinweis bleibt es unklar
+    return o.melder ? "eigen" : "unklar";
+  }
+  if (entry.lean === "eigen" && o.melder && !o.enemy && !ENEMY_RE.test(text)) return "eigen";
+  if (o.enemy || ENEMY_RE.test(text) || entry.lean === "feind") return "feind";
+  return "unklar";
 }
 
 /** Lage zum Zeitpunkt: pro Element die letzte Meldung mit Standort (bis einschliesslich `t`). */
@@ -271,10 +374,13 @@ export function situationAt(events: LageEvent[], t: string, maxAgeMin = Infinity
     }
     const k = unitKey(e.side, e.unit);
     const cur = byUnit.get(k);
-    // Tätigkeit (Kontakt, Sperre …): als eigenes Zeichen am Ort; das Element behält sein Zeichen
-    if (symbolDef(e.sym).activity) {
+    // Tätigkeit / Ereignis (Kontakt, Sperre, Explosion …): als eigenes Zeichen am Ort; das Element behält sein Zeichen.
+    // Eigene Meldungen damit verschieben den Melder nicht (nur Einheiten-Meldungen und eigene Lage wie Stellung).
+    const cat = catalogEntry(e.sym);
+    if (cat ? cat.activity : symbolDef(e.sym).activity) {
       const pos = e.pos ?? cur?.pos;
       if (pos && Date.parse(e.t) >= tMin) loose.push({ ...e, pos });
+      if (e.side === "blau" && cat?.lean !== "eigen") continue;
       if (cur) e = { ...e, sym: cur.event.sym };
       else if (!e.pos) continue;
       else e = { ...e, sym: "einheit" };
@@ -312,7 +418,7 @@ export function lastPosition(events: LageEvent[], side: Side, unit: string, befo
 export function kindLabel(e: Pick<LageEvent, "side" | "aff">): string {
   if (e.side === "blau") return "Eigene";
   if (e.side === "ul") return "UL";
-  return e.aff === "U" ? "Unklar" : "Feind";
+  return e.aff === "U" ? "Unklar" : e.aff === "N" ? "Neutral" : "Feind";
 }
 
 const csvCell = (v: string) => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
@@ -343,11 +449,18 @@ export function eventFromDraft(d: Draft, device: string, now = new Date()): Lage
     label: d.count ? String(d.count) : undefined,
     sym: d.sym,
     aff: d.aff,
+    sidc: d.sidc,
+    echelon: d.echelon,
+    status: d.status !== "present" ? d.status : undefined,
+    desc: d.desc,
     pos: d.pos,
     cells: d.cells,
     nai: d.nai,
     count: d.count,
     dir: d.dir,
+    from: d.from,
+    fromLabel: d.fromLabel,
+    roadHint: d.roadHint,
     where: d.where?.label,
     source: { kind: "text" },
     confirmed: true,

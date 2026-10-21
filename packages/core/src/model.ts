@@ -9,6 +9,8 @@ import type { RasterSheet } from "./raster";
 import type { Affiliation } from "./symbols";
 
 export type Side = "rot" | "blau" | "ul";
+/** Hinweis auf die Strassenart aus dem Text: «auf Hauptstrasse» → haupt, «auf Autobahn / A1» → autobahn */
+export type RoadHint = "haupt" | "autobahn";
 
 export interface SourceRef {
   kind: "text" | "image" | "audio" | "import";
@@ -52,6 +54,24 @@ export interface LageEvent {
   dir?: number;
   /** Herkunft des Standorts, z. B. «NAI 3», «UK7 C», «Koordinate», «Karte» */
   where?: string;
+  /** vollständiger SIDC (APP-6/2525C) inkl. Stufe und Status – hat Vorrang vor `sym` + `aff` */
+  sidc?: string;
+  /** Stufe, z. B. «hz» (Halbzug) */
+  echelon?: import("./catalog").Echelon;
+  /** «anticipated» = vermutet/geplant (gestrichelter Rahmen), z. B. «mögliche IED» */
+  status?: import("./catalog").Status;
+  /** ausgeschriebener Sinn, z. B. «1 gegnerischer Halbzug Infanterie» */
+  desc?: string;
+  /** Ausrichtung im Gelände in Grad (0 = Nord), z. B. Strassenrichtung bei einer Sperre */
+  angle?: number;
+  /** Strasse, auf die das Zeichen gelegt wurde */
+  road?: string;
+  /** Strassenart aus dem Text («auf Hauptstrasse», «auf Autobahn») für die Lage auf der Strasse */
+  roadHint?: RoadHint;
+  /** Herkunft in Grad (0 = Nord), z. B. «Schuss aus Rtg O» → 90; keine Bewegungsrichtung */
+  from?: number;
+  /** Herkunft als Text, wenn keine Himmelsrichtung, z. B. «aus Rtg Bern» */
+  fromLabel?: string;
   source?: SourceRef;
   /** Vom Benutzer bestätigt (sonst Vorschlag der Erkennung) */
   confirmed: boolean;

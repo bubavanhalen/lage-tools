@@ -31,7 +31,7 @@ export function journalPdf(ex: Exercise, classification = "INTERN"): Blob {
   for (const e of events) {
     const di = ex.days.indexOf(e.t.slice(0, 10));
     const cells = [
-      di >= 0 ? `T${di + 1}` : e.t.slice(5, 10), e.t.slice(11, 16), kindLabel(e), e.melder ?? "", e.side === "blau" && e.unit === e.melder ? "" : e.unit, e.text,
+      di >= 0 ? `T${di + 1}` : e.t.slice(5, 10), e.t.slice(11, 16), e.side === "rot" && e.aff === "N" ? "Neutral" : kindLabel(e), e.melder ?? "", e.side === "blau" && e.unit === e.melder ? "" : e.unit, e.text,
       [e.where, ...(e.cells ?? []).filter((c) => c !== e.where)].filter(Boolean).join(", "),
     ];
     const lines = cells.map((c, i) => doc.splitTextToSize(c, cols[i]!.w - 2) as string[]);

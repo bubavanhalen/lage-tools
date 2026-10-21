@@ -1,19 +1,25 @@
 /**
  * Lagejournal: Meldungen eingeben (eine Zeile pro Meldung), Erkennung prüfen, Liste führen.
  */
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import L from "leaflet";
 import {
-  SYMBOLS,
   eventFromDraft,
   formatLv95,
   isoOf,
-  kindLabel,
   lastPosition,
   minutesOf,
   parseMeldung,
   reviseEvent,
   sheetBounds,
+  catalogEntry,
+  cellBounds,
+  describeTactical,
+  findCells,
+  type Affiliation,
+  type RoadPlacement,
+  type Status,
   symbolDef,
   type Draft,
   type Exercise,
@@ -24,6 +30,9 @@ import {
 } from "@lage/core";
 import { pickPoint, symbolSvg, toLatLng, toLv95 } from "@lage/map";
 import { dayLabel } from "./Timeline";
+import { SymbolPicker, choiceSvg, makeChoice, pickerEntry, rebaseSidc, type SymbolChoice } from "./SymbolPicker";
+import { placeOnRoadIn } from "./roadsource";
+import { kindText } from "./journalLayer";
 
 interface Props {
   ex: Exercise;
@@ -47,7 +56,27 @@ interface Props {
 const wideScreen = typeof window !== "undefined" && window.innerWidth >= 860 && !window.matchMedia?.("(pointer: coarse)").matches;
 const KINDS: Array<[Kind, string]> = [["eigen", "Eigene"], ["feind", "Feind"], ["unklar", "Unklar"]];
 export const KIND_COLOR: Record<Kind, string> = { eigen: "#1f5fb8", feind: "#c8102e", unklar: "#b8860b" };
-const kindOf = (e: Pick<LageEvent, "side" | "aff">): Kind => (e.side === "blau" ? "eigen" : e.aff === "U" ? "unklar" : "feind");
+/** Art für Filter und Bearbeiten: neutral (N) zählt zu «Unklar» (nicht Feind) */
+const kindOf = (e: Pick<LageEvent, "side" | "aff">): Kind => (e.side === "blau" ? "eigen" : e.aff === "U" || e.aff === "N" ? "unklar" : "feind");
+/** Zugehörigkeit ↔ Art: F = eigen, H = feind, U/N = unklar */
+const kindOfAff = (a: Affiliation): Kind => (a === "F" ? "eigen" : a === "H" ? "feind" : "unklar");
+const affOfKind = (k: Kind, cur: Affiliation): Affiliation => (k === "eigen" ? "F" : k === "feind" ? "H" : cur === "N" ? "N" : "U");
+const sideOfAff = (a: Affiliation): Side => (a === "F" ? "blau" : "rot");
+/** Farbe für Liste/Zeile: neutral grün */
+const kindColor = (e: Pick<LageEvent, "side" | "aff">): string => (e.side !== "blau" && e.aff === "N" ? "#2d7a4b" : KIND_COLOR[kindOf(e)]);
+const kindVar = (e: Pick<LageEvent, "side" | "aff">): string => {
+  const k = kindOf(e);
+  return k === "eigen" ? "var(--blau)" : e.aff === "N" ? "var(--ok)" : k === "feind" ? "var(--rot)" : "var(--unklar)";
+};
+const STATUS_WORD: Partial<Record<Status, string>> = { anticipated: "vermutet", destroyed: "zerstört", damaged: "beschädigt" };
+const COMPASS = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
+const compass = (deg: number) => COMPASS[Math.round(deg / 45) % 8]!;
+/** ausgeschriebener Sinn zu einer (von Hand gewählten) Zeichenwahl, inkl. Zugehörigkeit und Anzahl */
+function choiceText(c: SymbolChoice, count?: number): string {
+  const st = c.status && c.status !== "present" ? STATUS_WORD[c.status] : undefined;
+  return describeTactical({ key: c.key, echelon: c.echelon, count: count && count > 0 ? count : undefined, statusWord: st }, c.aff === "H" || c.aff === "F" ? c.aff : null)
+    || pickerEntry(c.key)?.name || c.key;
+}
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 /** Bereich der Übung (Raster, NAI) – für die Ortssuche */
@@ -71,8 +100,8 @@ async function lookupPlace(q: string, box: ReturnType<typeof exerciseBox>, signa
   return hit ? { name: q, pos: { e: hit.attrs.y, n: hit.attrs.x } } : null;
 }
 
-function SymbolMini({ k, aff }: { k: string; aff: LageEvent["aff"] }) {
-  const s = useMemo(() => symbolSvg(k, aff, 14), [k, aff]);
+function SymbolMini({ k, aff, sidc, status }: { k: string; aff: LageEvent["aff"]; sidc?: string; status?: LageEvent["status"] }) {
+  const s = useMemo(() => symbolSvg(k, aff, 14, { sidc, status }), [k, aff, sidc, status]);
   return <span className="symmini" dangerouslySetInnerHTML={{ __html: s.svg }} />;
 }
 
@@ -89,6 +118,23 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const [editing, setEditing] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [confirmNoMelder, setConfirmNoMelder] = useState(false);
+  const [symOverride, setSymOverride] = useState<SymbolChoice | null>(null);
+  const [pickOpen, setPickOpen] = useState(false);
+  /** Popover fest am Bildschirm ausrichten (die Seitenleiste schneidet sonst ab) */
+  const [pickPos, setPickPos] = useState<{ left: number; top: number; maxH: number } | null>(null);
+  const pickClosedAt = useRef(0);
+  const openPicker = (btn: HTMLElement) => {
+    if (pickOpen) { setPickOpen(false); return; }
+    if (Date.now() - pickClosedAt.current < 300) return; // Klick auf den Chip hat das Popover eben geschlossen
+    const r = btn.getBoundingClientRect();
+    const w = Math.min(440, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12));
+    const below = window.innerHeight - r.bottom - 18;
+    const top = below >= 360 ? r.bottom + 6 : Math.max(12, window.innerHeight - Math.min(560, window.innerHeight - 24) - 12);
+    setPickPos({ left, top, maxH: Math.min(560, window.innerHeight - top - 12) });
+    setPickOpen(true);
+  };
+  const [roadPl, setRoadPl] = useState<{ key: string; pl: RoadPlacement } | null>(null);
 
   // Taste «N» (ausserhalb von Eingabefeldern): zurück in die Meldungszeile
   useEffect(() => {
@@ -126,8 +172,50 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   }, [draft?.placeQuery, draft?.pos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const future = !!draft && draft.timeFromText && Date.parse(draft.t) - Date.now() > 10 * 60000 && Date.parse(draft.t) - Date.now() < 36 * 3600000;
-  const effPos = manualPos ?? (found && draft?.placeQuery === found.q && (!draft.pos || draft.where?.kind === "zuletzt") ? found.pos : draft?.pos);
-  const effWhere = manualPos ? "Karte" : found && effPos === found.pos ? found.name : draft?.where?.label;
+  // Zeichen: erkannt oder von Hand gewählt
+  const autoEntry = draft ? pickerEntry(draft.sym) ?? pickerEntry("einheit")! : null;
+  const choice: SymbolChoice | null = draft ? symOverride ?? makeChoice(autoEntry!, draft.aff, draft.echelon, draft.status) : null;
+  const choiceEntry = choice ? pickerEntry(choice.key) ?? autoEntry : null;
+  const choiceDesc = symOverride && choiceEntry ? choiceText(symOverride, draft?.count) : draft?.desc;
+  // Art folgt einer von Hand gewählten Zugehörigkeit (Neutral → unklar)
+  const effKind: Kind | null = draft ? (symOverride ? kindOfAff(symOverride.aff) : draft.kind) : null;
+  const setKind = (k: Kind) => {
+    setKindOverride(k);
+    if (symOverride) setSymOverride(makeChoice(pickerEntry(symOverride.key) ?? pickerEntry("einheit")!, affOfKind(k, symOverride.aff), symOverride.echelon, symOverride.status));
+  };
+  // Hindernisse, Checkpoint, IED …: auf die wahrscheinlichste Strasse im gemeldeten Gebiet legen
+  const roadTarget = (() => {
+    if (!draft || !choice || manualPos) return null;
+    const ce = catalogEntry(choice.key);
+    // Hindernis & Co. – oder ausdrücklich «auf Hauptstrasse / Autobahn» gemeldet
+    if (ce?.placement !== "strasse" && !draft.roadHint) return null;
+    const hint = draft.roadHint;
+    if (draft.where?.kind === "raster" && draft.cells?.[0]) {
+      const c = findCells(draft.cells[0], ex.sheets)[0];
+      const sh = c && ex.sheets.find((x) => x.id === c.sheetId);
+      if (c && sh) return { key: `${choice.key}|${draft.cells[0]}|${hint ?? ""}`, target: cellBounds(sh, c.col, c.row, c.quadrant) as import("@lage/core").Bounds | LV95[], along: choice.key === "hinterhalt", hint };
+    }
+    if (draft.where?.kind === "nai" && draft.nai) {
+      const a = ex.areas.find((x) => x.name === draft.nai);
+      if (a) return { key: `${choice.key}|${a.id}|${hint ?? ""}`, target: a.ring as import("@lage/core").Bounds | LV95[], along: choice.key === "hinterhalt", hint };
+    }
+    return null;
+  })();
+  useEffect(() => {
+    if (!roadTarget) { setRoadPl(null); return; }
+    if (roadPl?.key === roadTarget.key) return;
+    const ctl = new AbortController();
+    const t = window.setTimeout(async () => {
+      const pl = await placeOnRoadIn(roadTarget.target, undefined, { along: roadTarget.along, hint: roadTarget.hint, signal: ctl.signal });
+      if (!ctl.signal.aborted) setRoadPl(pl ? { key: roadTarget.key, pl } : null);
+    }, 200);
+    return () => { ctl.abort(); window.clearTimeout(t); };
+  }, [roadTarget?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const road = roadTarget && roadPl?.key === roadTarget.key ? roadPl.pl : null;
+  const effPos0 = manualPos ?? (found && draft?.placeQuery === found.q && (!draft.pos || draft.where?.kind === "zuletzt") ? found.pos : draft?.pos);
+  const effWhere0 = manualPos ? "Karte" : found && effPos0 === found.pos ? found.name : draft?.where?.label;
+  const effPos = road ? road.pos : effPos0;
+  const effWhere = road ? `${effWhere0} · auf ${road.road ?? "Strasse"}` : effWhere0;
 
   const pickOnMap = async () => {
     setPicking(true);
@@ -142,16 +230,27 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     if (!draft.melder && !confirmNoMelder) { setConfirmNoMelder(true); return; }
     setConfirmNoMelder(false);
     const ev = eventFromDraft({ ...draft, pos: effPos, where: effWhere ? { kind: manualPos ? "karte" : "ort", label: effWhere } : undefined }, device);
+    if (symOverride) {
+      ev.sym = symOverride.key; ev.aff = symOverride.aff; ev.sidc = symOverride.sidc; ev.echelon = symOverride.echelon; ev.status = symOverride.status; ev.desc = choiceDesc;
+      // neutral = Zugehörigkeit N, Seite rot (Art «unklar»), nie «ul»
+      ev.side = sideOfAff(symOverride.aff);
+      if (ev.side === "blau") ev.unit = ev.unit || ev.melder || "";
+      else if (ev.unit && ev.unit === ev.melder) ev.unit = "";
+    }
+    if (draft.from !== undefined && ev.from === undefined) ev.from = draft.from;
+    if (draft.fromLabel && !ev.fromLabel) ev.fromLabel = draft.fromLabel;
+    if (draft.roadHint && !ev.roadHint) ev.roadHint = draft.roadHint;
+    if (road) { ev.angle = road.angle; if (road.road) ev.road = road.road; }
     update((x) => {
       x.events = [...(x.events ?? []), ev];
       if (!x.days.includes(ev.t.slice(0, 10))) x.days = [...x.days, ev.t.slice(0, 10)].sort();
       const remember = (side: Side, u?: string) => { if (u && !x.units[side].some((v) => v.toLowerCase() === u.toLowerCase())) x.units[side] = [...x.units[side], u]; };
       remember("blau", ev.melder);
       remember(ev.side, ev.unit);
-      if (found && effPos === found.pos && !(x.places ?? []).some((p) => p.name === found.name)) x.places = [...(x.places ?? []), { name: found.name, pos: found.pos }];
+      if (found && effPos0 === found.pos && !(x.places ?? []).some((p) => p.name === found.name)) x.places = [...(x.places ?? []), { name: found.name, pos: found.pos }];
       return x;
     });
-    setText(""); setManualPos(null); setFound(null); setKindOverride(null);
+    setText(""); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setPickOpen(false); setRoadPl(null);
     onSelect(ev.id);
     if (ev.pos && !map.getBounds().contains(toLatLng(ev.pos))) map.panTo(toLatLng(ev.pos));
     if (!ev.pos) say("Eingetragen – ohne Ort. Mit ✎ kann der Ort später auf der Karte gesetzt werden.");
@@ -209,7 +308,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
           {onDemo && <div className="btnrow"><button onClick={onDemo}>Beispiel (fiktiv) ansehen</button></div>}
         </div>
       )}
-      <div className="entry" style={{ borderColor: draft ? KIND_COLOR[draft.kind] : undefined }}>
+      <div className="entry" style={{ borderColor: effKind ? (symOverride?.aff === "N" ? "#2d7a4b" : KIND_COLOR[effKind]) : undefined }}>
         <div className="btnrow">
           <b className="entry-title">Meldung</b>
           <select value={day} onChange={(e) => (e.target.value === "__add" ? addDay() : setDay(e.target.value))} aria-label="Übungstag">
@@ -219,14 +318,14 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         </div>
         <textarea ref={inputRef} className="msg" value={text} autoFocus={wideScreen} rows={1} placeholder={wideScreen ? "z. B. 1015 H04 2 Fz in NAI 3 Rtg N" : "1015 H04 2 Fz NAI 3"} aria-label="Meldung"
           onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; }}
-          onChange={(e) => { setText(e.target.value.replace(/\n/g, " ")); setConfirmNoMelder(false); if (!e.target.value) { setManualPos(null); setKindOverride(null); e.target.style.height = "auto"; } }}
+          onChange={(e) => { setText(e.target.value.replace(/\n/g, " ")); setConfirmNoMelder(false); if (!e.target.value) { setManualPos(null); setKindOverride(null); setSymOverride(null); e.target.style.height = "auto"; } }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); add(); }
             if (e.key === "Escape") { setText(""); setManualPos(null); setKindOverride(null); }
             // ↑ in leerer Zeile: letzte Meldung zum Korrigieren öffnen
             if (e.key === "ArrowUp" && !text) { const last = [...events].filter((x) => !x.deleted).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]; if (last) { e.preventDefault(); setEditing(last.id); onSelect(last.id); } }
             // Alt+1/2/3: Einordnung festlegen
-            if (e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setKindOverride(KINDS[+e.key - 1]![0]); }
+            if (e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setKind(KINDS[+e.key - 1]![0]); }
           }} />
         {draft ? (
           <div className="preview">
@@ -236,12 +335,24 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             {future && <span className="chip warnsoft" title="Zeit liegt nach jetzt">liegt in der Zukunft – Vortag?</span>}
             <span className="seg kinds" role="group" aria-label="Einordnung" title={draft.kindFrom === "inhalt" ? "aus dem Inhalt erkannt – zum Ändern anklicken" : undefined}>
               {KINDS.map(([k, l]) => (
-                <button key={k} className={k} aria-pressed={draft.kind === k} onClick={() => { setKindOverride(k); inputRef.current?.focus(); }}>{l}</button>
+                <button key={k} className={k === "unklar" && symOverride?.aff === "N" ? "neutral" : k} aria-pressed={effKind === k} onClick={() => { setKind(k); inputRef.current?.focus(); }}>{k === "unklar" && symOverride?.aff === "N" ? "Neutral" : l}</button>
               ))}
             </span>
-            {draft.kind !== "eigen" && draft.unit && <span className="chip"><b>{draft.unit}</b></span>}
-            <span className="chip"><SymbolMini k={draft.sym} aff={draft.aff} /> {symbolDef(draft.sym).name}{draft.count && draft.count > 1 ? ` ×${draft.count}` : ""}</span>
-            {(draft.dir !== undefined || draft.dirLabel) && <span className="chip">{draft.dirLabel ?? `Rtg ${["N", "NO", "O", "SO", "S", "SW", "W", "NW"][Math.round(draft.dir! / 45) % 8]}`}</span>}
+            {effKind !== "eigen" && draft.unit && draft.unit !== draft.melder && <span className="chip"><b>{draft.unit}</b></span>}
+            <span className="symchipwrap">
+              <button className={"chip symchip" + (symOverride ? " manual" : "")} onClick={(ev) => openPicker(ev.currentTarget)} title="Zeichen ändern" aria-expanded={pickOpen}>
+                {choiceEntry && <span className="symmini" dangerouslySetInnerHTML={{ __html: !symOverride && draft.sidc ? symbolSvg(draft.sym, draft.aff, 16, { sidc: draft.sidc, status: draft.status }).svg : choiceSvg(choiceEntry, choice!.aff, 16, { echelon: choice!.echelon, status: choice!.status }) }} />}
+                {choiceDesc ?? choiceEntry?.name ?? symbolDef(draft.sym).name}{!choiceDesc && draft.count && draft.count > 1 ? ` ×${draft.count}` : ""} ▾
+              </button>
+              {pickOpen && choice && createPortal(
+                <div className="sympop" style={pickPos && window.innerWidth > 560 ? ({ left: pickPos.left, top: pickPos.top, "--sp-maxh": `${pickPos.maxH}px` } as CSSProperties) : undefined}>
+                  <SymbolPicker value={choice} onChange={(c) => setSymOverride(c)} onClose={() => { pickClosedAt.current = Date.now(); setPickOpen(false); inputRef.current?.focus(); }} />
+                </div>
+              , document.body)}
+            </span>
+            {(draft.dir !== undefined || draft.dirLabel) && <span className="chip" title="Bewegungsrichtung">{draft.dirLabel ?? `Rtg ${compass(draft.dir!)}`}</span>}
+            {(draft.from !== undefined || draft.fromLabel) && <span className="chip" title="Herkunft (woher) – kein Bewegungspfeil">{draft.fromLabel ?? `aus ${compass(draft.from!)}`}</span>}
+            {draft.roadHint && <span className="chip soft" title="wird auf die passende Strasse gelegt">{draft.roadHint === "autobahn" ? "auf Autobahn" : "auf Hauptstrasse"}</span>}
             {effPos ? <span className="chip where">📍 {effWhere}</span> : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
           </div>
@@ -279,14 +390,14 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
                 ) : (
                   <li data-id={e.id} className={"jrow " + k + (e.id === selected ? " sel" : "") + (e.id === flashId ? " flash" : "")} tabIndex={0}
                     onClick={() => onSelect(e.id)} onKeyDown={(ev) => { if (ev.key === "Enter") onSelect(e.id); }}>
-                    <span className="sbar" style={{ background: KIND_COLOR[k] }} />
+                    <span className="sbar" style={{ background: kindColor(e) }} />
                     <span className="jt tnum">{e.t.slice(11, 16)}</span>
                     <span className="ju">
-                      <b style={{ color: k === "eigen" ? "var(--blau)" : k === "feind" ? "var(--rot)" : "var(--unklar)" }}>{e.unit || (k === "eigen" ? e.melder : kindLabel(e))}</b>
+                      <b style={{ color: kindVar(e) }}>{e.unit || (k === "eigen" ? e.melder : kindText(e))}</b>
                       {e.melder && e.melder !== e.unit && <small>via {e.melder}</small>}
                     </span>
                     <span className="jb">
-                      <span className="jtext" title={e.text}><SymbolMini k={e.sym} aff={e.aff} />{displayText(e)}</span>
+                      <span className="jtext" title={e.desc ? `${e.desc} – ${e.text}` : e.text}><SymbolMini k={e.sym} aff={e.aff} sidc={e.sidc} status={e.status} />{displayText(e)}</span>
                       <span className="jmeta">
                         {(e.cells ?? []).slice(0, 2).map((c) => <span key={c} className="pq">{c}</span>)}
                         {e.nai && <span className="naichip">{e.nai}</span>}
@@ -325,11 +436,17 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
 function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise; map: L.Map; onCancel: () => void; onSave: (p: Partial<LageEvent>) => void }) {
   const [time, setTime] = useState(e.t.slice(11, 16));
   const [day, setDay] = useState(e.t.slice(0, 10));
-  const [kind, setKind] = useState<Kind>(kindOf(e));
   const [unit, setUnit] = useState(e.unit);
   const [melder, setMelder] = useState(e.melder ?? "");
   const [text, setText] = useState(e.text);
-  const [sym, setSym] = useState(e.sym);
+  // Zeichen und Art bleiben synchron: Art = Zugehörigkeit (F eigen, H Feind, U/N unklar)
+  const initial = useMemo(() => {
+    const aff: Affiliation = e.side === "blau" ? "F" : e.aff === "F" ? "H" : e.aff;
+    return makeChoice(pickerEntry(e.sym) ?? pickerEntry("einheit")!, aff, e.echelon, e.status);
+  }, [e]);
+  const [choice, setChoice] = useState<SymbolChoice>(initial);
+  const kind = kindOfAff(choice.aff);
+  const setKind = (k: Kind) => setChoice((c) => makeChoice(pickerEntry(c.key) ?? pickerEntry("einheit")!, affOfKind(k, c.aff), c.echelon, c.status));
   const [count, setCount] = useState(e.count ?? 0);
   const [pos, setPos] = useState<LV95 | undefined>(e.pos);
   const [where, setWhere] = useState(e.where);
@@ -338,9 +455,24 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
   const save = () => {
     const m = /^(\d{1,2})[:.]?(\d{2})$/.exec(time.trim());
     const minutes = m ? Math.min(23, +m[1]!) * 60 + Math.min(59, +m[2]!) : minutesOf(e.t);
+    const entry = pickerEntry(choice.key) ?? pickerEntry("einheit")!;
+    // SIDC immer neu aus Zeichen + Zugehörigkeit + Stufe + Status (nie einen alten SIDC mit alter Zugehörigkeit behalten)
+    const c0 = makeChoice(entry, choice.aff, choice.echelon, choice.status);
+    // gleiches Zeichen: erkannten SIDC (z. B. Kolonne «Lastwagen») behalten, nur Zugehörigkeit/Status/Stufe anpassen
+    const c = c0.key === e.sym ? { ...c0, sidc: rebaseSidc(e.sidc, c0) ?? c0.sidc } : c0;
+    const n = count > 0 ? count : undefined;
+    const same = c.key === e.sym && c.aff === e.aff && c.echelon === e.echelon && (c.status ?? "present") === (e.status ?? "present") && n === e.count;
+    const side = sideOfAff(c.aff);
+    const u = unit.trim() || (side === "blau" ? melder.trim() : "");
+    const moved = pos?.e !== e.pos?.e || pos?.n !== e.pos?.n;
     onSave({
-      t: isoOf(day, minutes), side: kind === "eigen" ? "blau" : "rot", unit: unit.trim(), melder: melder.trim() || undefined, text, sym, count: count > 0 ? count : undefined, label: count > 1 ? String(count) : undefined,
-      aff: kind === "eigen" ? "F" : kind === "feind" ? "H" : "U", pos, where,
+      t: isoOf(day, minutes), side, unit: u, melder: melder.trim() || undefined, text, count: n, label: n && n > 1 ? String(n) : undefined,
+      sym: c.key, sidc: c.sidc, echelon: c.echelon, status: c.status, aff: c.aff,
+      // ausgeschriebenen Sinn nur neu bilden, wenn sich am Zeichen etwas geändert hat (sonst bleibt «mögliche IED» usw.)
+      desc: same && e.desc ? e.desc : choiceText(c, n),
+      pos, where,
+      // von Hand verschoben: Ausrichtung auf der alten Strasse gilt nicht mehr
+      ...(moved ? { angle: undefined, road: undefined } : {}),
     });
   };
   return (
@@ -351,17 +483,17 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
           <label>Tag<select value={day} onChange={(x) => setDay(x.target.value)}>{days.map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.</option>)}</select></label>
         </div>
         <div className="two">
-          <label>Art<select value={kind} onChange={(x) => setKind(x.target.value as Kind)}>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label>Art<select value={kind} onChange={(x) => setKind(x.target.value as Kind)}>{KINDS.map(([k, l]) => <option key={k} value={k}>{k === "unklar" && choice.aff === "N" ? "Unklar (neutral)" : l}</option>)}</select></label>
           <label>Melder<input value={melder} onChange={(x) => setMelder(x.target.value)} /></label>
         </div>
         <div className="two">
           <label>Element auf der Karte<input value={unit} onChange={(x) => setUnit(x.target.value)} placeholder={kind === "eigen" ? "= Melder" : "leer = einzelne Sichtung"} /></label>
-          <span />
+          <label>Anzahl<input type="number" min={0} value={count || ""} onChange={(x) => setCount(+x.target.value)} /></label>
         </div>
         <label>Meldung<input value={text} onChange={(x) => setText(x.target.value)} /></label>
-        <div className="two">
-          <label>Zeichen<select value={sym} onChange={(x) => setSym(x.target.value)}>{SYMBOLS.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select></label>
-          <label>Anzahl<input type="number" min={0} value={count || ""} onChange={(x) => setCount(+x.target.value)} /></label>
+        <div className="editpick">
+          <span className="help">Zeichen</span>
+          <SymbolPicker anchor="inline" compact value={choice} onChange={setChoice} />
         </div>
         <div className="btnrow">
           <span className="help">{pos ? `📍 ${where ?? formatLv95(pos)}` : "ohne Ort"}</span>

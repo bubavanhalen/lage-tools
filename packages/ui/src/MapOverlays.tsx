@@ -3,18 +3,18 @@
  * Legende (unten links, aus dem tatsächlich Sichtbaren gebaut, einklappbar).
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { kindLabel, symbolDef, type Area, type LageEvent } from "@lage/core";
+import { type Area, type LageEvent } from "@lage/core";
 import { symbolSvg } from "@lage/map";
 import type { LayerFlags } from "./layers";
-import { kindOf, situationModel, STALE_MIN } from "./journalLayer";
+import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
 import { getSituationLayout, subscribeSituationLayout } from "./situationLayer";
 import { dayLabel } from "./Timeline";
 import "./mapoverlays.css";
 
-const UNIT_VAR = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", ul: "var(--muted)" } as const;
+const UNIT_VAR = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", neutral: "var(--ok)", ul: "var(--muted)" } as const;
 
-function Sym({ k, aff, size }: { k: string; aff: LageEvent["aff"]; size: number }) {
-  const s = useMemo(() => symbolSvg(k, aff, size), [k, aff, size]);
+function Sym({ k, aff, size, sidc, status }: { k: string; aff: LageEvent["aff"]; size: number; sidc?: string; status?: LageEvent["status"] }) {
+  const s = useMemo(() => symbolSvg(k, aff, size, { sidc, status }), [k, aff, size, sidc, status]);
   return <span className="mo-sym" aria-hidden dangerouslySetInnerHTML={{ __html: s.svg }} />;
 }
 
@@ -87,11 +87,13 @@ export function EventBanner({ event, days, onClose, onEdit }: EventBannerProps) 
     <div ref={ref} className="mo-banner" role="status" aria-label="Gewählte Meldung"
       style={{ maxWidth: place.maxW, top: place.top, maxHeight: place.maxH }}>
       <span className="mo-time tnum">{time}</span>
-      <span className={`mo-kind k-${kind}`}>{kindLabel(event)}</span>
-      <Sym k={event.sym} aff={event.aff} size={14} />
+      <span className={`mo-kind k-${kind}`}>{kindText(event)}</span>
+      <Sym k={event.sym} aff={event.aff} size={14} sidc={event.sidc} status={event.status} />
       {unit && <span className="mo-unit" style={{ color: UNIT_VAR[kind] }}>{unit}</span>}
       {kind !== "eigen" && event.melder && <span className="mo-via">via {event.melder}</span>}
       {where && <span className="mo-pq tnum">{where}</span>}
+      {event.road && <span className="mo-road">auf {event.road}</span>}
+      {event.desc && <span className="mo-desc">{event.desc}</span>}
       <span className="mo-msg">{event.text}</span>
       {onEdit && <button className="mo-btn" onClick={() => onEdit(event)} title="Meldung bearbeiten">✎ Bearbeiten</button>}
       <button className="mo-x" onClick={onClose} aria-label="Auswahl aufheben" title="Schliessen (Esc)">×</button>
@@ -169,12 +171,21 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
   const entries = useMemo(() => {
     const out: Array<{ key: string; icon: ReactNode; label: string }> = [];
     const seen = new Set<string>();
-    const order = { eigen: 0, feind: 1, unklar: 2, ul: 3 } as const;
-    [...model.items].sort((a, b) => order[a.kind] - order[b.kind] || a.sym.localeCompare(b.sym)).forEach((it) => {
-      const k = `${it.sym}|${it.aff}`;
+    const order = { eigen: 0, feind: 1, unklar: 2, neutral: 3, ul: 4 } as const;
+    // je Zeichen + Stufe + Zugehörigkeit ein Eintrag (vermutet zählt nicht als eigenes Zeichen)
+    const plain = (sidc?: string) => (sidc ? sidc.slice(0, 3) + "P" + sidc.slice(4) : undefined);
+    [...model.items].sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name)).forEach((it) => {
+      const k = `${it.name}|${it.aff}`;
       if (seen.has(k)) return;
       seen.add(k);
-      out.push({ key: k, icon: <Sym k={it.sym} aff={it.aff} size={16} />, label: symbolDef(it.sym).name + (AFF_SUFFIX[it.aff] ?? "") });
+      out.push({ key: k, icon: <Sym k={it.sym} aff={it.aff} size={16} sidc={plain(it.sidc)} />, label: it.name + (AFF_SUFFIX[it.aff] ?? "") });
+    });
+    const ant = model.items.find((i) => i.anticipated);
+    if (ant) out.push({ key: "vermutet", icon: <Sym k={ant.sym} aff={ant.aff} size={16} sidc={ant.sidc} status="anticipated" />, label: "gestrichelt = vermutet" });
+    if (model.items.some((i) => i.road === "sperre")) out.push({
+      key: "sperre",
+      icon: <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M3 9 L6 4 L9 9 L12 4 L15 9 L18 4 L21 9" fill="none" stroke="#D3262D" strokeWidth="1.4" /><path d="M2 9 H22" stroke="#D3262D" strokeWidth="3" /></svg>,
+      label: "Sperre quer zur Strasse",
     });
     if (model.tracks.some((x) => x.side === "blau")) out.push({ key: "spur-b", icon: <LineSample color="#1F5FB8" dash="5 3" dots width={2} />, label: "Spur eigene" });
     if (model.tracks.some((x) => x.side !== "blau")) out.push({ key: "spur-r", icon: <LineSample color="#D3262D" dash="5 3" dots width={2} />, label: "Spur Feind" });

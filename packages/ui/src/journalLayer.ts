@@ -2,22 +2,50 @@
  * Lagebild-Modell für Karte und Legende: was ist zum Zeitpunkt `t` sichtbar, wie kräftig, mit welchem Zusatz.
  * Reine Berechnung (ohne Leaflet), damit Karte und Legende garantiert dasselbe zeigen.
  */
-import { situationAt, symbolDef, unitKey, type Affiliation, type LageEvent, type LV95, type Side } from "@lage/core";
+import { CATALOG, catalogEntry, ECHELONS, kindLabel, situationAt, SYMBOLS, symbolDef, unitKey, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status } from "@lage/core";
+import { isAnticipated, sidcAffiliation } from "@lage/map";
 import type { LayerFlags } from "./layers";
+import { roadMark, type RoadMark } from "./roadmark";
 
 /** Kartenfarben (entsprechen --m-rot, --m-blau, --unklar); Karte bleibt auch im Dunkelmodus hell */
 export const SIDE_COLOR: Record<Side, string> = { rot: "#D3262D", blau: "#1F5FB8", ul: "#A86F12" };
 export const MAP_INK = "#101414";
 
 /** Kartenfarbe nach Art (unklar = gelb wie das Zeichen, nicht rot wie die Seite): Linie und Füllung */
-export const KIND_COLOR: Record<"eigen" | "feind" | "unklar" | "ul", { line: string; fill: string }> = {
+export const KIND_COLOR: Record<"eigen" | "feind" | "unklar" | "neutral" | "ul", { line: string; fill: string }> = {
   eigen: { line: "#1F5FB8", fill: "#1F5FB8" },
   feind: { line: "#D3262D", fill: "#D3262D" },
   unklar: { line: "#B88A00", fill: "#FFD400" },
+  /** neutral / zivil (Zugehörigkeit N): grün wie das Zeichen (--ok) */
+  neutral: { line: "#2D7A4B", fill: "#2D7A4B" },
   ul: { line: "#A86F12", fill: "#A86F12" },
 };
 
-export type ItemKind = "eigen" | "feind" | "unklar" | "ul";
+export type ItemKind = "eigen" | "feind" | "unklar" | "neutral" | "ul";
+
+/** Stufe aus der Meldung oder aus dem SIDC (Stelle 12) */
+export function echelonOf(e: { echelon?: Echelon; sidc?: string }): Echelon | undefined {
+  if (e.echelon) return e.echelon;
+  const c = e.sidc?.[0]?.toUpperCase() === "S" ? e.sidc[11]?.toUpperCase() : undefined;
+  return c ? ECHELONS.find((x) => x.code === c)?.key : undefined;
+}
+
+/** Anzeigename des Zeichens: Katalogname (sonst alter Zeichenname) + Stufe, z. B. «Infanterie · Halbzug» */
+export function symbolName(sym: string, ech?: Echelon, sidc?: string): string {
+  const known = catalogEntry(sym) ?? SYMBOLS.find((x) => x.key === sym);
+  const base = known?.name ?? (sidc && nameBySidc(sidc)) ?? symbolDef(sym).name;
+  const en = ech ? ECHELONS.find((x) => x.key === ech)?.name : undefined;
+  return en ? `${base} · ${en}` : base;
+}
+
+/** Name zu einem SIDC aus Katalog bzw. alten Zeichen (Zugehörigkeit, Status, Stufe werden ignoriert) */
+function nameBySidc(sidc: string): string | undefined {
+  const norm = (x: string) => (x[0]! + x[2]! + x.slice(4, 10)).toUpperCase().replace(/\*/g, "-");
+  const k = norm(sidc.padEnd(15, "-"));
+  return [...CATALOG, ...SYMBOLS].find((x) => norm(x.sidc) === k)?.name;
+}
+
+export { roadMark, type RoadMark };
 
 export interface SituationItem {
   /** Originalmeldung (bei Elementen die letzte Meldung) */
@@ -25,6 +53,15 @@ export interface SituationItem {
   /** Zeichen-Schlüssel (bei Elementen ggf. das zuletzt bekannte Zeichen) */
   sym: string;
   aff: Affiliation;
+  /** voller SIDC für die Darstellung (falls bekannt) */
+  sidc?: string;
+  status?: Status;
+  /** vermutet (gestrichelt) */
+  anticipated: boolean;
+  /** Katalogname + Stufe */
+  name: string;
+  /** Hindernis/Zeichen quer zur Strasse */
+  road: RoadMark | null;
   pos: LV95;
   kind: ItemKind;
   /** Element mit Standort (eigenes Element oder bekanntes Feindelement) */
@@ -59,7 +96,11 @@ export interface SituationModel {
 export const STALE_MIN = 60;
 
 export const kindOf = (e: Pick<LageEvent, "side" | "aff">): ItemKind =>
-  e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : e.aff === "U" ? "unklar" : "feind";
+  e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : e.aff === "U" ? "unklar" : e.aff === "N" ? "neutral" : "feind";
+
+/** Bezeichnung der Art: wie `kindLabel`, aber neutral (Zugehörigkeit N) heisst «Neutral», nicht «Feind» */
+export const kindText = (e: Pick<LageEvent, "side" | "aff">): string =>
+  e.side !== "blau" && e.side !== "ul" && e.aff === "N" ? "Neutral" : kindLabel(e);
 
 const minutesBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 60000);
 
@@ -86,6 +127,13 @@ export function situationModel(
       if ((lastReport.get(k) ?? "") < e.t) lastReport.set(k, e.t);
     }
   }
+  // letzter bekannter SIDC je Element (z. B. «gn Hz Inf»), damit spätere Meldungen ohne Zeichen die Stufe behalten
+  const lastSidc = new Map<string, LageEvent>();
+  for (const e of events) {
+    if (e.deleted || e.t > t || !e.sidc || !e.unit) continue;
+    const k = unitKey(e.side, e.unit);
+    if ((lastSidc.get(k)?.t ?? "") <= e.t) lastSidc.set(k, e);
+  }
   const show = (side: Side) => (side === "blau" ? flags.eigene : flags.feind);
   const items: SituationItem[] = [];
   const make = (ev: LageEvent, sym: string, pos: LV95, isUnit: boolean, unitName: string): SituationItem => {
@@ -99,8 +147,16 @@ export function situationModel(
     const silent = own && isUnit ? Math.max(0, minutesBetween(lastReport.get(unitKey("blau", unitName)) ?? e.t, t)) : 0;
     if (own) ud = unitName + (silent > STALE_MIN ? ` · ${ageText(silent)}` : "");
     else ud = [e.count && e.count > 1 ? `${e.count}×` : "", unitName].join(" ").trim();
+    // SIDC nur, wenn das Zeichen wirklich zu dieser Meldung gehört (Elemente behalten sonst ihr bekanntes Zeichen)
+    let src: LageEvent | undefined = sym === e.sym && e.sidc ? e : undefined;
+    if (!src && isUnit) { const l = lastSidc.get(unitKey(e.side, unitName)); if (l && l.sym === sym) src = l; }
+    const sidc = src?.sidc;
+    const status = src?.status ?? (sym === e.sym ? e.status : undefined);
     return {
-      e, sym, aff: ev.aff, pos, kind, isUnit, ageMin, silentMin: silent, fresh, selected,
+      e, sym, aff: sidc ? sidcAffiliation(sidc, ev.aff) : ev.aff, sidc, status, anticipated: isAnticipated(sidc, status),
+      name: symbolName(sym, src ? echelonOf(src) : sym === e.sym ? echelonOf(e) : undefined, sidc),
+      road: sym === e.sym ? roadMark({ sym, angle: e.angle, pos }) : null,
+      pos, kind, isUnit, ageMin, silentMin: silent, fresh, selected,
       opacity: own || fresh || selected ? 1 : 0.45,
       ud,
       showTime: flags.zeiten && (fresh || selected),
@@ -112,7 +168,7 @@ export function situationModel(
   }
   for (const e of st.loose) {
     if (!e.pos || !show(e.side)) continue;
-    items.push(make(e, e.sym, e.pos, false, e.side === "blau" ? e.unit : symbolDef(e.sym).activity ? "" : e.unit));
+    items.push(make(e, e.sym, e.pos, false, e.side === "blau" ? e.unit : (catalogEntry(e.sym)?.activity ?? symbolDef(e.sym).activity) ? "" : e.unit));
   }
   // gewählte Meldung immer zeigen (auch wenn sie inzwischen von einer neueren Meldung überholt ist)
   if (sel && !items.some((i) => i.e.id === sel)) {

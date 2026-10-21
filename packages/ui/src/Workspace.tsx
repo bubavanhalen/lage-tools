@@ -11,6 +11,8 @@ import {
   journalToCsv,
   findCells,
   cellBounds,
+  catalogEntry,
+  type Bounds,
   makeFeldSheet,
   newDeviceId,
   demoExercise,
@@ -20,6 +22,7 @@ import {
   referencePoint,
   sheetBounds,
   situationAt,
+  reviseEvent,
   type Area,
   type Exercise,
   type LageEvent,
@@ -40,7 +43,7 @@ import {
   type Basemap,
   type SwissMap,
 } from "@lage/map";
-import { currentExerciseId, downloadText, listExercises, loadExercise, pickFile, safeFileName, saveExercise } from "./store";
+import { currentExerciseId, downloadText, listExercises, loadExercise, onDbNotice, pickFile, safeFileName, saveExercise } from "./store";
 import { NaiPanel } from "./NaiPanel";
 import { GeorefPane } from "./GeorefPane";
 import type { Candidate } from "./imageimport";
@@ -110,12 +113,36 @@ export function Workspace({ product, tagline }: Props) {
     window.setTimeout(() => setToast((x) => (x === t ? null : x)), 4000);
   }, []);
 
+  // Datenbank blockiert (altes Lagejournal-Fenster offen): Hinweis zeigen, App läuft mit leerer Übung weiter
+  const [dbBlocked, setDbBlocked] = useState(false);
+  const dbBlockedRef = useRef(false);
+  /** Übung, die nur angelegt wurde, weil die Datenbank beim Start blockiert war (nicht speichern, später ersetzen) */
+  const fallbackId = useRef<string | null>(null);
+  useEffect(() => onDbNotice((n) => {
+    dbBlockedRef.current = n === "blocked";
+    setDbBlocked(n === "blocked");
+    if (n !== "ready" || !fallbackId.current) return;
+    // wieder frei: die zuletzt benutzte Übung laden, solange in der Ersatz-Übung noch nichts erfasst ist
+    (async () => {
+      const id = await currentExerciseId();
+      const loaded = id ? await loadExercise(id) : null;
+      setSaved(await listExercises());
+      setEx((cur) => {
+        const untouched = cur && cur.id === fallbackId.current && !(cur.events ?? []).length && !cur.sheets.length && !cur.areas.length;
+        fallbackId.current = null;
+        return untouched && loaded ? loaded : cur;
+      });
+    })();
+  }), []);
+
   // Übung laden
   useEffect(() => {
     (async () => {
       const id = await currentExerciseId();
       const loaded = id ? await loadExercise(id) : null;
-      setEx(loaded ?? newExercise());
+      const next = loaded ?? newExercise();
+      if (!loaded && dbBlockedRef.current) fallbackId.current = next.id;
+      setEx(next);
       setSaved(await listExercises());
     })();
   }, []);
@@ -123,6 +150,8 @@ export function Workspace({ product, tagline }: Props) {
   // Speichern (verzögert)
   useEffect(() => {
     if (!ex) return;
+    // leere Ersatz-Übung bei blockierter Datenbank nicht als «aktuelle Übung» speichern
+    if (fallbackId.current === ex.id && !(ex.events ?? []).length && !ex.sheets.length && !ex.areas.length) return;
     const t = window.setTimeout(async () => {
       await saveExercise(ex);
       setSaved(await listExercises());
@@ -167,6 +196,59 @@ export function Workspace({ product, tagline }: Props) {
     const now = isoLocal(clock);
     return !last || clock - Date.parse(last) < 12 * 3600000 ? (now > last ? now : last) : last;
   })();
+
+  // Hindernisse, Checkpoint, IED … (und Meldungen «auf Hauptstrasse/Autobahn») ohne Ausrichtung nachträglich auf die
+  // Strasse legen (z. B. Beispiel, Import, Meldung offline erfasst). Erledigt erst mit Ergebnis; fehlten Strassendaten
+  // (offline, Fehler), wird es später erneut versucht (wieder online, nächste Änderung).
+  const roadDone = useRef(new Set<string>());
+  const roadBusy = useRef(new Set<string>());
+  const [roadRetry, setRoadRetry] = useState(0);
+  useEffect(() => {
+    const on = () => setRoadRetry((n) => n + 1);
+    window.addEventListener("online", on);
+    return () => window.removeEventListener("online", on);
+  }, []);
+  useEffect(() => {
+    if (!ex) return;
+    const todo = (ex.events ?? []).filter((e) => !e.deleted && e.angle === undefined && !roadDone.current.has(e.id) && !roadBusy.current.has(e.id)
+      && (catalogEntry(e.sym)?.placement === "strasse" || !!e.roadHint) && (e.cells?.length || e.nai) && e.where !== "Karte");
+    if (!todo.length) return;
+    todo.forEach((e) => roadBusy.current.add(e.id));
+    const exId = ex.id;
+    (async () => {
+      const { placeOnRoadTry } = await import("./roadsource");
+      try {
+        for (const e of todo) {
+          let target: Bounds | LV95[] | null = null;
+          const c = e.cells?.[0] ? findCells(e.cells[0], ex.sheets)[0] : undefined;
+          const sh = c && ex.sheets.find((x) => x.id === c.sheetId);
+          if (c && sh) target = cellBounds(sh, c.col, c.row, c.quadrant);
+          else if (e.nai) target = ex.areas.find((a) => a.name === e.nai)?.ring ?? null;
+          if (!target) { roadDone.current.add(e.id); continue; }
+          const { pl, complete } = await placeOnRoadTry(target, undefined, { along: e.sym === "hinterhalt", hint: e.roadHint });
+          if (exRef.current?.id !== exId) break;
+          if (!pl) { if (complete) roadDone.current.add(e.id); continue; }
+          roadDone.current.add(e.id);
+          update((x) => {
+            x.events = (x.events ?? []).map((y) => {
+              if (y.id !== e.id) return y;
+              // inzwischen von Hand verschoben, Ort entfernt/geändert oder schon ausgerichtet → nicht überschreiben
+              const samePos = y.pos?.e === e.pos?.e && y.pos?.n === e.pos?.n;
+              const sameWhere = (y.cells?.[0] ?? "") === (e.cells?.[0] ?? "") && (y.nai ?? "") === (e.nai ?? "");
+              if (y.deleted || y.where === "Karte" || y.angle !== undefined || !samePos || !sameWhere) return y;
+              // neue Revision (für den Abgleich), aber Zeitstempel nur minimal weiter: automatische Ergänzung,
+              // keine Benutzeränderung (sonst stünde jede Meldung des Beispiels als «neu» in der Liste)
+              const at = new Date((Date.parse(y.updatedAt) || Date.now()) + 1);
+              return reviseEvent(y, { pos: pl.pos, angle: pl.angle, road: pl.road, where: `${y.where ?? ""}${pl.road ? ` · auf ${pl.road}` : ""}`.replace(/^ · /, "") }, device, at);
+            });
+            return x;
+          });
+        }
+      } finally {
+        todo.forEach((e) => roadBusy.current.delete(e.id));
+      }
+    })();
+  }, [ex?.events, ex?.id, roadRetry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lage zum Zeitpunkt
   useEffect(() => {
@@ -349,7 +431,12 @@ export function Workspace({ product, tagline }: Props) {
     return () => { window.removeEventListener("keydown", key); document.removeEventListener("fullscreenchange", fs); };
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!ex) return <div className="app"><div className="loading">Wird geladen …</div></div>;
+  if (!ex) return (
+    <div className="app">
+      <div className="loading">Wird geladen …</div>
+      {dbBlocked && <div className="toast dbblocked" role="alert">Speicher blockiert: Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</div>}
+    </div>
+  );
   const cell = cursor ? cellAtAny(ex.sheets, cursor) : null;
   const sel = ex.sheets.find((s) => s.id === selSheet) ?? null;
   const hasBlatt = ex.sheets.some((s) => s.variant === "blatt");
@@ -460,6 +547,7 @@ export function Workspace({ product, tagline }: Props) {
       </div>
       {busy && <div className="busy"><div>{busy}</div></div>}
       {toast && <div className="toast" role="status">{toast}</div>}
+      {dbBlocked && <div className="toast dbblocked" role="alert">Speicher blockiert: Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</div>}
     </div>
   );
 }

@@ -22,6 +22,7 @@
     "pdfjs-dist": "5.7.284"
   },
   "peerDependencies": {
-    "react": ">=19"
+    "react": ">=19",
+    "react-dom": ">=19"
   }
 }
