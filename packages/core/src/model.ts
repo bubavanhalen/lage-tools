@@ -9,6 +9,8 @@ import type { RasterSheet } from "./raster";
 import type { Affiliation } from "./symbols";
 
 export type Side = "rot" | "blau" | "ul";
+/** Hinweis auf die Strassenart aus dem Text: «auf Hauptstrasse» → haupt, «auf Autobahn / A1» → autobahn */
+export type RoadHint = "haupt" | "autobahn";
 
 export interface SourceRef {
   kind: "text" | "image" | "audio" | "import";
@@ -64,6 +66,12 @@ export interface LageEvent {
   angle?: number;
   /** Strasse, auf die das Zeichen gelegt wurde */
   road?: string;
+  /** Strassenart aus dem Text («auf Hauptstrasse», «auf Autobahn») für die Lage auf der Strasse */
+  roadHint?: RoadHint;
+  /** Herkunft in Grad (0 = Nord), z. B. «Schuss aus Rtg O» → 90; keine Bewegungsrichtung */
+  from?: number;
+  /** Herkunft als Text, wenn keine Himmelsrichtung, z. B. «aus Rtg Bern» */
+  fromLabel?: string;
   source?: SourceRef;
   /** Vom Benutzer bestätigt (sonst Vorschlag der Erkennung) */
   confirmed: boolean;

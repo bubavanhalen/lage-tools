@@ -9,20 +9,57 @@ const DB_NAME = "lage-tools";
 const DB_VERSION = 2;
 export const ROADS_STORE = "roads";
 
+/** so lange höchstens auf die Datenbank warten, wenn ein anderes Fenster das Öffnen blockiert */
+const BLOCKED_WAIT_MS = 6000;
+
+type DbNotice = "blocked" | "ready";
+const listeners = new Set<(n: DbNotice) => void>();
+let blockedNow = false;
+/**
+ * Hinweise zur Datenbank abonnieren: «blocked» = ein anderes (altes) Lagejournal-Fenster hält die Datenbank offen
+ * und verhindert das Aktualisieren → Benutzer soll es schliessen; «ready» = wieder frei.
+ */
+export function onDbNotice(cb: (n: DbNotice) => void): () => void {
+  listeners.add(cb);
+  if (blockedNow) cb("blocked");
+  return () => { listeners.delete(cb); };
+}
+const notify = (n: DbNotice) => { blockedNow = n === "blocked"; listeners.forEach((cb) => { try { cb(n); } catch { /* egal */ } }); };
+
 let dbp: Promise<IDBPDatabase> | null = null;
-/** Gemeinsame Datenbank «lage-tools» (alle Stores werden hier angelegt). */
+let opened = false;
+/**
+ * Gemeinsame Datenbank «lage-tools» (alle Stores werden hier angelegt).
+ * Hängt nie: Blockiert ein anderes Fenster das Aktualisieren, wird ein Hinweis gemeldet (`onDbNotice`) und der
+ * einzelne Zugriff nach `BLOCKED_WAIT_MS` mit einem Fehler beendet (Aufrufer fangen ihn ab); das Öffnen selbst
+ * läuft weiter und gelingt, sobald das andere Fenster geschlossen ist.
+ */
 export function db(): Promise<IDBPDatabase> {
-  dbp ??= openDB(DB_NAME, DB_VERSION, {
-    upgrade(d) {
-      if (!d.objectStoreNames.contains("exercises")) d.createObjectStore("exercises", { keyPath: "id" });
-      if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
-      if (!d.objectStoreNames.contains(ROADS_STORE)) d.createObjectStore(ROADS_STORE, { keyPath: "key" });
-    },
-    // anderer Tab will eine neuere Version: Verbindung freigeben, beim nächsten Zugriff neu öffnen
-    blocking() { const p = dbp; dbp = null; p?.then((d) => d.close()).catch(() => { /* egal */ }); },
+  if (!dbp) {
+    opened = false;
+    const p = openDB(DB_NAME, DB_VERSION, {
+      upgrade(d) {
+        if (!d.objectStoreNames.contains("exercises")) d.createObjectStore("exercises", { keyPath: "id" });
+        if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
+        if (!d.objectStoreNames.contains(ROADS_STORE)) d.createObjectStore(ROADS_STORE, { keyPath: "key" });
+      },
+      // ein älteres Fenster hält die Datenbank offen und lässt das Aktualisieren nicht zu
+      blocked() { notify("blocked"); },
+      // anderes Fenster will eine neuere Version: Verbindung sofort freigeben, beim nächsten Zugriff neu öffnen
+      blocking() { if (dbp === p) dbp = null; p.then((d) => d.close()).catch(() => { /* egal */ }); },
+      // Verbindung vom Browser beendet (z. B. Speicher gelöscht): beim nächsten Zugriff neu öffnen
+      terminated() { if (dbp === p) dbp = null; },
+    });
+    dbp = p;
+    p.then(() => { opened = true; if (blockedNow) notify("ready"); }, () => { if (dbp === p) dbp = null; });
+  }
+  const p = dbp;
+  if (opened) return p;
+  // noch nicht offen: nicht endlos warten (z. B. blockiert durch ein altes Fenster)
+  return new Promise<IDBPDatabase>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("Datenbank blockiert – andere Lagejournal-Fenster schliessen")), BLOCKED_WAIT_MS);
+    p.then((d) => { clearTimeout(t); resolve(d); }, (e) => { clearTimeout(t); reject(e); });
   });
-  dbp.catch(() => { dbp = null; });
-  return dbp;
 }
 
 export async function listExercises(): Promise<Array<Pick<Exercise, "id" | "name">>> {

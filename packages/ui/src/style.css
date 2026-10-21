@@ -137,6 +137,7 @@ button:disabled { opacity: .45; cursor: default; }
 .kinds button.feind[aria-pressed="true"] { background: var(--rot); border-color: var(--rot); color: #fff; }
 .kinds button.eigen[aria-pressed="true"] { background: var(--blau); border-color: var(--blau); color: #fff; }
 .kinds button.unklar[aria-pressed="true"] { background: var(--unklar); border-color: var(--unklar); color: #fff; }
+.kinds button.neutral[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: #fff; }
 .journal .help { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
 .journal .help .mono { font-size: 12.5px; color: var(--ink); }
 .filters { gap: 8px; }
@@ -233,4 +234,10 @@ button:disabled { opacity: .45; cursor: default; }
 .sympop { position: fixed; z-index: 1200; }
 .sympop .sp-popover { position: static; max-height: var(--sp-maxh, min(560px, calc(100vh - 24px))); }
 @media (max-width: 560px) { .sympop { left: 8px; right: 8px; top: auto; bottom: 8px; } .sympop .sp-popover { width: 100%; max-height: 70vh; } }
-.editpick { display: grid; gap: 4px; }
+/* Bearbeiten: Inline-Zeichenauswahl darf das Formular nicht breiter machen (sonst 17 Spalten / Seitenleiste 1355 px) */
+.jlist > li.edit .form { grid-template-columns: minmax(0, 1fr); }
+.editpick { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.editpick > .sp { min-width: 0; }
+
+/* Speicher blockiert (altes Fenster offen): oben, bleibt stehen */
+.toast.dbblocked { bottom: auto; top: 64px; background: var(--rot); color: #fff; font-weight: 600; }

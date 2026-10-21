@@ -55,3 +55,14 @@ gewähltes Planquadrat hinterlegt, Meldungsband, Legende aus dem Sichtbaren, eig
 Navigation: eine Suche für Planquadrat/NAI/Element/Koordinate/Ort, Doppelklick Feld → Unterquadrant, Messen (Distanz, Azimut ° und ‰), Rechtsklick-Menü («Meldung hier»).
 Präsentationsmodus (Vollbild, ←/→ blättert), Nachtbetrieb, Tablet- und Handy-Ansicht.
 Offline: App als PWA; Karte für das Raster-Gebiet vorab speichern, angesehene Kartenteile bleiben gespeichert.
+
+## Lagejournal – Taktische Zeichen (Etappe 3c)
+- **Katalog** mit gut 110 Zeichen nach MIL-STD-2525C (milsymbol): Kampftruppen, Unterstützung, Führung/Logistik, Zivile/Irreguläre, Fahrzeuge, Waffen, Luftfahrzeuge, Anlagen, Hindernisse, Tätigkeiten, Ereignisse. Stufen Trp, Gr, Hz, Zug, Kp, Bat, Rgt, Br, Div.
+- **Armee-Kürzel** werden gelesen und ausgeschrieben: «1 gn hz inf» → 1 gegnerischer Halbzug Infanterie; «gn Pz Gren Zug mit 3 Spz»; «Kp Gfs» → Kommandoposten; «Fz-Kolonne 5 Lastw»; «zerstörter gn Kpz».
+- **Status:** «möglich/vermutet/vmtl» = Feind gestrichelt; «unklar/verdächtig» = gelb; «zerstört/beschädigt» nach 2525C.
+- **Einordnung:** Ereignisse, Anlagen, Tätigkeiten sind nur mit «eig» eigene Lage und verschieben den Melder nicht. Melder- und Elementnummern («H05», «Det 2») sind keine Anzahl.
+- **Herkunft** «aus Rtg O» ohne Bewegungspfeil.
+- **Im Gelände:** Sperren, Checkpoints, IED, Kolonnen, Hinterhalt usw. werden auf die wahrscheinlichste Strasse im gemeldeten Feld bzw. NAI gelegt (swisstopo TLM3D, Hauptstrasse vor Nebenstrasse, Autobahn nur mit «auf Autobahn»). Sperren liegen quer zur Strasse. Strassendaten werden mit dem Kartenpaket offline gespeichert.
+- **Zeichen-Auswahl:** Klick auf das Zeichen in der Vorschau oder beim Korrigieren. Suche versteht Kürzel («hz inf», «vermutete IED»), Kategorien, Zugehörigkeit, Stufe, «vermutet». Punkt-Zeichen mit deutschen Kurzzeichen (Mun, Bst, Vrk …).
+- Regressionstest mit über 120 Meldungen (`packages/core/test/meldungen.test.ts`).
+- Offen: Flächen- und Linienzeichen (Bereitstellungsraum, Minenfeld als Fläche) sind vorerst Punktzeichen.

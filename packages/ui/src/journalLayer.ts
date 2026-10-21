@@ -2,23 +2,26 @@
  * Lagebild-Modell für Karte und Legende: was ist zum Zeitpunkt `t` sichtbar, wie kräftig, mit welchem Zusatz.
  * Reine Berechnung (ohne Leaflet), damit Karte und Legende garantiert dasselbe zeigen.
  */
-import { CATALOG, catalogEntry, ECHELONS, situationAt, SYMBOLS, symbolDef, unitKey, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status } from "@lage/core";
+import { CATALOG, catalogEntry, ECHELONS, kindLabel, situationAt, SYMBOLS, symbolDef, unitKey, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status } from "@lage/core";
 import { isAnticipated, sidcAffiliation } from "@lage/map";
 import type { LayerFlags } from "./layers";
+import { roadMark, type RoadMark } from "./roadmark";
 
 /** Kartenfarben (entsprechen --m-rot, --m-blau, --unklar); Karte bleibt auch im Dunkelmodus hell */
 export const SIDE_COLOR: Record<Side, string> = { rot: "#D3262D", blau: "#1F5FB8", ul: "#A86F12" };
 export const MAP_INK = "#101414";
 
 /** Kartenfarbe nach Art (unklar = gelb wie das Zeichen, nicht rot wie die Seite): Linie und Füllung */
-export const KIND_COLOR: Record<"eigen" | "feind" | "unklar" | "ul", { line: string; fill: string }> = {
+export const KIND_COLOR: Record<"eigen" | "feind" | "unklar" | "neutral" | "ul", { line: string; fill: string }> = {
   eigen: { line: "#1F5FB8", fill: "#1F5FB8" },
   feind: { line: "#D3262D", fill: "#D3262D" },
   unklar: { line: "#B88A00", fill: "#FFD400" },
+  /** neutral / zivil (Zugehörigkeit N): grün wie das Zeichen (--ok) */
+  neutral: { line: "#2D7A4B", fill: "#2D7A4B" },
   ul: { line: "#A86F12", fill: "#A86F12" },
 };
 
-export type ItemKind = "eigen" | "feind" | "unklar" | "ul";
+export type ItemKind = "eigen" | "feind" | "unklar" | "neutral" | "ul";
 
 /** Stufe aus der Meldung oder aus dem SIDC (Stelle 12) */
 export function echelonOf(e: { echelon?: Echelon; sidc?: string }): Echelon | undefined {
@@ -42,18 +45,7 @@ function nameBySidc(sidc: string): string | undefined {
   return [...CATALOG, ...SYMBOLS].find((x) => norm(x.sidc) === k)?.name;
 }
 
-/** Darstellung im Gelände an einer Strasse (nur mit `angle` und Katalog-Platzierung «strasse») */
-export type RoadMark = "sperre" | "checkpoint" | "punkt";
-const OLD_ROAD_KEYS = new Set(["sperre", "kontrollposten"]);
-export function roadMark(e: Pick<LageEvent, "sym" | "angle" | "pos">): RoadMark | null {
-  if (e.angle === undefined || e.angle === null || !isFinite(e.angle) || !e.pos) return null;
-  const cat = catalogEntry(e.sym);
-  if (cat?.placement !== "strasse" && !OLD_ROAD_KEYS.has(e.sym)) return null;
-  const k = `${e.sym} ${cat?.name ?? ""} ${cat?.category ?? ""}`.toLowerCase();
-  if (/sperr|hindernis|barrik|block|graben|mine|verhau|stacheldraht/.test(k)) return "sperre";
-  if (/kontroll|checkpoint|\bcp\b/.test(k)) return "checkpoint";
-  return "punkt";
-}
+export { roadMark, type RoadMark };
 
 export interface SituationItem {
   /** Originalmeldung (bei Elementen die letzte Meldung) */
@@ -104,7 +96,11 @@ export interface SituationModel {
 export const STALE_MIN = 60;
 
 export const kindOf = (e: Pick<LageEvent, "side" | "aff">): ItemKind =>
-  e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : e.aff === "U" ? "unklar" : "feind";
+  e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : e.aff === "U" ? "unklar" : e.aff === "N" ? "neutral" : "feind";
+
+/** Bezeichnung der Art: wie `kindLabel`, aber neutral (Zugehörigkeit N) heisst «Neutral», nicht «Feind» */
+export const kindText = (e: Pick<LageEvent, "side" | "aff">): string =>
+  e.side !== "blau" && e.side !== "ul" && e.aff === "N" ? "Neutral" : kindLabel(e);
 
 const minutesBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 60000);
 

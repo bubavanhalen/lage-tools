@@ -609,8 +609,8 @@ function TipBox({ tip, days, multiDay, width }: { tip: Tip; days: string[]; mult
     <div className={"swt-tip" + (below ? " below" : "")} style={{ left, top: below ? tip.y + 26 : tip.y - 8 }} role="tooltip">
       <div className="swt-tip-h">
         <span className="tnum">{multiDay ? dayLabel(e.t, days) + " " : ""}{e.t.slice(11, 16)}</span>
-        <b style={{ color: KIND_VAR[e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : e.aff === "U" ? "unklar" : "feind"] }}>{who}</b>
-        <span className="swt-kind">{kindLabel(e)}</span>
+        <b style={{ color: e.side === "rot" && e.aff === "N" ? "var(--ok)" : KIND_VAR[e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : e.aff === "U" ? "unklar" : "feind"] }}>{who}</b>
+        <span className="swt-kind">{e.side === "rot" && e.aff === "N" ? "Neutral" : kindLabel(e)}</span>
       </div>
       <div className="swt-tip-t">{e.text}</div>
       <div className="swt-tip-m tnum">

@@ -52,7 +52,7 @@ describe("Katalog: Aufbau", () => {
     const bad: string[] = [];
     for (const e of CATALOG) {
       const variants = (["F", "H", "U", "N"] as const).map((a) => buildSidc(e, a));
-      variants.push(buildSidc(e, "H", { status: "anticipated" }));
+      for (const status of ["anticipated", "destroyed", "damaged"] as const) variants.push(buildSidc(e, "H", { status }));
       if (e.echelonable) for (const ech of ECHELONS) variants.push(buildSidc(e, "U", { echelon: ech.key }));
       for (const s of variants) {
         const sym = new ms.Symbol(s, { size: 30 });
@@ -76,6 +76,7 @@ describe("Katalog: Aufbau", () => {
     expect(searchCatalog("fluechtlinge")[0]!.key).toBe("fluechtlinge");
     expect(searchCatalog("Hindernisse").length).toBeGreaterThanOrEqual(8);
     expect(searchCatalog("").some((e) => e.key === "inf_gr")).toBe(false);
+    expect(searchCatalog("Inf Gruppe").some((e) => e.hidden)).toBe(false);
   });
 });
 
@@ -107,12 +108,13 @@ describe("Armee-Sprache lesen (readTactical)", () => {
     expect(r.sidc).toBe("SHGPUCI----C---");
     expect(r.description).toBe("1 gegnerischer Halbzug Infanterie");
   });
-  it("«mögliche IED in AF13» → vermutet, gestrichelt", () => {
+  it("«mögliche IED in AF13» → vermutet, gestrichelt, bleibt Feind (inhärent feindlich)", () => {
     const r = readTactical("mögliche IED in AF13")!;
     expect(r.key).toBe("ied");
     expect(r.status).toBe("anticipated");
-    expect(r.aff).toBe("U");
-    expect(r.sidc).toBe("SUGAEXI--------");
+    expect(r.aff).toBe("H");
+    expect(r.explicitAff).toBe(false);
+    expect(r.sidc).toBe("SHGAEXI--------");
     expect(r.description).toBe("mögliche IED");
   });
   it.each([
@@ -149,7 +151,7 @@ describe("Armee-Sprache lesen (readTactical)", () => {
     ["3 Mw", "mw_geraet", { count: 3 }, "3 Minenwerfer"],
     ["Infanteriezug", "inf", { echelon: "zug" }, "Zug Infanterie"],
     ["vermutlich gn Kpz", "kpz", { aff: "H", status: "anticipated" }, "vermuteter gegnerischer Kampfpanzer"],
-    ["Lastwagenkolonne Rtg S", "lw", {}, "Lastwagen"],
+    ["Lastwagenkolonne Rtg S", "kolonne", { of: "lw" }, "Lastwagen (Kolonne)"],
     ["mögl. VBIED", "vbied", { status: "anticipated" }, "mögliche Fahrzeug-IED"],
   ])("%s", (text, key, more, desc) => {
     const r = readTactical(text)!;
@@ -188,12 +190,12 @@ describe("Meldung erkennen mit Katalog (parseMeldung)", () => {
     expect(e.desc).toBe(d.desc);
     expect(e.status).toBeUndefined();
   });
-  it("«mögliche IED in AF13» → unklar, gestrichelt", () => {
+  it("«mögliche IED in AF13» → Feind, gestrichelt (Doktrin: Zugehörigkeit bleibt H)", () => {
     const d = parseMeldung("mögliche IED in C13", ctx());
-    expect(d.kind).toBe("unklar");
-    expect(d.aff).toBe("U");
+    expect(d.kind).toBe("feind");
+    expect(d.aff).toBe("H");
     expect(d.status).toBe("anticipated");
-    expect(d.sidc).toBe("SUGAEXI--------");
+    expect(d.sidc).toBe("SHGAEXI--------");
     expect(d.desc).toBe("mögliche IED");
     expect(eventFromDraft(d, "dev").status).toBe("anticipated");
   });

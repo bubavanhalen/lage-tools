@@ -5,7 +5,7 @@
  */
 import {
   parseTlmIdentify, placeAlongRoad, placeOnRoad, roadsInBounds, roadTiles, tlmRoadsUrl,
-  type Bounds, type LV95, type PlaceOptions, type RoadPlacement, type RoadSegment, type RoadTarget, type RoadTile,
+  type Bounds, type LV95, type PlaceOptions, type RoadHint, type RoadPlacement, type RoadSegment, type RoadTarget, type RoadTile,
 } from "@lage/core";
 import { db, ROADS_STORE } from "./store";
 
@@ -57,10 +57,10 @@ function withTimeout(signal?: AbortSignal): { signal: AbortSignal; done: () => v
 }
 
 /** Eine Kachel aus dem Netz (alle Seiten); null bei Fehler */
-async function fetchTile(tile: RoadTile, signal?: AbortSignal): Promise<RoadSegment[] | null> {
+async function fetchTile(tile: RoadTile): Promise<RoadSegment[] | null> {
   const out: RoadSegment[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    const to = withTimeout(signal);
+    const to = withTimeout();
     try {
       const r = await fetch(tlmRoadsUrl(tile.b, page * PAGE, PAGE), { mode: "cors", signal: to.signal });
       if (!r.ok) return null;
@@ -81,36 +81,70 @@ async function fetchTile(tile: RoadTile, signal?: AbortSignal): Promise<RoadSegm
 
 const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
 
+/** Auf ein geteiltes Ergebnis warten, aber mit eigenem Abbruch: bei Abbruch sofort null (der Abruf läuft weiter). */
+function waitFor<T>(p: Promise<T>, signal?: AbortSignal): Promise<T | null> {
+  if (!signal) return p;
+  if (signal.aborted) return Promise.resolve(null);
+  return new Promise<T | null>((resolve) => {
+    const on = () => resolve(null);
+    signal.addEventListener("abort", on, { once: true });
+    p.then((v) => resolve(v), () => resolve(null)).finally(() => signal.removeEventListener("abort", on));
+  });
+}
+
 /**
  * Strassen einer Kachel: Arbeitsspeicher → IndexedDB → Netz (und dann speichern).
- * @returns null, wenn weder gespeichert noch ladbar
+ * Der Abruf wird zwischen gleichzeitigen Aufrufern geteilt und hängt an keinem Abbruchsignal eines Aufrufers
+ * (nur an der eigenen Zeitüberschreitung); jeder Aufrufer wartet mit seinem eigenen `signal`.
+ * @returns null, wenn weder gespeichert noch ladbar (oder der Aufrufer abgebrochen hat)
  */
 async function tileRoads(tile: RoadTile, o: { signal?: AbortSignal; refresh?: boolean } = {}): Promise<RoadSegment[] | null> {
   const hit = mem.get(tile.key);
   if (hit && !o.refresh) return hit;
-  const run = pending.get(tile.key);
-  if (run) return run;
-  const p = (async () => {
-    const rec = await readTile(tile.key);
-    const fresh = rec && rec.f === FORMAT && Date.now() - rec.t < MAX_AGE_DAYS * 864e5;
-    if (rec && rec.f === FORMAT && (fresh || !isOnline()) && !o.refresh) {
-      const segs = rec.segs.map(unpack);
+  let run = pending.get(tile.key);
+  if (!run) {
+    const refresh = !!o.refresh;
+    run = (async () => {
+      const rec = await readTile(tile.key);
+      const fresh = rec && rec.f === FORMAT && Date.now() - rec.t < MAX_AGE_DAYS * 864e5;
+      if (rec && rec.f === FORMAT && (fresh || !isOnline()) && !refresh) {
+        const segs = rec.segs.map(unpack);
+        mem.set(tile.key, segs);
+        return segs;
+      }
+      if (!isOnline()) return null;
+      const segs = await fetchTile(tile);
+      if (!segs) {
+        // Netzfehler: lieber alte Daten als keine
+        if (rec && rec.f === FORMAT) { const old = rec.segs.map(unpack); mem.set(tile.key, old); return old; }
+        return null;
+      }
       mem.set(tile.key, segs);
+      await writeTile({ key: tile.key, f: FORMAT, t: Date.now(), segs: segs.map(pack) });
       return segs;
+    })().catch(() => null).finally(() => pending.delete(tile.key));
+    pending.set(tile.key, run);
+  }
+  return waitFor(run, o.signal);
+}
+
+/** Strassen im Gebiet und ob alle Kacheln da waren (`missing` > 0: offline/Fehler – später nochmals versuchen). */
+export async function getRoadsInfo(b: Bounds, o: { signal?: AbortSignal } = {}): Promise<{ roads: RoadSegment[]; missing: number }> {
+  try {
+    const tiles = roadTiles(b, TILE_M);
+    if (tiles.length > 64) return { roads: [], missing: 0 }; // Schutz: viel zu grosses Gebiet
+    const parts = await Promise.all(tiles.map((t) => tileRoads(t, o).catch(() => null)));
+    const seen = new Set<string>();
+    const all: RoadSegment[] = [];
+    let missing = 0;
+    for (const segs of parts) {
+      if (!segs) { missing++; continue; }
+      for (const s of segs) if (!seen.has(s.id)) { seen.add(s.id); all.push(s); }
     }
-    if (!isOnline()) return null;
-    const segs = await fetchTile(tile, o.signal);
-    if (!segs) {
-      // Netzfehler: lieber alte Daten als keine
-      if (rec && rec.f === FORMAT) { const old = rec.segs.map(unpack); mem.set(tile.key, old); return old; }
-      return null;
-    }
-    mem.set(tile.key, segs);
-    await writeTile({ key: tile.key, f: FORMAT, t: Date.now(), segs: segs.map(pack) });
-    return segs;
-  })().finally(() => pending.delete(tile.key));
-  pending.set(tile.key, p);
-  return p;
+    return { roads: roadsInBounds(all, b, 1), missing };
+  } catch {
+    return { roads: [], missing: 1 };
+  }
 }
 
 /**
@@ -119,17 +153,7 @@ async function tileRoads(tile: RoadTile, o: { signal?: AbortSignal; refresh?: bo
  * Nie ein Fehler: im schlimmsten Fall eine leere Liste.
  */
 export async function getRoads(b: Bounds, o: { signal?: AbortSignal } = {}): Promise<RoadSegment[]> {
-  try {
-    const tiles = roadTiles(b, TILE_M);
-    if (tiles.length > 64) return []; // Schutz: viel zu grosses Gebiet
-    const parts = await Promise.all(tiles.map((t) => tileRoads(t, o).catch(() => null)));
-    const seen = new Set<string>();
-    const all: RoadSegment[] = [];
-    for (const segs of parts) for (const s of segs ?? []) if (!seen.has(s.id)) { seen.add(s.id); all.push(s); }
-    return roadsInBounds(all, b, 1);
-  } catch {
-    return [];
-  }
+  return (await getRoadsInfo(b, o)).roads;
 }
 
 /** Nur aus dem Speicher (ohne Netz, sofort) – z. B. für eine erste Platzierung, bevor das Netz antwortet. */
@@ -201,14 +225,25 @@ export function targetBounds(t: RoadTarget): Bounds {
 
 /**
  * Alles in einem: Strassen fürs Gebiet holen (Speicher/Netz) und das Zeichen darauf legen.
- * `along` = Strassenrand (Hinterhalt) statt Strassenmitte. null, wenn keine Strasse bekannt ist.
+ * `along` = Strassenrand (Hinterhalt) statt Strassenmitte. `hint`: «haupt» = höchster Rang ohne Autobahn (Standard),
+ * «autobahn» = Autobahn normal werten (sie gewinnt dann). `pl` = null, wenn keine Strasse bekannt ist;
+ * `complete` = false, wenn Kacheln fehlten (offline/Fehler) – dann lohnt sich später ein neuer Versuch.
  */
-export async function placeOnRoadIn(target: RoadTarget, prefer?: LV95, o: PlaceOptions & { along?: boolean; signal?: AbortSignal } = {}): Promise<RoadPlacement | null> {
+export async function placeOnRoadTry(
+  target: RoadTarget, prefer?: LV95, o: PlaceOptions & { along?: boolean; signal?: AbortSignal; hint?: RoadHint } = {},
+): Promise<{ pl: RoadPlacement | null; complete: boolean }> {
   try {
-    const roads = await getRoads(targetBounds(target), { signal: o.signal });
-    if (!roads.length) return null;
-    return o.along ? placeAlongRoad(target, roads, prefer, 25, o) : placeOnRoad(target, roads, prefer, o);
+    const { roads, missing } = await getRoadsInfo(targetBounds(target), { signal: o.signal });
+    if (o.signal?.aborted) return { pl: null, complete: false };
+    const opts: PlaceOptions = { ...o, motorway: o.motorway ?? o.hint === "autobahn" };
+    const pl = !roads.length ? null : o.along ? placeAlongRoad(target, roads, prefer, 25, opts) : placeOnRoad(target, roads, prefer, opts);
+    return { pl, complete: missing === 0 };
   } catch {
-    return null;
+    return { pl: null, complete: false };
   }
+}
+
+/** Wie `placeOnRoadTry`, nur das Ergebnis (null, wenn keine Strasse bekannt ist). */
+export async function placeOnRoadIn(target: RoadTarget, prefer?: LV95, o: PlaceOptions & { along?: boolean; signal?: AbortSignal; hint?: RoadHint } = {}): Promise<RoadPlacement | null> {
+  return (await placeOnRoadTry(target, prefer, o)).pl;
 }

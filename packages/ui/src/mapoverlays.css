@@ -55,6 +55,7 @@
 .lt-kind.k-eigen { color: #1F5FB8; }
 .lt-kind.k-feind { color: #B8292F; }
 .lt-kind.k-unklar { color: #A86F12; }
+.lt-kind.k-neutral { color: #2D7A4B; }
 .lt-kind.k-ul { color: #5B655F; }
 
 /* ---------- Meldungsbanner (oben links neben dem Zoom) ---------- */
@@ -92,6 +93,7 @@
 .mo-kind.k-eigen { color: var(--blau); }
 .mo-kind.k-feind { color: var(--rot); }
 .mo-kind.k-unklar { color: var(--unklar); }
+.mo-kind.k-neutral { color: var(--ok); }
 .mo-kind.k-ul { color: var(--muted); }
 .mo-sym { display: inline-flex; align-self: center; }
 .mo-sym svg { height: 18px; width: auto; display: block; }

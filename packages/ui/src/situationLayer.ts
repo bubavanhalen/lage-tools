@@ -8,11 +8,11 @@
  */
 import L from "leaflet";
 import {
-  cellBounds, declutter, mirrorBox, findCells, kindLabel, lastPosition,
+  cellBounds, declutter, mirrorBox, findCells, lastPosition,
   type Box, type DeclutterItem, type LageEvent, type RasterSheet,
 } from "@lage/core";
 import { escapeHtml, symbolSvg, toLatLng } from "@lage/map";
-import { KIND_COLOR, MAP_INK, SIDE_COLOR, situationModel, type SituationItem } from "./journalLayer";
+import { KIND_COLOR, kindText, MAP_INK, SIDE_COLOR, situationModel, type SituationItem } from "./journalLayer";
 import type { LayerFlags } from "./layers";
 import { dayLabel } from "./Timeline";
 import "./mapoverlays.css";
@@ -198,7 +198,7 @@ class SituationLayer extends L.LayerGroup {
     const o = it.opacity;
     const opt = (color: string, weight: number, opacity: number): L.PolylineOptions => ({ color, weight, opacity: opacity * o, interactive: false, lineCap: "butt", lineJoin: "miter", dashArray: it.anticipated && color !== "#fff" ? "6 4" : undefined });
     const g = this.roadMarks;
-    const casing = (ll: L.LatLng[] | L.LatLng[][], w: number) => L.polyline(ll, opt("#fff", w, 0.9)).addTo(g);
+    const casing = (ll: L.LatLng[] | L.LatLng[][], w: number, op = 0.9) => L.polyline(ll, opt("#fff", w, op)).addTo(g);
     const line = (ll: L.LatLng[] | L.LatLng[][], w: number) => L.polyline(ll, opt(col, w, 1)).addTo(g);
     if (it.road === "sperre") {
       const L2 = 22, depth = 7, n = 4;
@@ -208,7 +208,9 @@ class SituationLayer extends L.LayerGroup {
         const a0 = -L2 + (2 * L2 * i) / n, a1 = -L2 + (2 * L2 * (i + 1)) / n;
         teeth.push(at(a0, 0), at((a0 + a1) / 2, side * depth), at(a1, 0));
       }
-      casing(teeth, 5); casing(bar, 9);
+      // Halo: dunkler Hauch + kräftiger weisser Rand, damit der rote Balken auch auf einer roten Hauptstrasse lesbar ist
+      L.polyline(bar, { ...opt(MAP_INK, 14, 0.35), dashArray: undefined }).addTo(g);
+      casing(teeth, 6, 1); casing(bar, 11, 1);
       line(teeth, 2); line(bar, 5);
     } else if (it.road === "checkpoint") {
       const L2 = 18;
@@ -227,8 +229,10 @@ class SituationLayer extends L.LayerGroup {
     const who = e.unit || (it.kind === "eigen" ? e.melder ?? "" : "");
     const via = it.kind !== "eigen" && e.melder ? `via ${e.melder}` : "";
     const where = (e.cells?.length ? e.cells.join(", ") : e.where) ?? "";
-    const meta = [where, e.road ? `auf ${e.road}` : "", it.name, e.nai && e.nai !== where ? e.nai : "", via].filter(Boolean).join(" · ");
-    return `<div class="lt-tip-h"><b class="tnum">${escapeHtml(time)}</b><span class="lt-kind k-${it.kind}">${escapeHtml(kindLabel(e))}</span>${who ? `<b class="lt-tip-u">${escapeHtml(who)}</b>` : ""}</div>`
+    // Herkunft («aus Rtg O») nur als Text – der Pfeil am Zeichen ist der Bewegungsrichtung vorbehalten
+    const from = e.fromLabel ?? (e.from !== undefined ? `aus ${["N", "NO", "O", "SO", "S", "SW", "W", "NW"][Math.round(e.from / 45) % 8]}` : "");
+    const meta = [where, e.road ? `auf ${e.road}` : "", it.name, from, e.nai && e.nai !== where ? e.nai : "", via].filter(Boolean).join(" · ");
+    return `<div class="lt-tip-h"><b class="tnum">${escapeHtml(time)}</b><span class="lt-kind k-${it.kind}">${escapeHtml(kindText(e))}</span>${who ? `<b class="lt-tip-u">${escapeHtml(who)}</b>` : ""}</div>`
       + (e.desc ? `<div class="lt-tip-d">${escapeHtml(e.desc)}</div>` : "")
       + `<div class="lt-tip-t">${escapeHtml(e.text)}</div>`
       + (meta ? `<div class="lt-tip-m tnum">${escapeHtml(meta)}</div>` : "");

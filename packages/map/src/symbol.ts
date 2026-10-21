@@ -7,7 +7,7 @@
  */
 import L from "leaflet";
 import ms from "milsymbol";
-import { buildSidc, catalogEntry, sidcFor, SYMBOLS, symbolDef, type Affiliation, type Status } from "@lage/core";
+import { buildSidc, catalogEntry, sidcFor, STATUS_CODE, SYMBOLS, symbolDef, type Affiliation, type Status } from "@lage/core";
 
 export const SYMBOL_FILL: Record<Affiliation, string> = { F: "#80E0FF", H: "#FF8080", U: "#FFFF80", N: "#AAFFAA" };
 
@@ -16,11 +16,11 @@ export interface SymbolText {
   unit?: string;
   /** Anzahl (nur für `symbolIcon`, «2×») */
   count?: number;
-  /** Bewegungsrichtung in Grad (Pfeil am Zeichen) */
+  /** Bewegungsrichtung in Grad (Pfeil am Zeichen). Herkunft («aus Rtg O», `LageEvent.from`) nie hier übergeben. */
   dir?: number;
   /** vollständiger SIDC (APP-6/2525C, 15 Stellen) – hat Vorrang vor Schlüssel + Zugehörigkeit */
   sidc?: string;
-  /** «anticipated» = vermutet (gestrichelter Rahmen), falls nicht schon im SIDC */
+  /** «anticipated» = vermutet (gestrichelter Rahmen), «destroyed»/«damaged» = zerstört/beschädigt (nur Einheiten/Geräte) */
   status?: Status;
 }
 
@@ -37,6 +37,8 @@ export function resolveSidc(key: string, aff: Affiliation, text: Pick<SymbolText
     sidc = cat ? buildSidc(cat, aff) : sidcFor(OLD_KEYS.has(key) ? key : "einheit", aff);
   }
   if (text.status === "anticipated") sidc = sidc.slice(0, 3) + "A" + sidc.slice(4);
+  // zerstört (X) / beschädigt (D): 2525C nur bei Einheiten und Geräten (S…), Grafiken kennen nur P/A
+  else if ((text.status === "destroyed" || text.status === "damaged") && sidc[0] === "S") sidc = sidc.slice(0, 3) + STATUS_CODE[text.status] + sidc.slice(4);
   return sidc;
 }
 
@@ -52,6 +54,19 @@ export function sidcAffiliation(sidc: string | undefined, aff: Affiliation): Aff
 }
 
 /** vermutet / geplant (SIDC Stelle 4 = A) */
+/**
+ * Punkt-Grafiken (Stecknadel, 2525C G*SPP… / G*GPGPP) tragen englische Kürzel (TCP, ASP …) oder sind leer:
+ * Kürzel durch das deutsche Kurzzeichen aus dem Katalog ersetzen (z. B. «Vrk», «Mun», «Draht»).
+ */
+export function germanPin(svg: string, sidc: string, tag?: string): string {
+  if (!tag || !/^G.(SPP|GPGPP)/i.test(sidc)) return svg;
+  const color = /<path[^>]*stroke="([^"]+)"/.exec(svg.replace(/<path[^>]*stroke-width="(?:[5-9]|\d\d)[^>]*>/g, ""))?.[1] ?? "black";
+  const fs = Math.min(34, Math.floor(118 / Math.max(2, tag.length)));
+  const esc = tag.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const txt = `<text x="100" y="-8" text-anchor="middle" font-size="${fs}" font-family="Arial" font-weight="bold" dominant-baseline="middle" fill="${color}">${esc}</text>`;
+  return svg.replace(/<text[^>]*>[^<]*<\/text>/g, "").replace(/<\/svg>\s*$/, `${txt}</svg>`);
+}
+
 export const isAnticipated = (sidc: string | undefined, status?: Status) => status === "anticipated" || sidc?.[3]?.toUpperCase() === "A";
 
 export interface SymbolGraphic {
@@ -103,7 +118,8 @@ function draw(key: string, aff: Affiliation, size: number, text: SymbolText, out
   if (!sym.isValid()) sym = new ms.Symbol(resolveSidc(key, aff, { status: text.status }), opts);
   const a = sym.getAnchor();
   const s = sym.getSize();
-  return { svg: sym.asSVG(), w: Math.ceil(s.width), h: Math.ceil(s.height), anchor: [a.x, a.y] };
+  const svg = germanPin(sym.asSVG(), resolveSidc(key, aff, text), catalogEntry(key)?.tag);
+  return { svg, w: Math.ceil(s.width), h: Math.ceil(s.height), anchor: [a.x, a.y] };
 }
 
 /** Zusatz neben dem Zeichen: «2× Det 2» */

@@ -3,15 +3,15 @@
  * Legende (unten links, aus dem tatsächlich Sichtbaren gebaut, einklappbar).
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { kindLabel, type Area, type LageEvent } from "@lage/core";
+import { type Area, type LageEvent } from "@lage/core";
 import { symbolSvg } from "@lage/map";
 import type { LayerFlags } from "./layers";
-import { kindOf, situationModel, STALE_MIN } from "./journalLayer";
+import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
 import { getSituationLayout, subscribeSituationLayout } from "./situationLayer";
 import { dayLabel } from "./Timeline";
 import "./mapoverlays.css";
 
-const UNIT_VAR = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", ul: "var(--muted)" } as const;
+const UNIT_VAR = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", neutral: "var(--ok)", ul: "var(--muted)" } as const;
 
 function Sym({ k, aff, size, sidc, status }: { k: string; aff: LageEvent["aff"]; size: number; sidc?: string; status?: LageEvent["status"] }) {
   const s = useMemo(() => symbolSvg(k, aff, size, { sidc, status }), [k, aff, size, sidc, status]);
@@ -87,7 +87,7 @@ export function EventBanner({ event, days, onClose, onEdit }: EventBannerProps) 
     <div ref={ref} className="mo-banner" role="status" aria-label="Gewählte Meldung"
       style={{ maxWidth: place.maxW, top: place.top, maxHeight: place.maxH }}>
       <span className="mo-time tnum">{time}</span>
-      <span className={`mo-kind k-${kind}`}>{kindLabel(event)}</span>
+      <span className={`mo-kind k-${kind}`}>{kindText(event)}</span>
       <Sym k={event.sym} aff={event.aff} size={14} sidc={event.sidc} status={event.status} />
       {unit && <span className="mo-unit" style={{ color: UNIT_VAR[kind] }}>{unit}</span>}
       {kind !== "eigen" && event.melder && <span className="mo-via">via {event.melder}</span>}
@@ -171,7 +171,7 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
   const entries = useMemo(() => {
     const out: Array<{ key: string; icon: ReactNode; label: string }> = [];
     const seen = new Set<string>();
-    const order = { eigen: 0, feind: 1, unklar: 2, ul: 3 } as const;
+    const order = { eigen: 0, feind: 1, unklar: 2, neutral: 3, ul: 4 } as const;
     // je Zeichen + Stufe + Zugehörigkeit ein Eintrag (vermutet zählt nicht als eigenes Zeichen)
     const plain = (sidc?: string) => (sidc ? sidc.slice(0, 3) + "P" + sidc.slice(4) : undefined);
     [...model.items].sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name)).forEach((it) => {

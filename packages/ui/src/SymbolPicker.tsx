@@ -11,15 +11,16 @@ import {
   CATALOG,
   catalogEntry,
   ECHELONS,
-  searchCatalog,
+  searchTactical,
   SYMBOLS,
   type Affiliation,
   type CatalogEntry,
   type Echelon,
   type Status,
 } from "@lage/core";
-import { symbolSvg } from "@lage/map";
+import { germanPin, symbolSvg } from "@lage/map";
 import { IconClose, IconSearch } from "./navicons";
+import { softHyphens } from "./hyphen";
 import "./symbolpicker.css";
 
 export interface SymbolChoice {
@@ -81,23 +82,39 @@ export function makeChoice(entry: CatalogEntry, aff: Affiliation, echelon?: Eche
   return { key: entry.key, aff, echelon: ech, status, sidc: buildSidc(entry, aff, { echelon: ech, status }) };
 }
 
+/**
+ * Bestehenden SIDC behalten (z. B. Kolonne mit Fahrzeugart aus dem Text) und nur Zugehörigkeit, Status und Stufe neu setzen.
+ * Liefert undefined, wenn der SIDC nicht zum Zeichen passt.
+ */
+export function rebaseSidc(old: string | undefined, c: SymbolChoice): string | undefined {
+  if (!old || old.length !== 15 || old[0] !== c.sidc[0]) return undefined;
+  const x = old.split("");
+  x[1] = c.aff;
+  x[3] = c.sidc[3]!;
+  if (x[0] === "S" || x[0] === "E") { x[10] = c.sidc[10]!; x[11] = c.sidc[11]!; }
+  return x.join("");
+}
+
 const svgCache = new Map<string, string>();
 /** Zeichen als SVG-Text (milsymbol; Dreieck für Beob Posten über `symbolSvg`). */
 export function choiceSvg(entry: CatalogEntry, aff: Affiliation, size: number, o: { echelon?: Echelon; status?: Status } = {}): string {
   if (entry.triangle && SYMBOLS.some((s) => s.key === entry.key && s.triangle)) return symbolSvg(entry.key, aff, size).svg;
   const sidc = buildSidc(entry, aff, o);
-  const ck = `${sidc}|${size}`;
+  const ck = `${sidc}|${size}|${entry.tag ?? ""}`;
   const hit = svgCache.get(ck);
   if (hit !== undefined) return hit;
   let svg = "";
-  try { svg = new ms.Symbol(sidc, { size, outlineWidth: 3, outlineColor: "#ffffff", fill: true }).asSVG(); } catch { svg = ""; }
+  try { svg = germanPin(new ms.Symbol(sidc, { size, outlineWidth: 3, outlineColor: "#ffffff", fill: true }).asSVG(), sidc, entry.tag); } catch { svg = ""; }
   if (svgCache.size > 1500) svgCache.clear();
   svgCache.set(ck, svg);
   return svg;
 }
 
+
 const ALL = "Alle";
 const RECENT = "Zuletzt";
+const VISIBLE = CATALOG.filter((e) => !e.hidden);
+const STATUS_WORD: Partial<Record<Status, string>> = { anticipated: "vermutet", destroyed: "zerstört", damaged: "beschädigt" };
 
 export function SymbolPicker(p: SymbolPickerProps) {
   const anchor = p.anchor ?? "popover";
@@ -111,19 +128,22 @@ export function SymbolPicker(p: SymbolPickerProps) {
   const gid = useId();
 
   const entry = pickerEntry(p.value.key) ?? CATALOG[0]!;
-  const categories = useMemo(() => [...new Set(CATALOG.map((e) => e.category))], []);
-  const recentEntries = useMemo(() => recent.map(pickerEntry).filter((e): e is CatalogEntry => !!e), [recent]);
+  const categories = useMemo(() => [...new Set(VISIBLE.map((e) => e.category))], []);
+  // verborgene (alte) Einträge nie anbieten
+  const recentEntries = useMemo(() => recent.map(pickerEntry).filter((e): e is CatalogEntry => !!e && !e.hidden), [recent]);
+  // Suche liest auch Stufe, Zugehörigkeit und Status: «hz inf», «Halbzug», «gn Zug Pz Gren», «vermutete IED»
+  const search = useMemo(() => (q.trim() ? searchTactical(q, 120) : null), [q]);
 
   // sichtbare Gruppen: Suche (flach) | Kategorie | Alle (Zuletzt + nach Kategorie)
   const groups = useMemo((): Array<{ title: string | null; items: CatalogEntry[] }> => {
-    if (q.trim()) return [{ title: null, items: searchCatalog(q, 120) }];
+    if (search) return [{ title: null, items: search.entries.filter((e) => !e.hidden) }];
     if (cat === RECENT) return [{ title: null, items: recentEntries }];
-    if (cat !== ALL) return [{ title: null, items: CATALOG.filter((e) => e.category === cat) }];
+    if (cat !== ALL) return [{ title: null, items: VISIBLE.filter((e) => e.category === cat) }];
     const out: Array<{ title: string | null; items: CatalogEntry[] }> = [];
     if (recentEntries.length) out.push({ title: RECENT, items: recentEntries });
-    for (const c of categories) out.push({ title: c, items: CATALOG.filter((e) => e.category === c) });
+    for (const c of categories) out.push({ title: c, items: VISIBLE.filter((e) => e.category === c) });
     return out;
-  }, [q, cat, recentEntries, categories]);
+  }, [search, cat, recentEntries, categories]);
   const flat = useMemo(() => groups.flatMap((g) => g.items.map((e, i) => ({ e, id: `${g.title ?? ""}:${e.key}:${i}` }))), [groups]);
 
   // aktiven Eintrag gültig halten
@@ -149,8 +169,13 @@ export function SymbolPicker(p: SymbolPickerProps) {
     grid.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(active)}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
+  // was die Suche vorgibt, gilt für die Auswahl (sonst die bisherigen Einstellungen)
+  const tAff = search?.aff ?? p.value.aff;
+  const tEch = search?.echelon ?? p.value.echelon;
+  // beschreibt die Suche das Element (Zugehörigkeit/Stufe), gilt «vermutet» nur, wenn es dasteht
+  const tStatus = search?.status ?? (search?.aff || search?.echelon ? undefined : p.value.status);
   const choose = (e: CatalogEntry, close = false) => {
-    p.onChange(makeChoice(e, p.value.aff, p.value.echelon, p.value.status));
+    p.onChange(makeChoice(e, tAff, tEch, tStatus));
     setRecent(pushRecent(e.key));
     if (close) p.onClose?.();
   };
@@ -188,12 +213,17 @@ export function SymbolPicker(p: SymbolPickerProps) {
     }
   };
 
-  const status = p.value.status === "anticipated" ? "anticipated" : undefined;
+  const status = p.value.status && p.value.status !== "present" ? p.value.status : undefined;
   const big = choiceSvg(entry, p.value.aff, p.compact ? 30 : 36, { echelon: entry.echelonable ? p.value.echelon : undefined, status });
-  const desc = [AFFILIATIONS.find((a) => a.aff === p.value.aff)?.label, entry.echelonable && p.value.echelon ? ECHELONS.find((e) => e.key === p.value.echelon)?.name : null, entry.name, status ? "(vermutet)" : null].filter(Boolean).join(" · ");
+  const desc = [AFFILIATIONS.find((a) => a.aff === p.value.aff)?.label, entry.echelonable && p.value.echelon ? ECHELONS.find((e) => e.key === p.value.echelon)?.name : null, entry.name, status ? `(${STATUS_WORD[status]})` : null].filter(Boolean).join(" · ");
+  // Kacheln so zeigen, wie sie übernommen würden
+  const tileStatus = tStatus && tStatus !== "present" ? tStatus : undefined;
+  const searchHint = search && (search.echelon || search.aff || (search.status && search.status !== "present"))
+    ? [search.aff ? AFFILIATIONS.find((a) => a.aff === search.aff)?.label : null, search.echelon ? ECHELONS.find((e) => e.key === search.echelon)?.name : null, search.status ? STATUS_WORD[search.status] : null].filter(Boolean).join(" · ")
+    : null;
 
   return (
-    <div ref={root} lang="de-CH" className={`sp sp-${anchor}${p.compact ? " sp-compact" : ""}`} role="dialog" aria-label="Taktisches Zeichen wählen" onKeyDown={onKey}>
+    <div ref={root} lang="de" className={`sp sp-${anchor}${p.compact ? " sp-compact" : ""}`} role="dialog" aria-label="Taktisches Zeichen wählen" onKeyDown={onKey}>
       <div className="sp-head">
         <label className="sp-search">
           <IconSearch />
@@ -213,7 +243,7 @@ export function SymbolPicker(p: SymbolPickerProps) {
           </button>
         ))}
         <label className="sp-toggle" title="Vermutet / nicht bestätigt: Zeichen gestrichelt">
-          <input type="checkbox" checked={!!status} onChange={(e) => setStatus(e.target.checked)} />
+          <input type="checkbox" checked={status === "anticipated"} onChange={(e) => setStatus(e.target.checked)} />
           <span>vermutet</span>
         </label>
       </div>
@@ -228,6 +258,8 @@ export function SymbolPicker(p: SymbolPickerProps) {
         </div>
       )}
 
+      {searchHint && <p className="sp-hint" aria-live="polite">Aus der Suche: <b>{searchHint}</b> – gilt beim Übernehmen</p>}
+
       {!q.trim() && (
         <div className="sp-cats" role="tablist" aria-label="Kategorien">
           {[ALL, ...(recentEntries.length ? [RECENT] : []), ...categories].map((c) => (
@@ -237,7 +269,7 @@ export function SymbolPicker(p: SymbolPickerProps) {
       )}
 
       <div ref={grid} id={gid} className="sp-body" role="listbox" aria-label="Zeichen" aria-activedescendant={active ? `${gid}-${active}` : undefined}>
-        {flat.length === 0 && <p className="sp-empty">Kein Zeichen gefunden. Andere Begriffe versuchen, z. B. «Inf», «Pz», «Sperre», «IED».</p>}
+        {flat.length === 0 && <p className="sp-empty">Kein Zeichen gefunden. Andere Begriffe versuchen, z. B. «Inf», «Pz», «Halbzug», «Sperre», «IED».</p>}
         {groups.map((g, gi) => g.items.length > 0 && (
           <section key={`${g.title}-${gi}`}>
             {g.title && <h4 className="sp-gh">{g.title}</h4>}
@@ -258,8 +290,10 @@ export function SymbolPicker(p: SymbolPickerProps) {
                     onDoubleClick={() => choose(e, true)}
                     title={`${e.name}${e.aliases.length ? ` (${e.aliases.slice(0, 4).join(", ")})` : ""}`}
                   >
-                    <span className="sp-sym" aria-hidden="true" dangerouslySetInnerHTML={{ __html: choiceSvg(e, p.value.aff, p.compact ? 22 : 26, { status }) }} />
-                    <span className="sp-name">{e.name}</span>
+                    <span className="sp-sym" aria-hidden="true">
+                      <span dangerouslySetInnerHTML={{ __html: choiceSvg(e, tAff, p.compact ? 22 : 26, { status: tileStatus, echelon: search?.echelon && e.echelonable ? search.echelon : undefined }) }} />
+                    </span>
+                    <span className="sp-name">{softHyphens(e.name)}</span>
                   </button>
                 );
               })}
