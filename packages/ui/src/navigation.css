@@ -214,4 +214,6 @@
 }
 @media (max-width: 760px) {
   .mapbox .maptools { max-width: calc(100% - 56px); }
+  .nav-kbd { display: none; }
 }
+@media (hover: none) { .nav-kbd { display: none; } }

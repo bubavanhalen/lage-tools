@@ -107,7 +107,7 @@ function pxSize(map: L.Map, b: Bounds, z: number): L.Point {
 
 /**
  * Zoomstufe, bei der `b` mit Rand `pad` ganz sichtbar ist – auf eine scharfe Stufe gelegt (siehe oben).
- * Liegt sie auf x.0 (bzw. x.25), wird x.5 genommen, wenn der Bereich dann mit dem halben Rand noch passt:
+ * Liegt sie auf x.0 (bzw. x.25), wird x.5 genommen, wenn der Bereich dann mit einem Viertel des Rands noch passt:
  * so zeigt die Karte die feinere Kachelstufe verkleinert statt der gröberen (z. B. Übersicht nicht auf der Kleinmassstabkarte).
  * @param maxZoom obere Grenze (z. B. damit ein Punkt nicht bis auf 10 cm/px gezoomt wird)
  */
@@ -124,7 +124,8 @@ export function sharpZoomFor(map: L.Map, b: Bounds, pad: NavPadding = navPadding
     const p = fitPadding(map, pad);
     const full = map.getSize();
     const s = pxSize(map, b, up);
-    const fits = up <= maxZoom && s.x <= full.x - (p[1] + p[3]) / 2 && s.y <= full.y - (p[0] + p[2]) / 2;
+    // «etwas weniger Rand»: ein Viertel des Rands darf genutzt werden (feinere Kachelstufe lohnt sich)
+    const fits = up <= maxZoom && s.x <= full.x - (p[1] + p[3]) / 4 && s.y <= full.y - (p[0] + p[2]) / 4;
     z = fits ? up : base;
   }
   return Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), z));
@@ -144,9 +145,14 @@ export interface FlyOptions {
 export function flyToBoundsSharp(map: L.Map, b: Bounds, o: FlyOptions = {}): boolean {
   const size = map.getSize();
   if (!size.x || !size.y || ![b.minE, b.maxE, b.minN, b.maxN].every(Number.isFinite)) return false;
-  const pad = fitPadding(map, o.padding ?? navPadding(map, b));
+  let pad = fitPadding(map, o.padding ?? navPadding(map, b));
   const z = sharpZoomFor(map, b, pad, o.maxZoom);
   if (!Number.isFinite(z)) return false;
+  // Bei aufgerundeter Stufe passt der Bereich nur mit kleinerem Rand: Rand anteilig verkleinern, damit er ganz sichtbar bleibt
+  const need = pxSize(map, b, z);
+  const kx = pad[1] + pad[3] > 0 ? Math.min(1, Math.max(0, size.x - need.x) / (pad[1] + pad[3])) : 1;
+  const ky = pad[0] + pad[2] > 0 ? Math.min(1, Math.max(0, size.y - need.y) / (pad[0] + pad[2])) : 1;
+  pad = [pad[0] * ky, pad[1] * kx, pad[2] * ky, pad[3] * kx];
   // Mitte unter Berücksichtigung des ungleichen Rands (wie Leaflet `_getBoundsCenterZoom`)
   const off = L.point((pad[1] - pad[3]) / 2, (pad[2] - pad[0]) / 2);
   const a = map.project(toLatLng({ e: b.minE, n: b.minN }), z);

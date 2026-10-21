@@ -443,7 +443,7 @@ export function Workspace({ product, tagline }: Props) {
               <div className="maptools">
                 <MapSearch ex={ex} map={sm.current.map} onSelectEvent={(id) => { setTab("journal"); setSelEvent(id); const e = (ex.events ?? []).find((x) => x.id === id); if (e && tCursor && e.t > tCursor) setTCursor(e.t); }} />
                 <MapToolbar map={sm.current.map} basemap={basemap} onBasemap={(b) => { setBasemap(b); sm.current?.setBasemap(b); }}
-                  flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} />
+                  flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} canFitAll={ex.sheets.length + ex.areas.length > 0} />
               </div>
               <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)}
                 onEdit={present ? undefined : (e) => { setTab("journal"); setEditReq({ id: e.id, n: Date.now() }); }} />

@@ -84,14 +84,31 @@ export function activeMeasure(map: L.Map): MeasureController | undefined {
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const LBL = "font:600 11px/1.25 var(--f-mono,ui-monospace,monospace);font-variant-numeric:tabular-nums;color:#101414;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.18);border-radius:3px;padding:1px 5px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.18);";
 
-function label(html: string, kind: "leg" | "total" | "live", left = false): L.DivIcon {
+type Place = "c" | "up" | "down" | "left" | "right";
+const TRANSFORM: Record<Place, string> = {
+  c: "-50%,-50%",
+  up: "-50%,calc(-100% - 7px)",
+  down: "-50%,7px",
+  left: "calc(-100% - 9px),-50%",
+  right: "9px,-50%",
+};
+
+function label(html: string, kind: "leg" | "total" | "live", place: Place = "right"): L.DivIcon {
   const extra = kind === "total" ? "background:#101414;color:#fff;border-color:#101414;font-weight:600;" : kind === "live" ? "opacity:.92;" : "";
   return L.divIcon({
     className: "lt-measure-lbl",
-    html: `<span style="position:absolute;left:0;top:0;transform:translate(${kind === "leg" ? "-50%,-50%" : left ? "calc(-100% - 10px),-50%" : "10px,-50%"});${LBL}${extra}">${html}</span>`,
+    html: `<span style="position:absolute;left:0;top:0;transform:translate(${TRANSFORM[place]});${LBL}${extra}">${html}</span>`,
     iconSize: [0, 0],
   });
 }
+
+/** Geschätzte Box (px) einer Beschriftung relativ zum Ankerpunkt. */
+function labelBox(at: L.Point, text: string, lines: number, place: Place): [number, number, number, number] {
+  const w = text.length * 6.7 + 12, h = 16 * lines + 4;
+  const [dx, dy] = place === "up" ? [-w / 2, -h - 7] : place === "down" ? [-w / 2, 7] : place === "left" ? [-w - 9, -h / 2] : place === "right" ? [9, -h / 2] : [-w / 2, -h / 2];
+  return [at.x + dx, at.y + dy, at.x + dx + w, at.y + dy + h];
+}
+const overlaps = (a: number[], b: number[]) => a[0]! < b[2]! && a[2]! > b[0]! && a[1]! < b[3]! && a[3]! > b[1]!;
 
 function legHtml(l: MeasureLeg): string {
   const a = formatAzimuth(l.deg, l.mils);
@@ -136,10 +153,27 @@ export function startMeasure(map: L.Map, opts: { start?: LV95 } = {}): MeasureCo
       L.polyline(seg, { pane, color: "#fff", weight: 5, opacity: 0.8, interactive: false }).addTo(g);
       L.polyline(seg, { pane, color: "#101414", weight: 2, opacity: 0.9, dashArray: "6 5", interactive: false }).addTo(g);
     }
+    // Teilstrecken: abwechselnd ober-/unterhalb (bzw. links/rechts bei steilen Strecken); zu kurze oder
+    // überlappende Beschriftungen weglassen – die Tabelle in der Werkzeugleiste zeigt alle Werte.
+    const taken: number[][] = [];
+    const endAt = s.live && live ? live : points[points.length - 1];
+    if (endAt) taken.push(labelBox(map.latLngToContainerPoint(toLatLng(endAt)), "0000000000000000000000000000", s.live ? 2 : 1, "right"));
     const midLabels = s.legs.length >= 2 || (!!s.live && s.legs.length >= 1);
-    if (midLabels) s.legs.forEach((l) => {
+    if (midLabels) s.legs.forEach((l, i) => {
+      const a = map.latLngToContainerPoint(toLatLng(l.from)), b = map.latLngToContainerPoint(toLatLng(l.to));
+      if (a.distanceTo(b) < 70) return;
       const mid = toLatLng({ e: (l.from.e + l.to.e) / 2, n: (l.from.n + l.to.n) / 2 });
-      L.marker(mid, { icon: label(legHtml(l), "leg"), pane, interactive: false, keyboard: false }).addTo(g);
+      const at = map.latLngToContainerPoint(mid);
+      const steep = Math.abs(b.y - a.y) > Math.abs(b.x - a.x) * 1.5;
+      const pref: Place[] = steep ? (i % 2 ? ["right", "left"] : ["left", "right"]) : i % 2 ? ["down", "up"] : ["up", "down"];
+      const text = legHtml(l).replace(/&[a-z]+;/g, "x");
+      for (const place of pref) {
+        const box = labelBox(at, text, 1, place);
+        if (taken.some((t) => overlaps(t, box))) continue;
+        taken.push(box);
+        L.marker(mid, { icon: label(legHtml(l), "leg", place), pane, interactive: false, keyboard: false }).addTo(g);
+        break;
+      }
     });
     points.forEach((p, i) => {
       L.circleMarker(toLatLng(p), { pane, radius: i === 0 ? 5 : 4, color: "#101414", weight: 2, fillColor: i === 0 ? "#101414" : "#fff", fillOpacity: 1, interactive: false }).addTo(g);
@@ -148,12 +182,12 @@ export function startMeasure(map: L.Map, opts: { start?: LV95 } = {}): MeasureCo
       const tot = s.total + s.live.m;
       // rechts im Kartenbild (unter den Werkzeugen) links vom Mauszeiger beschriften
       const left = map.latLngToContainerPoint(toLatLng(live)).x > map.getSize().x - 560;
-      L.marker(toLatLng(live), { icon: label(`${legHtml(s.live)}${s.legs.length ? `<br>Σ ${esc(formatDistance(tot))}` : ""}`, "live", left), pane, interactive: false, keyboard: false }).addTo(g);
+      L.marker(toLatLng(live), { icon: label(`${legHtml(s.live)}${s.legs.length ? `<br>Σ ${esc(formatDistance(tot))}` : ""}`, "live", left ? "left" : "right"), pane, interactive: false, keyboard: false }).addTo(g);
     } else if (s.legs.length) {
       const last = points[points.length - 1]!;
       const html = s.legs.length === 1 ? legHtml(s.legs[0]!) : `Σ ${esc(formatDistance(s.total))}`;
       const left = map.latLngToContainerPoint(toLatLng(last)).x > map.getSize().x - 560;
-      L.marker(toLatLng(last), { icon: label(html, "total", left), pane, interactive: false, keyboard: false }).addTo(g);
+      L.marker(toLatLng(last), { icon: label(html, "total", left ? "left" : "right"), pane, interactive: false, keyboard: false }).addTo(g);
     }
     fire();
   };
@@ -220,6 +254,7 @@ export function startMeasure(map: L.Map, opts: { start?: LV95 } = {}): MeasureCo
       gone = true;
       detach();
       document.removeEventListener("keydown", onKey, true);
+      map.off("zoomend", draw);
       map.removeLayer(g);
       if (active.get(map) === ctl) active.delete(map);
       fire();
@@ -228,6 +263,7 @@ export function startMeasure(map: L.Map, opts: { start?: LV95 } = {}): MeasureCo
   };
 
   map.on("click", onClick);
+  map.on("zoomend", draw);
   map.on("mousemove", onMove);
   map.on("dblclick", onDbl);
   document.addEventListener("keydown", onKey, true);
