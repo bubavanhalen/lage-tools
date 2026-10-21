@@ -12,6 +12,15 @@ export type Side = "rot" | "blau" | "ul";
 /** Hinweis auf die Strassenart aus dem Text: «auf Hauptstrasse» → haupt, «auf Autobahn / A1» → autobahn */
 export type RoadHint = "haupt" | "autobahn";
 
+/** Form eines Flächen- oder Linienzeichens (siehe `LageEvent.shape`) */
+export interface EventShape {
+  kind: "flaeche" | "linie";
+  /** Eckpunkte (Fläche, ohne Wiederholung des ersten Punkts) bzw. Linienzug, LV95 */
+  pts: LV95[];
+  /** aus dem Ort berechnet (Planquadrat, NAI, Strasse); von Hand gezeichnete Formen nie überschreiben */
+  auto?: boolean;
+}
+
 export interface SourceRef {
   kind: "text" | "image" | "audio" | "import";
   /** Dateiname, Asset-ID oder Originaltext */
@@ -66,6 +75,13 @@ export interface LageEvent {
   angle?: number;
   /** Strasse, auf die das Zeichen gelegt wurde */
   road?: string;
+  /** «Kein Strassenbezug» gewählt: nicht automatisch auf eine Strasse legen */
+  roadNone?: boolean;
+  /**
+   * Flächen- oder Linienzeichen (z. B. Minenfeld, Stacheldraht): Umriss bzw. Linienzug in LV95.
+   * `auto` = aus dem Ort berechnet (darf bei Ortsänderung neu berechnet werden), sonst von Hand gezeichnet.
+   */
+  shape?: EventShape;
   /** Strassenart aus dem Text («auf Hauptstrasse», «auf Autobahn») für die Lage auf der Strasse */
   roadHint?: RoadHint;
   /** Herkunft in Grad (0 = Nord), z. B. «Schuss aus Rtg O» → 90; keine Bewegungsrichtung */

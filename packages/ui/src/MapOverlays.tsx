@@ -4,7 +4,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { type Area, type LageEvent } from "@lage/core";
-import { symbolSvg } from "@lage/map";
+import { iconSvg } from "@lage/map";
 import type { LayerFlags } from "./layers";
 import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
 import { getSituationLayout, subscribeSituationLayout } from "./situationLayer";
@@ -14,7 +14,7 @@ import "./mapoverlays.css";
 const UNIT_VAR = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", neutral: "var(--ok)", ul: "var(--muted)" } as const;
 
 function Sym({ k, aff, size, sidc, status }: { k: string; aff: LageEvent["aff"]; size: number; sidc?: string; status?: LageEvent["status"] }) {
-  const s = useMemo(() => symbolSvg(k, aff, size, { sidc, status }), [k, aff, size, sidc, status]);
+  const s = useMemo(() => iconSvg(k, aff, size, { sidc, status }), [k, aff, size, sidc, status]);
   return <span className="mo-sym" aria-hidden dangerouslySetInnerHTML={{ __html: s.svg }} />;
 }
 
@@ -112,6 +112,8 @@ export interface LegendProps {
   /** wie bei der Kartenebene (Standard 30) */
   recentMin?: number;
   selectedId?: string | null;
+  /** Anfang des Zeitfensters (ISO lokal), null = alles */
+  from?: string | null;
 }
 
 const FOLD_KEY = "lage-tools.legende.zu";
@@ -139,7 +141,7 @@ function readFold(): boolean | null {
   return null;
 }
 
-export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = null }: LegendProps) {
+export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = null, from = null }: LegendProps) {
   const ref = useRef<HTMLElement>(null);
   const [userFold, setUserFold] = useState<boolean | null>(readFold);
   /** automatisch zu: kleine Karte (Höhe < 700 px) oder schmales Fenster (< 1100 px) */
@@ -166,7 +168,7 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
   }, []);
   const folded = present ? !presentOpen : userFold ?? autoFold;
   const layout = useSyncExternalStore(subscribeSituationLayout, getSituationLayout);
-  const model = useMemo(() => situationModel(events, t, flags, { recentMin, selectedId }), [events, t, flags, recentMin, selectedId]);
+  const model = useMemo(() => situationModel(events, t, flags, { recentMin, selectedId, from }), [events, t, flags, recentMin, selectedId, from]);
 
   const entries = useMemo(() => {
     const out: Array<{ key: string; icon: ReactNode; label: string }> = [];
@@ -200,13 +202,22 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
       out.push({ key: "blass", icon: <span style={{ opacity: 0.45 }}><Sym k={old.sym} aff={old.aff} size={16} /></span>, label: `blass = älter als ${recentMin} min` });
     }
     if (model.items.some((i) => i.kind === "eigen" && i.isUnit && i.silentMin > STALE_MIN)) out.push({ key: "alt", icon: <span className="mo-tl tnum">75′</span>, label: `keine Meldung seit über ${STALE_MIN} min` });
-    if (layout.moved > 0) out.push({
-      key: "lead",
-      icon: <svg viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M4 10 L20 4" stroke="currentColor" strokeWidth="1.5" /><circle cx="4" cy="10" r="3" fill="currentColor" /></svg>,
-      label: "versetzt, Punkt = wahrer Ort",
+    if (layout.stacks > 0) out.push({
+      key: "stapel",
+      icon: (
+        <svg viewBox="0 0 26 18" width="26" height="18" aria-hidden>
+          <rect x="11" y="2" width="11" height="9" fill="#fff" stroke="#101414" strokeWidth="1.2" />
+          <rect x="8" y="5" width="11" height="9" fill="#fff" stroke="#101414" strokeWidth="1.2" />
+          <rect x="5" y="8" width="11" height="9" fill="#FF8080" stroke="#101414" strokeWidth="1.2" />
+          <circle cx="5" cy="8" r="4.6" fill="#101414" stroke="#fff" strokeWidth="1" />
+          <text x="5" y="10.4" fontSize="6.5" fontWeight="700" fill="#fff" textAnchor="middle" fontFamily="var(--f-mono)">3</text>
+        </svg>
+      ),
+      label: "Stapel: Zahl = Meldungen am Ort, Klick fächert auf",
     });
+    if (from) out.push({ key: "fenster", icon: <span className="mo-tl tnum">{from.slice(11, 16)}</span>, label: "Zeitfenster: Meldungen ab dieser Zeit, Elemente immer" });
     return out;
-  }, [model, flags.nai, areas, recentMin, layout.moved]);
+  }, [model, flags.nai, areas, recentMin, layout.stacks, from]);
 
   const toggle = () => {
     const v = !folded;

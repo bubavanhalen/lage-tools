@@ -81,7 +81,23 @@ export interface CatalogEntry {
    * z. B. «Draht», «BR». Darstellung: `new ms.Symbol(sidc, { uniqueDesignation: tag })`.
    */
   tag?: string;
+  /**
+   * Geometrie des Zeichens: «punkt» (Standard), «flaeche» (Raum, z. B. Minenfeld, Bereitstellungsraum) oder «linie»
+   * (z. B. Stacheldraht, Phasenlinie, Marschachse). Flächen/Linien bekommen eine Form (`LageEvent.shape`) und werden
+   * zusätzlich als Punktzeichen am Schwerpunkt gezeigt.
+   */
+  geometry?: Geometry;
+  /** Linienart bzw. Flächenmuster für die Darstellung (siehe `ShapeStyle`) */
+  style?: ShapeStyle;
 }
+
+export type Geometry = "punkt" | "flaeche" | "linie";
+/**
+ * Darstellung von Flächen und Linien: rand = nur Umriss; minen = Schraffur mit «M»; abc = Schraffur;
+ * draht = Zacken/Kreise; graben = Zähne; sperre = Querstriche; achse = Pfeil; front = Bogenlinie (Kontaktlinie);
+ * grenze = Strich-Punkt; phase = gestrichelt mit Name an den Enden.
+ */
+export type ShapeStyle = "rand" | "minen" | "abc" | "draht" | "graben" | "sperre" | "achse" | "front" | "grenze" | "phase" | "ziel";
 
 export const ECHELONS: Array<{ key: Echelon; name: string; code: string; aliases: string[]; g: Genus; pl: string }> = [
   { key: "trp", name: "Trupp", code: "A", aliases: ["trp", "trupp"], g: "m", pl: "Trupps" },
@@ -115,6 +131,7 @@ export const CATEGORIES = [
   "Luftfahrzeuge",
   "Anlagen und Orte",
   "Hindernisse",
+  "Räume und Linien",
   "Tätigkeiten",
   "Ereignisse",
   "Allgemein",
@@ -130,6 +147,9 @@ const OBST: Extra = { lean: "feind", hostile: true, activity: true, placement: "
 const ACT: Extra = { lean: "feind", activity: true };
 const EVT: Extra = { activity: true };
 const SITE: Extra = { activity: true };
+/** Raum (Fläche) bzw. Linie: Tätigkeit am Ort, verschiebt kein Element; Rang tiefer als Elemente («gn Kp in BR AG12») */
+const AREA: Extra = { activity: true, geometry: "flaeche", style: "rand", prio: 1 };
+const LINE: Extra = { activity: true, geometry: "linie", prio: 1 };
 
 export const CATALOG: CatalogEntry[] = [
   // ---------- Kampftruppen
@@ -230,28 +250,43 @@ export const CATALOG: CatalogEntry[] = [
   E("log_pt", "Logistikpunkt", "Anlagen und Orte", "G?SPPL----****X", ["log pt", "log punkt", "log pkt", "logistikpunkt", "abgabestelle", "abgabepunkt", "versorgungspunkt"], "anlage", { ...SITE, pl: "Logistikpunkte", tag: "Log" }),
   E("san_hist", "Sanitätshilfsstelle / Spital", "Anlagen und Orte", "S?GPIXH--------", ["san hist", "sanitätshilfsstelle", "spital", "lazarett", "san po", "sanitätsposten", "mil spital", "notfallstation"], "anlage", { ...SITE, noun: "Sanitätshilfsstelle", g: "f", pl: "Sanitätshilfsstellen" }),
   E("verwundetennest", "Verwundetennest", "Anlagen und Orte", "G?SPPY----****X", ["verwundetennest", "vw nest", "verw nest", "patientensammelstelle", "verwundetensammelstelle"], "anlage", { ...SITE, g: "n", tag: "Verw" }),
-  E("landeplatz", "Landeplatz", "Anlagen und Orte", "E?FPLF---------", ["landeplatz", "lz", "heli landeplatz", "helikopterlandeplatz", "landezone", "lde pl"], "anlage", { ...SITE, pl: "Landeplätze" }),
+  E("landeplatz", "Landeplatz", "Anlagen und Orte", "E?FPLF---------", ["landeplatz", "heli landeplatz", "helikopterlandeplatz", "lde pl"], "anlage", { ...SITE, pl: "Landeplätze" }),
   E("bruecke", "Brücke", "Anlagen und Orte", "S?GPIMNB-------", ["brücke", "brücken", "übergang", "steg", "viadukt"], "anlage", { ...SITE, g: "f", pl: "Brücken", prio: 1 }),
   E("sammelplatz", "Sammelplatz", "Anlagen und Orte", "G?GPGPPR--****X", ["sammelplatz", "sammel pl", "sammelpunkt", "smpl", "treffpunkt", "sammelort"], "anlage", { ...SITE, tag: "Smpl" }),
-  // 2525C kennt den Bereitstellungsraum nur als Fläche (G*G*GAA…), milsymbol zeichnet nur Punkte: allgemeiner
-  // Aktionspunkt (G*G*GPP) mit Beschriftung «BR» statt «Start Point» (GPPS)
-  E("sammelraum", "Bereitstellungsraum / Sammelraum", "Anlagen und Orte", "G?GPGPP---****X", ["bereitstellungsraum", "bereitstellung", "ber raum", "bereitschaftsraum", "sammelraum", "warteraum"], "anlage", { ...SITE, noun: "Bereitstellungsraum", pl: "Bereitstellungsräume", inPhrase: "in Bereitstellung", tag: "BR" }),
 
   // ---------- Hindernisse
   E("sperre", "Sperre (allg.)", "Hindernisse", "G?OPPR----****X", ["sperre", "hindernis", "spr", "barrikade", "absperrung", "gesperrt"], "grafik", { ...OBST, noun: "Sperre", pl: "Sperren" }),
   E("strassensperre", "Strassensperre", "Hindernisse", "G?OPPR----****X", ["strassensperre", "str sperre", "strassenblockade", "strassenblockierung", "roadblock", "road block"], "grafik", { ...OBST, pl: "Strassensperren" }),
-  E("panzersperre", "Panzersperre", "Hindernisse", "G?MPOAOF--****X", ["panzersperre", "pz sperre", "höcker", "panzerhindernis", "pz hindernis", "tankfalle", "panzergraben"], "grafik", { ...OBST, pl: "Panzersperren" }),
-  E("minensperre", "Minensperre / Minenfeld", "Hindernisse", "G?MPOFS---****X", ["minensperre", "minenfeld", "min sperre", "mi sperre", "minen", "verminung", "vermint"], "grafik", { ...OBST, noun: "Minensperre", pl: "Minensperren" }),
+  E("panzersperre", "Panzersperre", "Hindernisse", "G?MPOAOF--****X", ["panzersperre", "pz sperre", "höcker", "panzerhindernis", "pz hindernis", "tankfalle"], "grafik", { ...OBST, pl: "Panzersperren" }),
+  E("minensperre", "Minensperre / Minenfeld", "Hindernisse", "G?MPOFS---****X", ["minensperre", "minenfeld", "min sperre", "mi sperre", "minen", "verminung", "vermint"], "grafik", { ...OBST, placement: "frei", geometry: "flaeche", style: "minen", noun: "Minensperre", pl: "Minensperren" }),
   E("mine", "Einzelmine", "Hindernisse", "G?MPOMU---****X", ["mine", "einzelmine", "landmine"], "grafik", { ...OBST, placement: "frei", noun: "Mine", pl: "Minen" }),
   E("pz_mine", "Panzermine", "Hindernisse", "G?MPOMT---****X", ["pz mine", "panzermine", "at mine"], "grafik", { ...OBST, placement: "frei", pl: "Panzerminen" }),
   E("pers_mine", "Personenmine", "Hindernisse", "G?MPOMP---****X", ["pers mine", "personenmine", "ap mine", "springmine"], "grafik", { ...OBST, placement: "frei", pl: "Personenminen" }),
   E("sprengobjekt", "Sprengobjekt (vorbereitete Sprengung)", "Hindernisse", "O?VPB----------", ["sprengobjekt", "spr obj", "spreng obj", "vorbereitete sprengung", "sprengladung", "sprengsatz geladen", "geladene brücke"], "grafik", { ...OBST, noun: "Sprengobjekt", g: "n", pl: "Sprengobjekte" }),
   // 2525C kennt Drahthindernisse nur als Linie (G*M*OW…), milsymbol zeichnet nur Punkte; OAOP wäre «bewegliche
   // Tetraeder» (Panzerhindernis) und damit falsch. Deshalb allgemeiner Punkt (G*G*GPP) mit Beschriftung «Draht».
-  E("stacheldraht", "Stacheldraht / Drahthindernis", "Hindernisse", "G?GPGPP---****X", ["stacheldraht", "draht", "drahthindernis", "drahtsperre", "nato draht", "concertina", "s draht"], "grafik", { ...OBST, placement: "frei", noun: "Drahthindernis", g: "n", pl: "Drahthindernisse", tag: "Draht" }),
+  E("stacheldraht", "Stacheldraht / Drahthindernis", "Hindernisse", "G?GPGPP---****X", ["stacheldraht", "draht", "drahthindernis", "drahtsperre", "nato draht", "concertina", "s draht"], "grafik", { ...OBST, placement: "frei", geometry: "linie", style: "draht", noun: "Drahthindernis", g: "n", pl: "Drahthindernisse", tag: "Draht" }),
   E("ied", "IED (Sprengfalle)", "Hindernisse", "S?GPEXI--------", ["ied", "ueid", "sprengsatz", "improvisierter sprengsatz", "usbv", "rohrbombe", "bombe"], "grafik", { ...OBST, noun: "IED", pl: "IEDs" }),
   E("vbied", "Fahrzeug-IED (VBIED)", "Hindernisse", "S?GPEXI---MO---", ["vbied", "fahrzeug ied", "autobombe", "fz ied", "fahrzeugbombe"], "grafik", { ...OBST, noun: "Fahrzeug-IED", pl: "Fahrzeug-IEDs", prio: 5 }),
   E("sprengfalle", "Sprengfalle", "Hindernisse", "G?MPOB----****X", ["sprengfalle", "booby trap", "stolperdraht", "stolperfalle"], "grafik", { ...OBST, placement: "frei", pl: "Sprengfallen" }),
+  E("sperrlinie", "Sperrlinie / Sperrriegel", "Hindernisse", "G?OPPR----****X", ["sperrlinie", "sperrriegel", "sperrgürtel", "riegel", "sperr linie"], "grafik", { ...OBST, ...LINE, style: "sperre", prio: 4, noun: "Sperrlinie", pl: "Sperrlinien" }),
+  E("panzergraben", "Panzergraben", "Hindernisse", "G?GPGPP---****X", ["panzergraben", "pz graben", "tankgraben", "pzgraben"], "grafik", { ...OBST, ...LINE, style: "graben", prio: 4, pl: "Panzergräben", g: "m", tag: "Graben" }),
+
+  // ---------- Räume und Linien (Fläche/Linie mit Punktzeichen am Schwerpunkt; milsymbol zeichnet nur das Punktzeichen)
+  // 2525C kennt den Bereitstellungsraum nur als Fläche (G*G*GAA…): Punktzeichen = allgemeiner Aktionspunkt (G*G*GPP)
+  // mit Beschriftung «BR» statt «Start Point» (GPPS)
+  E("sammelraum", "Bereitstellungsraum / Sammelraum", "Räume und Linien", "G?GPGPP---****X", ["bereitstellungsraum", "bereitstellung", "ber raum", "bereitschaftsraum", "sammelraum", "warteraum"], "anlage", { ...AREA, prio: undefined, noun: "Bereitstellungsraum", pl: "Bereitstellungsräume", inPhrase: "in Bereitstellung", tag: "BR" }),
+  E("sperrgebiet", "Sperrgebiet / gesperrtes Gebiet", "Räume und Linien", "G?GPGPP---****X", ["sperrgebiet", "gesperrtes gebiet", "sperrzone", "sperrraum", "absperrgebiet", "gesperrter raum"], "grafik", { ...AREA, noun: "Sperrgebiet", g: "n", pl: "Sperrgebiete", tag: "Sperr" }),
+  E("abc_gebiet", "Verseuchtes Gebiet (ABC)", "Räume und Linien", "G?GPGPP---****X", ["verseuchtes gebiet", "verseucht", "verseuchung", "kontaminiert", "kontaminiertes gebiet", "kontamination", "abc gebiet", "c gebiet", "chemisch verseucht"], "grafik", { ...AREA, style: "abc", lean: "unklar", noun: "verseuchtes Gebiet", g: "n", pl: "verseuchte Gebiete", tag: "ABC" }),
+  E("beob_raum", "Beobachtungsraum / Überwachungsraum", "Räume und Linien", "G?GPGPP---****X", ["beobachtungsraum", "überwachungsraum", "beob raum", "beo raum", "überwachungszone", "überwachungsgebiet", "beobachtungsgebiet"], "grafik", { ...AREA, lean: "eigen", noun: "Beobachtungsraum", pl: "Beobachtungsräume", tag: "Beob" }),
+  E("zielraum", "Zielraum", "Räume und Linien", "G?FPPTS---****X", ["zielraum", "zielgebiet", "zielfläche", "ziel raum"], "grafik", { ...AREA, style: "ziel", lean: "eigen", pl: "Zielräume" }),
+  E("landezone", "Landezone", "Räume und Linien", "G?GPGPP---****X", ["landezone", "lz", "landeraum", "absetzzone", "absetzraum", "lde zone"], "grafik", { ...AREA, lean: "eigen", g: "f", pl: "Landezonen", tag: "LZ" }),
+  E("evak_raum", "Evakuierungsraum", "Räume und Linien", "G?GPGPP---****X", ["evakuierungsraum", "evak raum", "evakuierungszone", "evakuierungsgebiet", "evak zone"], "grafik", { ...AREA, lean: "eigen", pl: "Evakuierungsräume", tag: "Evak" }),
+  E("feuerraum", "Feuerraum / Wirkungsraum", "Räume und Linien", "G?GPGPP---****X", ["feuerraum", "feuerzone", "wirkungsraum", "feuerbereich", "wirkungszone"], "grafik", { ...AREA, lean: "eigen", noun: "Feuerraum", pl: "Feuerräume", tag: "Feuer" }),
+  E("kontaktlinie", "Front-/Kontaktlinie", "Räume und Linien", "G?GPGPP---****X", ["kontaktlinie", "frontlinie", "front", "vordere linie", "gefechtsberührung", "flot"], "grafik", { ...LINE, style: "front", noun: "Kontaktlinie", g: "f", pl: "Kontaktlinien", tag: "Front" }),
+  E("phasenlinie", "Phasenlinie", "Räume und Linien", "G?GPGPP---****X", ["phasenlinie", "phasen linie", "meldelinie", "kontrolllinie", "phase line"], "grafik", { ...LINE, style: "phase", lean: "eigen", g: "f", pl: "Phasenlinien", tag: "Phase" }),
+  E("grenze", "Grenze / Abschnittsgrenze", "Räume und Linien", "G?GPGPP---****X", ["abschnittsgrenze", "grenze", "trennlinie", "raumgrenze", "abschnitt grenze", "gefechtsstreifen"], "grafik", { ...LINE, style: "grenze", lean: "eigen", noun: "Abschnittsgrenze", g: "f", pl: "Abschnittsgrenzen", tag: "Grenze" }),
+  E("achse", "Marsch-/Verschiebungsachse", "Räume und Linien", "G?GPGPP---****X", ["marschachse", "verschiebungsachse", "vormarschachse", "angriffsachse", "achse", "marschroute", "vormarschweg", "stossachse"], "grafik", { ...LINE, style: "achse", noun: "Achse", g: "f", pl: "Achsen", tag: "Achse" }),
 
   // ---------- Tätigkeiten
   E("patrouille", "Patrouille", "Tätigkeiten", "G?OPPT----****X", ["patrouille", "patr", "pat", "streife", "patrouillieren", "patrouilliert"], "taetigkeit", { lean: "feind", g: "f", pl: "Patrouillen", prio: 3 }),

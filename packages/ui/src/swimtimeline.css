@@ -92,6 +92,31 @@
 .swt-curlabel { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 600; fill: var(--blau); text-anchor: middle; }
 .swt-zoomnote { font-family: var(--f-mono); font-size: 11px; fill: var(--muted); text-anchor: end; }
 
+/* ---------- Zeitfenster: Anfangsgriff, abgedunkelte Vergangenheit, hervorgehobener Bereich ---------- */
+.swt-past { opacity: .7; }
+.swt-winband { fill: var(--blau); opacity: .07; pointer-events: none; }
+.swt-winline { stroke: var(--blau); stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
+.swt-fromlabel { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 500; fill: var(--blau); text-anchor: middle; }
+.swt-grip { cursor: ew-resize; outline: none; }
+.swt-grip .hit { fill: transparent; }
+.swt-grip-v { fill: none; stroke: var(--blau); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.swt-grip-t { fill: var(--blau); }
+.swt-grip.idle .swt-grip-v { stroke: var(--muted); stroke-width: 2.4; opacity: .75; }
+.swt-grip:hover .swt-grip-v, .swt-grip:focus-visible .swt-grip-v { stroke: var(--blau); opacity: 1; stroke-width: 4; }
+.swt-grip:focus-visible .hit { fill: color-mix(in srgb, var(--blau) 18%, transparent); }
+
+.swt-win { flex: none; display: inline-flex; align-items: center; }
+.swt-win-seg { display: inline-flex; align-items: center; gap: 1px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.swt-win-seg button {
+  min-height: 28px; padding: 2px 10px; border: 0; border-radius: 999px; background: transparent;
+  font: 500 13px/1.2 var(--f-body); color: var(--ink); white-space: nowrap;
+}
+.swt-win-seg button:hover { background: var(--grid); }
+.swt-win-seg button[aria-pressed="true"] { background: var(--blau); color: var(--card); }
+.swt-win-ab span { opacity: .8; margin-left: 2px; }
+.swt-win-seg button.swt-win-ab.inactive { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); text-decoration: line-through; }
+.swt-win-sel { display: none; min-height: 32px; padding: 4px 6px; font-size: 13px; border-radius: 999px; background: var(--card); }
+
 .swt-dot, .swt-melder, .swt-badge { cursor: pointer; }
 .swt-dot .hit, .swt-melder .hit { fill: transparent; stroke: none; }
 .swt-dot:hover circle:last-child { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--ink) 45%, transparent)); }
@@ -148,6 +173,7 @@
 .swt.compact .swt-play { width: 34px; height: 34px; }
 .swt.compact .swt-now { font-size: 19px; min-width: 100px; }
 .swt.compact .swt-chip, .swt.compact .swt-speed { min-height: 28px; padding-top: 2px; padding-bottom: 2px; }
+.swt.compact .swt-win-seg button { min-height: 24px; padding: 1px 8px; }
 .swt.compact .swt-axis text { font-size: 11px; }
 .swt.compact .swt-lane text { font-family: var(--f-body); font-weight: 500; }
 
@@ -159,14 +185,26 @@
   .swt-chip { padding: 4px 10px; }
 }
 @container (max-width: 520px) {
-  .swt-range { order: 10; flex-basis: 100%; }
+  .swt-range { order: 10; flex: 1 1 0; min-width: 0; }
+  .swt-fold { order: 11; margin-left: 0; }
+  .swt-bar::after { content: ""; order: 9; flex-basis: 100%; height: 0; }
+}
+/* wenig Breite: Schnellwahl als Auswahlliste */
+@container (max-width: 820px) {
+  .swt-win-seg { display: none; }
+  .swt-win-sel { display: inline-block; }
 }
 /* ---------- schmal (Telefon) ---------- */
 @media (max-width: 760px) {
   .swt-bar { padding: 8px 10px; gap: 6px 8px; }
   .swt-now { font-size: 19px; min-width: 0; }
-  .swt-range { order: 10; flex-basis: 100%; }
+  /* Schieberegler in eigener Zeile, der Einklapp-Pfeil gleich daneben (nicht allein auf einer Zeile) */
+  .swt-range { order: 10; flex: 1 1 0; min-width: 0; }
+  .swt-fold { order: 11; margin-left: 0; }
+  .swt-bar::after { content: ""; order: 9; flex-basis: 100%; height: 0; }
   .swt-speed { display: none; }
+  /* «Ganze Achse» nur, wenn hineingezoomt (sonst ohne Wirkung, kostet eine Zeile) */
+  .swt-fit[aria-pressed="true"] { display: none; }
 }
 /* Touch: Klickziele mindestens 40 px */
 @media (pointer: coarse) {
@@ -177,4 +215,7 @@
   .swt-range::-webkit-slider-thumb { width: 26px; height: 26px; margin-top: -10px; }
   .swt-range::-moz-range-thumb { width: 24px; height: 24px; }
   .swt-more { min-height: 28px; }
+  .swt-win-seg button { min-height: 36px; padding: 2px 12px; }
+  .swt-win-sel { min-height: 40px; }
+  .swt-grip .hit { stroke: transparent; stroke-width: 18px; } /* grössere Fläche für den Finger */
 }

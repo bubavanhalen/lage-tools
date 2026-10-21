@@ -2,12 +2,15 @@
  * Rechtsklick bzw. langes Drücken (Touch) auf die Karte: kleines Menü an der Stelle mit LV95-Koordinate,
  * Planquadrat inkl. Unterquadrant, Kopieren, «Meldung hier», «Messen ab hier», Zoom auf Feld/Unterquadrant.
  * Schliesst mit Esc, Klick daneben oder Verschieben der Karte. Während einer Messung beendet Rechtsklick die Messung.
+ * Langes Drücken: 500 ms ohne Bewegung (> 8 px oder zweiter Finger bricht ab), danach kein Klick und kein
+ * natives Kontextmenü mehr (keine Doppelöffnung), siehe `longpress.ts`.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { cellAtAny, formatLv95, type CellRef, type LV95, type RasterSheet } from "@lage/core";
 import { activeMeasure, isMeasuring, overlayPane, startMeasure, toLatLng, toLv95, zoomToCell } from "@lage/map";
 import { IconCell, IconCopy, IconPen, IconQuad, IconRuler } from "./navicons";
+import { contextMenuSuppressed, longPress } from "./longpress";
 import "./navigation.css";
 
 interface Open {
@@ -36,7 +39,8 @@ async function copyText(t: string): Promise<boolean> {
   }
 }
 
-const LONG_PRESS_MS = 550;
+/** langes Drücken bis zum Kontextmenü (ms) */
+const LONG_PRESS_MS = 500;
 
 export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; sheets: RasterSheet[]; onReportHere: (pos: LV95) => void }) {
   const [open, setOpen] = useState<Open | null>(null);
@@ -62,53 +66,28 @@ export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; shee
     };
     const onCtx = (ev: L.LeafletMouseEvent) => {
       ev.originalEvent?.preventDefault();
+      if (contextMenuSuppressed()) return; // eben ein Zeichen angehoben oder Menü per langem Drücken geöffnet
       if (isMeasuring(map)) { activeMeasure(map)?.finish(); return; }
       show(ev.latlng);
     };
     map.on("contextmenu", onCtx);
 
+    // langes Drücken (Finger, Stift): nicht auf Zeichen (dort hebt langes Drücken das Zeichen zum Verschieben an)
     const el = map.getContainer();
-    let timer = 0;
-    let start: { x: number; y: number; id: number } | null = null;
-    let suppressClick = false;
-    const cancel = () => { window.clearTimeout(timer); start = null; };
-    // Klick nach dem Loslassen eines langen Drückens schlucken – aber nur kurz (nicht jeder Browser sendet ihn)
-    const onUp = () => {
-      cancel();
-      if (suppressClick) window.setTimeout(() => { suppressClick = false; }, 400);
-    };
-    const onDown = (e: PointerEvent) => {
-      if (e.pointerType === "mouse") return;
-      if (start) { cancel(); return; } // zweiter Finger: Pinch
-      start = { x: e.clientX, y: e.clientY, id: e.pointerId };
-      timer = window.setTimeout(() => {
-        if (!start || isMeasuring(map)) return;
+    const off = longPress(el, {
+      delay: LONG_PRESS_MS,
+      tolerance: 8,
+      accept: (e) => e.pointerType !== "mouse" && !(e.target instanceof Element && e.target.closest(".lt-ev, .nav-ctx")),
+      onPress: (p) => {
+        if (isMeasuring(map) || contextMenuSuppressed()) return false;
         const r = el.getBoundingClientRect();
-        show(map.containerPointToLatLng(L.point(start.x - r.left, start.y - r.top)));
-        suppressClick = true;
-        start = null;
-        navigator.vibrate?.(15);
-      }, LONG_PRESS_MS);
-    };
-    const onMove = (e: PointerEvent) => {
-      if (start && e.pointerId === start.id && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel();
-    };
-    const onClickCapture = (e: MouseEvent) => {
-      if (suppressClick) { suppressClick = false; e.stopPropagation(); e.preventDefault(); }
-    };
-    el.addEventListener("pointerdown", onDown);
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", onUp);
-    el.addEventListener("pointercancel", cancel);
-    el.addEventListener("click", onClickCapture, true);
+        show(map.containerPointToLatLng(L.point(p.x - r.left, p.y - r.top)));
+        return true;
+      },
+    });
     return () => {
       map.off("contextmenu", onCtx);
-      cancel();
-      el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", cancel);
-      el.removeEventListener("click", onClickCapture, true);
+      off();
     };
   }, [map]);
 

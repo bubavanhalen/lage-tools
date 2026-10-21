@@ -18,7 +18,7 @@ import {
   type Echelon,
   type Status,
 } from "@lage/core";
-import { germanPin, symbolSvg } from "@lage/map";
+import { germanPin, shapeIconSvg, symbolSvg } from "@lage/map";
 import { IconClose, IconSearch } from "./navicons";
 import { softHyphens } from "./hyphen";
 import "./symbolpicker.css";
@@ -96,8 +96,11 @@ export function rebaseSidc(old: string | undefined, c: SymbolChoice): string | u
 }
 
 const svgCache = new Map<string, string>();
-/** Zeichen als SVG-Text (milsymbol; Dreieck für Beob Posten über `symbolSvg`). */
+/** Zeichen als SVG-Text (milsymbol; Dreieck für Beob Posten über `symbolSvg`; Fläche/Linie über `shapeIconSvg`). */
 export function choiceSvg(entry: CatalogEntry, aff: Affiliation, size: number, o: { echelon?: Echelon; status?: Status } = {}): string {
+  // Flächen und Linien: eigenes kleines Bild (Vieleck mit Muster bzw. Linienart) statt der unleserlichen Stecknadel
+  const shape = shapeIconSvg(entry.key, aff, size, { status: o.status });
+  if (shape) return shape.svg;
   if (entry.triangle && SYMBOLS.some((s) => s.key === entry.key && s.triangle)) return symbolSvg(entry.key, aff, size).svg;
   const sidc = buildSidc(entry, aff, o);
   const ck = `${sidc}|${size}|${entry.tag ?? ""}`;

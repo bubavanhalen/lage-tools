@@ -15,6 +15,8 @@ const POINT_RE = /ied|spreng|bombe|mine|unfall/;
 export function roadMark(e: Pick<LageEvent, "sym" | "angle" | "pos">): RoadMark | null {
   if (e.angle === undefined || e.angle === null || !isFinite(e.angle) || !e.pos) return null;
   const cat = catalogEntry(e.sym);
+  // Flächen- und Linienzeichen (Stacheldraht, Sperrlinie, Panzergraben …) zeichnet die Formebene quer zur Strasse
+  if (cat?.geometry && cat.geometry !== "punkt") return null;
   if (cat?.placement !== "strasse" && !OLD_ROAD_KEYS.has(e.sym)) return null;
   if (BARRIER_KEYS.has(e.sym)) return "sperre";
   if (GATE_KEYS.has(e.sym)) return "checkpoint";

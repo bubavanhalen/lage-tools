@@ -51,4 +51,19 @@ describe("roadsource", () => {
     expect((await rs.placeOnRoadTry(CELL)).pl?.road).toBe("Teststrasse");
     expect((await rs.placeOnRoadTry(CELL, undefined, { hint: "autobahn" })).pl?.road).toBe("A1");
   });
+
+  it("Strassenname im Text: genannte Strasse knapp ausserhalb gewinnt, Kandidaten dabei", async () => {
+    const two = { results: [
+      ROAD.results[0],
+      { id: 3, properties: { objektart: 10, strassenname: "Bärenmattweg" }, geometry: { type: "LineString", coordinates: [[2600100, 1199700], [2600900, 1199700]] } },
+    ] };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(two), { status: 200 })));
+    const rs = await import("../src/roadsource");
+    const auto = (await rs.placeOnRoadTry(CELL)).pl!;
+    expect(auto.road).toBe("Teststrasse");
+    const r = (await rs.placeOnRoadTry(CELL, undefined, { text: "H04: gn Sperre Baerenmattweg" })).pl!;
+    expect(r).toMatchObject({ road: "Bärenmattweg", named: "text" });
+    expect(r.pos.n).toBeCloseTo(1199700, 0);
+    expect(r.candidates!.map((c) => c.road)).toEqual(["Bärenmattweg", "Teststrasse"]);
+  });
 });

@@ -217,3 +217,18 @@
   .nav-kbd { display: none; }
 }
 @media (hover: none) { .nav-kbd { display: none; } }
+
+/* ---------- Touch: langes Drücken ohne Text-Markieren und ohne iOS-Callout ---------- */
+.mapbox .leaflet-container {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Schloss «Zeichen fixieren» */
+.nav-bar .nav-lock { padding: 4px 10px; }
+/* Präsentation: nichts verschieben → kein Schloss */
+.present .nav-lock, .present .nav-lockitem { display: none; }
+.nav-bar .nav-menu button[aria-checked="true"] svg { color: var(--ink); }
+.nav-bar .nav-menu button[aria-checked="true"] span { font-weight: 600; }

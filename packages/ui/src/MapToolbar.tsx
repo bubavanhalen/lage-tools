@@ -1,9 +1,11 @@
 /**
- * Werkzeugleiste der Karte, immer einzeilig: Grundkarte, Ebenen (Ausklappmenü mit Pills), Ganzes Raster, Zoom auf Feld/Unterquadrant, Messen.
- * Auf schmaleren Karten (< 1180 px) wandert die Grundkarte ins Ebenen-Menü und die Werkzeuge hinter «⋯».
+ * Werkzeugleiste der Karte, immer einzeilig: Grundkarte, Ebenen (Ausklappmenü mit Pills), Ganzes Raster, Zoom auf Feld/Unterquadrant, Messen,
+ * Schloss «Zeichen fixieren» (Standard offen = Zeichen lassen sich ziehen; Zustand pro Gerät gemerkt).
+ * Auf schmaleren Karten (< 1180 px) wandert die Grundkarte ins Ebenen-Menü und die Werkzeuge hinter «⋯»;
+ * das Schloss bleibt ab 760 px Kartenbreite sichtbar (in der Präsentation ausgeblendet, dort zieht man nichts).
  * Messen: Klick setzt Punkte, Doppelklick/Enter beendet, Backspace = Rückgängig, Esc = Abbrechen.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import L from "leaflet";
 import {
   activeMeasure,
@@ -16,7 +18,7 @@ import {
   type MeasureEvent,
   type MeasureState,
 } from "@lage/map";
-import { DEFAULT_FLAGS, type LayerFlags } from "./layers";
+import { DEFAULT_FLAGS, isLocked, setLocked, subscribeLock, type LayerFlags } from "./layers";
 import { IconCell, IconCheck, IconChevron, IconClose, IconFit, IconLayers, IconMore, IconQuad, IconRuler, IconUndo } from "./navicons";
 import "./navigation.css";
 
@@ -43,13 +45,28 @@ const LAYERS: Array<{ key: keyof LayerFlags; label: string; title: string; sw: s
   { key: "nai", label: "NAI", title: "NAI, AO und Stao-Flächen", sw: "nai" },
   { key: "eigene", label: "Eigene", title: "Eigene Elemente (Blau)", sw: "blau" },
   { key: "feind", label: "Feind", title: "Feind und unklare Sichtungen (Rot/Gelb)", sw: "rot" },
+  { key: "flaechen", label: "Flächen/Linien", title: "Flächen- und Linienzeichen (Minenfeld, Stacheldraht, Phasenlinie …)", sw: "flaeche" },
   { key: "spuren", label: "Spuren", title: "Bisherige Standorte der Elemente als Linie", sw: "spur" },
   { key: "zeiten", label: "Zeiten", title: "Zeit neben frischen Meldungen", sw: "zeit" },
   { key: "legende", label: "Legende", title: "Legende der Zeichen", sw: "leg" },
 ];
 
+/** Schloss: Zeichen fixieren (zu) bzw. verschiebbar (offen) */
+const IconLock = ({ closed }: { closed: boolean }) => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <rect x="3" y="7.2" width="10" height="7" rx="1.2" />
+    <path d={closed ? "M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2" : "M5.2 7.2V5a2.8 2.8 0 0 1 5.4-1"} />
+    {closed && <circle cx="8" cy="10.7" r=".9" fill="currentColor" stroke="none" />}
+  </svg>
+);
+const LOCK_TITLE = (on: boolean) => on
+  ? "Zeichen sind fixiert – klicken, damit sie sich wieder ziehen lassen (Ort korrigieren)"
+  : "Zeichen fixieren: kein versehentliches Verschieben auf der Karte";
+
 /** Ab dieser Kartenbreite (px) alle Werkzeuge in einer Zeile ausgeschrieben, darunter kompakt (Ebenen-Menü + «⋯»). */
 export const TOOLBAR_FULL_MIN = 1180;
+/** Ab dieser Kartenbreite steht das Schloss immer in der Leiste (nicht im «⋯») */
+const TOOLBAR_LOCK_MIN = 760;
 /** Unter dieser Kartenbreite nur noch Symbole */
 const TOOLBAR_TINY_MAX = 560;
 
@@ -84,8 +101,16 @@ export function MapToolbar(p: MapToolbarProps) {
   const layersRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
   const width = useMapWidth(p.map);
+  const locked = useSyncExternalStore(subscribeLock, isLocked);
   const full = width >= TOOLBAR_FULL_MIN;
   const tiny = width < TOOLBAR_TINY_MAX;
+  const lockOut = width >= TOOLBAR_LOCK_MIN;
+  const lockBtn = (
+    <button type="button" className="nav-btn nav-lock" aria-pressed={locked} onClick={() => setLocked(!locked)} title={LOCK_TITLE(locked)}
+      aria-label={locked ? "Zeichen fixiert" : "Zeichen fixieren"}>
+      <IconLock closed={locked} />
+    </button>
+  );
 
   // Messung (auch aus dem Kontextmenü gestartet) verfolgen
   useEffect(() => {
@@ -173,8 +198,11 @@ export function MapToolbar(p: MapToolbarProps) {
             <button type="button" className="nav-btn" aria-pressed={measuring} onClick={toggleMeasure} title="Distanz und Azimut messen">
               <IconRuler /><span>Messen</span>
             </button>
+            {lockBtn}
           </>
         ) : (
+          <>
+          {lockOut && lockBtn}
           <div className="nav-more" ref={moreRef}>
             <button type="button" className="nav-btn nav-dots" aria-expanded={moreOpen} aria-haspopup="menu" aria-pressed={measuring}
               onClick={() => { setMoreOpen((o) => !o); setLayersOpen(false); }} aria-label="Weitere Werkzeuge" title="Ganzes Raster, Feld, Unterquadrant, Messen">
@@ -187,9 +215,15 @@ export function MapToolbar(p: MapToolbarProps) {
                 <button type="button" role="menuitem" onClick={more(() => zoomToCellAtCenter(p.map, "quadrant"))} disabled={!hasRaster} title={`Auf den Unterquadranten in der Kartenmitte zoomen${cellTitle}`}><IconQuad /><span>Auf Unterquadrant zoomen</span></button>
                 <hr />
                 <button type="button" role="menuitem" aria-pressed={measuring} onClick={more(toggleMeasure)}><IconRuler /><span>{measuring ? "Messen beenden" : "Messen (Distanz, Azimut)"}</span></button>
+                {!lockOut && (
+                  <button type="button" role="menuitemcheckbox" className="nav-lockitem" aria-checked={locked} onClick={more(() => setLocked(!locked))} title={LOCK_TITLE(locked)}>
+                    <IconLock closed={locked} /><span>{locked ? "Zeichen fixiert (lösen)" : "Zeichen fixieren"}</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
+          </>
         )}
       </div>
 

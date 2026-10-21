@@ -51,12 +51,15 @@ import { JournalPanel } from "./JournalPanel";
 import { OfflineBox } from "./OfflineBox";
 import { isoLocal } from "./Timeline";
 import { SwimTimeline } from "./SwimTimeline";
-import { situationLayer } from "./situationLayer";
+import { situationLayer, whenNotDragging } from "./situationLayer";
+import { shapeLayer } from "./shapeLayer";
 import { EventBanner, Legend } from "./MapOverlays";
 import { MapSearch } from "./MapSearch";
 import { MapToolbar } from "./MapToolbar";
 import { MapContextMenu } from "./MapContextMenu";
 import { loadFlags, saveFlags, type LayerFlags } from "./layers";
+import { windowStart } from "@lage/core";
+import { useMoveEvent, useTimeWindow } from "./mapedit";
 
 function deviceId(): string {
   try {
@@ -196,6 +199,9 @@ export function Workspace({ product, tagline }: Props) {
     const now = isoLocal(clock);
     return !last || clock - Date.parse(last) < 12 * 3600000 ? (now > last ? now : last) : last;
   })();
+  // Zeitfenster (pro Übung gemerkt): Anfang zur Lagezeit, null = alles
+  const [win, setWin] = useTimeWindow(ex?.id);
+  const winFrom = windowStart(win, tNow);
 
   // Hindernisse, Checkpoint, IED … (und Meldungen «auf Hauptstrasse/Autobahn») ohne Ausrichtung nachträglich auf die
   // Strasse legen (z. B. Beispiel, Import, Meldung offline erfasst). Erledigt erst mit Ergebnis; fehlten Strassendaten
@@ -210,7 +216,7 @@ export function Workspace({ product, tagline }: Props) {
   }, []);
   useEffect(() => {
     if (!ex) return;
-    const todo = (ex.events ?? []).filter((e) => !e.deleted && e.angle === undefined && !roadDone.current.has(e.id) && !roadBusy.current.has(e.id)
+    const todo = (ex.events ?? []).filter((e) => !e.deleted && !e.roadNone && e.angle === undefined && !roadDone.current.has(e.id) && !roadBusy.current.has(e.id)
       && (catalogEntry(e.sym)?.placement === "strasse" || !!e.roadHint) && (e.cells?.length || e.nai) && e.where !== "Karte");
     if (!todo.length) return;
     todo.forEach((e) => roadBusy.current.add(e.id));
@@ -225,7 +231,7 @@ export function Workspace({ product, tagline }: Props) {
           if (c && sh) target = cellBounds(sh, c.col, c.row, c.quadrant);
           else if (e.nai) target = ex.areas.find((a) => a.name === e.nai)?.ring ?? null;
           if (!target) { roadDone.current.add(e.id); continue; }
-          const { pl, complete } = await placeOnRoadTry(target, undefined, { along: e.sym === "hinterhalt", hint: e.roadHint });
+          const { pl, complete } = await placeOnRoadTry(target, undefined, { along: e.sym === "hinterhalt", hint: e.roadHint, text: e.text });
           if (exRef.current?.id !== exId) break;
           if (!pl) { if (complete) roadDone.current.add(e.id); continue; }
           roadDone.current.add(e.id);
@@ -235,7 +241,7 @@ export function Workspace({ product, tagline }: Props) {
               // inzwischen von Hand verschoben, Ort entfernt/geändert oder schon ausgerichtet → nicht überschreiben
               const samePos = y.pos?.e === e.pos?.e && y.pos?.n === e.pos?.n;
               const sameWhere = (y.cells?.[0] ?? "") === (e.cells?.[0] ?? "") && (y.nai ?? "") === (e.nai ?? "");
-              if (y.deleted || y.where === "Karte" || y.angle !== undefined || !samePos || !sameWhere) return y;
+              if (y.deleted || y.roadNone || y.where === "Karte" || y.angle !== undefined || !samePos || !sameWhere) return y;
               // neue Revision (für den Abgleich), aber Zeitstempel nur minimal weiter: automatische Ergänzung,
               // keine Benutzeränderung (sonst stünde jede Meldung des Beispiels als «neu» in der Liste)
               const at = new Date((Date.parse(y.updatedAt) || Date.now()) + 1);
@@ -254,14 +260,34 @@ export function Workspace({ product, tagline }: Props) {
   useEffect(() => {
     const s = sm.current;
     if (!s || !ex) return;
+    // nicht während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen …): nach dem Loslassen nachholen
+    whenNotDragging(s.map, () => {
     journalRef.current?.remove();
     const g = situationLayer(s.map, ex.events ?? [], {
-      t: tNow, flags, selectedId: selEvent, sheets: ex.sheets, days: ex.days,
+      t: tNow, flags, selectedId: selEvent, sheets: ex.sheets, days: ex.days, from: winFrom,
       onClick: (e) => { setTab("journal"); setSelEvent(e.id); },
+      onMove: present ? undefined : mover.move,
     });
     g.addTo(s.map);
     journalRef.current = g;
-  }, [ex?.events, ex?.sheets, tNow, flags, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+    });
+  }, [ex?.events, ex?.sheets, tNow, winFrom, flags, selEvent, mapReady, present]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Flächen- und Linienzeichen (unter den Zeichen); Zeitfenster: `from` = Anfang des Fensters (null = alles)
+  const shapeRef = useRef<L.LayerGroup | null>(null);
+  const shapeFrom = winFrom;
+  useEffect(() => {
+    const s = sm.current;
+    shapeRef.current?.remove();
+    shapeRef.current = null;
+    if (!s || !ex) return;
+    const g = shapeLayer(ex.events ?? [], {
+      t: tNow, from: shapeFrom, flags, selectedId: selEvent, sheets: ex.sheets, areas: ex.areas,
+      onClick: (e) => { setTab("journal"); setSelEvent(e.id); },
+    });
+    g.addTo(s.map);
+    shapeRef.current = g;
+  }, [ex?.events, ex?.sheets, ex?.areas, tNow, shapeFrom, flags, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Karte auf eine Meldung: Planquadrat (bzw. Unterquadrant) mit Rand, sonst Ort */
   const focusEvent = (e: LageEvent) => {
@@ -321,6 +347,8 @@ export function Workspace({ product, tagline }: Props) {
   const exRef = useRef<Exercise | null>(null);
   exRef.current = ex;
   const update = (f: (x: Exercise) => Exercise) => setEx((x) => (x ? f(structuredClone(x)) : x));
+  // Zeichen auf der Karte verschoben → Ort der Meldung korrigieren (mit Rückgängig)
+  const mover = useMoveEvent(update, device, ex);
 
   // ---------- Raster ----------
   const addSheet = async (kind: "gesamt" | "detail" | "feld") => {
@@ -482,6 +510,7 @@ export function Workspace({ product, tagline }: Props) {
             <div className="panel"><p className="help">Karte wird geladen …</p></div>
           ) : tab === "journal" ? (
             <JournalPanel ex={ex} map={sm.current!.map} device={device} selected={selEvent}
+              win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => setWin({ mode: "alles" })}
               onSelect={selectEvent} reportAt={reportAt} editRequest={editReq}
               onGoto={(t) => setTab(t)} onDemo={() => { const x = demoExercise(); setEx(x); setSelSheet(null); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); }} update={update} say={say} onExport={exportJournal} />
           ) : tab === "raster" ? (
@@ -519,7 +548,7 @@ export function Workspace({ product, tagline }: Props) {
         <main className="mapwrap">
           {(tab === "journal" || (ex.events ?? []).some((e) => !e.deleted)) && (
             <SwimTimeline events={ex.events ?? []} days={ex.days} units={ex.units} value={tCursor} onChange={setTCursor}
-              selectedId={selEvent} compact={present}
+              selectedId={selEvent} compact={present} win={win} onWin={setWin}
               onSelect={(id) => { setSelEvent(id); setTab("journal"); const e = (ex.events ?? []).find((x) => x.id === id); if (e) { setTCursor(e.t); focusEvent(e); } }}
               extra={present ? <button className="swt-chip" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button> : undefined} />
           )}
@@ -534,7 +563,7 @@ export function Workspace({ product, tagline }: Props) {
               </div>
               <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)}
                 onEdit={present ? undefined : (e) => { setTab("journal"); setEditReq({ id: e.id, n: Date.now() }); }} />
-              {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} />}
+              {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} from={winFrom} />}
               <MapContextMenu map={sm.current.map} sheets={ex.sheets} onReportHere={(pos) => { setTab("journal"); setReportAt({ pos, n: Date.now() }); }} />
             </>
           )}
@@ -547,6 +576,7 @@ export function Workspace({ product, tagline }: Props) {
       </div>
       {busy && <div className="busy"><div>{busy}</div></div>}
       {toast && <div className="toast" role="status">{toast}</div>}
+      {mover.notice}
       {dbBlocked && <div className="toast dbblocked" role="alert">Speicher blockiert: Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</div>}
     </div>
   );

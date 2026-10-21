@@ -66,3 +66,11 @@ Offline: App als PWA; Karte für das Raster-Gebiet vorab speichern, angesehene K
 - **Zeichen-Auswahl:** Klick auf das Zeichen in der Vorschau oder beim Korrigieren. Suche versteht Kürzel («hz inf», «vermutete IED»), Kategorien, Zugehörigkeit, Stufe, «vermutet». Punkt-Zeichen mit deutschen Kurzzeichen (Mun, Bst, Vrk …).
 - Regressionstest mit über 120 Meldungen (`packages/core/test/meldungen.test.ts`).
 - Offen: Flächen- und Linienzeichen (Bereitstellungsraum, Minenfeld als Fläche) sind vorerst Punktzeichen.
+
+## Lagejournal – Lagedarstellung (Etappe 3d)
+- **Zeitfenster:** Alles · 30′ · 1 h · 2 h · 6 h oder Anfang auf dem Zeitstrahl ziehen. Sichtungen/Ereignisse ausserhalb fallen weg, Elemente bleiben an ihrem letzten Standort. Gilt für Karte, Liste, Legende, Präsentation; pro Übung gemerkt.
+- **Stapel statt Führungsstriche:** Zeichen am gleichen Ort liegen übereinander mit Zahl-Marke; Klick fächert auf (Linien zum Ort nur dann), Klick daneben/Esc/Zoom klappt zu; Tastatur: Tab/Enter/Esc.
+- **Zeichen verschieben:** gewähltes Zeichen ziehen (Touch: lang drücken), korrigiert den Ort der Meldung als neue Revision; Hinweis mit «Rückgängig» (Ctrl+Z); Schloss «Zeichen fixieren». In der Präsentation gesperrt.
+- **Flächen und Linien:** Bereitstellungsraum, Minenfeld, Sperrgebiet, verseuchtes Gebiet, Beobachtungs-, Ziel-, Feuerraum, Landezone, Evakuierungsraum; Stacheldraht, Sperrlinie, Panzergraben, Kontakt-, Phasenlinie, Abschnittsgrenze, Vormarsch-/Verschiebungsachse. Automatisch aus Planquadrat, Unterquadrant, NAI oder Koordinate; von Hand zeichnen und bearbeiten.
+- **Deutsche Kürzel** in allen Zeichen (Spez, EKF, Mil Pol, Log …); IED bleibt.
+- **Strassenwahl:** bei mehrdeutigen Feldern Auswahl der Kandidaten; Strassenname im Text gewinnt; «Kein Strassenbezug».

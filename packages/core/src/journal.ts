@@ -11,6 +11,7 @@ import { boundsCenter, cellBounds, findCells, type RasterSheet } from "./raster"
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
+import { autoShape, shapeCenter } from "./shapes";
 
 export interface JournalContext {
   sheets: RasterSheet[];
@@ -307,6 +308,11 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     }
   }
 
+  // Fläche/Linie über mehrere Felder («Achse AN6 AL8 AJ10»): Punktzeichen in die Mitte der Form statt ins erste Feld
+  if (where?.kind === "raster" && (cells?.length ?? 0) > 1 && entry.geometry && entry.geometry !== "punkt") {
+    const sh = autoShape({ sym, pos, cells, where: where.label }, { sheets: ctx.sheets, areas: ctx.areas });
+    if (sh) { const c = shapeCenter(sh); pos = { e: Math.round(c.e), n: Math.round(c.n) }; }
+  }
   const aff: Affiliation = kind === "eigen" ? "F" : kind === "feind" ? "H" : "U";
   const status: Status = reading?.status ?? "present";
   const echelon = reading?.echelon;
@@ -380,7 +386,8 @@ export function situationAt(events: LageEvent[], t: string, maxAgeMin = Infinity
     if (cat ? cat.activity : symbolDef(e.sym).activity) {
       const pos = e.pos ?? cur?.pos;
       if (pos && Date.parse(e.t) >= tMin) loose.push({ ...e, pos });
-      if (e.side === "blau" && cat?.lean !== "eigen") continue;
+      // Räume und Linien (Beobachtungsraum, Phasenlinie …) sind nie der Standort des Melders
+      if (e.side === "blau" && (cat?.lean !== "eigen" || (cat.geometry && cat.geometry !== "punkt"))) continue;
       if (cur) e = { ...e, sym: cur.event.sym };
       else if (!e.pos) continue;
       else e = { ...e, sym: "einheit" };
@@ -423,13 +430,22 @@ export function kindLabel(e: Pick<LageEvent, "side" | "aff">): string {
 
 const csvCell = (v: string) => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
+/** Form für den CSV-Export: gezeichnet mit Eckpunkten (LV95, gerundet), sonst «Fläche (aus Ort)» */
+function shapeCsv(e: LageEvent): string {
+  const geo = e.shape?.kind ?? catalogEntry(e.sym)?.geometry;
+  if (!geo || geo === "punkt") return "";
+  const word = geo === "flaeche" ? "Fläche" : "Linie";
+  if (!e.shape || e.shape.auto) return `${word} (aus Ort)`;
+  return `${word}: ${e.shape.pts.map((p) => `${Math.round(p.e)} ${Math.round(p.n)}`).join(", ")}`;
+}
+
 export function journalToCsv(events: LageEvent[], days: string[]): string {
-  const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N"];
+  const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Form"];
   const rows = events.filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t)).map((e) => {
     const d = e.t.slice(0, 10);
     const tag = days.indexOf(d) >= 0 ? `T${days.indexOf(d) + 1}` : d;
     return [tag, e.t.slice(11, 16), kindLabel(e), e.unit, e.melder ?? "", e.text, e.sym, e.where ?? "", (e.cells ?? []).join(" "), e.nai ?? "",
-      e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : ""];
+      e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", shapeCsv(e)];
   });
   return "﻿" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
 }

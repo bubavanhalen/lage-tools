@@ -4,7 +4,7 @@
  * Fehler (offline, Zeitüberschreitung, Speicher voll) → leere Liste bzw. Zählung als «fehlgeschlagen», nie werfen.
  */
 import {
-  parseTlmIdentify, placeAlongRoad, placeOnRoad, roadsInBounds, roadTiles, tlmRoadsUrl,
+  NAMED_ROAD_NEAR, parseTlmIdentify, placeAlongRoad, placeOnRoad, roadsInBounds, roadTiles, tlmRoadsUrl,
   type Bounds, type LV95, type PlaceOptions, type RoadHint, type RoadPlacement, type RoadSegment, type RoadTarget, type RoadTile,
 } from "@lage/core";
 import { db, ROADS_STORE } from "./store";
@@ -223,27 +223,46 @@ export function targetBounds(t: RoadTarget): Bounds {
   return { minE: Math.min(...t.map((p) => p.e)), maxE: Math.max(...t.map((p) => p.e)), minN: Math.min(...t.map((p) => p.n)), maxN: Math.max(...t.map((p) => p.n)) };
 }
 
+/** Optionen der Platzierung in der App: Strassenrand (Hinterhalt) und Hinweis aus der Meldung */
+export type PlaceTryOptions = PlaceOptions & { along?: boolean; signal?: AbortSignal; hint?: RoadHint };
+
+/**
+ * Strassen für ein Zielgebiet holen (Speicher/Netz) – mit Rand, damit eine im Text genannte Strasse knapp
+ * ausserhalb des Gebiets auch gefunden wird.
+ */
+export async function roadsForTarget(target: RoadTarget, o: { signal?: AbortSignal } = {}): Promise<{ roads: RoadSegment[]; missing: number }> {
+  const b = targetBounds(target);
+  const m = NAMED_ROAD_NEAR;
+  return getRoadsInfo({ minE: b.minE - m, maxE: b.maxE + m, minN: b.minN - m, maxN: b.maxN + m }, o);
+}
+
+/** Zeichen auf eine der gegebenen Strassen legen (ohne Laden, sofort). Siehe `placeOnRoad` (Kandidaten, mehrdeutig). */
+export function placeWith(target: RoadTarget, roads: RoadSegment[], prefer?: LV95, o: PlaceTryOptions = {}): RoadPlacement | null {
+  if (!roads.length) return null;
+  const { along, signal: _s, hint, ...rest } = o;
+  const opts: PlaceOptions = { ...rest, motorway: o.motorway ?? hint === "autobahn" };
+  return along ? placeAlongRoad(target, roads, prefer, 25, opts) : placeOnRoad(target, roads, prefer, opts);
+}
+
 /**
  * Alles in einem: Strassen fürs Gebiet holen (Speicher/Netz) und das Zeichen darauf legen.
  * `along` = Strassenrand (Hinterhalt) statt Strassenmitte. `hint`: «haupt» = höchster Rang ohne Autobahn (Standard),
- * «autobahn» = Autobahn normal werten (sie gewinnt dann). `pl` = null, wenn keine Strasse bekannt ist;
+ * «autobahn» = Autobahn normal werten (sie gewinnt dann). `text` = Meldungstext (genannte Strasse gewinnt),
+ * `road`/`segId` = von Hand gewählte Strasse. `pl` = null, wenn keine Strasse bekannt ist;
  * `complete` = false, wenn Kacheln fehlten (offline/Fehler) – dann lohnt sich später ein neuer Versuch.
  */
-export async function placeOnRoadTry(
-  target: RoadTarget, prefer?: LV95, o: PlaceOptions & { along?: boolean; signal?: AbortSignal; hint?: RoadHint } = {},
-): Promise<{ pl: RoadPlacement | null; complete: boolean }> {
+export async function placeOnRoadTry(target: RoadTarget, prefer?: LV95, o: PlaceTryOptions = {}): Promise<{ pl: RoadPlacement | null; complete: boolean }> {
   try {
-    const { roads, missing } = await getRoadsInfo(targetBounds(target), { signal: o.signal });
+    const named = !!(o.text || o.road);
+    const { roads, missing } = named ? await roadsForTarget(target, { signal: o.signal }) : await getRoadsInfo(targetBounds(target), { signal: o.signal });
     if (o.signal?.aborted) return { pl: null, complete: false };
-    const opts: PlaceOptions = { ...o, motorway: o.motorway ?? o.hint === "autobahn" };
-    const pl = !roads.length ? null : o.along ? placeAlongRoad(target, roads, prefer, 25, opts) : placeOnRoad(target, roads, prefer, opts);
-    return { pl, complete: missing === 0 };
+    return { pl: placeWith(target, roads, prefer, o), complete: missing === 0 };
   } catch {
     return { pl: null, complete: false };
   }
 }
 
 /** Wie `placeOnRoadTry`, nur das Ergebnis (null, wenn keine Strasse bekannt ist). */
-export async function placeOnRoadIn(target: RoadTarget, prefer?: LV95, o: PlaceOptions & { along?: boolean; signal?: AbortSignal; hint?: RoadHint } = {}): Promise<RoadPlacement | null> {
+export async function placeOnRoadIn(target: RoadTarget, prefer?: LV95, o: PlaceTryOptions = {}): Promise<RoadPlacement | null> {
   return (await placeOnRoadTry(target, prefer, o)).pl;
 }
