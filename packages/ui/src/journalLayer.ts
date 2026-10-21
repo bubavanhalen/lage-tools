@@ -2,7 +2,7 @@
  * Lagebild-Modell für Karte und Legende: was ist zum Zeitpunkt `t` sichtbar, wie kräftig, mit welchem Zusatz.
  * Reine Berechnung (ohne Leaflet), damit Karte und Legende garantiert dasselbe zeigen.
  */
-import { catalogEntry, ECHELONS, situationAt, symbolDef, unitKey, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status } from "@lage/core";
+import { CATALOG, catalogEntry, ECHELONS, situationAt, SYMBOLS, symbolDef, unitKey, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status } from "@lage/core";
 import { isAnticipated, sidcAffiliation } from "@lage/map";
 import type { LayerFlags } from "./layers";
 
@@ -28,10 +28,18 @@ export function echelonOf(e: { echelon?: Echelon; sidc?: string }): Echelon | un
 }
 
 /** Anzeigename des Zeichens: Katalogname (sonst alter Zeichenname) + Stufe, z. B. «Infanterie · Halbzug» */
-export function symbolName(sym: string, ech?: Echelon): string {
-  const base = catalogEntry(sym)?.name ?? symbolDef(sym).name;
+export function symbolName(sym: string, ech?: Echelon, sidc?: string): string {
+  const known = catalogEntry(sym) ?? SYMBOLS.find((x) => x.key === sym);
+  const base = known?.name ?? (sidc && nameBySidc(sidc)) ?? symbolDef(sym).name;
   const en = ech ? ECHELONS.find((x) => x.key === ech)?.name : undefined;
   return en ? `${base} · ${en}` : base;
+}
+
+/** Name zu einem SIDC aus Katalog bzw. alten Zeichen (Zugehörigkeit, Status, Stufe werden ignoriert) */
+function nameBySidc(sidc: string): string | undefined {
+  const norm = (x: string) => (x[0]! + x[2]! + x.slice(4, 10)).toUpperCase().replace(/\*/g, "-");
+  const k = norm(sidc.padEnd(15, "-"));
+  return [...CATALOG, ...SYMBOLS].find((x) => norm(x.sidc) === k)?.name;
 }
 
 /** Darstellung im Gelände an einer Strasse (nur mit `angle` und Katalog-Platzierung «strasse») */
@@ -150,7 +158,7 @@ export function situationModel(
     const status = src?.status ?? (sym === e.sym ? e.status : undefined);
     return {
       e, sym, aff: sidc ? sidcAffiliation(sidc, ev.aff) : ev.aff, sidc, status, anticipated: isAnticipated(sidc, status),
-      name: symbolName(sym, src ? echelonOf(src) : sym === e.sym ? echelonOf(e) : undefined),
+      name: symbolName(sym, src ? echelonOf(src) : sym === e.sym ? echelonOf(e) : undefined, sidc),
       road: sym === e.sym ? roadMark({ sym, angle: e.angle, pos }) : null,
       pos, kind, isUnit, ageMin, silentMin: silent, fresh, selected,
       opacity: own || fresh || selected ? 1 : 0.45,

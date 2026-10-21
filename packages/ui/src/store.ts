@@ -18,6 +18,8 @@ export function db(): Promise<IDBPDatabase> {
       if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
       if (!d.objectStoreNames.contains(ROADS_STORE)) d.createObjectStore(ROADS_STORE, { keyPath: "key" });
     },
+    // anderer Tab will eine neuere Version: Verbindung freigeben, beim nächsten Zugriff neu öffnen
+    blocking() { const p = dbp; dbp = null; p?.then((d) => d.close()).catch(() => { /* egal */ }); },
   });
   dbp.catch(() => { dbp = null; });
   return dbp;

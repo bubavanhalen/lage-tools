@@ -140,13 +140,7 @@ class SituationLayer extends L.LayerGroup {
     }
 
     // Hindernisse / Zeichen quer zur Strasse (im Gelände; bei jedem Zoom neu, damit sie nie zu klein werden)
-    const roadOffsets = new Map<SituationItem, [number, number]>();
-    for (const it of model.items) {
-      if (!it.road) continue;
-      const a = ((it.e.angle ?? 0) * Math.PI) / 180;
-      roadOffsets.set(it, [Math.cos(a) * 30, Math.sin(a) * 30]); // quer zur Strasse (Bildschirm: x Ost, y Süd)
-      this.roadItems.push(it);
-    }
+    for (const it of model.items) if (it.road) this.roadItems.push(it);
     this.roadMarks.addTo(this);
     this.leaders.addTo(this);
 
@@ -178,7 +172,7 @@ class SituationLayer extends L.LayerGroup {
       if (!it.selected) marker.bindTooltip(() => this.tooltip(it), { direction: "top", offset: [0, -ay - 2], className: "lt-tip", opacity: 1 });
       marker.on("click", () => { marker.closeTooltip(); o.onClick(it.e); });
       marker.addTo(this);
-      this.placed.push({ it, ll, marker, core, box, w: s.w, ax, offset: roadOffsets.get(it) });
+      this.placed.push({ it, ll, marker, core, box, w: s.w, ax, offset: it.road ? roadOffset(it, core) : undefined });
     }
   }
 
@@ -192,7 +186,7 @@ class SituationLayer extends L.LayerGroup {
     const a = ((it.e.angle ?? 0) * Math.PI) / 180;
     const u = { e: Math.cos(a), n: -Math.sin(a) }; // quer zur Strasse
     const v = { e: Math.sin(a), n: Math.cos(a) }; // entlang der Strasse
-    const k = Math.max(1, (17 * mPerPx) / 22); // Massstab: halbe Balkenlänge mind. 17 px
+    const k = Math.max(1, (20 * mPerPx) / 22); // Massstab: halbe Balkenlänge mind. 20 px
     const at = (du: number, dv: number) => toLatLng({ e: p.e + (u.e * du + v.e * dv) * k, n: p.n + (u.n * du + v.n * dv) * k });
     // Zacken zur Gegenseite: bei Feind/unklar zum Melder (das sind wir), sonst in Strassenrichtung
     let side = 1;
@@ -217,11 +211,11 @@ class SituationLayer extends L.LayerGroup {
       casing(teeth, 5); casing(bar, 9);
       line(teeth, 2); line(bar, 5);
     } else if (it.road === "checkpoint") {
-      const L2 = 12;
-      const gate = [[at(-L2, -5), at(-L2, 5)], [at(-L2, 0), at(L2, 0)], [at(L2, -5), at(L2, 5)]];
+      const L2 = 18;
+      const gate = [[at(-L2, -7), at(-L2, 7)], [at(-L2, 0), at(L2, 0)], [at(L2, -7), at(L2, 7)]];
       casing(gate, 6); line(gate, 3);
     } else {
-      const tick = [at(-8, 0), at(8, 0)];
+      const tick = [at(-12, 0), at(12, 0)];
       casing(tick, 6); line(tick, 3);
       L.circleMarker(toLatLng(p), { radius: 3.5, color: col, weight: 2, fillColor: "#fff", fillOpacity: o, opacity: o, interactive: false }).addTo(g);
     }
@@ -308,6 +302,20 @@ function avoidAreaLabels(map: L.Map, rects: ReadonlyArray<readonly [number, numb
     const ok = tries.find(([dx, dy]) => !hit([r0[0]! + dx, r0[1]! + dy, r0[2]! + dx, r0[3]! + dy]));
     if (ok && (ok[0] || ok[1])) sp.style.translate = `${ok[0]}px ${ok[1]}px`;
   });
+}
+
+/**
+ * Versatz des Zeichens neben der Strasse (quer dazu; Bildschirm x = Ost, y = Süd), so weit, dass das Zeichen
+ * den wahren Ort (Balkenmitte) nicht verdeckt.
+ */
+function roadOffset(it: SituationItem, core: Box): [number, number] {
+  const a = ((it.e.angle ?? 0) * Math.PI) / 180;
+  const dx = Math.cos(a), dy = Math.sin(a);
+  const M = 26; // Abstand Ort ↔ Zeichenrand (Balken + etwas Luft)
+  const tx = dx > 1e-6 ? (M - core[0]) / dx : dx < -1e-6 ? (core[2] + M) / -dx : Infinity;
+  const ty = dy > 1e-6 ? (M - core[1]) / dy : dy < -1e-6 ? (core[3] + M) / -dy : Infinity;
+  const t = Math.max(24, Math.min(tx, ty, 90));
+  return [dx * t, dy * t];
 }
 
 /** Umriss eines Planquadrats (inkl. Unterquadrant), null wenn unbekannt */

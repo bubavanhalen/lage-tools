@@ -204,10 +204,15 @@ function directionAt(pts: LV95[], i: number, p: LV95, span = 15): number {
 
 // ---------------------------------------------------------------- Platzierung
 
-interface Group { key: string; rank: number; cls: number; name?: string; len: number; pieces: Array<{ seg: RoadSegment; piece: Piece }> }
+interface GroupPiece { seg: RoadSegment; piece: Piece; rank: number; len: number }
+interface Group { key: string; rank: number; cls: number; name?: string; len: number; pieces: GroupPiece[] }
 
-/** Strassenstücke im Gebiet zu «Strassen» zusammenfassen: gleicher Name + Rang, bzw. ohne Name: zusammenhängend */
-function buildGroups(target: RoadTarget, roads: RoadSegment[], opts: PlaceOptions): Group[] {
+/**
+ * Strassenstücke im Gebiet zu «Strassen» zusammenfassen: gleicher Name (auch über Klassenwechsel hinweg),
+ * bzw. ohne Name: gleicher Rang und zusammenhängend. Rang einer benannten Strasse = höchster Rang, der auf
+ * mindestens `minLen` m vorkommt (ein kurzes Stück «Durchgangsstrasse» macht die Strasse nicht wichtiger).
+ */
+function buildGroups(target: RoadTarget, roads: RoadSegment[], opts: PlaceOptions, minLen: number): Group[] {
   const ring = ringOf(target);
   const groups = new Map<string, Group>();
   const unnamed: Group[] = [];
@@ -216,20 +221,32 @@ function buildGroups(target: RoadTarget, roads: RoadSegment[], opts: PlaceOption
     let rank = roadRank(seg.cls, seg.vb);
     if (rank <= 0 || rank < (opts.minRank ?? 0)) continue;
     // Autobahn & Co. ans Ende (nur wenn sonst nichts im Gebiet liegt)
-    if (!opts.motorway && isMotorway(seg.cls)) rank = rank / 100;
+    const mw = !opts.motorway && isMotorway(seg.cls);
+    if (mw) rank = rank / 100;
     const pieces = clipPieces(seg.pts, ring);
     if (!pieces.length) continue;
     const name = seg.name?.trim() || undefined;
-    const len = pieces.reduce((s, p) => s + pieceLen(p), 0);
+    const gp = pieces.map((piece) => ({ seg, piece, rank, len: pieceLen(piece) }));
+    const len = gp.reduce((s, p) => s + p.len, 0);
     if (name) {
-      const key = `${rank}|${name}`;
+      const key = `${mw ? "A" : ""}|${name}`;
       let g = groups.get(key);
       if (!g) { g = { key, rank, cls: seg.cls, name, len: 0, pieces: [] }; groups.set(key, g); }
       g.len += len;
-      for (const piece of pieces) g.pieces.push({ seg, piece });
+      g.pieces.push(...gp);
     } else {
-      unnamed.push({ key: `#${seg.id}`, rank, cls: seg.cls, len, pieces: pieces.map((piece) => ({ seg, piece })) });
+      unnamed.push({ key: `#${seg.id}`, rank, cls: seg.cls, len, pieces: gp });
     }
+  }
+  for (const g of groups.values()) {
+    const byRank = new Map<number, { len: number; cls: number }>();
+    for (const p of g.pieces) {
+      const x = byRank.get(p.rank) ?? { len: 0, cls: p.seg.cls };
+      x.len += p.len; byRank.set(p.rank, x);
+    }
+    const ranks = [...byRank.entries()].sort((a, b) => b[0] - a[0]);
+    const best = ranks.find(([, x]) => x.len >= minLen) ?? ranks[0]!;
+    g.rank = best[0]; g.cls = best[1].cls;
   }
   // unbenannte Stücke gleichen Rangs, die sich an den Enden berühren, zusammenführen
   const ends = (g: Group) => g.pieces.flatMap(({ piece }) => [piece.pts[0]!, piece.pts[piece.pts.length - 1]!]);
@@ -256,11 +273,11 @@ function buildGroups(target: RoadTarget, roads: RoadSegment[], opts: PlaceOption
 export function placeOnRoad(target: RoadTarget, roads: RoadSegment[], prefer?: LV95, opts: PlaceOptions = {}): RoadPlacement | null {
   const ring = ringOf(target);
   if (ring.length < 3) return null;
-  const groups = buildGroups(target, roads, opts);
-  if (!groups.length) return null;
   const rb = ringBounds(ring);
   const size = Math.sqrt(Math.max(1, (rb.maxE - rb.minE) * (rb.maxN - rb.minN)));
   const minLen = Math.max(15, Math.min(80, 0.15 * size));
+  const groups = buildGroups(target, roads, opts, minLen);
+  if (!groups.length) return null;
   const anchor = prefer ?? centroidOf(ring);
   const nearest = (g: Group) => {
     let best = { d: Infinity, p: anchor, seg: g.pieces[0]!.seg, i: 0 };
@@ -291,8 +308,8 @@ export function placeOnRoad(target: RoadTarget, roads: RoadSegment[], prefer?: L
     return { e: c.e + (p.e - c.e) * f, n: c.n + (p.n - c.n) * f };
   });
   let at = null as ReturnType<typeof nearest> | null;
-  const innerPieces = pick.pieces.flatMap(({ seg, piece }) =>
-    clipPieces(piece.pts, inner).map((ip) => ({ seg, piece: { pts: ip.pts, idx: ip.idx.map((k) => piece.idx[k]!) } })));
+  const innerPieces = pick.pieces.flatMap((gp) =>
+    clipPieces(gp.piece.pts, inner).map((ip) => ({ ...gp, piece: { pts: ip.pts, idx: ip.idx.map((k) => gp.piece.idx[k]!) } })));
   if (innerPieces.length) at = nearest({ ...pick, pieces: innerPieces });
   at ??= nearest(pick);
   const seg = at.seg;
@@ -301,7 +318,7 @@ export function placeOnRoad(target: RoadTarget, roads: RoadSegment[], prefer?: L
     angle: directionAt(seg.pts, at.i, at.p),
     road: pick.name,
     cls: pick.cls,
-    rank: roadRank(pick.cls, seg.vb),
+    rank: !opts.motorway && isMotorway(pick.cls) ? roadRank(pick.cls) : pick.rank,
     kind: roadClassName(pick.cls),
     length: Math.round(pick.len),
     segId: seg.id,
