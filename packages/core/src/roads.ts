@@ -108,7 +108,7 @@ function ringBounds(r: LV95[]): Bounds {
 }
 
 /** Schwerpunkt eines Rings (Fläche), bei entarteten Ringen Mittel der Ecken */
-export function ringCentroid(r: LV95[]): LV95 {
+function centroidOf(r: LV95[]): LV95 {
   let a = 0, ce = 0, cn = 0;
   for (let i = 0; i < r.length; i++) {
     const p = r[i]!, q = r[(i + 1) % r.length]!;
@@ -261,7 +261,7 @@ export function placeOnRoad(target: RoadTarget, roads: RoadSegment[], prefer?: L
   const rb = ringBounds(ring);
   const size = Math.sqrt(Math.max(1, (rb.maxE - rb.minE) * (rb.maxN - rb.minN)));
   const minLen = Math.max(15, Math.min(80, 0.15 * size));
-  const anchor = prefer ?? ringCentroid(ring);
+  const anchor = prefer ?? centroidOf(ring);
   const nearest = (g: Group) => {
     let best = { d: Infinity, p: anchor, seg: g.pieces[0]!.seg, i: 0 };
     for (const { seg, piece } of g.pieces) {
@@ -284,7 +284,7 @@ export function placeOnRoad(target: RoadTarget, roads: RoadSegment[], prefer?: L
   }
   // Punkt nicht direkt an den Rand legen: zuerst im verkleinerten Gebiet suchen
   const margin = Math.min(25, 0.1 * size);
-  const c = ringCentroid(ring);
+  const c = centroidOf(ring);
   const inner = ring.map((p) => {
     const d = dist(p, c) || 1;
     const f = Math.max(0, (d - margin * 1.41) / d);
@@ -317,7 +317,7 @@ export function placeAlongRoad(target: RoadTarget, roads: RoadSegment[], prefer?
   if (!r) return null;
   const a = (r.angle * Math.PI) / 180;
   const right = { e: Math.cos(a), n: -Math.sin(a) }; // rechts in Richtung `angle`
-  const c = ringCentroid(ringOf(target));
+  const c = centroidOf(ringOf(target));
   const toC = (c.e - r.pos.e) * right.e + (c.n - r.pos.n) * right.n;
   const side: 1 | -1 = toC < 0 ? -1 : 1;
   return {

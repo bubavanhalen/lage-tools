@@ -5,16 +5,21 @@ import { openDB, type IDBPDatabase } from "idb";
 import type { Exercise } from "@lage/core";
 
 const DB_NAME = "lage-tools";
-const DB_VERSION = 1;
+/** 1: exercises, meta · 2: roads (Strassen-Kacheln, siehe roadsource.ts) */
+const DB_VERSION = 2;
+export const ROADS_STORE = "roads";
 
 let dbp: Promise<IDBPDatabase> | null = null;
-function db(): Promise<IDBPDatabase> {
+/** Gemeinsame Datenbank «lage-tools» (alle Stores werden hier angelegt). */
+export function db(): Promise<IDBPDatabase> {
   dbp ??= openDB(DB_NAME, DB_VERSION, {
     upgrade(d) {
       if (!d.objectStoreNames.contains("exercises")) d.createObjectStore("exercises", { keyPath: "id" });
       if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
+      if (!d.objectStoreNames.contains(ROADS_STORE)) d.createObjectStore(ROADS_STORE, { keyPath: "key" });
     },
   });
+  dbp.catch(() => { dbp = null; });
   return dbp;
 }
 
