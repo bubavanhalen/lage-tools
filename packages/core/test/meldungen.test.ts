@@ -218,6 +218,48 @@ describe("Element- und Meldernummern sind keine Anzahl", () => {
   });
 });
 
+describe("Sichtungen ohne Katalogbegriff sind nie eigene Lage", () => {
+  it.each([
+    ["H03: 1 weisser Lieferwagen AO2 Rtg N", "feind", "fz", 1],
+    ["H03: 2 graue Kastenwagen AO3", "feind", "fz", 2],
+    ["H02: 1 Velo AK9 Rtg W", "unklar", "zivil", 1],
+    ["H05: 1 Traktor in NAI 3 Rtg O", "unklar", "ziv_fz", 1],
+    ["H05: 2 Traktoren AR12", "unklar", "ziv_fz", 2],
+    ["H02: 3 Wanderer AK8 Rtg N", "unklar", "zivil", 3],
+    ["H01: 1 Pw AE6 Rtg O", "feind", "fz", 1],
+    ["H01: 2 Pers AD7", "feind", "inf_trp", 2],
+    ["H03: 1 schwarzer Kombi AO3 Rtg S", "feind", "fz", 1],
+  ] as const)("%s", (text, kind, sym, count) => {
+    const d = parseMeldung(text, ctx());
+    expect(d.kind, "Einordnung").toBe(kind);
+    expect(d.side).toBe("rot");
+    expect(d.sym, "Zeichen").toBe(sym);
+    expect(d.count, "Anzahl").toBe(count);
+    expect(d.melder).toBe(text.slice(0, 3));
+    expect(d.unit, "kein Element (Melder verschiebt sich nicht)").toBe("");
+  });
+  it.each([
+    "H03 Beo Stao AP4 D",
+    "H03 nichts Neues",
+    "H03 Vbk i.O.",
+    "H05 rollt ab AS13",
+    "H01 verschiebt nach AC6 B",
+    "H02 Ablösung, Beo Stao AL9 A",
+    "Gr 3 bezieht Stellung AF7",
+    "H04 eig Patr AG10",
+  ])("eigene Lage bleibt eigen: %s", (text) => {
+    expect(parseMeldung(text, ctx()).kind).toBe("eigen");
+  });
+  it("Lage: «H03: 1 weisser Lieferwagen AO2» verschiebt H03 nicht", () => {
+    const events = ex.events!.filter((e) => e.t <= "2030-05-14T19:00");
+    const c = { ...ctx(), lastPos: (u: string, sd: Draft["side"]) => lastPosition(events, sd, u) };
+    const before = situationAt(events, "2030-05-14T19:00").units.find((u) => u.unit === "H03")!;
+    for (const l of ["T1 1905 H03: 1 weisser Lieferwagen AO2 Rtg N", "T1 1906 H03: 1 Traktor AO3", "T1 1907 H03: 1 Velo AO1"]) events.push(eventFromDraft(parseMeldung(l, c), "dev"));
+    const after = situationAt(events, "2030-05-14T19:10").units.find((u) => u.unit === "H03")!;
+    expect(after.pos).toEqual(before.pos);
+  });
+});
+
 describe("Lage: eigene Meldungen mit Tätigkeit/Ereignis verschieben den Melder nicht", () => {
   it("«H02 Explosion AS2», «H02 Brand AT1», «H02 eig Verletzte AT2»: H02 bleibt, Ereignisse am Ort", () => {
     const events = [...ex.events!];

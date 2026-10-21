@@ -17,6 +17,12 @@
  *   D3 `D3:<NAI>:<letzte Meldung des Trupps>` bzw. `D3:<NAI>:ohne:<erste Rot-Meldung>`
  *   E3 `E3:<Meldung a>:<Meldung b>` · E4 `E4:<Meldung>`
  * Kommen zur gleichen Situation neue Auslöser hinzu (z. B. eine weitere Durchfahrt), bleibt die ID gleich.
+ * Ändert sich die ID trotzdem (nachgetragene frühere Meldung, C3 wird zu C2), findet `decisionFor` den Entscheid
+ * über Regel und gespeicherte Auslöser (≥ 50 % Überlappung).
+ *
+ * Ende (`until`): A3 neue Meldung · B2/B3 CP abgebaut bzw. ohne Meldung · C2 drei Takte ohne Durchfahrt ·
+ * D1/D2 Stellungswechsel (bzw. Rot-Stao verlassen) · D3 Trupp meldet sich wieder · A2/B1/C1/C3/C4/C6/E3/E4 nach
+ * `STALE_MIN` bzw. `C6_VALID_MIN` ohne neuen Auslöser. Prognosen stehen nur in `next`, nie im Text.
  */
 import { catalogEntry, type CatalogEntry, type Echelon } from "./catalog";
 import { pointInRing } from "./geo";
