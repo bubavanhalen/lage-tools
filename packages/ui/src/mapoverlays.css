@@ -25,6 +25,64 @@
 .lt-ev.sel .lt-tl { background: #101414; color: #fff; border-color: #101414; }
 .lt-selcell { pointer-events: none; }
 
+/* ---------- Stapel: oberstes Zeichen vorne, bis zwei weitere nach rechts oben versetzt, Zahl-Marke ---------- */
+.lt-ev.hid { display: none; }
+.lt-ev.old > svg, .lt-ev.old > .lt-ud, .lt-ev.old > .lt-tl { opacity: .45; }
+.lt-ev.fan.old > svg, .lt-ev.fan.old > .lt-ud, .lt-ev.fan.old > .lt-tl { opacity: .75; }
+.lt-ev.under .lt-ud, .lt-ev.under .lt-tl { display: none; }
+.lt-tl.opt { display: none; }
+.lt-ev.fan .lt-tl.opt { display: block; }
+.lt-ev.stacktop::after {
+  content: attr(data-n);
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: #101414;
+  color: #fff;
+  border: 1.5px solid #fff;
+  font: 600 10.5px/14px var(--f-mono, "IBM Plex Mono", ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  pointer-events: none;
+}
+.lt-ev.stacktop.left::after { left: auto; right: -9px; }
+/* aufgefächert: Zeichen über allem, kurze Bewegung beim Öffnen/Schliessen */
+.lt-ev.fan svg { filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
+.lt-ev.fan.sel svg { filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px #F2B705) drop-shadow(0 0 2px #F2B705); }
+.lt-fanmove .leaflet-marker-pane .lt-ev { transition: transform .17s cubic-bezier(.2, .7, .3, 1), left .17s cubic-bezier(.2, .7, .3, 1), top .17s cubic-bezier(.2, .7, .3, 1); }
+.leaflet-overlay-pane .lt-fanline { animation: lt-fadein .18s ease-out both; }
+/* solange ein Stapel offen ist, treten die übrigen Zeichen zurück */
+.lt-fanopen .leaflet-marker-pane .lt-ev:not(.fan) { opacity: .4 !important; transition: opacity .15s; }
+@keyframes lt-fadein { from { opacity: 0; } }
+
+/* ---------- Zeichen verschieben: angehoben (Schatten), Planquadrat unter dem Zeichen ---------- */
+.lt-ev.lift { z-index: 9000 !important; cursor: grabbing; }
+.lt-ev.lift svg { filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 6px 6px rgba(0, 0, 0, .45)); transform: scale(1.18); transform-origin: 50% 70%; transition: transform .12s ease-out; }
+.lt-ev.lift .lt-ud, .lt-ev.lift .lt-tl { display: none; }
+.lt-dragging, .lt-dragging .leaflet-interactive { cursor: grabbing !important; }
+.lt-dragging .leaflet-tooltip { display: none; }
+.lt-dragtip {
+  position: absolute;
+  z-index: 800;
+  transform: translate(-50%, -100%);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #101414;
+  color: #fff;
+  font: 600 13px/18px var(--f-mono, "IBM Plex Mono", ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+}
+.lt-dragtip span { font-weight: 500; opacity: .85; }
+
 /* ---------- Tooltip (hell, auch im Dunkelmodus, weil die Karte hell bleibt) ---------- */
 .leaflet-tooltip.lt-tip {
   white-space: normal;
@@ -44,6 +102,18 @@
 .lt-tip-t { margin-top: 2px; }
 .lt-tip-d { margin-top: 2px; font-weight: 600; }
 .lt-tip-m { margin-top: 2px; font: 500 11.5px var(--f-mono, ui-monospace, monospace); color: #5B655F; }
+.lt-tip-k { margin-top: 3px; font-size: 11.5px; color: #5B655F; }
+@media (hover: none) { .lt-tip-k { display: none; } }
+/* Stapel: kurze Liste (Zeit, Zeichen, Melder) */
+.lt-stk-hint { margin-left: auto; font-size: 11.5px; color: #5B655F; }
+.lt-stk { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.lt-stk li { display: grid; grid-template-columns: auto 20px minmax(0, auto) auto; gap: 6px; align-items: center; white-space: nowrap; }
+.lt-stk li b { font: 600 12px var(--f-mono, ui-monospace, monospace); }
+.lt-stk-s { display: inline-flex; justify-content: center; }
+.lt-stk-s svg { height: 13px; width: auto; display: block; }
+.lt-stk-n { overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.lt-stk-w { color: #5B655F; font-size: 12px; }
+.lt-stk-more { color: #5B655F; font-size: 12px; display: block !important; }
 .lt-kind {
   font: 600 10.5px/1.4 var(--f-mono, ui-monospace, monospace);
   letter-spacing: .04em;
@@ -172,3 +242,57 @@
   border-radius: 3px;
   padding: 0 3px;
 }
+
+/* ---------- Hinweis nach dem Verschieben eines Zeichens (mit Rückgängig) ---------- */
+.mo-undo {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(680px, calc(100vw - 24px));
+  padding: 8px 8px 8px 16px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
+  animation: mo-up .18s ease-out;
+}
+@keyframes mo-up { from { opacity: 0; transform: translate(-50%, 8px); } }
+.mo-undo-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mo-undo button {
+  flex: none;
+  min-height: 34px;
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--paper) 50%, transparent);
+  background: transparent;
+  color: var(--paper);
+  font-weight: 600;
+}
+.mo-undo button:hover { background: color-mix(in srgb, var(--paper) 14%, transparent); }
+.mo-undo .mo-undo-x { border: 0; padding: 0; width: 34px; font-size: 20px; font-weight: 400; }
+@media (pointer: coarse) { .mo-undo button { min-height: 42px; } .mo-undo .mo-undo-x { width: 42px; } }
+
+/* ---------- Zeitfenster-Hinweis über der Journalliste ---------- */
+.mo-winhint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 8px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--blau) 45%, var(--line));
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: var(--blau-soft);
+  color: var(--ink);
+  font-size: 13px;
+}
+.mo-winhint > span { flex: 1; min-width: 0; }
+.mo-winhint .tnum { font-weight: 600; }
+.mo-winhint button { flex: none; min-height: 30px; padding: 2px 10px; font-size: 13px; border-radius: 999px; }
+@media (pointer: coarse) { .mo-winhint button { min-height: 40px; } }

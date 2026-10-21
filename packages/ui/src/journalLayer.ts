@@ -111,10 +111,12 @@ export function situationModel(
   events: LageEvent[],
   t: string,
   flags: Pick<LayerFlags, "eigene" | "feind" | "spuren" | "zeiten">,
-  opts: { recentMin?: number; selectedId?: string | null } = {},
+  opts: { recentMin?: number; selectedId?: string | null; from?: string | null } = {},
 ): SituationModel {
   const recent = opts.recentMin ?? 30;
   const sel = opts.selectedId ?? null;
+  /** Anfang des Zeitfensters: Sichtungen/Ereignisse davor fallen weg, Elemente bleiben (Lagewissen) */
+  const from = opts.from ?? null;
   const st = situationAt(events, t);
   const byId = new Map(events.map((e) => [e.id, e]));
   // letzte Meldung jedes eigenen Elements (als Melder oder mit eigener Lage) bis t
@@ -167,7 +169,7 @@ export function situationModel(
     items.push(make(u.event, u.event.sym, u.pos, true, u.unit));
   }
   for (const e of st.loose) {
-    if (!e.pos || !show(e.side)) continue;
+    if (!e.pos || !show(e.side) || (from && e.t < from)) continue;
     items.push(make(e, e.sym, e.pos, false, e.side === "blau" ? e.unit : (catalogEntry(e.sym)?.activity ?? symbolDef(e.sym).activity) ? "" : e.unit));
   }
   // gewählte Meldung immer zeigen (auch wenn sie inzwischen von einer neueren Meldung überholt ist)
@@ -176,8 +178,11 @@ export function situationModel(
     if (e && !e.deleted && e.pos && e.t <= t && show(e.side)) items.push(make(e, e.sym, e.pos, false, e.unit));
   }
   for (const it of items) if (it.e.id === sel) it.selected = true;
+  // Spuren: im Zeitfenster nur die Standorte ab dem Anfang (beginnend beim Standort zu Fensterbeginn)
+  const before = flags.spuren && from ? new Map(situationAt(events.filter((e) => e.t < from), from).units.map((u) => [u.key, u.track.length])) : null;
   const tracks: SituationTrack[] = flags.spuren
-    ? st.units.filter((u) => show(u.side) && u.track.length > 1).map((u) => ({ side: u.side, unit: u.unit, pts: u.track }))
+    ? st.units.filter((u) => show(u.side)).map((u) => ({ side: u.side, unit: u.unit, pts: before ? u.track.slice(Math.max(0, (before.get(u.key) ?? 0) - 1)) : u.track }))
+      .filter((x) => x.pts.length > 1)
     : [];
   return { items, tracks };
 }

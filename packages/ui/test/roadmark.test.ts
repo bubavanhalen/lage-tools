@@ -8,12 +8,15 @@ describe("roadMark", () => {
   it("Sperren bekommen den Sperrbalken", () => {
     for (const k of ["sperre", "strassensperre", "panzersperre"]) expect(mark(k), k).toBe("sperre");
   });
+  it("Flächen- und Linienzeichen (Stacheldraht, Sperrlinie, Panzergraben, Minenfeld) zeichnet die Formebene, kein Sperrbalken", () => {
+    for (const k of ["stacheldraht", "sperrlinie", "panzergraben", "minensperre"]) expect(mark(k), k).toBeNull();
+  });
   it("Checkpoint und Verkehrsposten als Schranke", () => {
     expect(mark("kontrollposten")).toBe("checkpoint");
     expect(mark("verkehrsposten")).toBe("checkpoint");
   });
-  it("IED, VBIED, Minen, Sprengobjekt, Unfall nur als Punkt (kein Sperrbalken)", () => {
-    for (const k of ["ied", "vbied", "minensperre", "sprengobjekt", "unfall"]) expect(mark(k), k).toBe("punkt");
+  it("IED, VBIED, Sprengobjekt, Unfall nur als Punkt (kein Sperrbalken)", () => {
+    for (const k of ["ied", "vbied", "sprengobjekt", "unfall"]) expect(mark(k), k).toBe("punkt");
   });
   it("ohne Ausrichtung, ohne Ort oder ohne Strassen-Platzierung: nichts", () => {
     expect(roadMark({ sym: "sperre", pos })).toBeNull();

@@ -8,6 +8,9 @@
 import L from "leaflet";
 import ms from "milsymbol";
 import { buildSidc, catalogEntry, sidcFor, STATUS_CODE, SYMBOLS, symbolDef, type Affiliation, type Status } from "@lage/core";
+import { germanPin } from "./symboltext";
+
+export { germanPin, germanText, germanTextFor, GERMAN_TEXT, KEEP_TEXT, sidcFunction } from "./symboltext";
 
 export const SYMBOL_FILL: Record<Affiliation, string> = { F: "#80E0FF", H: "#FF8080", U: "#FFFF80", N: "#AAFFAA" };
 
@@ -54,19 +57,6 @@ export function sidcAffiliation(sidc: string | undefined, aff: Affiliation): Aff
 }
 
 /** vermutet / geplant (SIDC Stelle 4 = A) */
-/**
- * Punkt-Grafiken (Stecknadel, 2525C G*SPP… / G*GPGPP) tragen englische Kürzel (TCP, ASP …) oder sind leer:
- * Kürzel durch das deutsche Kurzzeichen aus dem Katalog ersetzen (z. B. «Vrk», «Mun», «Draht»).
- */
-export function germanPin(svg: string, sidc: string, tag?: string): string {
-  if (!tag || !/^G.(SPP|GPGPP)/i.test(sidc)) return svg;
-  const color = /<path[^>]*stroke="([^"]+)"/.exec(svg.replace(/<path[^>]*stroke-width="(?:[5-9]|\d\d)[^>]*>/g, ""))?.[1] ?? "black";
-  const fs = Math.min(34, Math.floor(118 / Math.max(2, tag.length)));
-  const esc = tag.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const txt = `<text x="100" y="-8" text-anchor="middle" font-size="${fs}" font-family="Arial" font-weight="bold" dominant-baseline="middle" fill="${color}">${esc}</text>`;
-  return svg.replace(/<text[^>]*>[^<]*<\/text>/g, "").replace(/<\/svg>\s*$/, `${txt}</svg>`);
-}
-
 export const isAnticipated = (sidc: string | undefined, status?: Status) => status === "anticipated" || sidc?.[3]?.toUpperCase() === "A";
 
 export interface SymbolGraphic {

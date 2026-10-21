@@ -18,7 +18,6 @@ import {
   describeTactical,
   findCells,
   type Affiliation,
-  type RoadPlacement,
   type Status,
   symbolDef,
   type Draft,
@@ -31,8 +30,11 @@ import {
 import { pickPoint, symbolSvg, toLatLng, toLv95 } from "@lage/map";
 import { dayLabel } from "./Timeline";
 import { SymbolPicker, choiceSvg, makeChoice, pickerEntry, rebaseSidc, type SymbolChoice } from "./SymbolPicker";
-import { placeOnRoadIn } from "./roadsource";
+import { RoadChoice, RoadEdit, useRoadChoice, type RoadPatch, type RoadPick } from "./RoadChoice";
 import { kindText } from "./journalLayer";
+import { WindowHint } from "./mapedit";
+import { inWindow } from "@lage/core";
+import { ShapeButton, shapeFits, shapePatch } from "./ShapeDraw";
 
 interface Props {
   ex: Exercise;
@@ -50,6 +52,9 @@ interface Props {
   onDemo?: () => void;
   /** «Bearbeiten» aus dem Meldungsband der Karte */
   editRequest?: { id: string; n: number } | null;
+  /** Zeitfenster der Karte: Liste nur [from, to] (ISO lokal), null = alles */
+  win?: { from: string; to: string } | null;
+  onWinClear?: () => void;
 }
 
 /** Auf Handy/Tablet nicht automatisch fokussieren (sonst springt die Seite und die Tastatur geht auf) */
@@ -105,12 +110,14 @@ function SymbolMini({ k, aff, sidc, status }: { k: string; aff: LageEvent["aff"]
   return <span className="symmini" dangerouslySetInnerHTML={{ __html: s.svg }} />;
 }
 
-export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt, editRequest, onGoto, onDemo }: Props) {
+export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt, editRequest, onGoto, onDemo, win, onWinClear }: Props) {
   const events = ex.events ?? [];
   const [kindOverride, setKindOverride] = useState<Kind | null>(null);
   const [day, setDay] = useState(() => (ex.days.includes(todayIso()) ? todayIso() : ex.days[ex.days.length - 1] ?? todayIso()));
   const [text, setText] = useState("");
   const [manualPos, setManualPos] = useState<LV95 | null>(null);
+  /** von Hand gezeichnete Fläche/Linie für die neue Meldung */
+  const [shapeDraft, setShapeDraft] = useState<LageEvent["shape"]>(undefined);
   const [found, setFound] = useState<{ q: string; name: string; pos: LV95 } | null>(null);
   const [picking, setPicking] = useState(false);
   const [filter, setFilter] = useState<"alle" | Kind>("alle");
@@ -134,7 +141,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     setPickPos({ left, top, maxH: Math.min(560, window.innerHeight - top - 12) });
     setPickOpen(true);
   };
-  const [roadPl, setRoadPl] = useState<{ key: string; pl: RoadPlacement } | null>(null);
+  /** Strassenwahl von Hand (Kreuzung), bleibt wie die Zeichenwahl bis zum Eintragen */
+  const [roadPick, setRoadPick] = useState<RoadPick | null>(null);
 
   // Taste «N» (ausserhalb von Eingabefeldern): zurück in die Meldungszeile
   useEffect(() => {
@@ -201,17 +209,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     }
     return null;
   })();
-  useEffect(() => {
-    if (!roadTarget) { setRoadPl(null); return; }
-    if (roadPl?.key === roadTarget.key) return;
-    const ctl = new AbortController();
-    const t = window.setTimeout(async () => {
-      const pl = await placeOnRoadIn(roadTarget.target, undefined, { along: roadTarget.along, hint: roadTarget.hint, signal: ctl.signal });
-      if (!ctl.signal.aborted) setRoadPl(pl ? { key: roadTarget.key, pl } : null);
-    }, 200);
-    return () => { ctl.abort(); window.clearTimeout(t); };
-  }, [roadTarget?.key]); // eslint-disable-line react-hooks/exhaustive-deps
-  const road = roadTarget && roadPl?.key === roadTarget.key ? roadPl.pl : null;
+  // Strasse: im Text genannte gewinnt, sonst wahrscheinlichste; von Hand wählbar (RoadChoice)
+  const roadRes = useRoadChoice(roadTarget, text, roadPick);
+  const road = roadTarget ? roadRes.pl : null;
   const effPos0 = manualPos ?? (found && draft?.placeQuery === found.q && (!draft.pos || draft.where?.kind === "zuletzt") ? found.pos : draft?.pos);
   const effWhere0 = manualPos ? "Karte" : found && effPos0 === found.pos ? found.name : draft?.where?.label;
   const effPos = road ? road.pos : effPos0;
@@ -241,6 +241,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     if (draft.fromLabel && !ev.fromLabel) ev.fromLabel = draft.fromLabel;
     if (draft.roadHint && !ev.roadHint) ev.roadHint = draft.roadHint;
     if (road) { ev.angle = road.angle; if (road.road) ev.road = road.road; }
+    if (roadTarget && roadPick?.none) ev.roadNone = true;
+    if (shapeDraft && shapeFits(shapeDraft, ev.sym)) Object.assign(ev, shapePatch(shapeDraft, ex.sheets));
     update((x) => {
       x.events = [...(x.events ?? []), ev];
       if (!x.days.includes(ev.t.slice(0, 10))) x.days = [...x.days, ev.t.slice(0, 10)].sort();
@@ -250,7 +252,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       if (found && effPos0 === found.pos && !(x.places ?? []).some((p) => p.name === found.name)) x.places = [...(x.places ?? []), { name: found.name, pos: found.pos }];
       return x;
     });
-    setText(""); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setPickOpen(false); setRoadPl(null);
+    setText(""); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setPickOpen(false); setRoadPick(null); setShapeDraft(undefined);
     onSelect(ev.id);
     if (ev.pos && !map.getBounds().contains(toLatLng(ev.pos))) map.panTo(toLatLng(ev.pos));
     if (!ev.pos) say("Eingetragen – ohne Ort. Mit ✎ kann der Ort später auf der Karte gesetzt werden.");
@@ -284,8 +286,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     const q = search.trim().toLowerCase();
     return events
       .filter((e) => !e.deleted && (filter === "alle" || kindOf(e) === filter) && (!q || `${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")}`.toLowerCase().includes(q)))
+      .filter((e) => !win || inWindow(e.t, win.from, win.to))
       .sort((a, b) => b.t.localeCompare(a.t) || b.id.localeCompare(a.id));
-  }, [events, filter, search]);
+  }, [events, filter, search, win?.from, win?.to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addDay = () => {
     const last = ex.days[ex.days.length - 1] ?? todayIso();
@@ -318,7 +321,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         </div>
         <textarea ref={inputRef} className="msg" value={text} autoFocus={wideScreen} rows={1} placeholder={wideScreen ? "z. B. 1015 H04 2 Fz in NAI 3 Rtg N" : "1015 H04 2 Fz NAI 3"} aria-label="Meldung"
           onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; }}
-          onChange={(e) => { setText(e.target.value.replace(/\n/g, " ")); setConfirmNoMelder(false); if (!e.target.value) { setManualPos(null); setKindOverride(null); setSymOverride(null); e.target.style.height = "auto"; } }}
+          onChange={(e) => { setText(e.target.value.replace(/\n/g, " ")); setConfirmNoMelder(false); if (!e.target.value) { setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); e.target.style.height = "auto"; } }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); add(); }
             if (e.key === "Escape") { setText(""); setManualPos(null); setKindOverride(null); }
@@ -353,8 +356,10 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             {(draft.dir !== undefined || draft.dirLabel) && <span className="chip" title="Bewegungsrichtung">{draft.dirLabel ?? `Rtg ${compass(draft.dir!)}`}</span>}
             {(draft.from !== undefined || draft.fromLabel) && <span className="chip" title="Herkunft (woher) – kein Bewegungspfeil">{draft.fromLabel ?? `aus ${compass(draft.from!)}`}</span>}
             {draft.roadHint && <span className="chip soft" title="wird auf die passende Strasse gelegt">{draft.roadHint === "autobahn" ? "auf Autobahn" : "auf Hauptstrasse"}</span>}
-            {effPos ? <span className="chip where">📍 {effWhere}</span> : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
+            {effPos ? (roadTarget ? <RoadChoice where={effWhere0 ?? ""} res={roadRes} pick={roadPick} onPick={setRoadPick} onMap={pickOnMap} map={map} /> : <span className="chip where">📍 {effWhere}</span>) : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
+            <ShapeButton map={map} sym={choice?.key ?? draft.sym} value={shapeDraft} onChange={setShapeDraft} color={effKind ? KIND_COLOR[effKind] : undefined}
+              ctx={{ sheets: ex.sheets, areas: ex.areas, event: { sym: choice?.key ?? draft.sym, pos: effPos, cells: draft.cells, nai: draft.nai, where: effWhere, angle: road?.angle, dir: draft.dir } }} />
           </div>
         ) : (
           <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen · <b>↑</b> = letzte korrigieren · <b>N</b> = zurück ins Feld.</p>
@@ -371,6 +376,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         </div>
         <input className="aname" placeholder="Suchen …" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Journal durchsuchen" />
       </div>
+      {win && <WindowHint events={events} from={win.from} to={win.to} onClear={onWinClear} />}
 
       {list.length === 0 ? (
         <div className="empty"><p>{events.length ? "Keine Einträge für diesen Filter." : "Noch keine Meldungen. Oben eintippen und Enter drücken."}</p></div>
@@ -451,6 +457,10 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
   const [pos, setPos] = useState<LV95 | undefined>(e.pos);
   const [where, setWhere] = useState(e.where);
   const [picking, setPicking] = useState(false);
+  /** Fläche/Linie: von Hand gezeichnet (auto: false) – Punktzeichen dann am Schwerpunkt */
+  const [shape, setShape] = useState(e.shape);
+  /** Strassenwahl beim Bearbeiten (gilt nur, solange der Ort nicht anders geändert wurde) */
+  const [roadPatch, setRoadPatch] = useState<RoadPatch | null>(null);
   const days = ex.days.includes(day) ? ex.days : [...ex.days, day];
   const save = () => {
     const m = /^(\d{1,2})[:.]?(\d{2})$/.exec(time.trim());
@@ -473,6 +483,8 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
       pos, where,
       // von Hand verschoben: Ausrichtung auf der alten Strasse gilt nicht mehr
       ...(moved ? { angle: undefined, road: undefined } : {}),
+      ...(roadPatch && pos === roadPatch.pos ? { angle: roadPatch.angle, road: roadPatch.road, roadNone: roadPatch.roadNone } : {}),
+      ...(shape !== e.shape ? { shape } : {}),
     });
   };
   return (
@@ -496,9 +508,20 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
           <SymbolPicker anchor="inline" compact value={choice} onChange={setChoice} />
         </div>
         <div className="btnrow">
-          <span className="help">{pos ? `📍 ${where ?? formatLv95(pos)}` : "ohne Ort"}</span>
+          {pos && where !== "Karte"
+            ? <RoadEdit e={e} ex={ex} map={map} symKey={choice.key} text={text} where={where}
+                onChange={(p) => { setRoadPatch(p); setPos(p.pos); setWhere(p.where); }}
+                fallback={<span className="help">📍 {where ?? formatLv95(pos)}</span>} />
+            : <span className="help">{pos ? `📍 ${where ?? formatLv95(pos)}` : "ohne Ort"}</span>}
           <button disabled={picking} onClick={async () => { setPicking(true); const p = await pickPoint(map); setPicking(false); if (p) { setPos(p); setWhere("Karte"); } }}>{picking ? "Auf Karte klicken …" : "Ort auf Karte"}</button>
           {pos && <button onClick={() => { setPos(undefined); setWhere(undefined); }}>Ort entfernen</button>}
+          <ShapeButton map={map} sym={choice.key} value={shape?.auto ? undefined : shape} className="" color={KIND_COLOR[kind]}
+            ctx={{ sheets: ex.sheets, areas: ex.areas, event: { ...e, sym: choice.key, pos, where, shape } }}
+            onChange={(sh) => {
+              if (!sh) { setShape(undefined); return; }
+              const p = shapePatch(sh, ex.sheets);
+              setShape(sh); setPos(p.pos); setWhere(p.where);
+            }} />
         </div>
         <div className="btnrow">
           <button className="primary" onClick={save}>Speichern</button>

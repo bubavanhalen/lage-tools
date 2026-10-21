@@ -252,7 +252,8 @@ export function zoomToCellAtCenter(map: L.Map, level: CellZoomLevel = "auto"): C
 export function enableCellZoom(map: L.Map, getSheets: () => RasterSheet[]): () => void {
   registry.set(map, getSheets);
   const onDbl = (ev: L.LeafletMouseEvent) => {
-    if (isMeasuring(map)) return;
+    // Messen oder Fläche/Linie zeichnen: Doppelklick beendet das Werkzeug, kein Zoom
+    if (isMeasuring(map) || map.getContainer().classList.contains("lt-drawing")) return;
     const oe = ev.originalEvent;
     if (oe?.shiftKey) {
       map.setZoomAround(ev.containerPoint, map.getZoom() - 1);

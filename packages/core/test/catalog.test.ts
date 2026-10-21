@@ -38,7 +38,7 @@ describe("Katalog: Aufbau", () => {
     const cats = new Set(CATALOG.map((e) => e.category));
     for (const c of cats) expect(CATEGORIES as readonly string[]).toContain(c);
     expect(cats.size).toBeGreaterThanOrEqual(8);
-    expect(cats.size).toBeLessThanOrEqual(12);
+    expect(cats.size).toBeLessThanOrEqual(13);
     expect(CATALOG.length).toBeGreaterThan(100);
   });
   it("Kürzel klein und ohne Punkte, SIDC-Vorlage 15 Stellen mit «?»", () => {

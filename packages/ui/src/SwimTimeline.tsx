@@ -4,7 +4,7 @@
  * Lagezeit setzen durch Klicken/Ziehen (Maus, Stift, Touch), Abspielen, «Live», Zoom (Ctrl + Mausrad, Pinch).
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as RKeyboardEvent, type MouseEvent as RMouseEvent, type PointerEvent as RPointerEvent, type ReactNode } from "react";
-import { axisTicks, buildLanes, clusterX, kindLabel, liveTime, stackOffsets, timeBounds, type DotKind, type Exercise, type Lane, type LaneItem, type LageEvent } from "@lage/core";
+import { axisTicks, buildLanes, clusterX, kindLabel, liveTime, stackOffsets, timeBounds, windowLabel, windowStart, WINDOW_PRESETS, type DotKind, type Exercise, type Lane, type LaneItem, type LageEvent, type TimeWindow } from "@lage/core";
 import { dayLabel, isoLocal } from "./Timeline";
 import "./swimtimeline.css";
 
@@ -25,6 +25,9 @@ export interface SwimTimelineProps {
   /** optional: eingeklappt (sonst merkt sich der Zeitstrahl den Zustand selbst) */
   collapsed?: boolean;
   onCollapsedChange?: (c: boolean) => void;
+  /** Zeitfenster (ohne Angabe: keine Fenster-Bedienung) */
+  win?: TimeWindow;
+  onWin?: (w: TimeWindow) => void;
 }
 
 const MIN = 60000;
@@ -57,7 +60,7 @@ function useWindowSize() {
 interface Tip { e: LageEvent; x: number; y: number; melder?: boolean }
 
 export function SwimTimeline(p: SwimTimelineProps) {
-  const { events, days, units, value, onChange, selectedId, onSelect, compact = false, extra } = p;
+  const { events, days, units, value, onChange, selectedId, onSelect, compact = false, extra, win, onWin } = p;
 
   // ---------- Daten ----------
   const { lanes, items } = useMemo(() => buildLanes(events, units), [events, units]);
@@ -95,6 +98,12 @@ export function SwimTimeline(p: SwimTimelineProps) {
   const cur = playing && playMs !== null ? playMs : Number.isFinite(valueMs) ? valueMs : liveMs;
 
   // aktuelle Werte für Callbacks (rAF, native Listener)
+  /** Anfang des Zeitfensters (ms) zur angezeigten Lagezeit, null = alles */
+  const fromMs = (() => {
+    if (!win || !onWin) return null;
+    const f = windowStart(win, isoLocal(cur));
+    return f ? Math.max(t0, Date.parse(f)) : null;
+  })();
   const st = useRef({ cur, t0, t1, liveMs, zoom, onChange, onSelect, speed });
   st.current = { cur, t0, t1, liveMs, zoom, onChange, onSelect, speed };
 
@@ -273,6 +282,26 @@ export function SwimTimeline(p: SwimTimelineProps) {
 
   // ---------- Zeiger: Klicken/Ziehen setzt die Lagezeit, zwei Finger = Zoom ----------
   const pointers = useRef(new Map<number, number>());
+  /** Zeiger, der den Anfangsgriff des Zeitfensters zieht */
+  const gripDrag = useRef<number | null>(null);
+  /** Anfang des Zeitfensters setzen (ms): auf Minuten gerundet, höchstens 1 min vor der Lagezeit; am Achsenanfang = alles */
+  const setStart = (ms: number) => {
+    if (!onWin) return;
+    const m = Math.round(ms / MIN) * MIN;
+    if (m <= t0 + MIN / 2) { onWin({ mode: "alles" }); return; }
+    onWin({ mode: "ab", t: isoLocal(Math.min(m, st.current.cur - MIN)) });
+  };
+  const onGripKey = (ev: RKeyboardEvent) => {
+    const k = ev.key;
+    const step = (ev.shiftKey ? 60 : 5) * MIN;
+    const base = fromMs ?? t0;
+    if (k === "ArrowLeft") setStart(base - step);
+    else if (k === "ArrowRight") setStart(base + step);
+    else if (k === "Home" || k === "Delete" || k === "Backspace") onWin?.({ mode: "alles" });
+    else return;
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
   const pinch = useRef<{ d: number; span: number; mid: number } | null>(null);
   const dragging = useRef(false);
   const timeAtClient = (clientX: number) => {
@@ -282,7 +311,17 @@ export function SwimTimeline(p: SwimTimelineProps) {
   const onPointerDown = (ev: RPointerEvent<HTMLDivElement>) => {
     if (ev.button !== 0 && ev.pointerType === "mouse") return;
     const target = ev.target as Element;
-    if (chartRef.current) { chartRef.current.dataset.maus = "1"; chartRef.current.focus({ preventScroll: true }); }
+    const grip = target.closest("[data-grip]");
+    if (chartRef.current && !grip) { chartRef.current.dataset.maus = "1"; chartRef.current.focus({ preventScroll: true }); }
+    if (grip?.getAttribute("data-grip") === "start" && onWin) {
+      // Anfang des Zeitfensters ziehen → «ab …»; ganz nach links = alles
+      ev.preventDefault();
+      (grip as HTMLElement | SVGElement).focus?.({ preventScroll: true });
+      gripDrag.current = ev.pointerId;
+      try { (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId); } catch { /* egal */ }
+      setTip(null);
+      return;
+    }
     if (target.closest("[data-id],[data-zoom],button")) return;
     const r = chartRef.current!.getBoundingClientRect();
     if (ev.clientX - r.left < LM - 4) return; // Spurnamen
@@ -299,6 +338,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
     setTime(timeAtClient(ev.clientX));
   };
   const onPointerMove = (ev: RPointerEvent<HTMLDivElement>) => {
+    if (gripDrag.current === ev.pointerId) { setStart(timeAtClient(ev.clientX)); return; }
     if (pointers.current.has(ev.pointerId)) pointers.current.set(ev.pointerId, ev.clientX);
     if (pinch.current && pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()] as [number, number];
@@ -311,6 +351,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
     if (dragging.current) setTime(timeAtClient(ev.clientX));
   };
   const onPointerUp = (ev: RPointerEvent<HTMLDivElement>) => {
+    if (gripDrag.current === ev.pointerId) gripDrag.current = null;
     pointers.current.delete(ev.pointerId);
     if (pointers.current.size < 2) pinch.current = null;
     dragging.current = false;
@@ -452,8 +493,42 @@ export function SwimTimeline(p: SwimTimelineProps) {
   const pct = clamp(((cur - t0) / Math.max(MIN, liveMs - t0)) * 100, 0, 100);
   const empty = items.length === 0;
 
-  const veil = (y: number, h: number) =>
-    curVisible || cur < v0 ? <rect className="swt-veil" x={clamp(cx + R + 1, LM, W - RM)} y={y} width={Math.max(0, Math.min(endX, W - RM) - clamp(cx + R + 1, LM, W - RM))} height={h} /> : null;
+  const veil = (y: number, h: number) => (
+    <>
+      {curVisible || cur < v0 ? <rect className="swt-veil" x={clamp(cx + R + 1, LM, W - RM)} y={y} width={Math.max(0, Math.min(endX, W - RM) - clamp(cx + R + 1, LM, W - RM))} height={h} /> : null}
+      {winVeil(y, h)}
+    </>
+  );
+  // Zeitfenster: vor dem Anfang abgedunkelt, zwischen Anfang und Lagezeit leicht hervorgehoben
+  const fx = fromMs !== null ? x(fromMs) : null;
+  const winVeil = (y: number, h: number) => {
+    if (fx === null) return null;
+    const a = clamp(fx, LM, W - RM), b = clamp(cx, LM, W - RM);
+    return (
+      <>
+        {a > LM && <rect className="swt-veil swt-past" x={LM} y={y} width={a - LM} height={h} />}
+        {b > a && <rect className="swt-winband" x={a} y={y} width={b - a} height={h} />}
+      </>
+    );
+  };
+  const winLabel = win ? windowLabel(win) : "";
+  /** Griff «Anfang des Zeitfensters» auf der Achse (ziehen, Tastatur ←/→, Pos1 = alles) */
+  const startGrip = (h: number) => {
+    if (!onWin || (fx !== null && (fx < LM - 1 || fx > W - RM + 1))) return null;
+    const gx = fx ?? LM;
+    const idle = fx === null;
+    return (
+      <g data-grip="start" className={"swt-grip" + (idle ? " idle" : "")} tabIndex={0} role="slider" onKeyDown={onGripKey}
+        aria-label="Anfang des Zeitfensters" aria-valuemin={t0} aria-valuemax={cur} aria-valuenow={fromMs ?? t0}
+        aria-valuetext={idle ? "alles, kein Anfang" : `ab ${hhmm(fromMs!)}`}>
+        <title>{idle ? "Zeitfenster: Griff nach rechts ziehen, um nur Meldungen ab einer Zeit zu zeigen" : `Zeitfenster ab ${hhmm(fromMs!)} – ziehen; ganz nach links = alles (Pfeiltasten, Pos1)`}</title>
+        <rect className="hit" x={gx - 13} y={0} width={26} height={h} />
+        {/* Griff unten an der Achse (die Zeitbeschriftung oben bleibt frei): Klammer «[» mit Lasche */}
+        <path className="swt-grip-v" d={`M${gx + 6} ${Math.max(1.5, h - (idle ? 9 : 12))} H${gx} V${h - 0.5}`} />
+        {!idle && <path className="swt-grip-t" d={`M${gx} ${Math.max(1.5, h - 12)} l-5 -5 h10 z`} />}
+      </g>
+    );
+  };
 
   const laneLabel = (l: Lane) => {
     const y = laneY.get(l.key)!;
@@ -493,10 +568,27 @@ export function SwimTimeline(p: SwimTimelineProps) {
         {SPEEDS.map((s) => <option key={s} value={s}>{s ? `${s} min/s` : "auto"}</option>)}
       </select>
       <button className="swt-chip swt-live" aria-pressed={live} onClick={goLive} title="Immer die neuste Lage zeigen (L)"><i aria-hidden="true" />Live</button>
-      {!compact || !collapsed ? (
+      {/* eingeklappt und nicht gezoomt: «Ganze Achse» bringt nichts → Platz für das Zeitfenster */}
+      {!collapsed || !fit ? (
         <button className="swt-chip" aria-pressed={fit} onClick={() => setZoom(null)} disabled={empty}
           title="Ganze Zeitachse zeigen (Zoom zurücksetzen) – die Lagezeit bleibt. Vergrössern: Ctrl + Mausrad, zwei Finger oder + / −. Neuste Lage: «Live»">Ganze Achse</button>
       ) : null}
+      {onWin && win && (
+        <span className="swt-win" role="group" aria-label="Zeitfenster" title="Zeitfenster: nur Meldungen der letzten … bis zur Lagezeit zeigen (Elemente bleiben an ihrem letzten Standort)">
+          <span className="swt-win-seg">
+            {WINDOW_PRESETS.map((m) => {
+              const on = m === 0 ? win.mode === "alles" : win.mode === "dauer" && win.min === m;
+              return <button key={m} type="button" aria-pressed={on} onClick={() => onWin(m === 0 ? { mode: "alles" } : { mode: "dauer", min: m })}>{m === 0 ? "Alles" : windowLabel({ mode: "dauer", min: m })}</button>;
+            })}
+            {win.mode === "ab" && <button type="button" aria-pressed className="swt-win-ab" onClick={() => onWin({ mode: "alles" })} title="Zeitfenster aufheben">{winLabel} <span aria-hidden>×</span></button>}
+          </span>
+          <select className="swt-win-sel" aria-label="Zeitfenster" value={win.mode === "dauer" ? String(win.min) : win.mode === "ab" ? "ab" : "0"}
+            onChange={(e) => { const v = e.target.value; if (v !== "ab") onWin(+v ? { mode: "dauer", min: +v } : { mode: "alles" }); }}>
+            {WINDOW_PRESETS.map((m) => <option key={m} value={m}>{m === 0 ? "Fenster: alles" : `Fenster: ${windowLabel({ mode: "dauer", min: m })}`}</option>)}
+            {win.mode === "ab" && <option value="ab">{winLabel}</option>}
+          </select>
+        </span>
+      )}
       {extra}
       <button className="swt-fold" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed} aria-label={collapsed ? "Zeitstrahl aufklappen" : "Zeitstrahl einklappen"} title={collapsed ? "Spuren zeigen" : "Spuren ausblenden"}>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d={collapsed ? "M4 6l4 4 4-4" : "M4 10l4-4 4 4"} /></svg>
@@ -533,6 +625,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
           ))}
           {veil(1, MH - 2)}
           {curVisible && <line className="swt-cursor" x1={cx} x2={cx} y1={0} y2={MH} />}
+          {startGrip(MH)}
         </svg>
       </div>
     );
@@ -554,6 +647,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
           })}
           {veil(TOP - 8, 8)}
           {curVisible && <line className="swt-cursor" x1={cx} x2={cx} y1={TOP - 8} y2={TOP} />}
+          {startGrip(TOP)}
         </svg>
         <div className="swt-bodywrap">
         {hidden.above > 0 && (
@@ -571,6 +665,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
             {lanes.map(laneLabel)}
             <g className="swt-dots">{dots}</g>
             {veil(0, bodyH)}
+            {fx !== null && fx >= LM && <line className="swt-winline" x1={fx} x2={fx} y1={0} y2={bodyH} />}
             {curVisible && <line className="swt-cursor" x1={cx} x2={cx} y1={0} y2={bodyH} />}
           </svg>
         </div>
@@ -578,6 +673,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
         <svg className="swt-foot" width={W} height={FOOT} role="presentation">
           {curVisible && <line className="swt-cursor" x1={cx} x2={cx} y1={0} y2={4} />}
           {curVisible && <text className="swt-curlabel" x={clamp(cx, LM + 18, W - RM - 18)} y={FOOT - (compact ? 4 : 5)}>{hhmm(cur)}</text>}
+          {fx !== null && fx >= LM && cx - fx > 46 && <text className="swt-fromlabel" x={clamp(fx, LM + 18, W - RM - 18)} y={FOOT - (compact ? 4 : 5)}>{hhmm(fromMs!)}</text>}
           {!fit && (() => {
             const note = `Ausschnitt ${tickLabel(v0, 0)} – ${hhmm(v1)}`;
             const right = !curVisible || cx < W - RM - note.length * 6.8 - 40;
