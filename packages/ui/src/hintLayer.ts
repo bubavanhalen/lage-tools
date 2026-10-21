@@ -125,7 +125,8 @@ export function hintLayer(map: L.Map, o: HintLayerOptions): L.LayerGroup {
     if (h.rule === "D1") {
       const st = h.pos ?? (h.unit ? lastPosition(ex.events ?? [], "blau", h.unit, o.t) : undefined);
       if (st) {
-        const ring = Array.from({ length: 72 }, (_, i) => toLatLng({ e: st.e + D1_RADIUS * Math.cos((i / 72) * 2 * Math.PI), n: st.n + D1_RADIUS * Math.sin((i / 72) * 2 * Math.PI) }));
+        const r = h.radius ?? D1_RADIUS;
+        const ring = Array.from({ length: 72 }, (_, i) => toLatLng({ e: st.e + r * Math.cos((i / 72) * 2 * Math.PI), n: st.n + r * Math.sin((i / 72) * 2 * Math.PI) }));
         L.polygon(ring, { pane: GEO_PANE, color: "#fff", weight: on ? 5 : 4, opacity: on ? 0.9 : 0.6, fill: false, interactive: false }).addTo(g);
         L.polygon(ring, { pane: GEO_PANE, color: INK, weight: on ? 2.2 : 1.5, opacity: on ? 1 : 0.7, dashArray: "3 5", fillColor: FLASH, fillOpacity: on ? 0.1 : 0.05, interactive: false }).addTo(g);
       }

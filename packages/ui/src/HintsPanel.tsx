@@ -178,7 +178,7 @@ function HintCard({ h, ex, t, state, sel, evById, compact, onSelect, onMap, onEv
         <span className="hc-rule">{h.rule}</span>
         <span className="hc-group">{rule?.name ?? GROUP_LABEL[groupOf(h)]}</span>
         {over
-          ? <span className="hc-time tnum" title={`galt ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)} bis ${dayLabel(h.until!, ex.days)} ${h.until!.slice(11, 16)}`}><span className="hc-over">vorbei</span> {hhmm(h.t, ex.days, t)}–{hhmm(h.until!, ex.days, t)}</span>
+          ? <span className="hc-time tnum" title={`galt ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)} bis ${dayLabel(h.until!, ex.days)} ${h.until!.slice(11, 16)}`}><span className="hc-over">beendet</span> {hhmm(h.until!, ex.days, t)}</span>
           : <span className="hc-time tnum" title={`gilt seit ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)}${h.last && h.last > h.t ? `, zuletzt ${h.last.slice(11, 16)}` : ""}`}>seit {hhmm(h.t, ex.days, t)}</span>}
       </div>
       <h4 className="hc-title">{h.title}</h4>

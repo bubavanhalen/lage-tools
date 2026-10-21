@@ -63,7 +63,7 @@ export function useHints(ex: Exercise | null, t: string, from: string | null): H
     return { list: computeHints(ex, { t }), quality: eventQuality(ex.events ?? [], t, ex) };
   }, [events, areas, sheets, t]); // eslint-disable-line react-hooks/exhaustive-deps
   const hints = useMemo(() => {
-    // im Zeitfenster: was darin gilt oder zuletzt ausgelöst wurde; Referenz immer
+    // im Zeitfenster: zuletzt ausgelöst (`last ?? t`) bzw. beendet (`until`) im Fenster; Referenz immer
     const vis = all.list.filter((h) => h.level === "info" || !from || (h.until ?? h.last ?? h.t) >= from || (h.next !== undefined && h.next >= from));
     // Reihenfolge des Kerns (hoch > mittel > info, dann neueste); vorbei nach hinten
     return vis.sort((a, b) => Number(isOver(a, t)) - Number(isOver(b, t)) || compareHints(a, b));
