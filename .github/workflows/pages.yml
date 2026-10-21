@@ -27,6 +27,16 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Vorschau des Arbeitsstands (Zweig wip/*) unter /vorschau/ bauen
+        if: github.event_name != 'pull_request'
+        run: |
+          BR=$(git ls-remote --heads origin 'wip/*' | sort -k2 | tail -1 | sed 's#.*refs/heads/##')
+          if [ -n "$BR" ]; then
+            git clone --depth 1 --branch "$BR" "https://github.com/${{ github.repository }}.git" vorschau-src
+            (cd vorschau-src && npm ci && npm test && npm run build)
+            mkdir -p _site/vorschau && cp -r vorschau-src/_site/. _site/vorschau/
+            echo "$BR $(git -C vorschau-src rev-parse --short HEAD)" > _site/vorschau/stand.txt
+          fi
       - uses: actions/configure-pages@v5
         if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v3
