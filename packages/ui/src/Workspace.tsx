@@ -11,6 +11,8 @@ import {
   journalToCsv,
   findCells,
   cellBounds,
+  catalogEntry,
+  type Bounds,
   makeFeldSheet,
   newDeviceId,
   demoExercise,
@@ -167,6 +169,30 @@ export function Workspace({ product, tagline }: Props) {
     const now = isoLocal(clock);
     return !last || clock - Date.parse(last) < 12 * 3600000 ? (now > last ? now : last) : last;
   })();
+
+  // Hindernisse, Checkpoint, IED … ohne Ausrichtung nachträglich auf die Strasse legen (z. B. Beispiel, Import)
+  const roadTried = useRef(new Set<string>());
+  useEffect(() => {
+    if (!ex) return;
+    const todo = (ex.events ?? []).filter((e) => !e.deleted && e.angle === undefined && !roadTried.current.has(e.id) && catalogEntry(e.sym)?.placement === "strasse" && (e.cells?.length || e.nai) && e.where !== "Karte");
+    if (!todo.length) return;
+    todo.forEach((e) => roadTried.current.add(e.id));
+    const exId = ex.id;
+    (async () => {
+      const { placeOnRoadIn } = await import("./roadsource");
+      for (const e of todo) {
+        let target: Bounds | LV95[] | null = null;
+        const c = e.cells?.[0] ? findCells(e.cells[0], ex.sheets)[0] : undefined;
+        const sh = c && ex.sheets.find((x) => x.id === c.sheetId);
+        if (c && sh) target = cellBounds(sh, c.col, c.row, c.quadrant);
+        else if (e.nai) target = ex.areas.find((a) => a.name === e.nai)?.ring ?? null;
+        if (!target) continue;
+        const pl = await placeOnRoadIn(target, undefined, { along: e.sym === "hinterhalt" });
+        if (!pl || exRef.current?.id !== exId) continue;
+        update((x) => { x.events = (x.events ?? []).map((y) => (y.id === e.id ? { ...y, pos: pl.pos, angle: pl.angle, road: pl.road, where: `${y.where ?? ""}${pl.road ? ` · auf ${pl.road}` : ""}`.replace(/^ · /, "") } : y)); return x; });
+      }
+    })();
+  }, [ex?.events, ex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lage zum Zeitpunkt
   useEffect(() => {

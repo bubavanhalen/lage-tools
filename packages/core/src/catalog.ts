@@ -68,12 +68,21 @@ export const ECHELONS: Array<{ key: Echelon; name: string; code: string; aliases
   { key: "gr", name: "Gruppe", code: "B", aliases: ["gr", "gruppe"], g: "f", pl: "Gruppen" },
   { key: "hz", name: "Halbzug", code: "C", aliases: ["hz", "halbzug"], g: "m", pl: "Halbzüge" },
   { key: "zug", name: "Zug", code: "D", aliases: ["zug", "z"], g: "m", pl: "Züge" },
-  { key: "kp", name: "Kompanie", code: "E", aliases: ["kp", "kompanie", "bttr", "batterie", "st", "staffel"], g: "f", pl: "Kompanien" },
+  { key: "kp", name: "Kompanie", code: "E", aliases: ["kp", "kompanie", "bttr", "batterie", "staffel"], g: "f", pl: "Kompanien" },
   { key: "bat", name: "Bataillon", code: "F", aliases: ["bat", "bataillon", "abt", "abteilung"], g: "n", pl: "Bataillone" },
   { key: "rgt", name: "Regiment", code: "G", aliases: ["rgt", "regiment"], g: "n", pl: "Regimenter" },
   { key: "br", name: "Brigade", code: "H", aliases: ["br", "brigade", "brig"], g: "f", pl: "Brigaden" },
   { key: "div", name: "Division", code: "I", aliases: ["div", "division"], g: "f", pl: "Divisionen" },
 ];
+
+/** Bezeichnungen je nach Truppengattung: «Art Abt» = Abteilung, «Bttr» = Batterie */
+const ECH_WORD: Record<string, { name: string; g: Genus; pl: string }> = {
+  abt: { name: "Abteilung", g: "f", pl: "Abteilungen" },
+  abteilung: { name: "Abteilung", g: "f", pl: "Abteilungen" },
+  bttr: { name: "Batterie", g: "f", pl: "Batterien" },
+  batterie: { name: "Batterie", g: "f", pl: "Batterien" },
+  staffel: { name: "Staffel", g: "f", pl: "Staffeln" },
+};
 
 /** Kategorien in der Reihenfolge der Auswahl */
 export const CATEGORIES = [
@@ -106,55 +115,55 @@ export const CATALOG: CatalogEntry[] = [
   // ---------- Kampftruppen
   E("inf", "Infanterie", "Kampftruppen", "S?GPUCI--------", ["inf", "infanterie", "füs", "füsiliere", "füsilier", "schützen"], "einheit", { ...UNIT, g: "f" }),
   E("pz_gren", "Panzergrenadiere (Inf mech)", "Kampftruppen", "S?GPUCIZ-------", ["pz gren", "panzergrenadiere", "panzergrenadier", "mech inf", "inf mech", "infanterie mechanisiert", "mechanisierte infanterie", "mech"], "einheit", { ...UNIT, noun: "Panzergrenadiere", g: "p", geraet: "spz" }),
-  E("pz", "Panzer", "Kampftruppen", "S?GPUCA--------", ["pz", "panzer", "panzertruppen", "pz trp"], "einheit", { ...UNIT, g: "p", geraet: "kpz" }),
+  E("pz", "Panzer", "Kampftruppen", "S?GPUCA--------", ["pz", "panzer", "panzertruppen"], "einheit", { ...UNIT, g: "p", geraet: "kpz" }),
   E("pzj", "Panzerjäger / Panzerabwehr", "Kampftruppen", "S?GPUCAA-------", ["pzj", "panzerjäger", "pz jäger", "panzerabwehr", "pz abw"], "einheit", { ...UNIT, noun: "Panzerjäger", g: "p", geraet: "pzaw" }),
-  E("aufkl", "Aufklärung", "Kampftruppen", "S?GPUCR--------", ["aufkl", "aufklärung", "aufklärer", "aufkl trp", "aufklärungstruppen"], "einheit", { ...UNIT, g: "f", geraet: "aufkl_fz" }),
+  E("aufkl", "Aufklärung", "Kampftruppen", "S?GPUCR--------", ["aufkl", "aufklärung", "aufklärer", "aufklärungstruppen"], "einheit", { ...UNIT, g: "f", geraet: "aufkl_fz" }),
   E("geb", "Gebirgstruppen", "Kampftruppen", "S?GPUCIO-------", ["geb", "gebirgstruppen", "gebirgsinfanterie", "geb inf", "gebirgsspezialisten", "geb spez"], "einheit", { ...UNIT, noun: "Gebirgsinfanterie", g: "f" }),
   E("fsch", "Fallschirmtruppen", "Kampftruppen", "S?GPUCIA-------", ["fsch", "fallschirm", "fallschirmjäger", "fallschirmaufklärer", "fsch aufkl", "luftlande", "luftlandetruppen"], "einheit", { ...UNIT, noun: "Fallschirmtruppen", g: "p" }),
   E("spez", "Spezialkräfte / Grenadiere", "Kampftruppen", "S?FPG----------", ["spez", "spezialkräfte", "spez kr", "sof", "kommando", "ksk", "gren", "grenadiere", "grenadier"], "einheit", { ...UNIT, noun: "Spezialkräfte", g: "p" }),
   E("scharfschuetze", "Scharfschütze", "Kampftruppen", "O?VPS----------", ["schaf", "scharfschütze", "scharfschützen", "sniper", "heckenschütze"], "einheit", { lean: "feind", pl: "Scharfschützen" }),
   E("inf_trp", "Personen / Inf Trupp", "Kampftruppen", "S?GPUCI--------", ["personen", "person", "pers", "soldaten", "soldat", "sdt", "mann", "angehörige", "zu fuss", "fussgänger", "bewaffnete"], "einheit", { ...UNIT, echelon: "trp", noun: "Personen", g: "p", prio: 1 }),
-  E("inf_gr", "Inf Gruppe", "Kampftruppen", "S?GPUCI--------", [], "einheit", { ...UNIT, echelon: "gr", noun: "Infanterie", g: "f", prio: 1, hidden: true }),
+  E("inf_gr", "Inf Gruppe", "Kampftruppen", "S?GPUCI--------", [], "einheit", { ...UNIT, echelon: "gr", noun: "Personen", g: "p", prio: 1, hidden: true }),
 
   // ---------- Unterstützung
-  E("art", "Artillerie", "Unterstützung", "S?GPUCF--------", ["art", "artillerie", "art abt"], "einheit", { ...UNIT, g: "f", geraet: "pz_hb" }),
-  E("art_pz", "Panzerartillerie", "Unterstützung", "S?GPUCFHE------", ["pz art", "panzerartillerie", "pz hb abt", "pz hb bttr"], "einheit", { ...UNIT, g: "f", geraet: "pz_hb" }),
+  E("art", "Artillerie", "Unterstützung", "S?GPUCF--------", ["art", "artillerie"], "einheit", { ...UNIT, g: "f", geraet: "pz_hb" }),
+  E("art_pz", "Panzerartillerie", "Unterstützung", "S?GPUCFHE------", ["pz art", "panzerartillerie"], "einheit", { ...UNIT, g: "f", geraet: "pz_hb" }),
   E("rak_art", "Raketenartillerie", "Unterstützung", "S?GPUCFRMS-----", ["rak art", "raketenartillerie", "rak"], "einheit", { ...UNIT, g: "f", geraet: "rak_werfer" }),
-  E("mw", "Minenwerfer", "Unterstützung", "S?GPUCFM-------", ["mw", "minenwerfer", "mw z", "mörser"], "einheit", { ...UNIT, geraet: "mw_geraet" }),
-  E("genie", "Genie / Pioniere", "Unterstützung", "S?GPUCE--------", ["g", "gen", "genie", "g trp", "genietruppen", "sap", "sappeure", "sappeur", "pioniere", "pionier", "pz sap", "panzersappeure"], "einheit", { ...UNIT, noun: "Genie", g: "f", geraet: "bagger" }),
-  E("rettung", "Rettung / Katastrophenhilfe", "Unterstützung", "E?OPBC---------", ["rttg", "rettung", "rettungstruppen", "katastrophenhilfe", "kata hi", "katastrophenhilfe bereitschaft", "rttg trp"], "einheit", { ...UNIT, lean: undefined, noun: "Rettungstruppen", g: "p" }),
-  E("abc", "ABC-Abwehr", "Unterstützung", "S?GPUUA--------", ["abc", "abc abw", "abc abwehr", "abc trp", "atomar", "chemie abwehr"], "einheit", { ...UNIT, g: "f" }),
+  E("mw", "Minenwerfer", "Unterstützung", "S?GPUCFM-------", ["mw", "minenwerfer", "mörser"], "einheit", { ...UNIT, geraet: "mw_geraet" }),
+  E("genie", "Genie / Pioniere", "Unterstützung", "S?GPUCE--------", ["g", "gen", "genie", "genietruppen", "sap", "sappeure", "sappeur", "pioniere", "pionier", "pz sap", "panzersappeure"], "einheit", { ...UNIT, noun: "Genie", g: "f", geraet: "bagger" }),
+  E("rettung", "Rettung / Katastrophenhilfe", "Unterstützung", "E?OPBC---------", ["rttg", "rettung", "rettungstruppen", "katastrophenhilfe", "kata hi", "katastrophenhilfe bereitschaft"], "einheit", { ...UNIT, lean: undefined, noun: "Rettungstruppen", g: "p" }),
+  E("abc", "ABC-Abwehr", "Unterstützung", "S?GPUUA--------", ["abc", "abc abw", "abc abwehr", "atomar", "chemie abwehr"], "einheit", { ...UNIT, g: "f" }),
   E("flab", "Fliegerabwehr", "Unterstützung", "S?GPUCD--------", ["flab", "fliegerabwehr", "m flab", "l flab", "luftverteidigung", "bodluv"], "einheit", { ...UNIT, g: "f", geraet: "flab_kan" }),
-  E("heli_einheit", "Lufttransport (Helikopter)", "Unterstützung", "S?GPUCVRU------", ["lufttransport", "lufttransportstaffel", "lt st", "heli st", "helikopterstaffel"], "einheit", { ...UNIT, noun: "Lufttransport", geraet: "heli" }),
-  E("uav_einheit", "Drohnen (UAV-Einheit)", "Unterstützung", "S?GPUCVU-------", ["drohnenstaffel", "drohnen einheit", "uav einheit", "ads st", "drohnen trp"], "einheit", { ...UNIT, noun: "Drohneneinheit", g: "f", geraet: "drohne" }),
+  E("heli_einheit", "Lufttransport (Helikopter)", "Unterstützung", "S?GPUCVRU------", ["lufttransport", "lufttransportstaffel", "helikopterstaffel"], "einheit", { ...UNIT, noun: "Lufttransport", geraet: "heli" }),
+  E("uav_einheit", "Drohnen (UAV-Einheit)", "Unterstützung", "S?GPUCVU-------", ["drohnenstaffel", "drohnen einheit", "uav einheit"], "einheit", { ...UNIT, noun: "Drohneneinheit", g: "f", geraet: "drohne" }),
 
   // ---------- Führung und Logistik
-  E("hq", "Stab / Kommando", "Führung und Logistik", "S?GPU-----A----", ["stab", "kdo", "kommandoelement", "hq", "stabskp", "stab kp", "führungsstaffel", "fhr st"], "einheit", { ...UNIT, noun: "Stab" }),
-  E("fu", "Führungsunterstützung / Übermittlung", "Führung und Logistik", "S?GPUUS--------", ["fu", "fu trp", "uem", "übermittlung", "übermittler", "führungsunterstützung", "fhr ustü", "funk trp", "tg"], "einheit", { ...UNIT, noun: "Führungsunterstützung", g: "f" }),
+  E("hq", "Stab / Kommando", "Führung und Logistik", "S?GPU-----A----", ["stab", "kdo", "kommandoelement", "hq", "stabskp", "führungsstaffel", "fhr st"], "einheit", { ...UNIT, noun: "Stab" }),
+  E("fu", "Führungsunterstützung / Übermittlung", "Führung und Logistik", "S?GPUUS--------", ["fu", "uem", "übermittlung", "übermittler", "führungsunterstützung", "fhr ustü", "funk trp"], "einheit", { ...UNIT, noun: "Führungsunterstützung", g: "f" }),
   E("ekf", "Elektronische Kriegsführung", "Führung und Logistik", "S?GPUUMSE------", ["ekf", "el kf", "elektronische kriegsführung", "ew", "funkaufklärung", "störer", "störsender"], "einheit", { ...UNIT, g: "f" }),
-  E("san", "Sanität", "Führung und Logistik", "S?GPUSM--------", ["san", "sanität", "sanitäter", "san trp", "sanitätstruppen", "sanitätsdienst"], "einheit", { ...UNIT, lean: undefined, g: "f" }),
-  E("log", "Logistik", "Führung und Logistik", "S?GPUS---------", ["log", "logistik", "log trp", "logistiktruppen"], "einheit", { ...UNIT, g: "f" }),
-  E("vsg", "Versorgung", "Führung und Logistik", "S?GPUSS--------", ["vsg", "versorgung", "nachschub", "vsg trp", "verpflegung"], "einheit", { ...UNIT, g: "f" }),
+  E("san", "Sanität", "Führung und Logistik", "S?GPUSM--------", ["san", "sanität", "sanitäter", "sanitätstruppen", "sanitätsdienst"], "einheit", { ...UNIT, lean: undefined, g: "f" }),
+  E("log", "Logistik", "Führung und Logistik", "S?GPUS---------", ["log", "logistik", "logistiktruppen"], "einheit", { ...UNIT, g: "f" }),
+  E("vsg", "Versorgung", "Führung und Logistik", "S?GPUSS--------", ["vsg", "versorgung", "nachschub", "verpflegung"], "einheit", { ...UNIT, g: "f" }),
   E("ih", "Instandhaltung", "Führung und Logistik", "S?GPUSX--------", ["ih", "instandhaltung", "unterhalt", "reparatur", "reparaturtrupp", "bergung"], "einheit", { ...UNIT, g: "f" }),
-  E("trsp", "Transport", "Führung und Logistik", "S?GPUST--------", ["trsp", "transport", "transporttruppen", "trsp trp"], "einheit", { ...UNIT }),
+  E("trsp", "Transport", "Führung und Logistik", "S?GPUST--------", ["trsp", "transport", "transporttruppen"], "einheit", { ...UNIT }),
   E("mp", "Militärpolizei", "Führung und Logistik", "S?GPUULM-------", ["mp", "mil pol", "militärpolizei", "mil sich"], "einheit", { ...UNIT, lean: undefined, g: "f" }),
 
   // ---------- Zivile und Irreguläre
   E("polizei", "Polizei", "Zivile und Irreguläre", "S?GPUULC-------", ["polizei", "pol", "kapo", "kantonspolizei", "stapo", "polizisten"], "einheit", { ...UNIT, lean: "unklar", g: "f" }),
   E("zivilschutz", "Zivilschutz", "Zivile und Irreguläre", "E?OPBJ---------", ["zivilschutz", "zs", "zso", "bevölkerungsschutz"], "einheit", { ...UNIT, lean: "unklar" }),
   E("feuerwehr", "Feuerwehr", "Zivile und Irreguläre", "E?OPCE---------", ["feuerwehr", "fw", "pompiers"], "einheit", { ...UNIT, lean: "unklar", g: "f" }),
-  E("zivil", "Zivile Person", "Zivile und Irreguläre", "O?PP-----------", ["zivilist", "zivilisten", "zivilperson", "zivile", "ziv", "passant", "passanten", "spaziergänger", "jogger", "bauer"], "einheit", { lean: "unklar", noun: "Zivilperson", g: "f", pl: "Zivilpersonen" }),
-  E("menge", "Menschenmenge", "Zivile und Irreguläre", "E?IPA----------", ["menschenmenge", "menge", "ansammlung", "menschenansammlung", "schaulustige", "mob"], "einheit", { lean: "unklar", g: "f", pl: "Menschenmengen" }),
+  E("zivil", "Zivile Person", "Zivile und Irreguläre", "O?PP-----------", ["zivilist", "zivilisten", "zivilperson", "zivile", "ziv", "passant", "passanten", "spaziergänger", "jogger"], "einheit", { lean: "unklar", noun: "Zivilperson", g: "f", pl: "Zivilpersonen" }),
+  E("menge", "Menschenmenge", "Zivile und Irreguläre", "E?IPA----------", ["menschenmenge", "menge", "ansammlung", "menschenansammlung", "schaulustige"], "einheit", { lean: "unklar", g: "f", pl: "Menschenmengen" }),
   E("fluechtlinge", "Flüchtlinge", "Zivile und Irreguläre", "O?GPA----------", ["flüchtlinge", "flüchtling", "vertriebene", "evakuierte", "flüchtlingsstrom", "migranten"], "einheit", { lean: "unklar", g: "p" }),
   E("irregulaer", "Irreguläre Kräfte / Bewaffnete", "Zivile und Irreguläre", "O?GP-----------", ["irreguläre", "irreguläre kräfte", "miliz", "milizen", "freischärler", "aufständische", "rebellen", "partisanen", "bewaffnete gruppe", "kämpfer", "insurgenten"], "einheit", { lean: "feind", noun: "irreguläre Kräfte", g: "p" }),
 
   // ---------- Fahrzeuge
-  E("kpz", "Kampfpanzer", "Fahrzeuge", "S?GPEVATH--MQ--", ["kpz", "kampfpanzer", "pz 87", "leopard", "leo", "t 72", "t72", "tank"], "geraet", { ...DEV, unit: "pz", prio: 4 }),
-  E("spz", "Schützenpanzer (Raupe)", "Fahrzeuge", "S?GPEVAI---MQ--", ["spz", "schützenpanzer", "spz 2000", "cv90", "bmp", "raupen spz"], "geraet", { ...DEV, noun: "Schützenpanzer", unit: "pz_gren", prio: 4 }),
-  E("spz_rad", "Schützenpanzer (Rad)", "Fahrzeuge", "S?GPEVAI---MP--", ["spz rad", "rad spz", "radschützenpanzer", "piranha", "btr"], "geraet", { ...DEV, noun: "Radschützenpanzer", unit: "pz_gren", prio: 4 }),
+  E("kpz", "Kampfpanzer", "Fahrzeuge", "S?GPEVATH-MQ---", ["kpz", "kampfpanzer", "pz 87", "leopard", "leo", "t 72", "t72"], "geraet", { ...DEV, unit: "pz", prio: 4 }),
+  E("spz", "Schützenpanzer (Raupe)", "Fahrzeuge", "S?GPEVAI--MQ---", ["spz", "schützenpanzer", "spz 2000", "cv90", "bmp", "raupen spz"], "geraet", { ...DEV, noun: "Schützenpanzer", unit: "pz_gren", prio: 4 }),
+  E("spz_rad", "Schützenpanzer (Rad)", "Fahrzeuge", "S?GPEVAI--MP---", ["spz rad", "rad spz", "radschützenpanzer", "piranha", "btr"], "geraet", { ...DEV, noun: "Radschützenpanzer", unit: "pz_gren", prio: 4 }),
   E("mtw", "Mannschaftstransportwagen", "Fahrzeuge", "S?GPEVAA-------", ["mtw", "mannschaftstransportwagen", "m113", "gmtf", "pz mtw", "schützenpanzerwagen"], "geraet", { ...DEV, unit: "pz_gren", prio: 4 }),
   E("aufkl_fz", "Aufklärungsfahrzeug", "Fahrzeuge", "S?GPUCRVA------", ["aufkl fz", "aufklärungsfahrzeug", "eagle", "spähpanzer", "aufkl pz"], "geraet", { ...DEV, noun: "Aufklärungsfahrzeug", g: "n", pl: "Aufklärungsfahrzeuge", unit: "aufkl", prio: 4 }),
-  E("gw", "Geländewagen", "Fahrzeuge", "S?GPEVCJ-------", ["gw", "geländewagen", "gelände pw", "jeep", "pinzgauer", "mowag", "pickup", "pick up"], "geraet", { ...DEV, prio: 4 }),
+  E("gw", "Geländewagen", "Fahrzeuge", "S?GPEVUX-------", ["gw", "geländewagen", "gelände pw", "jeep", "pinzgauer", "mowag", "pickup", "pick up"], "geraet", { ...DEV, prio: 4 }),
   E("fz", "Fahrzeug (allg.)", "Fahrzeuge", "S?GPEVU--------", ["fahrzeug", "fz", "pw", "auto", "personenwagen", "g klasse", "g wagen", "puch", "wagen"], "geraet", { ...DEV, noun: "Fahrzeug", g: "n", pl: "Fahrzeuge", prio: 3 }),
   E("ziv_fz", "Ziviles Fahrzeug", "Fahrzeuge", "S?GPEVCA-------", ["ziv fz", "zivilfahrzeug", "privatauto", "privat pw", "ziviles fahrzeug", "zivil pw"], "geraet", { lean: "unklar", noun: "ziviles Fahrzeug", g: "n", pl: "zivile Fahrzeuge", prio: 4 }),
   E("lw", "Lastwagen", "Fahrzeuge", "S?GPEVUL-------", ["lastwagen", "lkw", "lw", "duro", "camion", "lastw", "laster"], "geraet", { ...DEV, prio: 4 }),
@@ -173,7 +182,7 @@ export const CATALOG: CatalogEntry[] = [
   E("smg", "Schweres Maschinengewehr", "Waffen", "S?GPEWRH-------", ["smg", "schweres mg", "schweres maschinengewehr", "mg 64", "12 7 mm mg", "überschweres mg"], "geraet", { ...DEV, noun: "schweres Maschinengewehr", g: "n", pl: "schwere Maschinengewehre", prio: 4 }),
   E("pzaw", "Panzerabwehrlenkwaffe", "Waffen", "S?GPEWMTL------", ["pzaw", "pzaw lwf", "panzerabwehrlenkwaffe", "panzerabwehrwaffe", "lenkwaffe", "tow", "atgm", "spike"], "geraet", { ...DEV, g: "f", pl: "Panzerabwehrlenkwaffen", unit: "pzj", prio: 4 }),
   E("panzerfaust", "Panzerfaust", "Waffen", "S?GPEWTL-------", ["pzf", "panzerfaust", "pz faust", "rpg", "nlaw", "rakrohr", "raketenrohr"], "geraet", { ...DEV, g: "f", pl: "Panzerfäuste", prio: 4 }),
-  E("schaf_gewehr", "Scharfschützengewehr", "Waffen", "S?GPEWRR-------", ["schaf gew", "scharfschützengewehr", "ssg", "präzisionsgewehr", "gewehr"], "geraet", { ...DEV, g: "n", pl: "Scharfschützengewehre", prio: 4 }),
+  E("schaf_gewehr", "Scharfschützengewehr", "Waffen", "S?GPEWRR-------", ["schaf gew", "scharfschützengewehr", "ssg", "präzisionsgewehr"], "geraet", { ...DEV, g: "n", pl: "Scharfschützengewehre", prio: 4 }),
   E("flab_kan", "Flab-Kanone", "Waffen", "S?GPEWAM-------", ["flab kan", "flabkanone", "flab kanone", "35 mm flab", "m flab kan", "fliegerabwehrkanone"], "geraet", { ...DEV, g: "f", pl: "Flab-Kanonen", unit: "flab", prio: 4 }),
   E("flab_lwf", "Flab-Lenkwaffe", "Waffen", "S?GPEWMAS------", ["flab lwf", "flablenkwaffe", "flab lenkwaffe", "stinger", "rapier", "manpads", "fl lwf"], "geraet", { ...DEV, g: "f", pl: "Flab-Lenkwaffen", unit: "flab", prio: 4 }),
 
@@ -184,8 +193,8 @@ export const CATALOG: CatalogEntry[] = [
 
   // ---------- Anlagen und Orte
   E("kdo_po", "Kommandoposten", "Anlagen und Orte", "S?GPU-----A----", ["kdo po", "kommandoposten", "gefechtsstand", "kp stao", "führungsstandort", "cp kdo"], "anlage", { ...SITE, echelonable: true, pl: "Kommandoposten" }),
-  E("beob_aufkl", "Beob Posten / Späher", "Anlagen und Orte", "G?GPDPOR--****X", ["beob po", "beo po", "beobachtungsposten", "beob stao", "beo stao", "beob", "beo", "späher", "spähtrupp", "späher trp", "beobachter"], "anlage", { triangle: true, noun: "Beobachtungsposten", pl: "Beobachtungsposten" }),
-  E("stellung", "Stellung", "Anlagen und Orte", "G?MPSE----****X", ["stellung", "stel", "feldbefestigung", "schützenloch", "kampfstellung", "verteidigungsstellung", "stellungsraum"], "anlage", { ...SITE, g: "f", pl: "Stellungen", prio: 1 }),
+  E("beob_aufkl", "Beob Posten / Späher", "Anlagen und Orte", "G?GPDPOR--****X", ["beob po", "beo po", "beobachtungsposten", "beob stao", "beo stao", "beob", "beo", "späher", "spähtrupp", "beobachter"], "anlage", { triangle: true, noun: "Beobachtungsposten", pl: "Beobachtungsposten" }),
+  E("stellung", "Stellung / Stützpunkt", "Anlagen und Orte", "G?MPSF----****X", ["stellung", "stel", "stützpunkt", "stp", "feldbefestigung", "schützenloch", "kampfstellung", "verteidigungsstellung", "stellungsraum"], "anlage", { ...SITE, noun: "Stellung", g: "f", pl: "Stellungen", prio: 1 }),
   E("kontrollposten", "Checkpoint / Kontrollposten", "Anlagen und Orte", "G?GPGPPK--****X", ["checkpoint", "kontrollposten", "kontrollpunkt", "cp", "ckp", "kontr po", "chp", "check point"], "anlage", { ...SITE, lean: "feind", placement: "strasse", noun: "Checkpoint", pl: "Checkpoints", prio: 3 }),
   E("verkehrsposten", "Verkehrsposten", "Anlagen und Orte", "G?SPPO----****X", ["verkehrsposten", "verkehrskontrolle", "verkehrsregelung", "tcp", "vrk po", "verkehrsregler"], "anlage", { ...SITE, placement: "strasse", pl: "Verkehrsposten", prio: 3 }),
   E("lager", "Lager / Depot", "Anlagen und Orte", "G?SPPSZ---****X", ["lager", "depot", "materiallager", "mat lager", "magazin", "vsg pl", "versorgungsplatz"], "anlage", { ...SITE, noun: "Lager", g: "n" }),
@@ -199,7 +208,7 @@ export const CATALOG: CatalogEntry[] = [
   E("sammelraum", "Bereitstellungsraum / Sammelraum", "Anlagen und Orte", "G?GPGPPS--****X", ["bereitstellungsraum", "bereitstellung", "ber raum", "bereitschaftsraum", "sammelraum", "warteraum"], "anlage", { ...SITE, noun: "Bereitstellungsraum", pl: "Bereitstellungsräume" }),
 
   // ---------- Hindernisse
-  E("sperre", "Sperre (allg.)", "Hindernisse", "G?MPOAOM--****X", ["sperre", "hindernis", "spr", "barrikade", "absperrung", "gesperrt"], "grafik", { ...OBST, noun: "Sperre", pl: "Sperren" }),
+  E("sperre", "Sperre (allg.)", "Hindernisse", "G?OPPR----****X", ["sperre", "hindernis", "spr", "barrikade", "absperrung", "gesperrt"], "grafik", { ...OBST, noun: "Sperre", pl: "Sperren" }),
   E("strassensperre", "Strassensperre", "Hindernisse", "G?OPPR----****X", ["strassensperre", "str sperre", "strassenblockade", "strassenblockierung", "roadblock", "road block"], "grafik", { ...OBST, pl: "Strassensperren" }),
   E("panzersperre", "Panzersperre", "Hindernisse", "G?MPOAOF--****X", ["panzersperre", "pz sperre", "höcker", "panzerhindernis", "pz hindernis", "tankfalle", "panzergraben"], "grafik", { ...OBST, pl: "Panzersperren" }),
   E("minensperre", "Minensperre / Minenfeld", "Hindernisse", "G?MPOFS---****X", ["minensperre", "minenfeld", "min sperre", "mi sperre", "minen", "verminung", "vermint"], "grafik", { ...OBST, noun: "Minensperre", pl: "Minensperren" }),
@@ -219,18 +228,18 @@ export const CATALOG: CatalogEntry[] = [
   E("beschuss", "Beschuss / Einschlag", "Tätigkeiten", "G?OPVI----****X", ["beschuss", "einschlag", "einschläge", "art feuer", "mw feuer", "granateinschlag", "steilfeuer", "indirektes feuer", "artilleriefeuer"], "taetigkeit", { ...ACT, noun: "Beschuss" }),
   E("zerstoerung", "Zerstörung", "Tätigkeiten", "G?TPD-----****X", ["zerstörung", "zerstört", "vernichtet", "vernichtung", "ausgeschaltet"], "taetigkeit", { ...EVT, g: "f" }),
   E("sprengung", "Sprengung erfolgt", "Tätigkeiten", "E?IPBC---------", ["sprengung", "gesprengt", "sprengung erfolgt", "sprengungen", "detoniert"], "taetigkeit", { ...ACT, noun: "Sprengung", g: "f", pl: "Sprengungen" }),
-  E("durchsuchung", "Durchsuchung", "Tätigkeiten", "O?OPF----------", ["durchsuchung", "durchsucht", "durchsuchen", "absuchen", "razzia", "suche"], "taetigkeit", { ...ACT, g: "f", pl: "Durchsuchungen" }),
+  E("durchsuchung", "Durchsuchung", "Tätigkeiten", "O?OPF----------", ["durchsuchung", "durchsucht", "durchsuchen", "absuchen", "razzia"], "taetigkeit", { ...ACT, g: "f", pl: "Durchsuchungen" }),
   E("minenlegen", "Minen verlegen", "Tätigkeiten", "O?OPM----------", ["minen verlegen", "minenverlegung", "minen legen", "verlegt minen", "minenleger"], "taetigkeit", { ...ACT, noun: "Minenverlegung", g: "f", prio: 5 }),
   E("festnahme", "Festnahme", "Tätigkeiten", "O?OPA----------", ["festnahme", "festgenommen", "verhaftung", "verhaftet", "arretiert", "gefangennahme", "gefangen genommen"], "taetigkeit", { ...EVT, g: "f", pl: "Festnahmen" }),
   E("gefangene", "Gefangene", "Tätigkeiten", "G?SPPE----****X", ["gefangene", "gefangener", "kgf", "kriegsgefangene", "gefangenensammelstelle", "inhaftierte"], "taetigkeit", { ...EVT, g: "p", dat: "Gefangenen" }),
-  E("uebergabe", "Übergabe", "Tätigkeiten", "G?GPGPPC--****X", ["übergabe", "übergabepunkt", "gefangenenübergabe", "materialübergabe", "kontaktpunkt", "übergeben"], "taetigkeit", { ...EVT, g: "f", pl: "Übergaben" }),
+  E("uebergabe", "Übergabe / Verbindungspunkt", "Tätigkeiten", "G?GPGPPL--****X", ["übergabe", "übergabepunkt", "gefangenenübergabe", "materialübergabe", "kontaktpunkt", "übergeben", "verbindungspunkt", "verbindungsaufnahme"], "taetigkeit", { ...EVT, noun: "Übergabe", g: "f", pl: "Übergaben" }),
 
   // ---------- Ereignisse
   E("explosion", "Explosion", "Ereignisse", "O?VPE----------", ["explosion", "detonation", "explodiert", "knall", "explosionen"], "ereignis", { ...EVT, g: "f", pl: "Explosionen" }),
   E("ied_anschlag", "IED-Anschlag", "Ereignisse", "O?VPEI---------", ["ied anschlag", "ied explosion", "anschlag", "sprengstoffanschlag", "bombenanschlag"], "ereignis", { ...EVT, placement: "strasse", prio: 5 }),
   E("brand", "Brand", "Ereignisse", "E?IPC----------", ["brand", "brennt", "brennend", "brennendes", "flammen", "waldbrand", "feuersbrunst", "rauch"], "ereignis", { ...EVT, pl: "Brände" }),
   E("unfall", "Unfall", "Ereignisse", "O?OPCB---------", ["unfall", "verkehrsunfall", "kollision", "zusammenstoss", "unfälle", "verunfallt"], "ereignis", { ...EVT, placement: "strasse", pl: "Unfälle" }),
-  E("verletzte", "Verletzte", "Ereignisse", "O?OPCA---------", ["verletzte", "verletzter", "verwundete", "verwundeter", "verletzt", "verwundet", "tote", "gefallene", "verluste"], "ereignis", { ...EVT, g: "p", dat: "Verletzten" }),
+  E("verletzte", "Verletzte / Verluste", "Ereignisse", "O?OPC----------", ["verletzte", "verletzter", "verwundete", "verwundeter", "verletzt", "verwundet", "tote", "gefallene", "verluste"], "ereignis", { ...EVT, noun: "Verletzte", g: "p", dat: "Verletzten" }),
   E("demo", "Demonstration", "Ereignisse", "O?OPD----------", ["demo", "demonstration", "kundgebung", "demonstranten", "protest", "proteste"], "ereignis", { ...EVT, lean: "unklar", g: "f", pl: "Demonstrationen" }),
   E("unruhen", "Unruhen / Krawall", "Ereignisse", "E?IPAC---------", ["unruhe", "unruhen", "krawall", "krawalle", "ausschreitungen", "aufruhr", "randale"], "ereignis", { ...EVT, lean: "unklar", noun: "Unruhen", g: "p" }),
   E("pluenderung", "Plünderung", "Ereignisse", "O?IPV----------", ["plünderung", "plünderer", "plündern", "geplündert", "vandalismus", "sachbeschädigung"], "ereignis", { ...EVT, lean: "unklar", g: "f", pl: "Plünderungen" }),
@@ -308,13 +317,15 @@ export interface TacticalReading {
   statusWord?: string;
   /** Zusatz, z. B. «in Stellung» oder «mit Verletzten» */
   extra?: string;
+  /** Wort für die Stufe aus dem Text, z. B. «abt» (→ «Abteilung» statt «Bataillon») */
+  echelonWord?: string;
   /** Textstellen [Anfang, Ende), die als taktische Begriffe gelesen wurden (z. B. damit «Kp» in «1 Kp Pz» kein Melder ist) */
   spans: Array<[number, number]>;
 }
 
 type Hit =
   | { t: "e"; e: CatalogEntry; weak?: boolean }
-  | { t: "ech"; ech: Echelon; weak?: boolean }
+  | { t: "ech"; ech: Echelon; weak?: boolean; word?: string }
   | { t: "aff"; aff: Affiliation }
   | { t: "st"; word: string; unclear?: boolean }
   | { t: "fill" };
@@ -358,11 +369,14 @@ for (const e of CATALOG) {
   for (const a of e.aliases) {
     put(a, { t: "e", e, weak: normTerm(a).length === 1 });
     const n = normTerm(a);
-    if (n.length >= 6 && !n.includes(" ")) LONG.push([n, e]);
+    if (n.length >= 6 && !n.includes(" ") && (e.kind === "einheit" || e.kind === "geraet")) LONG.push([n, e]);
   }
   put(e.name.replace(/\(.*?\)/g, ""), { t: "e", e });
 }
-for (const ech of ECHELONS) for (const a of ech.aliases) put(a, { t: "ech", ech: ech.key, weak: a.length === 1 });
+for (const ech of ECHELONS) {
+  for (const a of ech.aliases) put(a, { t: "ech", ech: ech.key, weak: a.length === 1, word: a });
+  put(ech.pl, { t: "ech", ech: ech.key });
+}
 for (const [w, aff] of AFF_WORDS) put(w, { t: "aff", aff });
 for (const [w, word, unclear] of STATUS_WORDS) put(w, { t: "st", word, unclear });
 for (const w of FILLERS) put(w, { t: "fill" });
@@ -435,17 +449,18 @@ function inflect(adj: string, g: Genus): string {
  * Ausgeschriebener Sinn, z. B. «1 gegnerischer Halbzug Infanterie», «mögliche IED», «2 gegnerische Kampfpanzer».
  * @param aff Zugehörigkeit für das Adjektiv (H → «gegnerisch», F → «eigen»), null = ohne
  */
-export function describeTactical(r: Pick<TacticalReading, "key" | "echelon" | "count" | "statusWord" | "extra">, aff: Affiliation | null): string {
+export function describeTactical(r: Pick<TacticalReading, "key" | "echelon" | "count" | "statusWord" | "extra" | "echelonWord">, aff: Affiliation | null): string {
   const e = catalogEntry(r.key);
   if (!e) return "";
   const many = (r.count ?? 1) > 1;
   let head: string;
   let g: Genus;
-  const ech = r.echelon && e.echelonable ? ECHELONS.find((x) => x.key === r.echelon) : undefined;
+  const ech0 = r.echelon && e.echelonable ? ECHELONS.find((x) => x.key === r.echelon) : undefined;
+  const ech = ech0 && r.echelonWord && ECH_WORD[r.echelonWord] ? { ...ech0, ...ECH_WORD[r.echelonWord] } : ech0;
   const noun = e.noun ?? e.name.replace(/\s*\(.*?\)\s*/g, " ").split(" / ")[0]!.trim();
-  if (ech && (r.echelon !== e.echelon || e.key === "inf_gr")) {
+  if (ech && r.echelon !== e.echelon) {
     g = many ? "p" : ech.g;
-    head = `${many ? ech.pl : ech.name} ${noun}`;
+    head = e.key === "einheit" ? (many ? ech.pl : ech.name) : `${many ? ech.pl : ech.name} ${noun}`;
   } else {
     g = many ? "p" : e.g ?? "m";
     head = many ? e.pl ?? noun : noun;
@@ -455,10 +470,8 @@ export function describeTactical(r: Pick<TacticalReading, "key" | "echelon" | "c
   const adjAllowed = e.kind !== "ereignis" && e.key !== "kontakt" && e.lean !== "unklar";
   if (adjAllowed && aff === "H") adjs.push(inflect("gegnerisch", g));
   if (adjAllowed && aff === "F") adjs.push(inflect("eigen", g));
-  // Nomen, die schon ein Adjektiv tragen («irreguläre Kräfte», «schweres Maschinengewehr»): Adjektive davor passen
   const parts = [r.count !== undefined ? String(r.count) : "", ...adjs, head, r.extra ?? ""].filter(Boolean);
-  const out = parts.join(" ");
-  return out.charAt(0).toUpperCase() === out.charAt(0) || /^\d/.test(out) ? out : out.charAt(0).toUpperCase() + out.slice(1);
+  return parts.join(" ");
 }
 
 const prioOf = (e: CatalogEntry) =>
@@ -494,7 +507,8 @@ export function readTactical(text: string): TacticalReading | null {
     const e = (f.h as { e: CatalogEntry }).e;
     if (!primary) { primary = f; continue; }
     const p = (primary.h as { e: CatalogEntry }).e;
-    const d = prioOf(e) - prioOf(p) || (primary.sub ? 1 : 0) - (f.sub ? 1 : 0) || f.len - primary.len;
+    // höherer Rang gewinnt, dann ganzes Wort vor Wortteil, dann der frühere Begriff
+    const d = prioOf(e) - prioOf(p) || (primary.sub ? 1 : 0) - (f.sub ? 1 : 0);
     if (d > 0) primary = f;
   }
   if (!primary && !echs.length) return null;
@@ -503,12 +517,14 @@ export function readTactical(text: string): TacticalReading | null {
   const anchor = primary ?? echs[0]!;
   // Stufe: nächste gültige Stufe bei der Truppengattung
   let echelon: Echelon | undefined;
+  let echelonWord: string | undefined;
   let echFound: Found | undefined;
   for (const f of echs) {
     if (Math.abs(f.i - anchor.i) <= 2 && (!echFound || Math.abs(f.i - anchor.i) < Math.abs(echFound.i - anchor.i))) echFound = f;
   }
   if (echFound) {
     echelon = (echFound.h as { ech: Echelon }).ech;
+    echelonWord = (echFound.h as { word?: string }).word;
     if (!entry.echelonable && entry.unit) entry = catalogEntry(entry.unit) ?? entry;
     if (!entry.echelonable) { echelon = undefined; echFound = undefined; }
   }
@@ -520,7 +536,6 @@ export function readTactical(text: string): TacticalReading | null {
     if (isNum(j)) { const n = toks[j]!.num!; if (n > 0 && n < 1000) count = n; break; }
     if (!skip.has(j)) break;
   }
-  if (count === undefined && toks[first]?.num !== undefined && toks[first]!.s !== String(toks[first]!.num)) count = toks[first]!.num;
   // Gerät statt Einheit: «3 Mw» = 3 Minenwerfer; Personen ab 8 = Gruppe
   if (count !== undefined && !echelon && entry.kind === "einheit" && entry.geraet && entry.key !== "inf_trp") entry = catalogEntry(entry.geraet) ?? entry;
   if (entry.key === "inf_trp" && count !== undefined && count >= 8) entry = catalogEntry("inf_gr")!;
@@ -543,7 +558,7 @@ export function readTactical(text: string): TacticalReading | null {
 
   const spans: Array<[number, number]> = [];
   for (const f of [primary, echFound, ...affs, ...sts].filter(Boolean) as Found[]) spans.push([toks[f.i]!.a, toks[f.i + f.n - 1]!.b]);
-  const base = { key: entry.key, echelon, count, statusWord, extra };
+  const base = { key: entry.key, echelon, count, statusWord, extra, echelonWord };
   return {
     key: entry.key,
     sidc: buildSidc(entry, aff ?? "U", { echelon, status }),
@@ -554,6 +569,7 @@ export function readTactical(text: string): TacticalReading | null {
     description: describeTactical(base, aff),
     statusWord,
     extra,
+    echelonWord,
     spans,
   };
 }

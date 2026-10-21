@@ -225,3 +225,12 @@ button:disabled { opacity: .45; cursor: default; }
   .entry { position: static; box-shadow: none; }
   .jrow { scroll-margin-top: 12px; }
 }
+
+/* Zeichen-Auswahl in der Vorschau */
+.symchipwrap { position: relative; display: inline-flex; }
+.symchip { cursor: pointer; font-weight: 600; }
+.symchip.manual { border-color: var(--ink); }
+.sympop { position: fixed; z-index: 1200; }
+.sympop .sp-popover { position: static; max-height: var(--sp-maxh, min(560px, calc(100vh - 24px))); }
+@media (max-width: 560px) { .sympop { left: 8px; right: 8px; top: auto; bottom: 8px; } .sympop .sp-popover { width: 100%; max-height: 70vh; } }
+.editpick { display: grid; gap: 4px; }

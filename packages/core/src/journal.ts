@@ -8,7 +8,8 @@ import { pointInRing, ringCentroid } from "./geo";
 import { findCoordinates, type LV95 } from "./lv95";
 import { newEventId, type Area, type LageEvent, type Place, type Side } from "./model";
 import { boundsCenter, cellBounds, findCells, type RasterSheet } from "./raster";
-import { detectSymbol, symbolDef, type Affiliation } from "./symbols";
+import { buildSidc, catalogEntry, describeTactical, readTactical, type Echelon, type Status } from "./catalog";
+import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
 
 export interface JournalContext {
@@ -50,6 +51,14 @@ export interface Draft {
   unit: string;
   sym: string;
   aff: Affiliation;
+  /** vollständiger SIDC (Zeichen, Zugehörigkeit, Stufe, Status) */
+  sidc: string;
+  /** Stufe, z. B. «hz» (aus «1 gn hz inf») */
+  echelon?: Echelon;
+  /** «anticipated» = vermutet/möglich (gestrichelt) */
+  status: Status;
+  /** ausgeschriebener Sinn, z. B. «1 gegnerischer Halbzug Infanterie» */
+  desc?: string;
   count?: number;
   /** Bewegungsrichtung in Grad (0 = Nord) */
   dir?: number;
@@ -70,10 +79,14 @@ const KIND_WORDS: Array<[RegExp, Kind]> = [
   [/^(?:seite\s+)?(?:blau|eigen|eig)\b[:,]?\s*/i, "eigen"],
   [/^(?:unklar|unbekannt)\b[:,]?\s*/i, "unklar"],
 ];
-const UNCLEAR_RE = /\b(unklar|unbekannt|nicht erkennbar|zivil\??|evtl\.?|vermutlich|möglicherweise)\b/i;
+const W = "[\\wÄÖÜäöü]";
+/** Zugehörigkeit ausdrücklich unklar */
+const UNCLEAR_RE = /\b(unklar|unbekannt|nicht erkennbar)\b/i;
+/** ausdrücklich gegnerisch: «gn», «gegn.», «Gegner», «feindl.» */
+const STRONG_ENEMY_RE = new RegExp(`(?<!${W})(gn|gegn|gegner\\w*|gegnerisch\\w*|feindl\\w*)(?!${W})`, "i");
+/** vermutet / möglich → unklar (und gestrichelt, siehe Katalog) */
+const MAYBE_RE = new RegExp(`(?<!${W})(zivil\\??|evtl|eventuell|vermutlich|vermutet\\w*|möglicherweise|mögl|möglich\\w*|mutmasslich\\w*|allenfalls)(?!${W})`, "i");
 const ENEMY_RE = /\b(gegner|feind|fe|rot|verdächtig|bewaffnet|fremde?)\b/i;
-/** Zeichen, die in LVZ-Meldungen fast immer eine Sichtung sind */
-const SIGHTING_SYMS = new Set(["fz", "lw", "inf_gr", "inf_trp", "drohne", "patrouille", "hinterhalt", "sperre", "kontrollposten", "mun_lager", "kontakt"]);
 const sideOf = (k: Kind): Side => (k === "eigen" ? "blau" : "rot");
 
 /** Gängige Elementbezeichnungen: H04, Det 2, Zug 1, Gr 3, Trp 2, Pat 1, Kp, Zfhr … */
@@ -153,7 +166,10 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     const m = flexRe(u).exec(text);
     if (m && !hits.some((h) => m.index >= h.index && m.index < h.index + h.u.length)) hits.push({ u, side: sd, index: m.index });
   }
+  // taktische Begriffe zuerst lesen: «Kp» in «1 Kp Pz» ist eine Stufe, kein Melder
+  const reading = readTactical(text);
   for (const m of text.matchAll(new RegExp(UNIT_RE.source, "gi"))) {
+    if (reading?.spans.some(([a, b]) => m.index! >= a && m.index! < b)) continue;
     const u = m[1]!.replace(/\.\s?|\s+/g, " ").replace(/^(\D+?)\s?(\d)/, (_, a: string, d: string) => (a.length > 1 ? `${a} ${d}` : a + d)).trim();
     if (!hits.some((h) => Math.abs(h.index - m.index!) < 2 || norm(h.u) === norm(u))) hits.push({ u, side: null, index: m.index! });
   }
@@ -163,14 +179,20 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const melder = melderHit?.u ?? "";
 
   // ---- Anzahl, Zeichen, Einordnung
-  const cm = COUNT_RE.exec(text);
-  const count = cm ? +cm[1]! : undefined;
-  const sym = detectSymbol(text);
+  const sym = reading?.key ?? "einheit";
+  const entry = catalogEntry(sym) ?? catalogEntry("einheit")!;
+  // Anzahl aus der Erkennung; sonst (nur bei Elementen) «3 Pers», «2 Fz» irgendwo im Text
+  const cm = !reading || entry.kind === "einheit" || entry.kind === "geraet" ? COUNT_RE.exec(text) : null;
+  const count = reading?.count ?? (cm ? +cm[1]! : undefined);
   let kindFrom: Draft["kindFrom"] = explicit ? "text" : "inhalt";
   if (ctx.kind) { kind = ctx.kind; kindFrom = "vorgabe"; }
   if (!kind) {
     if (UNCLEAR_RE.test(text)) kind = "unklar";
-    else if (enemyHit || ENEMY_RE.test(text) || count !== undefined || SIGHTING_SYMS.has(sym)) kind = "feind";
+    else if (STRONG_ENEMY_RE.test(text)) kind = "feind";
+    else if (MAYBE_RE.test(text)) kind = "unklar";
+    else if (reading?.aff === "F") kind = "eigen";
+    else if (entry.lean === "unklar" && !enemyHit) kind = "unklar";
+    else if (enemyHit || ENEMY_RE.test(text) || count !== undefined || entry.lean === "feind") kind = "feind";
     // eigene Lage nur mit Melder; ohne Melder und ohne Hinweis bleibt es unklar
     else kind = melder ? "eigen" : "unklar";
   }
@@ -238,7 +260,11 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   }
 
   const aff: Affiliation = kind === "eigen" ? "F" : kind === "feind" ? "H" : "U";
-  return { minutes, day, t: isoOf(day, minutes), timeFromText, kind, kindFrom, side, melder, unit, sym, aff, count, dir, dirLabel, pos, where, cells, nai, placeQuery, text: text || input.trim() };
+  const status: Status = reading?.status ?? "present";
+  const echelon = reading?.echelon;
+  const sidc = buildSidc(entry, aff, { echelon, status });
+  const desc = reading ? describeTactical(reading, kind === "feind" ? "H" : kind === "eigen" && reading.aff === "F" ? "F" : null) : undefined;
+  return { minutes, day, t: isoOf(day, minutes), timeFromText, kind, kindFrom, side, melder, unit, sym, aff, sidc, echelon, status, desc, count, dir, dirLabel, pos, where, cells, nai, placeQuery, text: text || input.trim() };
 }
 
 /** Lage zum Zeitpunkt: pro Element die letzte Meldung mit Standort (bis einschliesslich `t`). */
@@ -343,6 +369,10 @@ export function eventFromDraft(d: Draft, device: string, now = new Date()): Lage
     label: d.count ? String(d.count) : undefined,
     sym: d.sym,
     aff: d.aff,
+    sidc: d.sidc,
+    echelon: d.echelon,
+    status: d.status === "anticipated" ? "anticipated" : undefined,
+    desc: d.desc,
     pos: d.pos,
     cells: d.cells,
     nai: d.nai,

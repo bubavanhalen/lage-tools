@@ -1,7 +1,10 @@
 /**
- * Zeichenkatalog nach APP-6 / MIL-STD-2525C (SIDC, 15 Stellen) für milsymbol.
+ * Zeichen nach APP-6 / MIL-STD-2525C (SIDC, 15 Stellen) für milsymbol – Zugang über den Katalog (`catalog.ts`).
  * «?» im SIDC wird durch die Zugehörigkeit ersetzt: F = eigen, H = Feind, U = unbekannt, N = neutral.
+ * Die alten Schlüssel (einheit, inf_gr, inf_trp, fz, lw, drohne, patrouille, beob_aufkl, kontakt, hinterhalt, sperre,
+ * kontrollposten, mun_lager) sind Katalog-Einträge mit gleichem Schlüssel; gespeicherte Übungen bleiben gültig.
  */
+import { CATALOG, buildSidc, catalogEntry, readTactical, type CatalogEntry } from "./catalog";
 
 export type Affiliation = "F" | "H" | "U" | "N";
 
@@ -11,30 +14,31 @@ export interface SymbolDef {
   name: string;
   /** SIDC-Vorlage mit «?» für die Zugehörigkeit */
   sidc: string;
-  /** Erkennungsbegriffe in Meldungen (reguläre Ausdrücke, ohne Gross/Klein) */
+  /** Suchbegriffe / Kürzel (klein), aus dem Katalog */
   keywords: string[];
   /** Als Dreieck darstellen (Späher / Beob Posten), nicht als milsymbol */
   triangle?: boolean;
   /** Tätigkeit (Ereignis am Ort), nicht das Element selbst – z. B. Kontakt, Sperre */
   activity?: boolean;
+  /** Kategorie im Katalog */
+  category?: string;
+  /** «strasse» = auf die Strasse legen */
+  placement?: CatalogEntry["placement"];
 }
 
-/** Reihenfolge = Priorität der Erkennung (spezifisch vor allgemein). */
-export const SYMBOLS: SymbolDef[] = [
-  { key: "hinterhalt", name: "Hinterhalt", sidc: "G?OPVU----****X", keywords: ["hinterhalt", "überfall"], activity: true },
-  { key: "sperre", name: "Strassensperre", sidc: "G?OPPR----****X", keywords: ["strassensperre", "sperre"], activity: true },
-  { key: "kontrollposten", name: "Kontrollposten", sidc: "G?GPGPPK-------X", keywords: ["checkpoint", "kontrollposten", "kontrollpunkt", "\\bcp\\b"], activity: true },
-  { key: "mun_lager", name: "Übergabe / Munitionslager", sidc: "G?OPVC----****X", keywords: ["übergabe", "munition", "\\bmun\\b", "gefangenenübergabe"], activity: true },
-  { key: "kontakt", name: "Kurzer Kontakt", sidc: "G?CPOXUB--****X", keywords: ["kontakt mit", "feuerkontakt", "beschuss", "schüsse", "entdeckt"], activity: true },
-  { key: "drohne", name: "Drohne", sidc: "S?APMFQ--------", keywords: ["drohne", "\\buav\\b"] },
-  { key: "beob_aufkl", name: "Späher-Trupp (Beob Posten)", sidc: "G?CPMMPOR-****X", keywords: ["späher", "beob?\\s?posten", "beobachtungsposten", "beob?\\s?stao", "\\bbeob?\\b"], triangle: true },
-  { key: "patrouille", name: "Patrouille", sidc: "G?OPPT----****X", keywords: ["patrouille", "\\bpatr\\b"] },
-  { key: "lw", name: "Lastwagen", sidc: "S?GPEVUL-------", keywords: ["lastwagen", "\\blkw\\b", "\\bduro\\b"] },
-  { key: "fz", name: "Fahrzeug", sidc: "S?GPEVU--------", keywords: ["g-?klasse", "g-?wagen", "fahrzeug", "\\bfz\\b", "\\bpw\\b", "\\bauto\\b", "puch"] },
-  { key: "inf_gr", name: "Inf Gruppe", sidc: "S?GPUCI----B---", keywords: ["\\bgruppe\\b", "\\b(?:[89]|\\d{2,})\\s*(?:personen|pers\\.?|soldaten|mann)\\b"] },
-  { key: "inf_trp", name: "Inf Trupp", sidc: "S?GPUCI----A---", keywords: ["personen", "\\bpers\\b", "soldaten", "\\bmann\\b", "zu fuss", "fussgänger"] },
-  { key: "einheit", name: "Einheit (allg.)", sidc: "S?GPU----------", keywords: [] },
-];
+const toDef = (e: CatalogEntry): SymbolDef => ({
+  key: e.key,
+  name: e.name,
+  sidc: e.sidc,
+  keywords: e.aliases,
+  triangle: e.triangle,
+  activity: e.activity,
+  category: e.category,
+  placement: e.placement,
+});
+
+/** Alle Zeichen (Katalog-Reihenfolge, nach Kategorien); alte Schlüssel ohne eigene Auswahl sind am Ende. */
+export const SYMBOLS: SymbolDef[] = [...CATALOG.filter((e) => !e.hidden), ...CATALOG.filter((e) => e.hidden)].map(toDef);
 
 const byKey = new Map(SYMBOLS.map((s) => [s.key, s]));
 
@@ -42,17 +46,15 @@ export function symbolDef(key: string): SymbolDef {
   return byKey.get(key) ?? byKey.get("einheit")!;
 }
 
+/** SIDC aus Schlüssel und Zugehörigkeit (inkl. Standard-Stufe des Eintrags, z. B. «Inf Gruppe»). */
 export function sidcFor(key: string, aff: Affiliation): string {
-  return symbolDef(key).sidc.replace("?", aff);
+  const e = catalogEntry(key) ?? catalogEntry("einheit")!;
+  return buildSidc(e, aff);
 }
 
-/** Erkennt das passendste Zeichen in einem Meldungstext. */
+/** Erkennt das passendste Zeichen in einem Meldungstext (Schlüssel aus dem Katalog). */
 export function detectSymbol(text: string): string {
-  const t = text.toLowerCase();
-  for (const s of SYMBOLS) {
-    if (s.keywords.some((k) => new RegExp(k, "i").test(t))) return s.key;
-  }
-  return "einheit";
+  return readTactical(text)?.key ?? "einheit";
 }
 
 /**

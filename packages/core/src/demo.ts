@@ -27,6 +27,10 @@ const LINES = [
   "T2 0605 Det 1 2 Fz AO7 Rtg W",
   "T2 0630 H01 4 Pers AD7 unklar",
   "T2 0650 H03: Sperre AM5",
+  "T2 0655 H04: 1 gn Hz Inf AH12 Rtg N",
+  "T2 0700 H05: mögliche IED in AF13",
+  "T2 0705 H04: gn Sperre in AG13",
+  "T2 0710 H02: 2 Kpz AK9 Rtg W",
 ];
 
 export function demoExercise(): Exercise {
