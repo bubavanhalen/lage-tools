@@ -139,6 +139,18 @@ describe("placeOnRoad", () => {
     expect(r.length).toBeGreaterThan(450);
   });
 
+  it("Benannte Strasse über Klassenwechsel: ganze Strasse zählt, Punkt nahe der Mitte", () => {
+    const roads = [
+      // kurzes Stück mit Verkehrsbedeutung am Nordrand, Rest ohne
+      seg("k1", 8, [[2600400, 1199500], [2600420, 1199460]], "Landstrasse", 300),
+      seg("k2", 8, [[2600420, 1199460], [2600250, 1199250], [2600000, 1199050]], "Landstrasse"),
+    ];
+    const r = placeOnRoad(cell, roads)!;
+    expect(r.road).toBe("Landstrasse");
+    expect(r.rank).toBe(8);
+    expect(Math.hypot(r.pos.e - 2600250, r.pos.n - 1199250)).toBeLessThan(5);
+  });
+
   it("Unbenannte, zusammenhängende Stücke zählen zusammen", () => {
     const roads = [
       seg("u1", 11, [[2600000, 1199400], [2600200, 1199400]]),
