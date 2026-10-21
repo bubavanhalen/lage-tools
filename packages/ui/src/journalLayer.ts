@@ -1,42 +1,127 @@
 /**
- * Lage auf der Karte: pro Element das aktuelle Zeichen, dahinter die Spur; Meldungen ohne Element blass.
+ * Lagebild-Modell für Karte und Legende: was ist zum Zeitpunkt `t` sichtbar, wie kräftig, mit welchem Zusatz.
+ * Reine Berechnung (ohne Leaflet), damit Karte und Legende garantiert dasselbe zeigen.
  */
-import L from "leaflet";
-import type { LageEvent, Side, UnitState } from "@lage/core";
-import { symbolIcon, toLatLng } from "@lage/map";
+import { situationAt, symbolDef, unitKey, type Affiliation, type LageEvent, type LV95, type Side } from "@lage/core";
+import type { LayerFlags } from "./layers";
 
-export const SIDE_COLOR: Record<Side, string> = { rot: "#c8102e", blau: "#1f5fb8", ul: "#2e7d32" };
+/** Kartenfarben (entsprechen --m-rot, --m-blau, --unklar); Karte bleibt auch im Dunkelmodus hell */
+export const SIDE_COLOR: Record<Side, string> = { rot: "#D3262D", blau: "#1F5FB8", ul: "#A86F12" };
+export const MAP_INK = "#101414";
 
-export function journalLayer(
-  st: { units: UnitState[]; loose: LageEvent[] },
-  opts: { tracks: boolean; selectedId?: string | null; onClick?: (e: LageEvent) => void },
-): L.LayerGroup {
-  const g = L.layerGroup();
-  if (opts.tracks) {
-    for (const u of st.units) {
-      if (u.track.length < 2) continue;
-      const ll = u.track.map(toLatLng);
-      L.polyline(ll, { color: SIDE_COLOR[u.side], weight: 2.5, opacity: 0.75, dashArray: "6 5", interactive: false }).addTo(g);
-      ll.slice(0, -1).forEach((p) => L.circleMarker(p, { radius: 3, color: SIDE_COLOR[u.side], weight: 1.5, fillColor: "#fff", fillOpacity: 1, interactive: false }).addTo(g));
+/** Kartenfarbe nach Art (unklar = gelb wie das Zeichen, nicht rot wie die Seite): Linie und Füllung */
+export const KIND_COLOR: Record<"eigen" | "feind" | "unklar" | "ul", { line: string; fill: string }> = {
+  eigen: { line: "#1F5FB8", fill: "#1F5FB8" },
+  feind: { line: "#D3262D", fill: "#D3262D" },
+  unklar: { line: "#B88A00", fill: "#FFD400" },
+  ul: { line: "#A86F12", fill: "#A86F12" },
+};
+
+export type ItemKind = "eigen" | "feind" | "unklar" | "ul";
+
+export interface SituationItem {
+  /** Originalmeldung (bei Elementen die letzte Meldung) */
+  e: LageEvent;
+  /** Zeichen-Schlüssel (bei Elementen ggf. das zuletzt bekannte Zeichen) */
+  sym: string;
+  aff: Affiliation;
+  pos: LV95;
+  kind: ItemKind;
+  /** Element mit Standort (eigenes Element oder bekanntes Feindelement) */
+  isUnit: boolean;
+  /** Minuten seit der Meldung bis zur Lagezeit */
+  ageMin: number;
+  /** eigenes Element: Minuten seit seiner letzten Meldung (auch als Melder einer Sichtung) */
+  silentMin: number;
+  /** jünger als `recentMin` */
+  fresh: boolean;
+  selected: boolean;
+  /** Deckkraft (ältere Sichtungen blass) */
+  opacity: number;
+  /** Zusatz am Zeichen, z. B. «H04», «2× Det 1» */
+  ud: string;
+  /** Zeitlabel «hh:mm» zeigen */
+  showTime: boolean;
+}
+
+export interface SituationTrack {
+  side: Side;
+  unit: string;
+  pts: LV95[];
+}
+
+export interface SituationModel {
+  items: SituationItem[];
+  tracks: SituationTrack[];
+}
+
+/** eigene Elemente ohne Meldung seit so vielen Minuten bekommen eine Altersangabe («75′») */
+export const STALE_MIN = 60;
+
+export const kindOf = (e: Pick<LageEvent, "side" | "aff">): ItemKind =>
+  e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : e.aff === "U" ? "unklar" : "feind";
+
+const minutesBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 60000);
+
+/** Alter kurz: «75′», ab 2 h «3 h» */
+export const ageText = (min: number) => (min < 120 ? `${min}′` : `${Math.floor(min / 60)} h`);
+
+export function situationModel(
+  events: LageEvent[],
+  t: string,
+  flags: Pick<LayerFlags, "eigene" | "feind" | "spuren" | "zeiten">,
+  opts: { recentMin?: number; selectedId?: string | null } = {},
+): SituationModel {
+  const recent = opts.recentMin ?? 30;
+  const sel = opts.selectedId ?? null;
+  const st = situationAt(events, t);
+  const byId = new Map(events.map((e) => [e.id, e]));
+  // letzte Meldung jedes eigenen Elements (als Melder oder mit eigener Lage) bis t
+  const lastReport = new Map<string, string>();
+  for (const e of events) {
+    if (e.deleted || e.t > t) continue;
+    for (const name of [e.melder, e.side === "blau" ? e.unit : undefined]) {
+      if (!name) continue;
+      const k = unitKey("blau", name);
+      if ((lastReport.get(k) ?? "") < e.t) lastReport.set(k, e.t);
     }
   }
-  for (const e of st.loose) {
-    const m = L.marker(toLatLng(e.pos!), {
-      icon: symbolIcon(e.sym, e.aff, 22, { count: e.count, dir: e.dir }, e.id === opts.selectedId ? "sel" : ""),
-      opacity: e.id === opts.selectedId ? 1 : 0.6,
-      title: `${e.t.slice(11, 16)} ${e.text}`,
-    }).addTo(g);
-    if (opts.onClick) m.on("click", () => opts.onClick!(e));
-  }
+  const show = (side: Side) => (side === "blau" ? flags.eigene : flags.feind);
+  const items: SituationItem[] = [];
+  const make = (ev: LageEvent, sym: string, pos: LV95, isUnit: boolean, unitName: string): SituationItem => {
+    const e = byId.get(ev.id) ?? ev;
+    const kind = kindOf(e);
+    const ageMin = Math.max(0, minutesBetween(e.t, t));
+    const fresh = ageMin <= recent;
+    const selected = e.id === sel;
+    const own = kind === "eigen";
+    let ud = "";
+    const silent = own && isUnit ? Math.max(0, minutesBetween(lastReport.get(unitKey("blau", unitName)) ?? e.t, t)) : 0;
+    if (own) ud = unitName + (silent > STALE_MIN ? ` · ${ageText(silent)}` : "");
+    else ud = [e.count && e.count > 1 ? `${e.count}×` : "", unitName].join(" ").trim();
+    return {
+      e, sym, aff: ev.aff, pos, kind, isUnit, ageMin, silentMin: silent, fresh, selected,
+      opacity: own || fresh || selected ? 1 : 0.45,
+      ud,
+      showTime: flags.zeiten && (fresh || selected),
+    };
+  };
   for (const u of st.units) {
-    const e = u.event;
-    const sel = e.id === opts.selectedId;
-    const m = L.marker(toLatLng(u.pos), {
-      icon: symbolIcon(e.sym, e.aff, 26, { unit: u.unit, count: e.count, dir: e.dir }, sel ? "sel" : ""),
-      zIndexOffset: sel ? 1000 : 0,
-      title: `${e.t.slice(11, 16)} ${u.unit}: ${e.text}`,
-    }).addTo(g);
-    if (opts.onClick) m.on("click", () => opts.onClick!(e));
+    if (!show(u.side)) continue;
+    items.push(make(u.event, u.event.sym, u.pos, true, u.unit));
   }
-  return g;
+  for (const e of st.loose) {
+    if (!e.pos || !show(e.side)) continue;
+    items.push(make(e, e.sym, e.pos, false, e.side === "blau" ? e.unit : symbolDef(e.sym).activity ? "" : e.unit));
+  }
+  // gewählte Meldung immer zeigen (auch wenn sie inzwischen von einer neueren Meldung überholt ist)
+  if (sel && !items.some((i) => i.e.id === sel)) {
+    const e = byId.get(sel);
+    if (e && !e.deleted && e.pos && e.t <= t && show(e.side)) items.push(make(e, e.sym, e.pos, false, e.unit));
+  }
+  for (const it of items) if (it.e.id === sel) it.selected = true;
+  const tracks: SituationTrack[] = flags.spuren
+    ? st.units.filter((u) => show(u.side) && u.track.length > 1).map((u) => ({ side: u.side, unit: u.unit, pts: u.track }))
+    : [];
+  return { items, tracks };
 }

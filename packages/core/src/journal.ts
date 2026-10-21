@@ -171,7 +171,8 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   if (!kind) {
     if (UNCLEAR_RE.test(text)) kind = "unklar";
     else if (enemyHit || ENEMY_RE.test(text) || count !== undefined || SIGHTING_SYMS.has(sym)) kind = "feind";
-    else kind = "eigen";
+    // eigene Lage nur mit Melder; ohne Melder und ohne Hinweis bleibt es unklar
+    else kind = melder ? "eigen" : "unklar";
   }
   const side = sideOf(kind);
   const unit = kind === "eigen" ? melder : enemyHit?.u ?? "";

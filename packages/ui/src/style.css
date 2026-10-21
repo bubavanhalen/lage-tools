@@ -57,7 +57,7 @@ button:disabled { opacity: .45; cursor: default; }
 .form .short { width: 60px; }
 .form .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form label.check { display: flex; gap: 8px; align-items: center; color: var(--ink); }
-.importbox { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); }
+.importbox { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 .linkrow { display: flex; gap: 6px; }
 .linkrow input { flex: 1; min-width: 0; }
 .maptools { position: absolute; top: 12px; right: 12px; z-index: 500; }
@@ -95,20 +95,15 @@ button:disabled { opacity: .45; cursor: default; }
 .lt-pin.act span { background: #c8102e; }
 @media (max-width: 860px) {
   /* Tablet hochkant / Handy: Karte oben, Journal unten */
-  .work { grid-template-columns: 1fr; grid-template-rows: minmax(52vh, 1fr) minmax(0, 48vh); }
+  .work { grid-template-columns: 1fr; grid-template-rows: minmax(58vh, 1fr) minmax(0, 42vh); }
+  .mapbox { min-height: 46vh; }
   .mapwrap { order: 1; }
-  .side { order: 2; border-right: 0; border-top: 1px solid var(--line); max-height: 48vh; }
+  .side { order: 2; border-right: 0; border-top: 1px solid var(--line); max-height: 42vh; }
 }
 @media (max-width: 760px) {
   .georef .viewer.big { left: 0; width: 100vw; top: auto; bottom: 0; height: 40vh; border-width: 3px 0 0 0; }
   .exname { width: 160px; }
 }
-.maptools { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; }
-.search { position: relative; }
-.search input { font: inherit; font-size: 14px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-height: 34px; width: 220px; }
-.hits { position: absolute; top: 38px; right: 0; width: 300px; list-style: none; margin: 0; padding: 4px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.15); z-index: 700; }
-.hits button { width: 100%; text-align: left; border: 0; font-size: 13px; }
-@media (max-width: 760px) { .search input { width: 150px; } }
 
 /* ---------- Zeitstrahl ---------- */
 .tlwrap { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--paper); }
@@ -125,9 +120,10 @@ button:disabled { opacity: .45; cursor: default; }
 
 /* ---------- Journal ---------- */
 .journal { gap: 12px; }
-.entry { display: grid; gap: 8px; padding: 12px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--card); transition: border-color .15s; }
+.entry { display: grid; gap: 8px; padding: 12px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--card); transition: border-color .15s; position: sticky; top: 51px; z-index: 1; box-shadow: 0 -10px 0 0 var(--paper), 0 6px 12px -8px rgba(0,0,0,.28); }
+.journal { padding-top: 10px; }
 .entry-title { font-family: var(--f-display); font-weight: 600; font-size: 19px; margin-right: auto; line-height: 1; }
-.entry .msg { font: 500 16px/1.3 var(--f-mono); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; min-height: 44px; width: 100%; }
+.entry .msg { font: 500 16px/1.35 var(--f-mono); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; min-height: 44px; width: 100%; resize: none; overflow: hidden; display: block; }
 .entry .msg:focus { outline: 2px solid var(--blau); outline-offset: 0; border-color: transparent; }
 .preview { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 .chip { display: inline-flex; align-items: center; gap: 4px; font: 500 13px/1.2 var(--f-body); padding: 4px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
@@ -149,7 +145,7 @@ button:disabled { opacity: .45; cursor: default; }
 .symmini { display: inline-flex; width: 18px; height: 16px; align-items: center; justify-content: center; flex: none; vertical-align: -3px; margin-right: 5px; }
 .symmini svg { max-width: 18px; max-height: 16px; }
 .jlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.jlist .hourhead { font: 600 20px/1 var(--f-display); color: var(--muted); padding: 14px 4px 6px; position: sticky; top: 41px; background: var(--paper); z-index: 1; }
+.jlist .hourhead { font: 600 20px/1 var(--f-display); color: var(--muted); padding: 14px 4px 6px; }
 .jrow { position: relative; display: grid; grid-template-columns: 48px 86px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px 6px 8px 13px; border-bottom: 1px solid var(--grid); cursor: pointer; transition: background .2s; }
 .jrow:hover { background: var(--grid); }
 .jrow.sel { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--ink); border-radius: 4px; }
@@ -192,9 +188,40 @@ button:disabled { opacity: .45; cursor: default; }
 /* Nachtbetrieb: Kartenkacheln abdunkeln */
 .night .leaflet-tile-pane { filter: brightness(.6) contrast(1.05); }
 /* ---------- Präsentation ---------- */
-.app.present { grid-template-rows: 0 1fr; }
+.app.present { grid-template-rows: 1fr; }
 .app.present > .bar { display: none; }
-.app.present .work { grid-template-columns: 0 1fr; }
+.app.present .work { grid-template-columns: 1fr; grid-template-rows: 1fr; }
 .app.present .side { display: none; }
+.app.present .status { display: none; }
 @media (max-width: 1100px) { .stats { display: none; } }
 .presx { white-space: nowrap; }
+
+/* Touch: grössere Klickziele, keine Mauszeile */
+@media (pointer: coarse) {
+  .jrow .acts { gap: 8px; }
+  .jrow .acts button { min-width: 40px; min-height: 40px; font-size: 16px; }
+  .filters .seg button, .tabs button { min-height: 40px; }
+}
+@media (hover: none) { .status { display: none; } }
+/* Leerzustand: Einstieg */
+.onboard { display: grid; gap: 10px; padding: 14px; border: 1.5px dashed var(--line); border-radius: 6px; background: var(--card); }
+.onboard h3 { margin: 0; font: 600 19px/1.15 var(--f-display); }
+.onboard ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
+.onboard li b { font-weight: 600; }
+.onboard .btnrow button { min-height: 32px; }
+.chip.err { color: #fff; background: var(--rot); border-color: var(--rot); }
+.chip.warnsoft { color: var(--warn); border-color: var(--warn); }
+.jrow { scroll-margin-top: 230px; }
+
+/* Handy: ganze Seite scrollt, Karte 55 % der Höhe, Journal darunter in voller Länge */
+@media (max-width: 560px) {
+  html, body, #root { height: auto; min-height: 100%; }
+  .app { height: auto; min-height: 100%; }
+  .work { grid-template-rows: auto auto; }
+  .mapwrap { height: 62vh; min-height: 360px; overflow: hidden; }
+  .mapbox { min-height: 0; }
+  .side { max-height: none; overflow: visible; }
+  .tabs { position: static; }
+  .entry { position: static; box-shadow: none; }
+  .jrow { scroll-margin-top: 12px; }
+}

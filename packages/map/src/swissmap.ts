@@ -94,7 +94,7 @@ export function createSwissMap(el: HTMLElement, opts: { basemap?: Basemap; cente
     zoom: opts.zoom ?? 16,
     minZoom: 14,
     maxZoom: 28,
-    zoomSnap: 0.25,
+    zoomSnap: 0.5,
     zoomDelta: 0.5,
     wheelPxPerZoomLevel: 90,
   });

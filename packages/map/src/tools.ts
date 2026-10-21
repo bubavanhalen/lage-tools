@@ -77,22 +77,49 @@ export function pickPoint(map: L.Map): Promise<LV95 | null> {
   });
 }
 
-/** Zeichnet NAI / Räume mit Beschriftung. */
+/**
+ * Zeichnet NAI / Räume wie im Lagebild-Prototyp: zuerst weisse Unterlage (5 px), dann farbig.
+ * NAI: durchgezogen 2.5 px, Füllung 10 %, Beschriftung über der obersten Ecke (ab Schwerpunkt-x).
+ * AO: gestrichelt «10 6», ohne Füllung, Beschriftung links neben der westlichsten Ecke.
+ * Stao: rot gestrichelt «6 4», Füllung 10 %.
+ */
 export function areasLayer(areas: Area[], opts: { onClick?: (a: Area) => void; selectedId?: string } = {}): L.LayerGroup {
   const g = L.layerGroup();
   for (const a of areas) {
-    const color = a.color ?? (a.kind === "ao" ? "#0b3d91" : "#1f78d1");
+    if (a.ring.length < 3) continue;
+    const style = AREA_STYLE[a.kind] ?? AREA_STYLE.nai;
+    const color = a.color && a.kind !== "stao" ? a.color : style.line;
     const ring = a.ring.map(toLatLng);
     const sel = a.id === opts.selectedId;
+    L.polygon(ring, { color: "#fff", weight: sel ? 7 : 5, opacity: 0.8, fill: false, interactive: false }).addTo(g);
     const poly = L.polygon(ring, {
-      color, weight: sel ? 4 : 2.5, dashArray: a.kind === "ao" ? "10 6" : undefined, fillColor: color, fillOpacity: a.kind === "ao" ? 0 : 0.12,
+      color, weight: sel ? 4 : 2.5, dashArray: style.dash, fill: style.fill > 0, fillColor: a.kind === "stao" ? "#D3262D" : color, fillOpacity: style.fill,
+      interactive: !!opts.onClick, bubblingMouseEvents: false,
     }).addTo(g);
     if (opts.onClick) poly.on("click", () => opts.onClick!(a));
-    const top = ring.reduce((best, p) => (p.lat > best.lat ? p : best), ring[0]!);
-    L.marker(top, { interactive: false, icon: L.divIcon({ className: "lt-area-lbl", html: `<span style="color:${color}">${escapeHtml(a.name)}</span>`, iconSize: [0, 0] }) }).addTo(g);
+    let at: LV95;
+    let cls = "top";
+    if (a.kind === "ao") {
+      at = a.ring.reduce((m, p) => (p.e < m.e ? p : m), a.ring[0]!);
+      cls = "ao";
+    } else {
+      const top = a.ring.reduce((m, p) => (p.n > m.n ? p : m), a.ring[0]!);
+      at = a.kind === "stao" ? top : { e: a.ring.reduce((s, p) => s + p.e, 0) / a.ring.length, n: top.n };
+    }
+    L.marker(toLatLng(at), {
+      interactive: false, keyboard: false, zIndexOffset: -1000,
+      icon: L.divIcon({ className: `lt-area-lbl ${cls}`, html: `<span style="color:${color}">${escapeHtml(a.name)}</span>`, iconSize: [0, 0] }),
+    }).addTo(g);
   }
   return g;
 }
+
+const AREA_STYLE: Record<Area["kind"], { line: string; dash?: string; fill: number }> = {
+  nai: { line: "#1F78D1", fill: 0.1 },
+  ao: { line: "#0B3D91", dash: "10 6", fill: 0 },
+  stao: { line: "#B3242A", dash: "6 4", fill: 0.1 },
+  other: { line: "#1F78D1", fill: 0.1 },
+};
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);

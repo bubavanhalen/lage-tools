@@ -36,8 +36,15 @@ interface Props {
   onExport: (kind: "csv" | "pdf") => void;
   /** «Meldung hier» aus dem Kontextmenü der Karte: Ort vorbelegen */
   reportAt?: { pos: LV95; n: number } | null;
+  /** Leerzustand: zu Raster/NAI wechseln, Beispiel laden */
+  onGoto?: (tab: "raster" | "nai") => void;
+  onDemo?: () => void;
+  /** «Bearbeiten» aus dem Meldungsband der Karte */
+  editRequest?: { id: string; n: number } | null;
 }
 
+/** Auf Handy/Tablet nicht automatisch fokussieren (sonst springt die Seite und die Tastatur geht auf) */
+const wideScreen = typeof window !== "undefined" && window.innerWidth >= 860 && !window.matchMedia?.("(pointer: coarse)").matches;
 const KINDS: Array<[Kind, string]> = [["eigen", "Eigene"], ["feind", "Feind"], ["unklar", "Unklar"]];
 export const KIND_COLOR: Record<Kind, string> = { eigen: "#1f5fb8", feind: "#c8102e", unklar: "#b8860b" };
 const kindOf = (e: Pick<LageEvent, "side" | "aff">): Kind => (e.side === "blau" ? "eigen" : e.aff === "U" ? "unklar" : "feind");
@@ -69,7 +76,7 @@ function SymbolMini({ k, aff }: { k: string; aff: LageEvent["aff"] }) {
   return <span className="symmini" dangerouslySetInnerHTML={{ __html: s.svg }} />;
 }
 
-export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt }: Props) {
+export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt, editRequest, onGoto, onDemo }: Props) {
   const events = ex.events ?? [];
   const [kindOverride, setKindOverride] = useState<Kind | null>(null);
   const [day, setDay] = useState(() => (ex.days.includes(todayIso()) ? todayIso() : ex.days[ex.days.length - 1] ?? todayIso()));
@@ -80,8 +87,20 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const [filter, setFilter] = useState<"alle" | Kind>("alle");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [confirmNoMelder, setConfirmNoMelder] = useState(false);
 
+  // Taste «N» (ausserhalb von Eingabefeldern): zurück in die Meldungszeile
+  useEffect(() => {
+    const key = (ev: KeyboardEvent) => {
+      const el = ev.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if ((ev.key === "n" || ev.key === "N") && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); inputRef.current?.focus(); }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
+  useEffect(() => { if (editRequest) { setFilter("alle"); setSearch(""); setEditing(editRequest.id); } }, [editRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (reportAt) { setManualPos(reportAt.pos); inputRef.current?.focus(); } }, [reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!ex.days.includes(day)) setDay(ex.days[ex.days.length - 1] ?? todayIso()); }, [ex.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -106,6 +125,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     return () => { ctl.abort(); window.clearTimeout(t); };
   }, [draft?.placeQuery, draft?.pos]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const future = !!draft && draft.timeFromText && Date.parse(draft.t) - Date.now() > 10 * 60000 && Date.parse(draft.t) - Date.now() < 36 * 3600000;
   const effPos = manualPos ?? (found && draft?.placeQuery === found.q && (!draft.pos || draft.where?.kind === "zuletzt") ? found.pos : draft?.pos);
   const effWhere = manualPos ? "Karte" : found && effPos === found.pos ? found.name : draft?.where?.label;
 
@@ -119,6 +139,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
 
   const add = () => {
     if (!draft) return;
+    if (!draft.melder && !confirmNoMelder) { setConfirmNoMelder(true); return; }
+    setConfirmNoMelder(false);
     const ev = eventFromDraft({ ...draft, pos: effPos, where: effWhere ? { kind: manualPos ? "karte" : "ort", label: effWhere } : undefined }, device);
     update((x) => {
       x.events = [...(x.events ?? []), ev];
@@ -153,7 +175,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     const li = listRef.current?.querySelector<HTMLElement>(`li[data-id="${selected}"]`);
     if (!li) return;
     const r = li.getBoundingClientRect(), pr = listRef.current!.closest(".side")?.getBoundingClientRect();
-    if (!pr || r.top < pr.top + 40 || r.bottom > pr.bottom) li.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (!pr || r.top < pr.top + 230 || r.bottom > pr.bottom) li.scrollIntoView({ block: "center", behavior: "smooth" });
     setFlashId(selected);
     const t = window.setTimeout(() => setFlashId(null), 1600);
     return () => window.clearTimeout(t);
@@ -176,6 +198,17 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
 
   return (
     <div className="panel journal">
+      {!ex.sheets.length && !events.some((e) => !e.deleted) && (
+        <div className="onboard">
+          <h3>So startest du</h3>
+          <ol>
+            <li><b>Führungsraster</b> über den Raum legen – damit «AK7 C» verstanden wird.{onGoto && <> <button className="chipbtn" onClick={() => onGoto("raster")}>Raster anlegen</button></>}</li>
+            <li><b>NAI / BNB</b> einpflegen (Word, Bild, KML) – optional.{onGoto && <> <button className="chipbtn" onClick={() => onGoto("nai")}>NAI einpflegen</button></>}</li>
+            <li><b>Meldungen</b> unten eintippen: Zeit · Melder · was · wo.</li>
+          </ol>
+          {onDemo && <div className="btnrow"><button onClick={onDemo}>Beispiel (fiktiv) ansehen</button></div>}
+        </div>
+      )}
       <div className="entry" style={{ borderColor: draft ? KIND_COLOR[draft.kind] : undefined }}>
         <div className="btnrow">
           <b className="entry-title">Meldung</b>
@@ -184,10 +217,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             <option value="__add">+ Tag</option>
           </select>
         </div>
-        <input ref={inputRef} className="msg" value={text} autoFocus placeholder="z. B. 1015 H04 2 Fz in NAI 3 Rtg N" aria-label="Meldung"
-          onChange={(e) => { setText(e.target.value); if (!e.target.value) { setManualPos(null); setKindOverride(null); } }}
+        <textarea ref={inputRef} className="msg" value={text} autoFocus={wideScreen} rows={1} placeholder={wideScreen ? "z. B. 1015 H04 2 Fz in NAI 3 Rtg N" : "1015 H04 2 Fz NAI 3"} aria-label="Meldung"
+          onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; }}
+          onChange={(e) => { setText(e.target.value.replace(/\n/g, " ")); setConfirmNoMelder(false); if (!e.target.value) { setManualPos(null); setKindOverride(null); e.target.style.height = "auto"; } }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); add(); }
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); add(); }
             if (e.key === "Escape") { setText(""); setManualPos(null); setKindOverride(null); }
             // ↑ in leerer Zeile: letzte Meldung zum Korrigieren öffnen
             if (e.key === "ArrowUp" && !text) { const last = [...events].filter((x) => !x.deleted).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]; if (last) { e.preventDefault(); setEditing(last.id); onSelect(last.id); } }
@@ -197,7 +231,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         {draft ? (
           <div className="preview">
             <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}>{dayLabel(draft.t, ex.days)} {draft.t.slice(11, 16)}</span>
-            {draft.melder && <span className="chip" title="eigenes Element, das meldet">Melder <b>{draft.melder}</b></span>}
+            {draft.melder ? <span className="chip" title="eigenes Element, das meldet">Melder <b>{draft.melder}</b></span>
+              : <span className={"chip " + (confirmNoMelder ? "err" : "warnsoft")} title="Wer meldet? z. B. «H04» an den Anfang">{confirmNoMelder ? "Ohne Melder? Nochmals Enter" : "Melder fehlt"}</span>}
+            {future && <span className="chip warnsoft" title="Zeit liegt nach jetzt">liegt in der Zukunft – Vortag?</span>}
             <span className="seg kinds" role="group" aria-label="Einordnung" title={draft.kindFrom === "inhalt" ? "aus dem Inhalt erkannt – zum Ändern anklicken" : undefined}>
               {KINDS.map(([k, l]) => (
                 <button key={k} className={k} aria-pressed={draft.kind === k} onClick={() => { setKindOverride(k); inputRef.current?.focus(); }}>{l}</button>
@@ -210,7 +246,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
           </div>
         ) : (
-          <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen.</p>
+          <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen · <b>↑</b> = letzte korrigieren · <b>N</b> = zurück ins Feld.</p>
         )}
         <div className="btnrow">
           <button className="primary" disabled={!draft} onClick={add}>Eintragen</button>
@@ -250,7 +286,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
                       {e.melder && e.melder !== e.unit && <small>via {e.melder}</small>}
                     </span>
                     <span className="jb">
-                      <span className="jtext"><SymbolMini k={e.sym} aff={e.aff} />{e.text}</span>
+                      <span className="jtext" title={e.text}><SymbolMini k={e.sym} aff={e.aff} />{displayText(e)}</span>
                       <span className="jmeta">
                         {(e.cells ?? []).slice(0, 2).map((c) => <span key={c} className="pq">{c}</span>)}
                         {e.nai && <span className="naichip">{e.nai}</span>}
@@ -278,7 +314,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       )}
 
       <div className="btnrow foot">
-        <span className="help">{events.filter((e) => !e.deleted).length} Einträge</span>
+        <span className="help">{(() => { const n = events.filter((e) => !e.deleted).length; return `${n} ${n === 1 ? "Eintrag" : "Einträge"}`; })()}</span>
         <button onClick={() => onExport("csv")} disabled={!events.length}>CSV</button>
         <button onClick={() => onExport("pdf")} disabled={!events.length}>PDF</button>
       </div>
@@ -339,4 +375,13 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
       </div>
     </li>
   );
+}
+
+/** Anzeigetext ohne vorangestellten Melder («H01 4 Pers …» → «4 Pers …»), der Melder steht separat */
+function displayText(e: LageEvent): string {
+  const m = e.melder;
+  if (!m) return e.text;
+  const re = new RegExp("^" + m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*") + "\\s*[:,]?\\s*", "i");
+  const t = e.text.replace(re, "");
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : e.text;
 }

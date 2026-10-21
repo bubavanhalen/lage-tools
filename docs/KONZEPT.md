@@ -32,18 +32,26 @@
 5. Übungsauswertung: Import, Auswertung, AAR-Regie
 6. vNext: Abgleich Gerät ↔ Gerät
 
-## Lagejournal – Eingabe (Etappe 3)
-Eine Zeile pro Meldung, so wie man mitschreibt:
+## Lagejournal – Lageverfolgung im LVZ (Etappe 3 / 3b)
+Jede Meldung kommt von einem **eigenen Element (Melder)**. Der Inhalt entscheidet, was auf die Karte kommt:
+**eigene Lage** (blau, verschiebt den Melder), **Feindsichtung** (rot, am gemeldeten Ort) oder **unklar** (gelb).
+Der Vergleich Rot ↔ Blau (Erkennung) gehört ins Auswertungstool.
+
+Eingabe in einer Zeile:
 
 | Teil | Beispiele | Hinweis |
 |---|---|---|
-| Tag, Zeit | `T2 0315`, `10:15`, `1015` | ohne Zeit: jetzt; ohne Tag: gewählter Übungstag |
-| Seite | `Rot`, `Blau`, `UL`, `Gegner` | sonst Umschalter; bekannte Elemente bestimmen die Seite selbst |
-| Element | `H04`, `Det 2`, `Zug 1`, `Gr 3` | neue Elemente werden gemerkt |
-| was | `2 Fz`, `Beo Stao`, `Kontakt mit Gegner`, `Checkpoint` | Zeichen und Anzahl automatisch |
-| wo | `C12 D`, `UK7 C`, `NAI 3`, `2'600'100 / 1'200'200`, `in Wabern` | Ortsnamen online nachgeschlagen und für offline gemerkt; ohne Ort: letzter Standort des Elements |
+| Tag, Zeit | `T2 0315`, `10:15`, `1015` | ohne Zeit: jetzt; Zeit in der Zukunft wird angemerkt |
+| Melder | `H04`, `Det 2`, `Zug 1`, `Gr 3` | neue Elemente werden gemerkt; fehlt er, erscheint «Melder fehlt» |
+| was | `2 Fz`, `Beo Stao`, `Kontakt mit Gegner`, `Checkpoint`, `3 Pers unklar` | Zeichen, Anzahl, Einordnung automatisch (Alt+1/2/3 übersteuert) |
+| wo | `AK7 C`, `NAI 3`, `2'600'100 / 1'200'200`, `in Wabern` | sonst letzter Standort bzw. «bei Melder» |
 | Richtung | `Rtg N`, `Richtung Bern` | Pfeil am Zeichen |
 
-Karte: pro Element das aktuelle Zeichen mit Spur; Tätigkeiten (Kontakt, Sperre, Checkpoint …) als eigenes Zeichen am Ort.
-Zeitstrahl: Lage zu jedem Zeitpunkt, Abspielen, «Live». Export: CSV, PDF, Übungsdatei.
-Offline: App als PWA; Karte für das Raster-Gebiet vorab speichern (Detailstufe wählbar), angesehene Kartenteile bleiben gespeichert.
+Tasten: Enter = eintragen, ↑ = letzte korrigieren, N = zurück ins Meldungsfeld, / oder Strg+K = Suche.
+
+**Darstellung (wie Lagebild-Prototyp, verbessert):** Zeitstrahl mit Zeile pro Element (Feind oben, Eigene unten), Linie Sichtung → Melder, Live, Abspielen, Ziehen auch mit Touch.
+Karte: Raster mit grosser Feldbeschriftung, Uhrzeit an frischen Zeichen, älter als 30 min blass, überlappende Zeichen aufgefächert mit Führungsstrich,
+gewähltes Planquadrat hinterlegt, Meldungsband, Legende aus dem Sichtbaren, eigene Elemente ohne Meldung > 60 min mit Altersangabe.
+Navigation: eine Suche für Planquadrat/NAI/Element/Koordinate/Ort, Doppelklick Feld → Unterquadrant, Messen (Distanz, Azimut ° und ‰), Rechtsklick-Menü («Meldung hier»).
+Präsentationsmodus (Vollbild, ←/→ blättert), Nachtbetrieb, Tablet- und Handy-Ansicht.
+Offline: App als PWA; Karte für das Raster-Gebiet vorab speichern, angesehene Kartenteile bleiben gespeichert.

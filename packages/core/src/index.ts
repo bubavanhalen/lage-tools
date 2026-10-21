@@ -10,3 +10,6 @@ export * from "./exercise";
 export * from "./match";
 export * from "./journal";
 export * from "./demo";
+export * from "./search";
+export * from "./declutter";
+export * from "./lanes";

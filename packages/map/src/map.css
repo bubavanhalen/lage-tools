@@ -1,26 +1,50 @@
 @import "leaflet/dist/leaflet.css";
 
-.lt-edge span,
-.lt-cell span {
-  position: absolute;
-  white-space: nowrap;
-  font: 700 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  color: #1d1d1d;
-  text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff;
-  pointer-events: none;
-}
-.lt-edge.top span { transform: translate(-50%, -150%); }
-.lt-edge.bottom span { transform: translate(-50%, 50%); }
-.lt-edge.left span { transform: translate(-130%, -50%); }
-.lt-edge.right span { transform: translate(30%, -50%); }
-.lt-cell span { transform: translate(4px, 4px); font-size: 11px; font-weight: 600; opacity: 0.85; }
-.leaflet-container { background: #e9ece6; font: inherit; }
+/* Karte bleibt auch im Dunkelmodus hell: hier nur feste Kartenfarben (entsprechen --m-*). */
+.leaflet-container { background: #dfe3dc; font-family: var(--f-body, "IBM Plex Sans", system-ui, sans-serif); }
 .lt-drawing, .lt-drawing .leaflet-interactive { cursor: crosshair !important; }
 .lt-picking, .lt-picking .leaflet-interactive { cursor: crosshair !important; }
-.lt-area-lbl span { position: absolute; transform: translate(-50%, -130%); white-space: nowrap; font: 700 13px/1 ui-monospace, Menlo, Consolas, monospace; text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff; pointer-events: none; }
 
-/* Taktische Zeichen */
+/* ---------- Führungsraster ---------- */
+.lt-raster-lbl { pointer-events: none; }
+.lt-raster-lbl text {
+  font-family: var(--f-mono, "IBM Plex Mono", ui-monospace, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+  fill: #101414;
+  stroke: #fff;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.lt-edge-t { font-size: 13px; font-weight: 600; stroke-width: 3.5px; stroke-opacity: .95; text-anchor: middle; dominant-baseline: central; }
+.lt-cell-t { font-weight: 600; opacity: .9; }
+.lt-quad-x { fill: none; stroke: #111; stroke-opacity: .4; stroke-width: 1; stroke-dasharray: 6 5; }
+.lt-quad-t { font-size: 12px; font-weight: 600; stroke-width: 3px; text-anchor: middle; dominant-baseline: central; opacity: .7; }
+
+/* ---------- Flächen (NAI, AO, Stao) ---------- */
+.lt-area-lbl { background: none; border: 0; }
+.lt-area-lbl span {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  white-space: nowrap;
+  font: 700 12px/1 var(--f-mono, "IBM Plex Mono", ui-monospace, monospace);
+  letter-spacing: .03em;
+  text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 3px #fff;
+  pointer-events: none;
+}
+/* NAI / Stao: beginnt am Schwerpunkt-x, 20 px über der obersten Ecke */
+.lt-area-lbl.top span { transform: translate(0, -6px); }
+/* AO: an der westlichsten Ecke, innen (links daneben stünde sie auf der Randbeschriftung des Rasters) */
+.lt-area-lbl.ao span { font-size: 13px; transform: translate(8px, calc(100% + 5px)); }
+
+/* ---------- Taktische Zeichen ---------- */
 .lt-sym { background: none; border: 0; }
-.lt-sym svg { display: block; overflow: visible; }
-.lt-sym.sel svg { filter: drop-shadow(0 0 2px #ffd400) drop-shadow(0 0 4px #ffd400); }
-.lt-sym-lbl { position: absolute; top: 2px; font: 700 12px Arial, sans-serif; color: #000; white-space: nowrap; text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff; }
+.lt-sym svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff); }
+.lt-ud {
+  position: absolute;
+  font: 600 11px/1.15 var(--f-mono, "IBM Plex Mono", ui-monospace, monospace);
+  color: #101414;
+  white-space: nowrap;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff;
+  pointer-events: none;
+}
