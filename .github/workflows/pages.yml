@@ -29,6 +29,7 @@ jobs:
       - run: npm run build
       - name: Vorschau des Arbeitsstands (Zweig wip/*) unter /vorschau/ bauen
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         run: |
           BR=$(git ls-remote --heads origin 'wip/*' | sort -k2 | tail -1 | sed 's#.*refs/heads/##')
           if [ -n "$BR" ]; then
