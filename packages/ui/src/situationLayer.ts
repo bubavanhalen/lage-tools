@@ -15,7 +15,7 @@ import {
   buildStacks, catalogEntry, cellAtAny, cellBounds, fanLayout, findCells, lastPosition, mirrorBox, peekOffset, positionSource,
   type Box, type LageEvent, type LV95, type RasterSheet, type Stack,
 } from "@lage/core";
-import { escapeHtml, symbolSvg, toLatLng, toLv95 } from "@lage/map";
+import { escapeHtml, iconSvg, symbolSvg, toLatLng, toLv95 } from "@lage/map";
 import { KIND_COLOR, kindText, MAP_INK, SIDE_COLOR, situationModel, type SituationItem } from "./journalLayer";
 import { isLocked, subscribeLock, type LayerFlags } from "./layers";
 import { clickSuppressed, longPress, suppressClick, suppressContextMenu } from "./longpress";
@@ -396,7 +396,7 @@ class SituationLayer extends L.LayerGroup {
     const ms = s.st.members.map((i) => this.placed[i]!.it);
     const rows = ms.slice(0, 8).map((it) => {
       const who = it.kind === "eigen" ? it.e.unit || it.e.melder || "" : [it.e.unit, it.e.melder ? `via ${it.e.melder}` : ""].filter(Boolean).join(" ");
-      const sym = symbolSvg(it.sym, it.aff, 12, { sidc: it.sidc, status: it.status }).svg;
+      const sym = iconSvg(it.sym, it.aff, 12, { sidc: it.sidc, status: it.status }).svg;
       return `<li><b class="tnum">${it.e.t.slice(11, 16)}</b><span class="lt-stk-s">${sym}</span><span class="lt-stk-n">${escapeHtml(it.e.desc || it.name)}</span>${who ? `<span class="lt-stk-w">${escapeHtml(who)}</span>` : ""}</li>`;
     }).join("");
     const more = ms.length > 8 ? `<li class="lt-stk-more">… ${ms.length - 8} weitere</li>` : "";
