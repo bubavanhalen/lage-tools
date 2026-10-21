@@ -54,3 +54,8 @@
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.35); box-sizing: border-box;
 }
 .rc-pin.lit span { background: var(--m-flash); color: var(--m-ink); transform: scale(1.18); }
+
+/* Strasse liegt ausserhalb des gemeldeten Feldes */
+.rc-out { font-weight: 500; color: var(--warn); }
+.rc-chip .rc-lbl { display: inline; text-align: left; }
+.rc-chip:has(.rc-out) { border-radius: 12px; }

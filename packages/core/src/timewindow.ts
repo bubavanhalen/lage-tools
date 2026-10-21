@@ -23,8 +23,8 @@ export function windowStart(w: TimeWindow | null | undefined, t: string): string
     const ms = Date.parse(t);
     return Number.isFinite(ms) ? isoMinutes(ms - Math.max(1, w.min) * 60000) : null;
   }
-  // fester Anfang nach der Lagezeit: Fenster leer wäre verwirrend → bis zur Lagezeit zurück
-  return w.t > t.slice(0, 16) ? t.slice(0, 16) : w.t;
+  // fester Anfang nach der Lagezeit (z. B. Zeitstrahl zurückgestellt): ein leeres Fenster wäre verwirrend → alles zeigen
+  return w.t > t.slice(0, 16) ? null : w.t;
 }
 
 /** Liegt die Zeit `t` im Fenster [from, to]? (from null = offen) */

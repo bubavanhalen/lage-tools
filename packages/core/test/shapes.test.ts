@@ -47,6 +47,9 @@ describe("Katalog: Flächen- und Linienzeichen", () => {
     expect(catalogEntry("achse")!.style).toBe("achse");
     expect(shapeShortName("minensperre")).toBe("Minensperre");
     expect(shapeShortName("kontaktlinie")).toBe("Kontaktlinie");
+    // Achse: Feind «Vormarschachse», eigene «Verschiebungsachse»
+    expect(shapeShortName("achse", "rot")).toBe("Vormarschachse");
+    expect(shapeShortName("achse", "blau")).toBe("Verschiebungsachse");
   });
   it("Erkennung: Panzergraben, Landezone, Phasenlinie, Sperrgebiet", () => {
     expect(parseMeldung("H04 Panzergraben K12", jctx()).sym).toBe("panzergraben");

@@ -11,7 +11,7 @@
  */
 import { pointInRing, ringArea, ringCentroid } from "./geo";
 import type { LV95 } from "./lv95";
-import type { Area, EventShape, LageEvent } from "./model";
+import type { Area, EventShape, LageEvent, Side } from "./model";
 import { cellBounds, findCells, type Bounds, type RasterSheet } from "./raster";
 import { catalogEntry, type Geometry, type ShapeStyle } from "./catalog";
 
@@ -233,10 +233,14 @@ export function translateShape(s: EventShape, from: LV95, to: LV95): EventShape 
   return { ...s, pts: s.pts.map((p) => ({ e: p.e + de, n: p.n + dn })) };
 }
 
-/** Kurzname für die Beschriftung: erster Teil des Katalognamens, z. B. «Minensperre», «Marsch-Achse» */
-export function shapeShortName(sym: string): string {
+/**
+ * Kurzname für die Beschriftung: erster Teil des Katalognamens, z. B. «Minensperre», «Kontaktlinie».
+ * Achse nach Seite: Feind «Vormarschachse», eigene (und ohne Angabe) «Verschiebungsachse».
+ */
+export function shapeShortName(sym: string, side?: Side): string {
+  if (sym === "achse") return side === "rot" ? "Vormarschachse" : "Verschiebungsachse";
   const n = catalogEntry(sym)?.name ?? sym;
   const first = n.split(" / ")[0]!.replace(/\s*\(.*\)$/, "").trim();
-  // «Front-/Kontaktlinie» → «Kontaktlinie», «Marsch-/Verschiebungsachse» → «Verschiebungsachse»
+  // «Front-/Kontaktlinie» → «Kontaktlinie»
   return first.includes("-/") ? first.split("-/")[1]!.replace(/^./, (c) => c.toUpperCase()) : first;
 }

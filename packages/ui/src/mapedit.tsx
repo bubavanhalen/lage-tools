@@ -1,7 +1,7 @@
 /**
  * Zustand rund um die Lagekarte, ausgelagert aus dem Workspace:
  * - Zeitfenster pro Übung (gemerkt im Browser),
- * - Zeichen verschieben = Ort der Meldung korrigieren, mit Hinweis «Rückgängig» (~8 s).
+ * - Zeichen verschieben = Ort der Meldung korrigieren, mit Hinweis «Rückgängig» (12 s, steht still, solange Maus/Fokus darauf).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -29,6 +29,8 @@ export function useTimeWindow(exId: string | undefined): [TimeWindow, (w: TimeWi
 }
 
 interface Notice { id: string; text: string; undo: Partial<LageEvent>; n: number }
+/** so lange steht der Hinweis mit «Rückgängig» */
+const NOTICE_MS = 12000;
 
 /**
  * Meldung verschieben (neuer Ort aus der Karte) mit Rückgängig. `update` wie im Workspace (Übung klonen und ändern).
@@ -52,8 +54,14 @@ export function useMoveEvent(update: (f: (x: Exercise) => Exercise) => void, dev
     const n = Date.now();
     setNotice({ id: cur.id, text: `Ort von ${cur.t.slice(11, 16)} ${what} geändert${patch.cells?.[0] ? ` → ${patch.cells[0]}` : ""}`, undo, n });
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setNotice((c) => (c?.n === n ? null : c)), 8000);
+    timer.current = window.setTimeout(() => setNotice((c) => (c?.n === n ? null : c)), NOTICE_MS);
   }, [update, device]);
+  /** Maus oder Fokus auf dem Hinweis: nicht ausblenden; danach wieder volle Zeit */
+  const hold = useCallback((on: boolean) => {
+    window.clearTimeout(timer.current);
+    if (on) return;
+    timer.current = window.setTimeout(() => setNotice(null), NOTICE_MS);
+  }, []);
 
   const undo = useCallback(() => {
     if (!notice) return;
@@ -62,11 +70,11 @@ export function useMoveEvent(update: (f: (x: Exercise) => Exercise) => void, dev
     setNotice(null);
   }, [notice, update, device]);
 
-  const view = notice ? <MoveNotice text={notice.text} onUndo={undo} onClose={() => setNotice(null)} /> : null;
+  const view = notice ? <MoveNotice key={notice.n} text={notice.text} onUndo={undo} onClose={() => setNotice(null)} onHold={hold} /> : null;
   return { move, notice: view };
 }
 
-function MoveNotice({ text, onUndo, onClose }: { text: string; onUndo: () => void; onClose: () => void }) {
+function MoveNotice({ text, onUndo, onClose, onHold }: { text: string; onUndo: () => void; onClose: () => void; onHold: (on: boolean) => void }) {
   // Ctrl/⌘+Z macht das Verschieben rückgängig, solange der Hinweis steht
   useEffect(() => {
     const key = (ev: KeyboardEvent) => {
@@ -78,21 +86,28 @@ function MoveNotice({ text, onUndo, onClose }: { text: string; onUndo: () => voi
     return () => window.removeEventListener("keydown", key);
   }, [onUndo]);
   return (
-    <div className="mo-undo" role="status" aria-live="polite">
-      <span className="mo-undo-t">{text}</span>
-      <button type="button" onClick={onUndo} title="Alten Ort wiederherstellen (Ctrl+Z)">Rückgängig</button>
+    <div className="mo-undo" role="status" aria-live="polite" style={{ ["--mo-ms" as string]: `${NOTICE_MS}ms` }}
+      onPointerEnter={(e) => { if (e.pointerType === "mouse") onHold(true); }} onPointerLeave={(e) => { if (e.pointerType === "mouse") onHold(false); }}
+      onFocus={() => onHold(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onHold(false); }}>
+      <span className="mo-undo-t" title={text}>{text}</span>
+      <button type="button" className="mo-undo-b" onClick={onUndo} title="Alten Ort wiederherstellen (Ctrl+Z)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5 2.5 6.5l3 3M3 6.5h6.5a4 4 0 0 1 0 8H7" /></svg>Rückgängig
+      </button>
       <button type="button" className="mo-undo-x" onClick={onClose} aria-label="Hinweis schliessen">×</button>
     </div>
   );
 }
 
-/** Hinweis über der Journalliste: «Zeitfenster 07:10–07:40 · 12 von 30 Meldungen · Alle zeigen» */
+/**
+ * Hinweis über der Journalliste: «Zeitfenster 07:10–07:40 · 5 von 22 Meldungen bis 07:40 · Alle zeigen».
+ * Gezählt wird wie die Liste darunter: Meldungen bis zur Lagezeit (spätere zeigt weder Karte noch Liste).
+ */
 export function WindowHint({ events, from, to, onClear }: { events: LageEvent[]; from: string; to: string; onClear?: () => void }) {
-  const live = events.filter((e) => !e.deleted);
-  const n = live.filter((e) => inWindow(e.t, from, to)).length;
+  const upto = events.filter((e) => !e.deleted && inWindow(e.t, null, to));
+  const n = upto.filter((e) => inWindow(e.t, from, to)).length;
   return (
     <div className="mo-winhint" role="status">
-      <span><b>Zeitfenster</b> <span className="tnum">{from.slice(11, 16)}–{to.slice(11, 16)}</span> · <span className="tnum">{n}</span> von <span className="tnum">{live.length}</span> Meldungen</span>
+      <span><b>Zeitfenster</b> <span className="tnum">{from.slice(11, 16)}–{to.slice(11, 16)}</span> · <span className="tnum">{n}</span> von <span className="tnum">{upto.length}</span> Meldungen bis <span className="tnum">{to.slice(11, 16)}</span></span>
       {onClear && <button type="button" onClick={onClear}>Alle zeigen</button>}
     </div>
   );

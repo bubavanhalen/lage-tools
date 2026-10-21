@@ -1,7 +1,8 @@
 /**
  * Werkzeugleiste der Karte, immer einzeilig: Grundkarte, Ebenen (Ausklappmenü mit Pills), Ganzes Raster, Zoom auf Feld/Unterquadrant, Messen,
  * Schloss «Zeichen fixieren» (Standard offen = Zeichen lassen sich ziehen; Zustand pro Gerät gemerkt).
- * Auf schmaleren Karten (< 1180 px) wandert die Grundkarte ins Ebenen-Menü und die Werkzeuge hinter «⋯».
+ * Auf schmaleren Karten (< 1180 px) wandert die Grundkarte ins Ebenen-Menü und die Werkzeuge hinter «⋯»;
+ * das Schloss bleibt ab 760 px Kartenbreite sichtbar (in der Präsentation ausgeblendet, dort zieht man nichts).
  * Messen: Klick setzt Punkte, Doppelklick/Enter beendet, Backspace = Rückgängig, Esc = Abbrechen.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -64,6 +65,8 @@ const LOCK_TITLE = (on: boolean) => on
 
 /** Ab dieser Kartenbreite (px) alle Werkzeuge in einer Zeile ausgeschrieben, darunter kompakt (Ebenen-Menü + «⋯»). */
 export const TOOLBAR_FULL_MIN = 1180;
+/** Ab dieser Kartenbreite steht das Schloss immer in der Leiste (nicht im «⋯») */
+const TOOLBAR_LOCK_MIN = 760;
 /** Unter dieser Kartenbreite nur noch Symbole */
 const TOOLBAR_TINY_MAX = 560;
 
@@ -101,6 +104,13 @@ export function MapToolbar(p: MapToolbarProps) {
   const locked = useSyncExternalStore(subscribeLock, isLocked);
   const full = width >= TOOLBAR_FULL_MIN;
   const tiny = width < TOOLBAR_TINY_MAX;
+  const lockOut = width >= TOOLBAR_LOCK_MIN;
+  const lockBtn = (
+    <button type="button" className="nav-btn nav-lock" aria-pressed={locked} onClick={() => setLocked(!locked)} title={LOCK_TITLE(locked)}
+      aria-label={locked ? "Zeichen fixiert" : "Zeichen fixieren"}>
+      <IconLock closed={locked} />
+    </button>
+  );
 
   // Messung (auch aus dem Kontextmenü gestartet) verfolgen
   useEffect(() => {
@@ -188,12 +198,11 @@ export function MapToolbar(p: MapToolbarProps) {
             <button type="button" className="nav-btn" aria-pressed={measuring} onClick={toggleMeasure} title="Distanz und Azimut messen">
               <IconRuler /><span>Messen</span>
             </button>
-            <button type="button" className="nav-btn nav-lock" aria-pressed={locked} onClick={() => setLocked(!locked)} title={LOCK_TITLE(locked)}
-              aria-label={locked ? "Zeichen fixiert" : "Zeichen fixieren"}>
-              <IconLock closed={locked} />
-            </button>
+            {lockBtn}
           </>
         ) : (
+          <>
+          {lockOut && lockBtn}
           <div className="nav-more" ref={moreRef}>
             <button type="button" className="nav-btn nav-dots" aria-expanded={moreOpen} aria-haspopup="menu" aria-pressed={measuring}
               onClick={() => { setMoreOpen((o) => !o); setLayersOpen(false); }} aria-label="Weitere Werkzeuge" title="Ganzes Raster, Feld, Unterquadrant, Messen">
@@ -206,12 +215,15 @@ export function MapToolbar(p: MapToolbarProps) {
                 <button type="button" role="menuitem" onClick={more(() => zoomToCellAtCenter(p.map, "quadrant"))} disabled={!hasRaster} title={`Auf den Unterquadranten in der Kartenmitte zoomen${cellTitle}`}><IconQuad /><span>Auf Unterquadrant zoomen</span></button>
                 <hr />
                 <button type="button" role="menuitem" aria-pressed={measuring} onClick={more(toggleMeasure)}><IconRuler /><span>{measuring ? "Messen beenden" : "Messen (Distanz, Azimut)"}</span></button>
-                <button type="button" role="menuitemcheckbox" aria-checked={locked} onClick={more(() => setLocked(!locked))} title={LOCK_TITLE(locked)}>
-                  <IconLock closed={locked} /><span>{locked ? "Zeichen fixiert (lösen)" : "Zeichen fixieren"}</span>
-                </button>
+                {!lockOut && (
+                  <button type="button" role="menuitemcheckbox" className="nav-lockitem" aria-checked={locked} onClick={more(() => setLocked(!locked))} title={LOCK_TITLE(locked)}>
+                    <IconLock closed={locked} /><span>{locked ? "Zeichen fixiert (lösen)" : "Zeichen fixieren"}</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
+          </>
         )}
       </div>
 

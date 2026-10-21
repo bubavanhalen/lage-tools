@@ -7,6 +7,7 @@ import { unitKey } from "./journal";
 import type { LV95 } from "./lv95";
 import type { Area, LageEvent, Side } from "./model";
 import { cellAtAny, type RasterSheet } from "./raster";
+import { eventShape } from "./shapes";
 
 /** Felder, die beim Verschieben geändert werden (für Rückgängig) */
 export const RELOCATE_FIELDS = ["pos", "where", "cells", "nai", "angle", "road", "shape"] as const;
@@ -22,10 +23,14 @@ export function relocatePatch(e: LageEvent, pos: LV95, sheets: RasterSheet[], ar
     const a = areas.find((x) => x.name === e.nai);
     if (!a || !pointInRing({ x: p.e, y: p.n }, a.ring.map((q) => ({ x: q.e, y: q.n })))) patch.nai = undefined;
   }
-  // Form (Fläche/Linie) mit dem Zeichen mitverschieben – automatisch berechnete wie von Hand gezeichnete
-  if (e.shape && e.pos) {
+  // Form (Fläche/Linie) mit dem Zeichen mitverschieben: die angezeigte Form – bei automatischer Form also zuerst aus dem
+  // bisherigen Ort berechnen (Feld, NAI, Mehrfeld-Achse), sonst würde nach dem Verschieben ein Kreis daraus.
+  // Bleibt `auto: true` (darf bei einer späteren Ortsänderung neu berechnet werden), von Hand gezeichnete bleibt von Hand.
+  const shape = e.pos ? eventShape(e, { sheets, areas }) : undefined;
+  if (shape && e.pos) {
     const dx = p.e - e.pos.e, dy = p.n - e.pos.n;
-    patch.shape = { ...e.shape, pts: e.shape.pts.map((q) => ({ e: q.e + dx, n: q.n + dy })) };
+    patch.shape = { ...shape, pts: shape.pts.map((q) => ({ e: q.e + dx, n: q.n + dy })) };
+    if (shape.auto) patch.shape.auto = true;
   }
   return patch;
 }

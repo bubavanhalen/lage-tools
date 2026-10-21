@@ -5,7 +5,9 @@
  * - Zusatz am Zeichen («H04», «2× Det 1»), Zeitlabel «hh:mm» an frischen Zeichen,
  * - Zeichen, die sich auf dem Bildschirm überlappen, bilden einen **Stapel** (bis 3 sichtbar, Zahl-Marke), keine
  *   Führungsstriche; Klick fächert den Stapel im Kreis auf (dünne Linie zum Ort nur dann), Klick daneben/Esc/Zoom klappt zu,
- * - Zeichen verschieben: Maus ziehen (ab 4 px), Finger/Stift langes Drücken (350 ms) hebt das Zeichen an → ziehen,
+ * - Zeichen verschieben: Maus nur das gewählte Zeichen ziehen (ab 4 px; Ziehen auf anderen Zeichen schiebt die Karte),
+ *   Finger/Stift langes Drücken (350 ms) hebt das Zeichen an → ziehen; während des Ziehens kein Neuaufbau (`whenNotDragging`),
+ * - Tastatur: Tab erreicht Stapel und Zeichen, Enter fächert auf bzw. wählt, Esc klappt zu,
  * - gewählte Meldung: grösser, hervorgehoben, Planquadrat hinterlegt, Linie Melder → Sichtung, ihr Stapel offen.
  */
 import L from "leaflet";
@@ -15,7 +17,7 @@ import {
 } from "@lage/core";
 import { escapeHtml, symbolSvg, toLatLng, toLv95 } from "@lage/map";
 import { KIND_COLOR, kindText, MAP_INK, SIDE_COLOR, situationModel, type SituationItem } from "./journalLayer";
-import { isLocked, type LayerFlags } from "./layers";
+import { isLocked, subscribeLock, type LayerFlags } from "./layers";
 import { clickSuppressed, longPress, suppressClick, suppressContextMenu } from "./longpress";
 import { dayLabel } from "./Timeline";
 import "./mapoverlays.css";
@@ -68,12 +70,18 @@ interface Ctl {
   stickyUntil: number;
   lastSel: string | null | undefined;
   layer: SituationLayer | null;
+  /** Zeiger auf einem Zeichen gedrückt seit (ms, 0 = nicht): Neuaufbau ebenfalls aufschieben */
+  pressing: number;
+  /** während des Ziehens aufgeschobener Neuaufbau (der jüngste gewinnt) */
+  pending: (() => void) | null;
+  /** zuletzt mit der Tastatur fokussiertes Zeichen (Meldung), Fokus überlebt den Neuaufbau */
+  focusId: string | null;
 }
 const ctls = new WeakMap<L.Map, Ctl>();
 function ctlOf(map: L.Map): Ctl {
   const have = ctls.get(map);
   if (have) return have;
-  const c: Ctl = { map, openFor: null, stickyUntil: 0, lastSel: undefined, layer: null };
+  const c: Ctl = { map, openFor: null, stickyUntil: 0, lastSel: undefined, layer: null, pressing: 0, pending: null, focusId: null };
   ctls.set(map, c);
   map.on("click", () => { if (c.openFor) setOpen(c, null); });
   map.on("zoomstart", () => { if (c.openFor && Date.now() > c.stickyUntil) c.openFor = null; });
@@ -83,9 +91,37 @@ function ctlOf(map: L.Map): Ctl {
     if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
     e.preventDefault();
     e.stopPropagation(); // erst den Stapel schliessen, die Auswahl bleibt (zweites Esc)
+    const inFan = t?.closest?.(".lt-ev.fan");
     setOpen(c, null);
+    if (inFan) c.layer?.focusStackOf(c.focusId);
   }, true);
   return c;
+}
+
+/** Wird gerade ein Zeichen gezogen (oder ist der Zeiger auf einem Zeichen gedrückt)? */
+export function isDragging(map: L.Map): boolean {
+  const c = ctls.get(map);
+  // gedrückt höchstens 10 s berücksichtigen (falls ein «Loslassen» verloren geht)
+  return !!c && ((c.pressing > 0 && Date.now() - c.pressing < 10000) || !!c.layer?.dragging());
+}
+
+/**
+ * Lageebene neu aufbauen – ausser während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen, Zeitfenster
+ * würden das Ziehen sonst abbrechen): dann nach dem Loslassen nachholen (nur der jüngste Aufbau zählt).
+ */
+export function whenNotDragging(map: L.Map, rebuild: () => void): void {
+  const c = ctlOf(map);
+  if (isDragging(map)) { c.pending = rebuild; return; }
+  c.pending = null;
+  rebuild();
+}
+/** aufgeschobenen Neuaufbau ausführen (true = es gab einen) */
+function flushPending(c: Ctl): boolean {
+  const f = c.pending;
+  c.pending = null;
+  if (!f) return false;
+  f();
+  return true;
 }
 /** Stapel öffnen/schliessen, kurz animiert (≤ 180 ms; prefers-reduced-motion schaltet Übergänge ab) */
 function setOpen(c: Ctl, id: string | null) {
@@ -98,6 +134,8 @@ function setOpen(c: Ctl, id: string | null) {
 
 interface Placed {
   it: SituationItem;
+  /** Index in `placed` */
+  idx: number;
   /** wahrer Ort */
   ll: L.LatLng;
   marker: L.Marker;
@@ -112,6 +150,12 @@ interface Placed {
   rank: number;
   fanRank: number;
   z: number;
+}
+
+/** Sammlung der Strassen-Hindernisse: je Gestaltung ein Pfad */
+interface RoadOut {
+  groups: Map<string, { z: number; o: L.PolylineOptions; lines: L.LatLng[][] }>;
+  circles: L.CircleMarker[];
 }
 
 interface Drag {
@@ -137,9 +181,14 @@ class SituationLayer extends L.LayerGroup {
   private stacks: Stack[] = [];
   private stackIdx: number[] = [];
   private openStack = -1;
+  /** Massstab, mit dem die Strassen-Hindernisse zuletzt gezeichnet wurden */
+  private roadK = 0;
+  /** Seite der Zacken je Hindernis (hängt nicht vom Zoom ab) */
+  private roadSide = new Map<SituationItem, number>();
   private drag: Drag | null = null;
   private unbind: Array<() => void> = [];
   private ctl: Ctl;
+  private hoverNone = typeof matchMedia === "function" && matchMedia("(hover: none)").matches;
 
   constructor(map: L.Map, private events: LageEvent[], private o: SituationOptions) {
     super();
@@ -156,18 +205,25 @@ class SituationLayer extends L.LayerGroup {
   }
 
   override onAdd(map: L.Map): this {
+    const t0 = performance.now();
     super.onAdd(map);
     this.ctl.layer = this;
     for (const p of this.placed) { const el = p.marker.getElement(); if (el) this.byEl.set(el, p); }
     this.bindPointer(map);
+    this.unbind.push(subscribeLock(() => this.layout()));
     this.layout();
     map.on("zoomend viewreset", this.layout, this);
+    // Tastatur: Fokus nach dem Neuaufbau (z. B. Auswahl mit Enter) auf dasselbe Zeichen zurück
+    const fid = this.ctl.focusId;
+    const ae = document.activeElement;
+    if (fid && (!ae || ae === document.body || !ae.isConnected)) this.focusEvent(fid);
+    try { performance.measure("Lage: Einfügen", { start: t0 }); } catch { /* ältere Browser */ }
     return this;
   }
 
   override onRemove(map: L.Map): this {
     map.off("zoomend viewreset", this.layout, this);
-    this.endDrag(false);
+    this.endDrag(false, true);
     this.unbind.forEach((f) => f());
     this.unbind = [];
     if (this.ctl.layer === this) this.ctl.layer = null;
@@ -178,8 +234,30 @@ class SituationLayer extends L.LayerGroup {
 
   relayout(): void { this.layout(); }
   fanOpen(): boolean { return this.openStack >= 0; }
+  dragging(): boolean { return !!this.drag; }
+
+  /** Zeichen der Meldung `id` fokussieren (sichtbares Zeichen bzw. oberstes seines Stapels) */
+  private focusEvent(id: string): boolean {
+    const p = this.placed.find((x) => x.it.e.id === id);
+    if (!p) return false;
+    const s = this.stackOf(p);
+    const q = s && s.si !== this.openStack ? this.placed[s.st.members[0]!]! : p;
+    const el = q.marker.getElement();
+    if (!el) return false;
+    el.focus({ preventScroll: true });
+    return true;
+  }
+  /** nach dem Zuklappen: Fokus auf das oberste Zeichen des Stapels */
+  focusStackOf(id: string | null): void { if (id) this.focusEvent(id); }
 
   private build() {
+    const t0 = performance.now();
+    try { this.buildItems(); } finally {
+      try { performance.measure("Lage: Aufbau", { start: t0 }); } catch { /* ältere Browser */ }
+    }
+  }
+
+  private buildItems() {
     const o = this.o;
     const model = situationModel(this.events, o.t, o.flags, { recentMin: o.recentMin, selectedId: o.selectedId, from: o.from });
     const selected = model.items.find((i) => i.selected);
@@ -272,27 +350,37 @@ class SituationLayer extends L.LayerGroup {
         keyboard: false,
       });
       const p: Placed = {
-        it, ll, marker, core, box: boxWith(it.showTime), boxFan: boxWith(showTimes), rank: rankOf.get(it)!, fanRank: fanOf.get(it)!, z,
+        it, idx: this.placed.length, ll, marker, core, box: boxWith(it.showTime), boxFan: boxWith(showTimes), rank: rankOf.get(it)!, fanRank: fanOf.get(it)!, z,
         offset: it.road ? roadOffset(it, core) : undefined,
       };
       // Hinweis: Einzelzeichen = Meldung; Stapel = kurze Liste (gewählte Meldung: Band zeigt dasselbe)
       marker.bindTooltip(() => this.tooltipFor(p), { direction: "top", offset: [0, -ay - 2], className: "lt-tip", opacity: 1 });
-      marker.on("tooltipopen", () => { if (this.drag || (it.selected && !this.isClosedStack(p))) marker.closeTooltip(); });
+      // gewählte Meldung: das Band zeigt dasselbe – nur der Hinweis zum Ziehen (Maus), sonst kein Tooltip
+      marker.on("tooltipopen", () => { if (this.drag || (it.selected && !this.isClosedStack(p) && (this.hoverNone || !this.canDrag()))) marker.closeTooltip(); });
       marker.on("click", () => { marker.closeTooltip(); if (!clickSuppressed()) this.activate(p); });
       marker.addTo(this);
       this.placed.push(p);
     }
   }
 
-  /** Klick/Tippen auf ein Zeichen: geschlossener Stapel → auffächern, sonst Meldung wählen */
-  private activate(p: Placed) {
-    if (this.isClosedStack(p)) { setOpen(this.ctl, p.it.e.id); return; }
+  /** Klick/Tippen/Enter auf ein Zeichen: geschlossener Stapel → auffächern, sonst Meldung wählen */
+  private activate(p: Placed, byKey = false) {
+    if (this.isClosedStack(p)) {
+      setOpen(this.ctl, p.it.e.id);
+      if (byKey) {
+        // Fokus auf das erste aufgefächerte Zeichen
+        const s = this.stackOf(p);
+        const first = s ? [...s.st.members].sort((a, b) => this.placed[a]!.fanRank - this.placed[b]!.fanRank)[0] : undefined;
+        const el = first !== undefined ? this.placed[first]!.marker.getElement() : null;
+        el?.focus({ preventScroll: true });
+      }
+      return;
+    }
     this.o.onClick(p.it.e);
   }
 
   private stackOf(p: Placed): { st: Stack; si: number } | null {
-    const i = this.placed.indexOf(p);
-    const si = this.stackIdx[i] ?? -1;
+    const si = this.stackIdx[p.idx] ?? -1;
     return si >= 0 ? { st: this.stacks[si]!, si } : null;
   }
   private isClosedStack(p: Placed): boolean {
@@ -301,6 +389,8 @@ class SituationLayer extends L.LayerGroup {
   }
 
   private tooltipFor(p: Placed): string {
+    // gewählt (nicht in geschlossenem Stapel): nur der Hinweis, dass es sich ziehen lässt
+    if (p.it.selected && !this.isClosedStack(p)) return `<div class="lt-tip-k lt-tip-only">Gewählt: ziehen = Ort korrigieren</div>`;
     const s = this.stackOf(p);
     if (!s || s.st.members.length < 2 || s.si === this.openStack) return this.tooltip(p.it);
     const ms = s.st.members.map((i) => this.placed[i]!.it);
@@ -318,25 +408,34 @@ class SituationLayer extends L.LayerGroup {
    * zur Gegenseite, Checkpoint als Schranke, sonst kurzer Strich mit Punkt).
    * Länge ca. 44 m im Gelände, auf dem Bildschirm aber mindestens ca. 34 px.
    */
-  private drawRoadMark(it: SituationItem, mPerPx: number): void {
+  private drawRoadMark(it: SituationItem, mPerPx: number, out: RoadOut): void {
     const p = it.pos;
     const a = ((it.e.angle ?? 0) * Math.PI) / 180;
     const u = { e: Math.cos(a), n: -Math.sin(a) }; // quer zur Strasse
     const v = { e: Math.sin(a), n: Math.cos(a) }; // entlang der Strasse
-    const k = Math.max(1, (20 * mPerPx) / 22); // Massstab: halbe Balkenlänge mind. 20 px
+    const k = Math.max(1, (20 * mPerPx) / 22); // Massstab: halbe Balkenlänge mind. 20 px (wie `roadK`)
     const at = (du: number, dv: number) => toLatLng({ e: p.e + (u.e * du + v.e * dv) * k, n: p.n + (u.n * du + v.n * dv) * k });
     // Zacken zur Gegenseite: bei Feind/unklar zum Melder (das sind wir), sonst in Strassenrichtung
-    let side = 1;
-    if (it.kind !== "eigen" && it.e.melder) {
-      const m = lastPosition(this.events, "blau", it.e.melder, it.e.t);
-      if (m) side = Math.sign((m.e - p.e) * v.e + (m.n - p.n) * v.n) || 1;
+    let side = this.roadSide.get(it);
+    if (side === undefined) {
+      side = 1;
+      if (it.kind !== "eigen" && it.e.melder) {
+        const m = lastPosition(this.events, "blau", it.e.melder, it.e.t);
+        if (m) side = Math.sign((m.e - p.e) * v.e + (m.n - p.n) * v.n) || 1;
+      }
+      this.roadSide.set(it, side);
     }
     const col = KIND_COLOR[it.kind].line;
     const o = it.opacity;
     const opt = (color: string, weight: number, opacity: number): L.PolylineOptions => ({ color, weight, opacity: opacity * o, interactive: false, lineCap: "butt", lineJoin: "miter", dashArray: it.anticipated && color !== "#fff" ? "6 4" : undefined });
-    const g = this.roadMarks;
-    const casing = (ll: L.LatLng[] | L.LatLng[][], w: number, op = 0.9) => L.polyline(ll, opt("#fff", w, op)).addTo(g);
-    const line = (ll: L.LatLng[] | L.LatLng[][], w: number) => L.polyline(ll, opt(col, w, 1)).addTo(g);
+    const add = (z: number, ll: L.LatLng[] | L.LatLng[][], o2: L.PolylineOptions) => {
+      const key = `${z}|${o2.color}|${o2.weight}|${o2.opacity}|${o2.dashArray ?? ""}`;
+      const gr = out.groups.get(key) ?? { z, o: o2, lines: [] };
+      out.groups.set(key, gr);
+      if (Array.isArray(ll[0])) gr.lines.push(...(ll as L.LatLng[][])); else gr.lines.push(ll as L.LatLng[]);
+    };
+    const casing = (ll: L.LatLng[] | L.LatLng[][], w: number, op = 0.9) => add(1, ll, opt("#fff", w, op));
+    const line = (ll: L.LatLng[] | L.LatLng[][], w: number) => add(2, ll, opt(col, w, 1));
     if (it.road === "sperre") {
       const L2 = 22, depth = 7, n = 4;
       const bar = [at(-L2, 0), at(L2, 0)];
@@ -346,7 +445,7 @@ class SituationLayer extends L.LayerGroup {
         teeth.push(at(a0, 0), at((a0 + a1) / 2, side * depth), at(a1, 0));
       }
       // Halo: dunkler Hauch + kräftiger weisser Rand, damit der rote Balken auch auf einer roten Hauptstrasse lesbar ist
-      L.polyline(bar, { ...opt(MAP_INK, 14, 0.35), dashArray: undefined }).addTo(g);
+      add(0, bar, { ...opt(MAP_INK, 14, 0.35), dashArray: undefined });
       casing(teeth, 6, 1); casing(bar, 11, 1);
       line(teeth, 2); line(bar, 5);
     } else if (it.road === "checkpoint") {
@@ -356,7 +455,7 @@ class SituationLayer extends L.LayerGroup {
     } else {
       const tick = [at(-12, 0), at(12, 0)];
       casing(tick, 6); line(tick, 3);
-      L.circleMarker(toLatLng(p), { radius: 3.5, color: col, weight: 2, fillColor: "#fff", fillOpacity: o, opacity: o, interactive: false }).addTo(g);
+      out.circles.push(L.circleMarker(toLatLng(p), { radius: 3.5, color: col, weight: 2, fillColor: "#fff", fillOpacity: o, opacity: o, interactive: false }));
     }
   }
 
@@ -374,16 +473,27 @@ class SituationLayer extends L.LayerGroup {
       + (e.desc ? `<div class="lt-tip-d">${escapeHtml(e.desc)}</div>` : "")
       + `<div class="lt-tip-t">${escapeHtml(e.text)}</div>`
       + (meta ? `<div class="lt-tip-m tnum">${escapeHtml(meta)}</div>` : "")
-      + (canMove ? `<div class="lt-tip-k">Ziehen = Ort korrigieren</div>` : "");
+      + (canMove ? `<div class="lt-tip-k">Klick wählt · gewählt ziehen = Ort korrigieren</div>` : "");
   }
 
   // ---------------------------------------------------------------- Stapel und Auffächern (nach jedem Zoom neu)
   private layout() {
     const map = this._map;
     if (!map) return;
+    const t0 = performance.now();
     const mPerPx = 1 / map.options.crs!.scale(map.getZoom());
-    this.roadMarks.clearLayers();
-    for (const it of this.roadItems) this.drawRoadMark(it, mPerPx);
+    // Hindernisse an der Strasse: nur neu zeichnen, wenn sich ihr Massstab ändert (hineingezoomt bleibt er gleich)
+    const rk = Math.max(1, (20 * mPerPx) / 22);
+    if (rk !== this.roadK) {
+      this.roadK = rk;
+      this.roadMarks.clearLayers();
+      // gleich gestaltete Striche aller Hindernisse in einem Pfad (wenige SVG-Elemente statt 5 je Hindernis);
+      // Reihenfolge: Hauch, weisser Rand, Farbe – so liegt kein Rand über der Farbe eines Nachbarn
+      const out: RoadOut = { groups: new Map(), circles: [] };
+      for (const it of this.roadItems) this.drawRoadMark(it, mPerPx, out);
+      for (const gr of [...out.groups.values()].sort((a, b) => a.z - b.z)) L.polyline(gr.lines, gr.o).addTo(this.roadMarks);
+      for (const c of out.circles) c.addTo(this.roadMarks);
+    }
     this.fanLines.clearLayers();
     if (this.drag) return; // während des Ziehens nicht umstellen
 
@@ -426,24 +536,43 @@ class SituationLayer extends L.LayerGroup {
         for (const d of dots) L.circleMarker(map.layerPointToLatLng(d), { radius: 4, color: "#fff", weight: 1.5, fillColor: MAP_INK, fillOpacity: 1, interactive: false, className: "lt-fanline" }).addTo(this.fanLines);
         return;
       }
-      // ---- geschlossen: oberstes am Ort, bis zwei weitere leicht nach rechts oben versetzt, Rest verdeckt
+      // ---- geschlossen: oberstes am Ort, bis zwei weitere leicht nach rechts oben versetzt, Rest verdeckt.
+      // Der Versatz richtet sich nach dem obersten Zeichen: ist es grösser (gewählt 24 px), rücken die unteren
+      // um den Grössenunterschied weiter hinaus, sonst wären sie ganz verdeckt.
       const top = this.placed[st.members[0]!]!;
+      let ext = 0;
       st.members.forEach((i, k) => {
         const p = this.placed[i]!;
         const off = peekOffset(k);
-        this.place(p, off ? L.point(st.x + off[0], st.y + off[1]) : null, {
+        let at: L.Point | null = null;
+        if (off) {
+          const ex = k ? Math.max(0, top.core[2] - p.core[2]) : 0;
+          const ey = k ? Math.max(0, p.core[1] - top.core[1]) : 0;
+          ext = Math.max(ext, ex, ey);
+          at = L.point(st.x + off[0] + ex, st.y + off[1] - ey);
+        }
+        this.place(p, at, {
           fan: false, left: k === 0 && st.side < 0, under: k > 0, hid: !off, n: k === 0 && st.members.length > 1 ? st.members.length : 0, z: top.z - k * 5,
         });
       });
       const b = st.side < 0 ? mirrorBox(top.box, top.core) : top.box;
       const c = toCont(L.point(st.x, st.y));
-      const peek = (Math.min(st.members.length, 3) - 1) * 4;
+      const peek = (Math.min(st.members.length, 3) - 1) * 4 + ext;
       rects.push([c.x + b[0], c.y + b[1] - peek, c.x + b[2] + peek, c.y + b[3]]);
     });
     map.getContainer().classList.toggle("lt-fanopen", this.openStack >= 0);
     publish(this.stacks.filter((s) => s.members.length > 1).length);
-    // Flächenbeschriftungen (NAI, AO, Stao) den Zeichen ausweichen lassen
-    avoidAreaLabels(map, rects);
+    // Flächenbeschriftungen (NAI, AO, Stao) den Zeichen ausweichen lassen – nach dem Zeichnen (kein erzwungenes Layout)
+    avoidAreaLabelsSoon(map, rects);
+    try { performance.measure("Lage: Stapel", { start: t0, detail: { n } }); } catch { /* ältere Browser */ }
+  }
+
+  /** Text für Bildschirmleser und Tastatur: was liegt hier, was tut Enter */
+  private ariaFor(p: Placed, n: number): string {
+    const it = p.it;
+    const what = [it.e.t.slice(11, 16), kindText(it.e), it.e.desc || it.name, it.e.unit, it.e.cells?.[0]].filter(Boolean).join(" ");
+    if (n > 1) return `Stapel mit ${n} Meldungen, oberste ${what} – Enter fächert auf`;
+    return `${what}${it.selected ? " (gewählt)" : ""} – Enter wählt`;
   }
 
   /** Zeichen an einen Bildschirmort setzen und den Zustand als Klassen am Element führen */
@@ -463,10 +592,27 @@ class SituationLayer extends L.LayerGroup {
     el.classList.toggle("stacktop", s.n > 1);
     if (s.n > 1) el.dataset.n = String(s.n);
     else delete el.dataset.n;
+    // nur das gewählte Zeichen lässt sich mit der Maus ziehen (Cursor «grab»)
+    el.classList.toggle("movable", !s.under && !s.hid && s.n < 2 && this.movable(p));
+    // Tastatur: sichtbare Zeichen und oberste Zeichen der Stapel erreichbar, verdeckte nicht
+    const reach = !s.under && !s.hid;
+    if (reach) {
+      if (el.tabIndex !== 0) { el.tabIndex = 0; el.setAttribute("role", "button"); }
+      const label = this.ariaFor(p, s.n);
+      if (el.getAttribute("aria-label") !== label) el.setAttribute("aria-label", label);
+      if (s.fan) el.setAttribute("aria-expanded", "true"); else if (s.n > 1) el.setAttribute("aria-expanded", "false"); else el.removeAttribute("aria-expanded");
+    } else if (el.hasAttribute("tabindex")) {
+      el.removeAttribute("tabindex");
+      el.removeAttribute("role");
+      el.removeAttribute("aria-label");
+      el.removeAttribute("aria-expanded");
+    }
   }
 
   // ---------------------------------------------------------------- Zeichen verschieben
   private canDrag(): boolean { return !!this.o.onMove && !isLocked(); }
+  /** mit der Maus ziehbar: nur die gewählte Meldung (erster Klick wählt, dann ziehen), nicht in geschlossenem Stapel */
+  private movable(p: Placed): boolean { return this.canDrag() && p.it.selected && !this.isClosedStack(p); }
   private placedAt(t: EventTarget | null): Placed | null {
     const el = t instanceof Element ? t.closest(".lt-ev") : null;
     return el ? this.byEl.get(el) ?? null : null;
@@ -474,12 +620,30 @@ class SituationLayer extends L.LayerGroup {
 
   private bindPointer(map: L.Map) {
     const pane = map.getPane("markerPane")!;
-    // Maus: Ziehen ab 4 px (darunter bleibt es ein Klick); die Karte verschiebt sich dabei nicht
-    const onMouseDown = (e: MouseEvent) => { if (e.button === 0 && this.canDrag() && this.placedAt(e.target)) L.DomEvent.stopPropagation(e); };
+    // Maus: nur das gewählte Zeichen lässt sich ziehen (ab 4 px, darunter bleibt es ein Klick); die Karte steht dabei still.
+    // Ziehen auf einem anderen Zeichen verschiebt wie gewohnt die Karte.
+    const onMouseDown = (e: MouseEvent) => {
+      const p = e.button === 0 ? this.placedAt(e.target) : null;
+      if (p && this.movable(p)) L.DomEvent.stopPropagation(e);
+    };
+    // gedrückt auf einem Zeichen: Neuaufbau aufschieben, bis losgelassen (sonst ginge die Geste verloren)
+    const onPress = (e: PointerEvent) => {
+      if (!this.placedAt(e.target) || isDragging(this.ctl.map)) return;
+      this.ctl.pressing = Date.now();
+      const up = () => {
+        document.removeEventListener("pointerup", up, true);
+        document.removeEventListener("pointercancel", up, true);
+        this.ctl.pressing = 0;
+        // nach dem Klick (der noch folgt) nachholen, falls inzwischen nicht gezogen wird
+        window.setTimeout(() => { if (!isDragging(this.ctl.map)) flushPending(this.ctl); }, 0);
+      };
+      document.addEventListener("pointerup", up, true);
+      document.addEventListener("pointercancel", up, true);
+    };
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType !== "mouse" || e.button !== 0 || !this.canDrag() || this.drag) return;
       const p = this.placedAt(e.target);
-      if (!p) return;
+      if (!p || !this.movable(p)) return;
       const sx = e.clientX, sy = e.clientY, id = e.pointerId;
       const move = (ev: PointerEvent) => {
         if (ev.pointerId !== id || Math.hypot(ev.clientX - sx, ev.clientY - sy) < DRAG_PX) return;
@@ -498,6 +662,7 @@ class SituationLayer extends L.LayerGroup {
       if (Date.now() - touchAt < 2000 && this.placedAt(e.target)) { e.preventDefault(); L.DomEvent.stopPropagation(e); }
     };
     pane.addEventListener("mousedown", onMouseDown);
+    pane.addEventListener("pointerdown", onPress, true);
     pane.addEventListener("pointerdown", onPointerDown);
     pane.addEventListener("pointerdown", onAnyDown, true);
     pane.addEventListener("contextmenu", onCtx);
@@ -513,8 +678,28 @@ class SituationLayer extends L.LayerGroup {
         return true;
       },
     });
+    // Tastatur: Enter/Leertaste auf einem Zeichen = wie Klick (Stapel auffächern bzw. Meldung wählen)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const p = this.placedAt(e.target);
+      if (!p || e.target !== p.marker.getElement()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.activate(p, true);
+    };
+    const onFocus = (e: FocusEvent) => { const p = this.placedAt(e.target); if (p) this.ctl.focusId = p.it.e.id; };
+    const onBlur = (e: FocusEvent) => { if (!this.placedAt(e.relatedTarget) && (e.relatedTarget || !this._map)) this.ctl.focusId = null; };
+    pane.addEventListener("keydown", onKey);
+    pane.addEventListener("focusin", onFocus);
+    pane.addEventListener("focusout", onBlur);
+    this.unbind.push(() => {
+      pane.removeEventListener("keydown", onKey);
+      pane.removeEventListener("focusin", onFocus);
+      pane.removeEventListener("focusout", onBlur);
+    });
     this.unbind.push(() => {
       pane.removeEventListener("mousedown", onMouseDown);
+      pane.removeEventListener("pointerdown", onPress, true);
       pane.removeEventListener("pointerdown", onPointerDown);
       pane.removeEventListener("pointerdown", onAnyDown, true);
       pane.removeEventListener("contextmenu", onCtx);
@@ -600,7 +785,8 @@ class SituationLayer extends L.LayerGroup {
   }
 
   /** Ziehen beenden: übernehmen (neuer Ort) oder abbrechen (zurück an den alten Ort) */
-  private endDrag(commit: boolean) {
+  /** @param removing Ebene wird gerade entfernt: aufgeschobenen Neuaufbau nicht hier ausführen */
+  private endDrag(commit: boolean, removing = false) {
     const d = this.drag, map = this._map;
     if (!d) return;
     this.drag = null;
@@ -616,13 +802,32 @@ class SituationLayer extends L.LayerGroup {
       const it = d.p.it;
       const target = it.isUnit ? positionSource(this.events, it.e.side, it.e.unit, this.o.t, it.pos) ?? it.e : it.e;
       this.ctl.openFor = null;
-      this.o.onMove(target, { e: Math.round(pos.e), n: Math.round(pos.n) });
+      const onMove = this.o.onMove;
+      // aufgeschobenen Neuaufbau (Live-Takt …) zuerst nachholen, dann den neuen Ort übernehmen (baut nochmals auf)
+      if (!removing) flushPending(this.ctl);
+      onMove(target, { e: Math.round(pos.e), n: Math.round(pos.n) });
       return;
     }
     // angehoben, aber nicht bewegt (Finger): wie Tippen
     if (commit && !d.moved && d.touch) this.activate(d.p);
-    this.layout();
+    if (removing) return;
+    if (!flushPending(this.ctl)) this.layout();
   }
+}
+
+type Rects = ReadonlyArray<readonly [number, number, number, number]>;
+const avoidQueue = new WeakMap<L.Map, { rects: Rects; queued: boolean }>();
+/** `avoidAreaLabels` nach dem nächsten Bild ausführen: dann ist das Layout fertig und das Lesen der Beschriftungen billig */
+function avoidAreaLabelsSoon(map: L.Map, rects: Rects) {
+  const q = avoidQueue.get(map);
+  if (q) { q.rects = rects; if (q.queued) return; q.queued = true; }
+  else avoidQueue.set(map, { rects, queued: true });
+  requestAnimationFrame(() => window.setTimeout(() => {
+    const cur = avoidQueue.get(map);
+    if (!cur) return;
+    cur.queued = false;
+    if (map.getContainer().isConnected) avoidAreaLabels(map, cur.rects);
+  }, 0));
 }
 
 /**
@@ -636,12 +841,15 @@ function avoidAreaLabels(map: L.Map, rects: ReadonlyArray<readonly [number, numb
   const cr = cont.getBoundingClientRect();
   const hit = (a: readonly number[]) => rects.some((r) => a[0]! < r[2] && a[2]! > r[0] && a[1]! < r[3] && a[3]! > r[1]);
   const tries: Array<[number, number]> = [[0, 0], [0, -16], [0, -32], [24, 0], [-24, 0], [48, -16], [-48, -16], [0, -48]];
-  spans.forEach((sp) => {
-    sp.style.translate = "";
-    const b = sp.getBoundingClientRect();
+  // erst alle lesen, dann alle schreiben (sonst erzwingt jedes Lesen ein neues Layout der ganzen Seite)
+  spans.forEach((sp) => { sp.style.translate = ""; });
+  const boxes = [...spans].map((sp) => sp.getBoundingClientRect());
+  spans.forEach((sp, i) => {
+    const b = boxes[i]!;
     const r0 = [b.left - cr.left - 2, b.top - cr.top - 1, b.right - cr.left + 2, b.bottom - cr.top + 1];
     const ok = tries.find(([dx, dy]) => !hit([r0[0]! + dx, r0[1]! + dy, r0[2]! + dx, r0[3]! + dy]));
-    if (ok && (ok[0] || ok[1])) sp.style.translate = `${ok[0]}px ${ok[1]}px`;
+    const v = ok && (ok[0] || ok[1]) ? `${ok[0]}px ${ok[1]}px` : "";
+    if (v) sp.style.translate = v;
   });
 }
 

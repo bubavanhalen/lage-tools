@@ -3,7 +3,9 @@
  * - Farbe nach Art (eigen blau, Feind rot, unklar gelb, neutral grün), vermutet gestrichelt,
  * - Muster: Minenfeld «M», verseuchtes Gebiet schraffiert; Linien: Stacheldraht (Schlaufen), Panzergraben (Zähne),
  *   Sperrlinie (Zacken), Kontaktlinie (Bögen), Grenze (Strich-Punkt), Achse (Pfeil),
- * - Beschriftung Kurzname + Zeit (Fläche oben innen, Linie am Ende),
+ * - Beschriftung Kurzname (die Zeit steht am Punktzeichen): Fläche innen oben/unten/seitlich, Linie am Ende/Anfang/
+ *   seitlich – jeweils der erste Platz, der weder Zeichen noch andere Beschriftungen überdeckt; ausgeblendet, wenn die
+ *   Form am Bildschirm kleiner als der Text ist oder kein Platz frei ist (gewählte Form: immer beschriftet),
  * - klickbar (wählt die Meldung), Lagezeit und Zeitfenster wie die Zeichen (Form erscheint ab Meldungszeit).
  * Das Punktzeichen am Schwerpunkt zeichnet die Lageebene (`situationLayer`) wie jedes andere Zeichen.
  */
@@ -60,11 +62,10 @@ export function shapeItems(events: LageEvent[], o: Omit<ShapeLayerOptions, "onCl
     if (!shape) continue;
     const kind = kindOf(e);
     const age = (Date.parse(o.t) - Date.parse(e.t)) / 60000;
-    const time = e.t.slice(11, 16);
     out.push({
       e, shape, style: shapeStyleOf(e.sym), kind, color: KIND_COLOR[kind].line, dashed: isAnticipated(e.sidc, e.status), selected,
       opacity: kind === "eigen" || selected || age <= recent ? 1 : 0.55,
-      label: [shapeShortName(e.sym), o.flags.zeiten !== false ? time : ""].filter(Boolean).join(" "),
+      label: shapeShortName(e.sym, e.side),
     });
   }
   // gewählte zuletzt (oben)
@@ -133,6 +134,10 @@ class ShapeLayer extends L.LayerGroup {
   private disp = new Map<ShapeItem, LV95[]>();
   private items: ShapeItem[];
   private renderer: L.SVG | null = null;
+  private labels: LabelSlot[] = [];
+  private raf = 0;
+  /** Zeichen werden neu gesetzt (Stapel, Auffächern, Zeitlabels): Beschriftungen neu platzieren */
+  private watch: MutationObserver | null = null;
 
   constructor(events: LageEvent[], private o: ShapeLayerOptions) {
     super();
@@ -146,11 +151,21 @@ class ShapeLayer extends L.LayerGroup {
     this.deco.addTo(this);
     this.redraw();
     map.on("zoomend viewreset", this.redraw, this);
+    map.on("moveend", this.schedulePlace, this);
+    const pane = map.getPane("markerPane");
+    if (pane && typeof MutationObserver !== "undefined") {
+      this.watch = new MutationObserver(() => this.schedulePlace());
+      this.watch.observe(pane, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+    }
     return this;
   }
 
   override onRemove(map: L.Map): this {
+    cancelAnimationFrame(this.raf);
+    this.watch?.disconnect();
+    this.watch = null;
     map.off("zoomend viewreset", this.redraw, this);
+    map.off("moveend", this.schedulePlace, this);
     return super.onRemove(map);
   }
 
@@ -207,18 +222,85 @@ class ShapeLayer extends L.LayerGroup {
     const map = (this as unknown as { _map?: L.Map })._map;
     if (!map) return;
     this.deco.clearLayers();
+    this.labels = [];
     for (const it of this.items) {
       const px = (this.disp.get(it) ?? it.shape.pts).map((p) => map.latLngToLayerPoint(toLatLng(p)));
       const back = (p: Px) => map.layerPointToLatLng(p);
       const op = it.opacity;
       const c = it.color;
       if (it.shape.kind === "linie") this.lineDeco(it, px, back);
-      // Beschriftung
-      const lbl = labelAt(it, px);
-      if (lbl) {
-        const html = `<span class="lt-shape-lbl${it.selected ? " sel" : ""}" style="--c:${c};opacity:${op};--tx:${lbl.tx};--ty:${lbl.ty}">${escapeHtml(it.label)}</span>`;
-        L.marker(back(lbl.p), { pane: LABEL_PANE, interactive: false, keyboard: false, icon: L.divIcon({ className: "lt-shape-lblwrap", html, iconSize: [0, 0] }) }).addTo(this.deco);
+      // Beschriftung: zuerst unsichtbar am ersten Platz, nach dem Layout der Zeichen den freien Platz wählen
+      const cands = labelSpots(it, px);
+      if (cands.length) {
+        const c0 = cands[0]!;
+        const html = `<span class="lt-shape-lbl${it.selected ? " sel" : ""}" style="--c:${c};opacity:${op};--tx:${c0.tx};--ty:${c0.ty};visibility:hidden">${escapeHtml(it.label)}</span>`;
+        const marker = L.marker(back(c0.p), { pane: LABEL_PANE, interactive: false, keyboard: false, icon: L.divIcon({ className: "lt-shape-lblwrap", html, iconSize: [0, 0] }) }).addTo(this.deco);
+        this.labels.push({ it, marker, cands, px });
       }
+    }
+    this.schedulePlace();
+  }
+
+  private schedulePlace() {
+    cancelAnimationFrame(this.raf);
+    this.raf = requestAnimationFrame(() => this.placeLabels());
+  }
+
+  /**
+   * Beschriftungen setzen: gewählte zuerst, dann die jüngsten. Je Beschriftung der erste Platz, der kein Zeichen, keine
+   * NAI-/Raum-Beschriftung und keine schon gesetzte Beschriftung überdeckt; sonst ausblenden (gewählte: erster Platz).
+   * Ausblenden auch, wenn die Form am Bildschirm kleiner ist als der Text.
+   */
+  private placeLabels() {
+    const map = (this as unknown as { _map?: L.Map })._map;
+    if (!map || !this.labels.length) return;
+    const cont = map.getContainer();
+    const cr = cont.getBoundingClientRect();
+    const rel = (b: DOMRect): Rect => [b.left - cr.left, b.top - cr.top, b.right - cr.left, b.bottom - cr.top];
+    // nur um den sichtbaren Ausschnitt (beim Verschieben der Karte wird neu gesetzt)
+    const M = 400;
+    const obstacles: Rect[] = [];
+    /** Gewicht je Hindernis: Zeichen und Beschriftungen schwer, Feldbezeichnungen leicht */
+    const weight: number[] = [];
+    // Zeichen (mit Zeitlabel/Beschriftung), NAI-/Raum-Beschriftungen und die Feldbezeichnungen des Rasters
+    cont.querySelectorAll<Element>(".leaflet-marker-pane .lt-ev:not(.hid), .leaflet-marker-pane .lt-ev:not(.hid) span, .lt-area-lbl span, .lt-cell-t text").forEach((el) => {
+      const b = el.getBoundingClientRect();
+      if (b.width > 0 && b.height > 0 && b.right > cr.left - M && b.bottom > cr.top - M && b.left < cr.right + M && b.top < cr.bottom + M) {
+        obstacles.push(rel(b));
+        weight.push(el.tagName.toLowerCase() === "text" ? 1 : 1000);
+      }
+    });
+    const area = (r: Rect) => obstacles.reduce((s, o, i) => s + (weight[i] ?? 1000) * Math.max(0, Math.min(r[2], o[2]) - Math.max(r[0], o[0])) * Math.max(0, Math.min(r[3], o[3]) - Math.max(r[1], o[1])), 0);
+    // Feldbezeichnung darf ein wenig überdeckt werden (≤ 30 % des Texts), Zeichen und Beschriftungen nie
+    const hit = (r: Rect) => area(r) > 0.3 * (r[2] - r[0]) * (r[3] - r[1]);
+    const order = [...this.labels].sort((a, b) => Number(b.it.selected) - Number(a.it.selected) || b.it.e.t.localeCompare(a.it.e.t));
+    for (const l of order) {
+      const sp = l.marker.getElement()?.querySelector<HTMLElement>(".lt-shape-lbl");
+      if (!sp) continue;
+      const w = sp.offsetWidth, h = sp.offsetHeight;
+      const fits = labelFits(l.it, l.px, w, h);
+      let pick: LabelSpot | undefined;
+      let rect: Rect | undefined;
+      if (fits || l.it.selected) {
+        // gewählte Form: notfalls der Platz mit der kleinsten Überdeckung
+        let least = Infinity;
+        for (const c of l.cands) {
+          if (!fits && !c.outside) continue;
+          const a = map.layerPointToContainerPoint(c.p);
+          const x0 = a.x + frac(c.tx) * w, y0 = a.y + frac(c.ty) * h;
+          const r: Rect = [x0 - 2, y0 - 1, x0 + w + 2, y0 + h + 1];
+          if (!hit(r)) { pick = c; rect = r; break; }
+          const ov = l.it.selected ? area(r) : Infinity;
+          if (ov < least) { least = ov; pick = c; rect = r; }
+        }
+      }
+      if (!pick) { sp.style.visibility = "hidden"; sp.style.display = "none"; continue; }
+      l.marker.setLatLng(map.layerPointToLatLng(pick.p));
+      sp.style.setProperty("--tx", pick.tx);
+      sp.style.setProperty("--ty", pick.ty);
+      sp.style.display = "";
+      sp.style.visibility = "";
+      if (rect) { obstacles.push(rect); weight.push(1000); }
     }
   }
 
@@ -304,28 +386,79 @@ function displayPts(it: ShapeItem, mPerPx: number): LV95[] {
   return [a, b].map((q) => ({ e: c.e + (q.e - c.e) * k, n: c.n + (q.n - c.n) * k }));
 }
 
-/** Ort der Beschriftung: Fläche oben innen (Mitte), Linie am Ende (in Linienrichtung weiter) */
-function labelAt(it: ShapeItem, px: Px[]): { p: Px; tx: string; ty: string } | null {
-  if (!it.label || px.length < 2) return null;
+type Rect = [number, number, number, number];
+/** möglicher Platz einer Beschriftung: Ankerpunkt (Ebenen-Pixel) und Verschiebung des Texts; `outside` = ausserhalb der Form */
+interface LabelSpot { p: Px; tx: string; ty: string; outside?: boolean }
+interface LabelSlot { it: ShapeItem; marker: L.Marker; cands: LabelSpot[]; px: Px[] }
+const frac = (t: string) => (t === "0" ? 0 : t === "-100%" ? -1 : t === "-115%" ? -1.15 : -0.5);
+
+const bboxPx = (px: Px[]) => ({
+  minX: Math.min(...px.map((p) => p.x)), maxX: Math.max(...px.map((p) => p.x)),
+  minY: Math.min(...px.map((p) => p.y)), maxY: Math.max(...px.map((p) => p.y)),
+});
+
+/** Plätze der Beschriftung in der Reihenfolge der Wahl. Fläche: innen oben, unten, links, rechts, Mitte; Linie: Ende, Anfang, Mitte seitlich */
+export function labelSpots(it: Pick<ShapeItem, "label" | "shape">, px: Px[]): LabelSpot[] {
+  if (!it.label || px.length < 2) return [];
   if (it.shape.kind === "flaeche") {
-    const minY = Math.min(...px.map((p) => p.y));
-    const maxY = Math.max(...px.map((p) => p.y));
-    const minX = Math.min(...px.map((p) => p.x));
-    const maxX = Math.max(...px.map((p) => p.x));
-    if (maxX - minX < 40 || maxY - minY < 30) return { p: L.point((minX + maxX) / 2, minY), tx: "-50%", ty: "-115%" };
-    return { p: L.point((minX + maxX) / 2, minY + 5), tx: "-50%", ty: "0" };
+    const { minX, maxX, minY, maxY } = bboxPx(px);
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    return [
+      { p: L.point(cx, minY + 5), tx: "-50%", ty: "0" },
+      { p: L.point(cx, maxY - 5), tx: "-50%", ty: "-100%" },
+      { p: L.point(minX + 6, cy), tx: "0", ty: "-50%" },
+      { p: L.point(maxX - 6, cy), tx: "-100%", ty: "-50%" },
+      { p: L.point(cx, cy + 14), tx: "-50%", ty: "0" },
+      // nur für die gewählte Form, wenn sie zu klein ist: über bzw. unter der Form
+      { p: L.point(cx, minY - 3), tx: "-50%", ty: "-100%", outside: true },
+      { p: L.point(cx, maxY + 3), tx: "-50%", ty: "0", outside: true },
+      { p: L.point(cx, minY - 24), tx: "-50%", ty: "-100%", outside: true },
+      { p: L.point(cx, maxY + 24), tx: "-50%", ty: "0", outside: true },
+    ];
   }
-  const b = px[px.length - 1]!, a = px[px.length - 2]!;
-  const ang = Math.atan2(b.y - a.y, b.x - a.x);
-  const p = L.point(b.x + Math.cos(ang) * 10, b.y + Math.sin(ang) * 10);
-  const cx = Math.cos(ang), cy = Math.sin(ang);
-  return { p, tx: cx >= 0.3 ? "0" : cx <= -0.3 ? "-100%" : "-50%", ty: cy >= 0.3 ? "0" : cy <= -0.3 ? "-100%" : "-50%" };
+  const end = (b: Px, a: Px, d = 10): LabelSpot => {
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    const cx = Math.cos(ang), cy = Math.sin(ang);
+    return { p: L.point(b.x + cx * d, b.y + cy * d), tx: cx >= 0.3 ? "0" : cx <= -0.3 ? "-100%" : "-50%", ty: cy >= 0.3 ? "0" : cy <= -0.3 ? "-100%" : "-50%", outside: true };
+  };
+  // Mitte der Linie (Länge), seitlich darüber/darunter
+  let total = 0;
+  for (let i = 1; i < px.length; i++) total += px[i]!.distanceTo(px[i - 1]!);
+  let rest = total / 2, mid = px[0]!;
+  for (let i = 1; i < px.length; i++) {
+    const l = px[i]!.distanceTo(px[i - 1]!);
+    if (rest <= l) { const t = l ? rest / l : 0; mid = L.point(px[i - 1]!.x + (px[i]!.x - px[i - 1]!.x) * t, px[i - 1]!.y + (px[i]!.y - px[i - 1]!.y) * t); break; }
+    rest -= l;
+  }
+  return [
+    end(px[px.length - 1]!, px[px.length - 2]!),
+    end(px[0]!, px[1]!),
+    { p: L.point(mid.x, mid.y - 9), tx: "-50%", ty: "-100%", outside: true },
+    { p: L.point(mid.x, mid.y + 9), tx: "-50%", ty: "0", outside: true },
+    // weiter weg (dichte Lage um eine kurze Linie)
+    end(px[px.length - 1]!, px[px.length - 2]!, 34),
+    end(px[0]!, px[1]!, 34),
+    { p: L.point(mid.x, mid.y - 30), tx: "-50%", ty: "-100%", outside: true },
+    { p: L.point(mid.x, mid.y + 30), tx: "-50%", ty: "0", outside: true },
+  ];
+}
+
+/** Passt der Text zur Form? Fläche: Text kleiner als die Fläche am Bildschirm; Linie: Text nicht länger als die Linie */
+export function labelFits(it: Pick<ShapeItem, "shape">, px: Px[], w: number, h: number): boolean {
+  if (px.length < 2) return false;
+  if (it.shape.kind === "flaeche") {
+    const { minX, maxX, minY, maxY } = bboxPx(px);
+    return maxX - minX >= w + 10 && maxY - minY >= h + 10;
+  }
+  let len = 0;
+  for (let i = 1; i < px.length; i++) len += px[i]!.distanceTo(px[i - 1]!);
+  return len >= w;
 }
 
 function tooltip(it: ShapeItem): string {
   const e = it.e;
   const head = `<div class="lt-tip-h"><span class="lt-kind k-${it.kind}">${escapeHtml(kindText(e))}</span><b class="tnum">${e.t.slice(11, 16)}</b>`
-    + `<span class="lt-tip-u">${escapeHtml(shapeShortName(e.sym))}</span></div>`;
+    + `<span class="lt-tip-u">${escapeHtml(shapeShortName(e.sym, e.side))}</span></div>`;
   const desc = e.desc ? `<div class="lt-tip-d">${escapeHtml(e.desc)}</div>` : "";
   const meta = [e.melder ? `Melder ${e.melder}` : "", e.where ?? "", it.shape.auto ? "Form automatisch" : "Form gezeichnet"].filter(Boolean).join(" · ");
   return head + desc + `<div class="lt-tip-t">${escapeHtml(e.text)}</div><div class="lt-tip-m">${escapeHtml(meta)}</div>`;

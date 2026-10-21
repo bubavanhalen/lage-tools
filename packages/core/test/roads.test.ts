@@ -314,6 +314,14 @@ describe("Strassenwahl an Kreuzungen (Kandidaten, mehrdeutig)", () => {
     // genannte Strasse, aber keine im Gebiet: trotzdem darauf
     expect(placeOnRoad(cell, [roads[3]!], undefined, { text: "Gurtenblickweg" })!.road).toBe("Gurtenblickweg");
   });
+  it("genannte Strasse ausserhalb: Abstand zum Gebiet in `outside`; im Gebiet ohne", () => {
+    const roads = [...cross, seg("x", 10, [[2599900, 1198950], [2600700, 1198950]], "Gurtenblickweg")];
+    const r = placeOnRoad(cell, roads, undefined, { text: "Sperre Gurtenblickweg" })!;
+    expect(r.outside).toBe(50);
+    expect(r.pos.n).toBeLessThan(cell.minN);
+    expect(placeOnRoad(cell, cross, undefined, { text: "Sperre Talgutstrasse" })!.outside).toBeUndefined();
+    expect(placeOnRoad(cell, roads, undefined, { road: "Gurtenblickweg" })!.outside).toBe(50);
+  });
   it("von Hand gewählt (Name oder Stück-Kennung) gewinnt vor Text und Rang", () => {
     expect(placeOnRoad(cell, cross, undefined, { road: "Talgutstrasse", text: "Bärenmattstr" })!).toMatchObject({ road: "Talgutstrasse", named: "wahl", ambiguous: false });
     const w = placeOnRoad(cell, cross, undefined, { segId: "fw" })!;
@@ -347,6 +355,17 @@ describe("matchRoadNames", () => {
     expect(matchRoadNames("Sperre Bern", names)).toEqual([]);
     expect(matchRoadNames("Sperre auf der Strasse", names)).toEqual([]);
     expect(matchRoadNames("AG13 12345", ["12345er Weg"])).toEqual([]);
+  });
+  it("Strassentyp unterscheiden: Platz ≠ Strasse ≠ Gasse ≠ Weg; nur gleicher Typ oder ganzer Name", () => {
+    const n = ["Lindenstrasse", "Lindenplatz", "Lindengasse", "Lindenweg"];
+    expect(matchRoadNames("Sperre bei der Kreuzung Lindenplatz", ["Lindenstrasse"])).toEqual([]);
+    expect(matchRoadNames("Sperre Lindenplatz", n)[0]).toEqual({ name: "Lindenplatz", score: 3 });
+    expect(matchRoadNames("Sperre Lindengasse", ["Lindenstrasse", "Lindenweg"])).toEqual([]);
+    expect(matchRoadNames("Sperre Lindenstr.", ["Lindenplatz", "Lindenstrasse"]).map((h) => h.name)).toEqual(["Lindenstrasse"]);
+    // Teilwort mit Typ passt zum gleichen Typ in einem längeren Namen
+    expect(matchRoadNames("Kontrolle Lindenstrasse", ["Obere Lindenstrasse", "Lindenplatz"]).map((h) => h.name)).toEqual(["Obere Lindenstrasse"]);
+    // ohne Typ: alle Typen möglich
+    expect(matchRoadNames("Sperre Linden", n).length).toBe(4);
   });
   it("normRoadText", () => {
     expect(normRoadText("Bärenmatt-Str. 5")).toBe("baerenmatt strasse 5");

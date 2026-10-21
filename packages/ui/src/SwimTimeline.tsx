@@ -223,7 +223,8 @@ export function SwimTimeline(p: SwimTimelineProps) {
     const below = laneYs.filter((y) => y > bottom - LANE * 0.3).length;
     setHidden((h) => (h.above === above && h.below === below ? h : { above, below }));
   };
-  useLayoutEffect(updateHidden); // nach jeder Darstellung prüfen (billig, setzt nur bei Änderung)
+  // nur bei geänderter Geometrie prüfen (Lesen der Scrollhöhe erzwingt ein Layout – nicht bei jedem Bild beim Abspielen)
+  useLayoutEffect(updateHidden, [nLanes, LANE, bodyMax, collapsed, width, headH]); // eslint-disable-line react-hooks/exhaustive-deps
   const scrollLanes = (dir: 1 | -1) => { const b = bodyRef.current; if (b) b.scrollBy({ top: dir * Math.max(LANE * 2, b.clientHeight * 0.8), behavior: "smooth" }); };
 
   // Ausschnitt folgt der Lagezeit (Abspielen, Live), wenn hineingezoomt
@@ -570,7 +571,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
       <button className="swt-chip swt-live" aria-pressed={live} onClick={goLive} title="Immer die neuste Lage zeigen (L)"><i aria-hidden="true" />Live</button>
       {/* eingeklappt und nicht gezoomt: «Ganze Achse» bringt nichts → Platz für das Zeitfenster */}
       {!collapsed || !fit ? (
-        <button className="swt-chip" aria-pressed={fit} onClick={() => setZoom(null)} disabled={empty}
+        <button className="swt-chip swt-fit" aria-pressed={fit} onClick={() => setZoom(null)} disabled={empty}
           title="Ganze Zeitachse zeigen (Zoom zurücksetzen) – die Lagezeit bleibt. Vergrössern: Ctrl + Mausrad, zwei Finger oder + / −. Neuste Lage: «Live»">Ganze Achse</button>
       ) : null}
       {onWin && win && (
@@ -580,7 +581,8 @@ export function SwimTimeline(p: SwimTimelineProps) {
               const on = m === 0 ? win.mode === "alles" : win.mode === "dauer" && win.min === m;
               return <button key={m} type="button" aria-pressed={on} onClick={() => onWin(m === 0 ? { mode: "alles" } : { mode: "dauer", min: m })}>{m === 0 ? "Alles" : windowLabel({ mode: "dauer", min: m })}</button>;
             })}
-            {win.mode === "ab" && <button type="button" aria-pressed className="swt-win-ab" onClick={() => onWin({ mode: "alles" })} title="Zeitfenster aufheben">{winLabel} <span aria-hidden>×</span></button>}
+            {win.mode === "ab" && <button type="button" aria-pressed className={"swt-win-ab" + (fromMs === null ? " inactive" : "")} onClick={() => onWin({ mode: "alles" })}
+              title={fromMs === null ? "Anfang liegt nach der Lagezeit – es wird alles gezeigt. Klicken hebt das Zeitfenster auf." : "Zeitfenster aufheben"}>{winLabel} <span aria-hidden>×</span></button>}
           </span>
           <select className="swt-win-sel" aria-label="Zeitfenster" value={win.mode === "dauer" ? String(win.min) : win.mode === "ab" ? "ab" : "0"}
             onChange={(e) => { const v = e.target.value; if (v !== "ab") onWin(+v ? { mode: "dauer", min: +v } : { mode: "alles" }); }}>

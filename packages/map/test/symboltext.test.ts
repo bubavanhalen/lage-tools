@@ -31,14 +31,14 @@ describe("Deutsche Kürzel in Zeichen", () => {
   it("Ersetzungen wie festgelegt", () => {
     const t = allTexts();
     for (const [de, key] of [["Spez", "spez"], ["EKF", "ekf"], ["Mil Pol", "mp"], ["Krawall", "unruhen"], ["Flü", "fluechtlinge"], ["Demo", "demo"],
-      ["Unf", "unfall"], ["Spr Obj", "sprengobjekt"], ["Spreng", "sprengung"], ["Bus", "bus"], ["Entf", "entfuehrung"], ["Schaf", "scharfschuetze"],
+      ["Unf", "unfall"], ["Spr Obj", "sprengobjekt"], ["Spreng", "sprengung"], ["Bus", "bus"], ["Entf", "entfuehrung"], ["Scharfs", "scharfschuetze"],
       ["Trsp", "heli_einheit"], ["Zerst", "zerstoerung"], ["Log", "log"], ["Vrk", "verkehrsposten"], ["Kontr", "kontrollposten"]] as const) {
       expect(t.get(de), de).toContain(key);
     }
     for (const k of KEEP_TEXT) expect(t.has(k), k).toBe(true);
   });
   it("Einzelbuchstaben nur beim passenden Zeichen; Schrift wird kleiner, nie grösser", () => {
-    expect(germanTextFor("S", "OHVPS----------")).toBe("Schaf");
+    expect(germanTextFor("S", "OHVPS----------")).toBe("Scharfs");
     expect(germanTextFor("S", "SHGPUCI--------")).toBeUndefined();
     const sidc = "OHOPD----------";
     const svg = germanPin(new ms.Symbol(sidc, { size: 30 }).asSVG(), sidc);

@@ -228,5 +228,7 @@
 
 /* Schloss «Zeichen fixieren» */
 .nav-bar .nav-lock { padding: 4px 10px; }
+/* Präsentation: nichts verschieben → kein Schloss */
+.present .nav-lock, .present .nav-lockitem { display: none; }
 .nav-bar .nav-menu button[aria-checked="true"] svg { color: var(--ink); }
 .nav-bar .nav-menu button[aria-checked="true"] span { font-weight: 600; }

@@ -4,7 +4,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { type Area, type LageEvent } from "@lage/core";
-import { symbolSvg } from "@lage/map";
+import { iconSvg } from "@lage/map";
 import type { LayerFlags } from "./layers";
 import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
 import { getSituationLayout, subscribeSituationLayout } from "./situationLayer";
@@ -14,7 +14,7 @@ import "./mapoverlays.css";
 const UNIT_VAR = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", neutral: "var(--ok)", ul: "var(--muted)" } as const;
 
 function Sym({ k, aff, size, sidc, status }: { k: string; aff: LageEvent["aff"]; size: number; sidc?: string; status?: LageEvent["status"] }) {
-  const s = useMemo(() => symbolSvg(k, aff, size, { sidc, status }), [k, aff, size, sidc, status]);
+  const s = useMemo(() => iconSvg(k, aff, size, { sidc, status }), [k, aff, size, sidc, status]);
   return <span className="mo-sym" aria-hidden dangerouslySetInnerHTML={{ __html: s.svg }} />;
 }
 

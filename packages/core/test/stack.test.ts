@@ -58,6 +58,95 @@ describe("Stapel (Zeichen übereinander)", () => {
   });
 });
 
+/** frühere Stapelbildung (alle Paare je Durchgang) als Vergleich für die schnelle Fassung mit Raster-Fächern */
+function buildStacksRef(items: StackItem[]) {
+  const min = 3, vis = 3, peekPx = 4;
+  const order = (a: number, b: number) => items[b]!.prio - items[a]!.prio || a - b;
+  const hit = (a: R, b: R, m = 0) => Math.min(a[2], b[2]) - Math.max(a[0], b[0]) > m && Math.min(a[3], b[3]) - Math.max(a[1], b[1]) > m;
+  let groups: number[][] = items.map((_, i) => [i]);
+  const display = (g: number[]): R => {
+    const top = items[g[0]!]!;
+    const r = rect(top.x, top.y, top.core);
+    const p = peekPx * Math.max(0, Math.min(g.length, vis) - 1);
+    return [r[0], r[1] - p, r[2] + p, r[3]];
+  };
+  for (let pass = 0; pass < items.length + 1; pass++) {
+    groups.sort((a, b) => order(a[0]!, b[0]!));
+    const rects = groups.map(display);
+    const used = new Array<boolean>(groups.length).fill(false);
+    const next: number[][] = [];
+    let merged = false;
+    for (let a = 0; a < groups.length; a++) {
+      if (used[a]) continue;
+      used[a] = true;
+      let g = groups[a]!;
+      for (let b = a + 1; b < groups.length; b++) {
+        if (used[b] || !hit(rects[a]!, rects[b]!, min)) continue;
+        used[b] = true;
+        g = [...g, ...groups[b]!].sort(order);
+        merged = true;
+      }
+      next.push(g);
+    }
+    groups = next;
+    if (!merged) break;
+  }
+  groups.sort((a, b) => order(a[0]!, b[0]!));
+  const rects = groups.map(display);
+  const labelRect = (g: number[], side: 1 | -1): R | null => {
+    const it = items[g[0]!]!;
+    return it.box ? rect(it.x, it.y, side > 0 ? it.box : mirrorBox(it.box, it.core)) : null;
+  };
+  const sides: Array<1 | -1> = groups.map(() => 1);
+  const blocked = (gi: number, r: R) => groups.some((_, j) => {
+    if (j === gi) return false;
+    if (hit(r, rects[j]!, 0)) return true;
+    const lr = j < gi ? labelRect(groups[j]!, sides[j]!) : null;
+    return !!lr && hit(r, lr, 0);
+  });
+  groups.forEach((g, gi) => {
+    const right = labelRect(g, 1);
+    if (!right) return;
+    const it = items[g[0]!]!;
+    if (it.box![2] <= it.core[2] && it.box![1] >= it.core[1]) return;
+    if (blocked(gi, right) && !blocked(gi, labelRect(g, -1)!)) sides[gi] = -1;
+  });
+  return groups.map((g, gi) => ({ members: g, x: items[g[0]!]!.x, y: items[g[0]!]!.y, side: sides[gi]! }));
+}
+
+describe("Stapel: schnelle Fassung (Raster-Fächer)", () => {
+  // einfacher, reproduzierbarer Zufall
+  const rnd = (seed: number) => () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const SEL: Box = [-13, -13, 13, 13];
+  const NOLBL: Box = [-12, -12, 12, 12];
+  it("gleiches Ergebnis wie der Vergleich aller Paare (200 zufällige Fälle, 2–60 Zeichen)", () => {
+    const r = rnd(7);
+    for (let c = 0; c < 200; c++) {
+      const n = 2 + Math.floor(r() * 59);
+      const span = 40 + r() * 400;
+      const items = Array.from({ length: n }, (_, i) => {
+        const big = r() < 0.1;
+        return item(Math.round(r() * span), Math.round(r() * span), Math.floor(r() * 6), big ? { core: SEL, box: [-15, -31, 61, 15] as Box } : r() < 0.3 ? { box: NOLBL } : {});
+      });
+      expect(buildStacks(items), `Fall ${c}`).toEqual(buildStacksRef(items));
+    }
+  });
+  it("auch mit negativen Bildschirmorten und gleichem Ort", () => {
+    const items = [item(-500, -500, 2), item(-499, -501, 1), item(-500, -500, 3), item(-560, -500), item(10_000, 4_000)];
+    expect(buildStacks(items)).toEqual(buildStacksRef(items));
+  });
+  it("300 Zeichen in wenigen Millisekunden", () => {
+    const r = rnd(3);
+    const items = Array.from({ length: 300 }, () => item(Math.round(r() * 1400), Math.round(r() * 800), Math.floor(r() * 5)));
+    buildStacks(items); // aufwärmen
+    const t0 = performance.now();
+    for (let k = 0; k < 10; k++) buildStacks(items);
+    const ms = (performance.now() - t0) / 10;
+    expect(buildStacks(items)).toEqual(buildStacksRef(items));
+    expect(ms).toBeLessThan(15);
+  });
+});
+
 describe("Auffächern", () => {
   const check = (n: number) => {
     const boxes = Array.from({ length: n }, () => BOX);
@@ -95,8 +184,9 @@ describe("Zeitfenster", () => {
     expect(windowStart({ mode: "dauer", min: 30 }, "2026-05-15T07:40")).toBe("2026-05-15T07:10");
     expect(windowStart({ mode: "dauer", min: 120 }, "2026-05-15T01:00")).toBe("2026-05-14T23:00");
     expect(windowStart({ mode: "ab", t: "2026-05-15T06:00" }, "2026-05-15T07:40")).toBe("2026-05-15T06:00");
-    // Anfang nach der Lagezeit → Fenster bis zur Lagezeit zurück, nie leer
-    expect(windowStart({ mode: "ab", t: "2026-05-15T09:00" }, "2026-05-15T07:40")).toBe("2026-05-15T07:40");
+    // Anfang nach der Lagezeit → alles (kein leeres Fenster); genau zur Lagezeit = nur diese Minute
+    expect(windowStart({ mode: "ab", t: "2026-05-15T09:00" }, "2026-05-15T07:40")).toBeNull();
+    expect(windowStart({ mode: "ab", t: "2026-05-15T07:40" }, "2026-05-15T07:40")).toBe("2026-05-15T07:40");
   });
   it("inWindow und Beschriftung", () => {
     expect(inWindow("2026-05-15T07:10", "2026-05-15T07:10", "2026-05-15T07:40")).toBe(true);

@@ -65,13 +65,61 @@ export function peekOffset(i: number, opts: StackOptions = {}): [number, number]
 const byPrio = (items: StackItem[]) => (a: number, b: number) => items[b]!.prio - items[a]!.prio || a - b;
 
 /**
+ * Raster-Fächer (Bins) in etwa Zeichengrösse: jedes Rechteck steht in allen Fächern, die es berührt.
+ * Abfragen liefern nur die Rechtecke in der Nähe – so wird die Stapelbildung bei vielen Zeichen O(n)
+ * statt O(n²) je Durchgang.
+ */
+class Bins {
+  private cells = new Map<number, number[]>();
+  private stamp: number[] = [];
+  private round = 0;
+  constructor(private size: number) {}
+  private key(cx: number, cy: number) { return (cx + 32768) * 65536 + (cy + 32768); }
+  private span(r: Rect): [number, number, number, number] {
+    const s = this.size;
+    return [Math.floor(r[0] / s), Math.floor(r[1] / s), Math.floor(r[2] / s), Math.floor(r[3] / s)];
+  }
+  add(r: Rect, id: number) {
+    const [x0, y0, x1, y1] = this.span(r);
+    for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
+      const k = this.key(cx, cy);
+      const a = this.cells.get(k);
+      if (a) a.push(id); else this.cells.set(k, [id]);
+    }
+  }
+  /** Kennungen aller Rechtecke in den Fächern, die `r` berührt (jede nur einmal) */
+  near(r: Rect): number[] {
+    const [x0, y0, x1, y1] = this.span(r);
+    const out: number[] = [];
+    const st = ++this.round;
+    for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
+      const a = this.cells.get(this.key(cx, cy));
+      if (!a) continue;
+      for (const id of a) if (this.stamp[id] !== st) { this.stamp[id] = st; out.push(id); }
+    }
+    return out;
+  }
+}
+
+/** Fachgrösse: mittlere Zeichengrösse (mind. 8 px), damit ein Zeichen nur wenige Fächer belegt */
+function binSize(items: StackItem[]): number {
+  if (!items.length) return 32;
+  let s = 0;
+  for (const it of items) s += Math.max(it.core[2] - it.core[0], it.core[3] - it.core[1]);
+  return Math.max(8, Math.round(s / items.length));
+}
+
+/**
  * Bildet die Stapel. Ein Stapel steht am Ort seines obersten Zeichens; ein weiteres Zeichen kommt hinzu,
  * wenn es den angezeigten Stapel (oberstes Zeichen samt Versatz der darunterliegenden) überlappt.
  * So bleiben alle Zeichen eines Stapels höchstens etwa eine Zeichengrösse von ihrem wahren Ort entfernt.
+ * Nachbarn werden über Raster-Fächer gesucht (O(n) je Durchgang, meist 2–3 Durchgänge); das Ergebnis ist
+ * dasselbe wie beim Vergleich aller Paare.
  */
 export function buildStacks(items: StackItem[], opts: StackOptions = {}): Stack[] {
   const min = opts.minOverlap ?? 3;
   const order = byPrio(items);
+  const size = binSize(items);
   let groups: number[][] = items.map((_, i) => [i]);
   const display = (g: number[]): Rect => {
     const top = items[g[0]!]!;
@@ -80,10 +128,13 @@ export function buildStacks(items: StackItem[], opts: StackOptions = {}): Stack[
     const p = (opts.peek ?? 4) * Math.max(0, k);
     return [r[0], r[1] - p, r[2] + p, r[3]];
   };
-  // so lange zusammenführen, bis sich keine zwei Stapel mehr überlappen (wichtigere Stapel zuerst)
+  // so lange zusammenführen, bis sich keine zwei Stapel mehr überlappen (wichtigere Stapel zuerst):
+  // Stapel a nimmt alle späteren, noch freien Stapel b auf, deren Rahmen seinen Rahmen (zu Beginn des Durchgangs) überlappt
   for (let pass = 0; pass < items.length + 1; pass++) {
     groups.sort((a, b) => order(a[0]!, b[0]!));
     const rects = groups.map(display);
+    const bins = new Bins(size);
+    rects.forEach((r, gi) => bins.add(r, gi));
     const used = new Array<boolean>(groups.length).fill(false);
     const next: number[][] = [];
     let merged = false;
@@ -91,12 +142,14 @@ export function buildStacks(items: StackItem[], opts: StackOptions = {}): Stack[
       if (used[a]) continue;
       used[a] = true;
       let g = groups[a]!;
-      for (let b = a + 1; b < groups.length; b++) {
-        if (used[b] || !hit(rects[a]!, rects[b]!, min)) continue;
+      let grew = false;
+      for (const b of bins.near(rects[a]!)) {
+        if (b <= a || used[b] || !hit(rects[a]!, rects[b]!, min)) continue;
         used[b] = true;
-        g = [...g, ...groups[b]!].sort(order);
-        merged = true;
+        g = g.concat(groups[b]!);
+        grew = true;
       }
+      if (grew) { g.sort(order); merged = true; }
       next.push(g);
     }
     groups = next;
@@ -106,24 +159,29 @@ export function buildStacks(items: StackItem[], opts: StackOptions = {}): Stack[
 
   // Beschriftung des obersten Zeichens links, wenn sie rechts auf einen anderen Stapel fällt
   const rects = groups.map(display);
+  const stackBins = new Bins(size);
+  rects.forEach((r, gi) => stackBins.add(r, gi));
+  /** Beschriftungen der bereits behandelten (wichtigeren) Stapel */
+  const labelBins = new Bins(size);
+  const labels: Rect[] = [];
   const labelRect = (g: number[], side: 1 | -1): Rect | null => {
     const it = items[g[0]!]!;
     if (!it.box) return null;
     return rectOf(it.x, it.y, side > 0 ? it.box : mirrorBox(it.box, it.core));
   };
   const sides: Array<1 | -1> = groups.map(() => 1);
-  const blocked = (gi: number, r: Rect) => groups.some((_, j) => {
-    if (j === gi) return false;
-    if (hit(r, rects[j]!, 0)) return true;
-    const lr = j < gi ? labelRect(groups[j]!, sides[j]!) : null; // bereits gesetzte Beschriftungen
-    return !!lr && hit(r, lr, 0);
-  });
+  const blocked = (gi: number, r: Rect) =>
+    stackBins.near(r).some((j) => j !== gi && hit(r, rects[j]!, 0))
+    || labelBins.near(r).some((j) => hit(r, labels[j]!, 0));
   groups.forEach((g, gi) => {
     const right = labelRect(g, 1);
     if (!right) return;
     const it = items[g[0]!]!;
-    if (it.box![2] <= it.core[2] && it.box![1] >= it.core[1]) return; // keine Beschriftung
-    if (blocked(gi, right) && !blocked(gi, labelRect(g, -1)!)) sides[gi] = -1;
+    const has = !(it.box![2] <= it.core[2] && it.box![1] >= it.core[1]); // ohne Beschriftung: nichts zu tun
+    if (has && blocked(gi, right) && !blocked(gi, labelRect(g, -1)!)) sides[gi] = -1;
+    const lr = sides[gi]! > 0 ? right : labelRect(g, -1)!;
+    labels[gi] = lr;
+    labelBins.add(lr, gi);
   });
   return groups.map((g, gi) => ({ members: g, x: items[g[0]!]!.x, y: items[g[0]!]!.y, side: sides[gi]! }));
 }

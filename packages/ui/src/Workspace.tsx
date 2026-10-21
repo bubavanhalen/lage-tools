@@ -51,7 +51,7 @@ import { JournalPanel } from "./JournalPanel";
 import { OfflineBox } from "./OfflineBox";
 import { isoLocal } from "./Timeline";
 import { SwimTimeline } from "./SwimTimeline";
-import { situationLayer } from "./situationLayer";
+import { situationLayer, whenNotDragging } from "./situationLayer";
 import { shapeLayer } from "./shapeLayer";
 import { EventBanner, Legend } from "./MapOverlays";
 import { MapSearch } from "./MapSearch";
@@ -260,6 +260,8 @@ export function Workspace({ product, tagline }: Props) {
   useEffect(() => {
     const s = sm.current;
     if (!s || !ex) return;
+    // nicht während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen …): nach dem Loslassen nachholen
+    whenNotDragging(s.map, () => {
     journalRef.current?.remove();
     const g = situationLayer(s.map, ex.events ?? [], {
       t: tNow, flags, selectedId: selEvent, sheets: ex.sheets, days: ex.days, from: winFrom,
@@ -268,6 +270,7 @@ export function Workspace({ product, tagline }: Props) {
     });
     g.addTo(s.map);
     journalRef.current = g;
+    });
   }, [ex?.events, ex?.sheets, tNow, winFrom, flags, selEvent, mapReady, present]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flächen- und Linienzeichen (unter den Zeichen); Zeitfenster: `from` = Anfang des Fensters (null = alles)

@@ -52,6 +52,8 @@ export interface RoadPlacement {
   candidates?: RoadPlacement[];
   /** nur im Hauptergebnis: Zweitbeste etwa gleich wichtig und gleich nahe (z. B. Kreuzung) – bitte bestätigen */
   ambiguous?: boolean;
+  /** genannte/gewählte Strasse liegt ausserhalb des Gebiets: so viele Meter neben dem Gebietsrand (gerundet) */
+  outside?: number;
 }
 
 /** Zielgebiet: Rechteck (Planquadrat, Unterquadrant) oder Polygon (NAI, Ring in LV95) */
@@ -284,6 +286,8 @@ const GENERIC = new Set([
   "feldweg", "waldweg", "richtung", "ausfahrt", "einfahrt", "verzweigung", "kreisel", "unterfuehrung", "ueberfuehrung",
 ]);
 const SUFFIX_RE = /(strasse|gasse|weg|platz|allee|ring|rain|stutz)$/;
+/** Strassentyp am Wortende («Eigerplatz» → platz); verschiedene Typen sind verschiedene Strassen */
+const TYPE_RE = /(strasse|gasse|weg|platz|allee|ring|rain|stutz|quai|bruecke)$/;
 
 /** Schreibweise vereinheitlichen: klein, Umlaute ausgeschrieben, «str.» → «strasse», Satzzeichen → Leerschlag */
 export function normRoadText(s: string): string {
@@ -304,6 +308,8 @@ export interface RoadNameHit {
 /**
  * Welche der Strassennamen nennt der Meldungstext? Bester Treffer zuerst (ganzer Name vor Teilwort, längerer
  * Name vor kürzerem); leer, wenn keiner. Teilwörter unter 5 Zeichen und allgemeine Wörter («Strasse») zählen nicht.
+ * Ein Teilwort mit Strassentyp (Platz, Gasse, Weg, Strasse …) passt nur zu einem Namen gleichen Typs:
+ * «Eigerplatz» ≠ «Eigerstrasse», «Seftigen» passt zu beiden Typen.
  */
 export function matchRoadNames(text: string, names: Iterable<string>): RoadNameHit[] {
   const toks = normRoadText(text).split(" ").filter(Boolean);
@@ -325,9 +331,13 @@ export function matchRoadNames(text: string, names: Iterable<string>): RoadNameH
     }
     if (!score) {
       const stem = compact.replace(SUFFIX_RE, "");
+      const nType = TYPE_RE.exec(compact)?.[1];
       const words = nt.filter((w) => w.length >= 5 && !GENERIC.has(w));
       for (const t of toks) {
         if (t.length < 5 || GENERIC.has(t) || /^\d/.test(t)) continue;
+        // Teilwort mit Strassentyp nur beim gleichen Typ: «Eigerplatz» meint nicht die «Eigerstrasse»
+        const tType = TYPE_RE.exec(t)?.[1];
+        if (tType && tType !== nType) continue;
         if (compact.startsWith(t) || (stem.length >= 5 && t.startsWith(stem)) || words.some((w) => w.startsWith(t))) { score = 2; break; }
       }
     }
@@ -458,6 +468,10 @@ export function placeOnRoad(target: RoadTarget, roads: RoadSegment[], prefer?: L
       score: Math.round((g.rank + (s.full || s.outside ? 0 : -5) + (named === "wahl" ? 100 : named === "text" ? 50 : 0)) * 100) / 100,
     };
     if (named) r.named = named;
+    if (s.outside) {
+      const d = distToRing(r.pos, ring);
+      if (d >= 1) r.outside = Math.round(d);
+    }
     return r;
   };
   const best = place(pick, how);

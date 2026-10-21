@@ -27,14 +27,14 @@ import {
   type LV95,
   type Side,
 } from "@lage/core";
-import { pickPoint, symbolSvg, toLatLng, toLv95 } from "@lage/map";
+import { iconSvg, pickPoint, toLatLng, toLv95 } from "@lage/map";
 import { dayLabel } from "./Timeline";
 import { SymbolPicker, choiceSvg, makeChoice, pickerEntry, rebaseSidc, type SymbolChoice } from "./SymbolPicker";
-import { RoadChoice, RoadEdit, useRoadChoice, type RoadPatch, type RoadPick } from "./RoadChoice";
+import { RoadChoice, RoadEdit, roadOutside, useRoadChoice, type RoadPatch, type RoadPick } from "./RoadChoice";
 import { kindText } from "./journalLayer";
 import { WindowHint } from "./mapedit";
 import { inWindow } from "@lage/core";
-import { ShapeButton, shapeFits, shapePatch } from "./ShapeDraw";
+import { ShapeButton, shapeFits, shapePatch, takeDrawing } from "./ShapeDraw";
 
 interface Props {
   ex: Exercise;
@@ -106,8 +106,9 @@ async function lookupPlace(q: string, box: ReturnType<typeof exerciseBox>, signa
 }
 
 function SymbolMini({ k, aff, sidc, status }: { k: string; aff: LageEvent["aff"]; sidc?: string; status?: LageEvent["status"] }) {
-  const s = useMemo(() => symbolSvg(k, aff, 14, { sidc, status }), [k, aff, sidc, status]);
-  return <span className="symmini" dangerouslySetInnerHTML={{ __html: s.svg }} />;
+  // gleiches Objekt behalten: React 19 setzt innerHTML sonst bei jeder Darstellung neu (300 Zeilen bei jeder Mausbewegung)
+  const html = useMemo(() => ({ __html: iconSvg(k, aff, 14, { sidc, status }).svg }), [k, aff, sidc, status]);
+  return <span className="symmini" dangerouslySetInnerHTML={html} />;
 }
 
 export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt, editRequest, onGoto, onDemo, win, onWinClear }: Props) {
@@ -227,6 +228,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
 
   const add = () => {
     if (!draft) return;
+    // Fläche/Linie wird noch gezeichnet: zuerst abschliessen (Form übernehmen), dann eintragen
+    const drawn = takeDrawing("neu");
+    if (drawn === "unfertig") { say("Fläche/Linie noch nicht fertig – weitere Punkte setzen, dann «Fertig» (oder Esc)."); return; }
+    if (drawn) setShapeDraft(drawn);
+    const sd = drawn ?? shapeDraft;
     if (!draft.melder && !confirmNoMelder) { setConfirmNoMelder(true); return; }
     setConfirmNoMelder(false);
     const ev = eventFromDraft({ ...draft, pos: effPos, where: effWhere ? { kind: manualPos ? "karte" : "ort", label: effWhere } : undefined }, device);
@@ -241,8 +247,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     if (draft.fromLabel && !ev.fromLabel) ev.fromLabel = draft.fromLabel;
     if (draft.roadHint && !ev.roadHint) ev.roadHint = draft.roadHint;
     if (road) { ev.angle = road.angle; if (road.road) ev.road = road.road; }
+    // genannte Strasse liegt ausserhalb des gemeldeten Feldes: Feld nachführen
+    const out = roadOutside(road, effWhere0 ?? "", ex.sheets);
+    if (out?.cell) ev.cells = [out.cell];
     if (roadTarget && roadPick?.none) ev.roadNone = true;
-    if (shapeDraft && shapeFits(shapeDraft, ev.sym)) Object.assign(ev, shapePatch(shapeDraft, ex.sheets));
+    if (sd && shapeFits(sd, ev.sym)) Object.assign(ev, shapePatch(sd, ex.sheets));
     update((x) => {
       x.events = [...(x.events ?? []), ev];
       if (!x.days.includes(ev.t.slice(0, 10))) x.days = [...x.days, ev.t.slice(0, 10)].sort();
@@ -344,7 +353,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             {effKind !== "eigen" && draft.unit && draft.unit !== draft.melder && <span className="chip"><b>{draft.unit}</b></span>}
             <span className="symchipwrap">
               <button className={"chip symchip" + (symOverride ? " manual" : "")} onClick={(ev) => openPicker(ev.currentTarget)} title="Zeichen ändern" aria-expanded={pickOpen}>
-                {choiceEntry && <span className="symmini" dangerouslySetInnerHTML={{ __html: !symOverride && draft.sidc ? symbolSvg(draft.sym, draft.aff, 16, { sidc: draft.sidc, status: draft.status }).svg : choiceSvg(choiceEntry, choice!.aff, 16, { echelon: choice!.echelon, status: choice!.status }) }} />}
+                {choiceEntry && <span className="symmini" dangerouslySetInnerHTML={{ __html: !symOverride && draft.sidc ? iconSvg(draft.sym, draft.aff, 16, { sidc: draft.sidc, status: draft.status }).svg : choiceSvg(choiceEntry, choice!.aff, 16, { echelon: choice!.echelon, status: choice!.status }) }} />}
                 {choiceDesc ?? choiceEntry?.name ?? symbolDef(draft.sym).name}{!choiceDesc && draft.count && draft.count > 1 ? ` ×${draft.count}` : ""} ▾
               </button>
               {pickOpen && choice && createPortal(
@@ -356,9 +365,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             {(draft.dir !== undefined || draft.dirLabel) && <span className="chip" title="Bewegungsrichtung">{draft.dirLabel ?? `Rtg ${compass(draft.dir!)}`}</span>}
             {(draft.from !== undefined || draft.fromLabel) && <span className="chip" title="Herkunft (woher) – kein Bewegungspfeil">{draft.fromLabel ?? `aus ${compass(draft.from!)}`}</span>}
             {draft.roadHint && <span className="chip soft" title="wird auf die passende Strasse gelegt">{draft.roadHint === "autobahn" ? "auf Autobahn" : "auf Hauptstrasse"}</span>}
-            {effPos ? (roadTarget ? <RoadChoice where={effWhere0 ?? ""} res={roadRes} pick={roadPick} onPick={setRoadPick} onMap={pickOnMap} map={map} /> : <span className="chip where">📍 {effWhere}</span>) : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
+            {effPos ? (roadTarget ? <RoadChoice where={effWhere0 ?? ""} res={roadRes} pick={roadPick} onPick={setRoadPick} onMap={pickOnMap} map={map} sheets={ex.sheets} /> : <span className="chip where">📍 {effWhere}</span>) : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
-            <ShapeButton map={map} sym={choice?.key ?? draft.sym} value={shapeDraft} onChange={setShapeDraft} color={effKind ? KIND_COLOR[effKind] : undefined}
+            <ShapeButton map={map} sym={choice?.key ?? draft.sym} value={shapeDraft} onChange={setShapeDraft} color={effKind ? KIND_COLOR[effKind] : undefined} owner="neu"
               ctx={{ sheets: ex.sheets, areas: ex.areas, event: { sym: choice?.key ?? draft.sym, pos: effPos, cells: draft.cells, nai: draft.nai, where: effWhere, angle: road?.angle, dir: draft.dir } }} />
           </div>
         ) : (
@@ -459,10 +468,16 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
   const [picking, setPicking] = useState(false);
   /** Fläche/Linie: von Hand gezeichnet (auto: false) – Punktzeichen dann am Schwerpunkt */
   const [shape, setShape] = useState(e.shape);
+  /** Planquadrat nach dem Zeichnen (Schwerpunkt der Form) */
+  const [cells, setCells] = useState(e.cells);
   /** Strassenwahl beim Bearbeiten (gilt nur, solange der Ort nicht anders geändert wurde) */
   const [roadPatch, setRoadPatch] = useState<RoadPatch | null>(null);
   const days = ex.days.includes(day) ? ex.days : [...ex.days, day];
   const save = () => {
+    // Fläche/Linie wird noch gezeichnet: zuerst abschliessen und übernehmen
+    const drawn = takeDrawing(`edit:${e.id}`);
+    if (drawn === "unfertig") return;
+    const dp = drawn ? shapePatch(drawn, ex.sheets) : null;
     const m = /^(\d{1,2})[:.]?(\d{2})$/.exec(time.trim());
     const minutes = m ? Math.min(23, +m[1]!) * 60 + Math.min(59, +m[2]!) : minutesOf(e.t);
     const entry = pickerEntry(choice.key) ?? pickerEntry("einheit")!;
@@ -474,7 +489,7 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
     const same = c.key === e.sym && c.aff === e.aff && c.echelon === e.echelon && (c.status ?? "present") === (e.status ?? "present") && n === e.count;
     const side = sideOfAff(c.aff);
     const u = unit.trim() || (side === "blau" ? melder.trim() : "");
-    const moved = pos?.e !== e.pos?.e || pos?.n !== e.pos?.n;
+    const moved = (dp?.pos ?? pos)?.e !== e.pos?.e || (dp?.pos ?? pos)?.n !== e.pos?.n;
     onSave({
       t: isoOf(day, minutes), side, unit: u, melder: melder.trim() || undefined, text, count: n, label: n && n > 1 ? String(n) : undefined,
       sym: c.key, sidc: c.sidc, echelon: c.echelon, status: c.status, aff: c.aff,
@@ -483,8 +498,10 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
       pos, where,
       // von Hand verschoben: Ausrichtung auf der alten Strasse gilt nicht mehr
       ...(moved ? { angle: undefined, road: undefined } : {}),
-      ...(roadPatch && pos === roadPatch.pos ? { angle: roadPatch.angle, road: roadPatch.road, roadNone: roadPatch.roadNone } : {}),
+      ...(roadPatch && pos === roadPatch.pos ? { angle: roadPatch.angle, road: roadPatch.road, roadNone: roadPatch.roadNone, ...(roadPatch.cells ? { cells: roadPatch.cells } : {}) } : {}),
       ...(shape !== e.shape ? { shape } : {}),
+      ...(cells !== e.cells ? { cells } : {}),
+      ...(dp ?? {}),
     });
   };
   return (
@@ -515,12 +532,12 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
             : <span className="help">{pos ? `📍 ${where ?? formatLv95(pos)}` : "ohne Ort"}</span>}
           <button disabled={picking} onClick={async () => { setPicking(true); const p = await pickPoint(map); setPicking(false); if (p) { setPos(p); setWhere("Karte"); } }}>{picking ? "Auf Karte klicken …" : "Ort auf Karte"}</button>
           {pos && <button onClick={() => { setPos(undefined); setWhere(undefined); }}>Ort entfernen</button>}
-          <ShapeButton map={map} sym={choice.key} value={shape?.auto ? undefined : shape} className="" color={KIND_COLOR[kind]}
-            ctx={{ sheets: ex.sheets, areas: ex.areas, event: { ...e, sym: choice.key, pos, where, shape } }}
+          <ShapeButton map={map} sym={choice.key} value={shape?.auto ? undefined : shape} className="" color={KIND_COLOR[kind]} owner={`edit:${e.id}`}
+            ctx={{ sheets: ex.sheets, areas: ex.areas, event: { ...e, sym: choice.key, pos, where, cells, shape } }}
             onChange={(sh) => {
               if (!sh) { setShape(undefined); return; }
               const p = shapePatch(sh, ex.sheets);
-              setShape(sh); setPos(p.pos); setWhere(p.where);
+              setShape(sh); setPos(p.pos); setWhere(p.where); setCells(p.cells);
             }} />
         </div>
         <div className="btnrow">

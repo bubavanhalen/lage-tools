@@ -7,8 +7,8 @@ import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import L from "leaflet";
 import {
-  NAMED_ROAD_NEAR, catalogEntry, cellBounds, findCells, normRoadText,
-  type Bounds, type Exercise, type LageEvent, type LV95, type RoadHint, type RoadPlacement, type RoadSegment, type RoadTarget,
+  NAMED_ROAD_NEAR, catalogEntry, cellAtAny, cellBounds, findCells, normRoadText,
+  type Bounds, type Exercise, type LageEvent, type LV95, type RasterSheet, type RoadHint, type RoadPlacement, type RoadSegment, type RoadTarget,
 } from "@lage/core";
 import { flyToBoundsSharp, toLatLng } from "@lage/map";
 import { cachedRoads, placeWith, roadsForTarget, targetBounds } from "./roadsource";
@@ -79,6 +79,19 @@ export const pickOf = (c: RoadPlacement): RoadPick => (c.road ? { road: c.road }
 const sameRoad = (a: RoadPlacement, b: RoadPlacement) => (a.road || b.road ? !!a.road && !!b.road && normRoadText(a.road) === normRoadText(b.road) : a.segId === b.segId);
 const roadLabel = (c: RoadPlacement) => c.road ?? `${c.kind} (ohne Name)`;
 
+/**
+ * Genannte/gewählte Strasse liegt ausserhalb des gemeldeten Feldes: Feld, in dem das Zeichen wirklich liegt
+ * (gleich genau wie gemeldet: mit Unterquadrant nur, wenn so gemeldet), und Hinweis «liegt 50 m ausserhalb AK9 (in AK10)».
+ */
+export function roadOutside(pl: RoadPlacement | null | undefined, where: string, sheets: RasterSheet[]): { cell?: string; text: string } | null {
+  if (!pl?.outside) return null;
+  const rep = where.trim();
+  const c = cellAtAny(sheets, pl.pos);
+  const cell = c ? (/\s[A-D]$/i.test(rep) ? c.label : c.label.replace(/\s+[A-D]$/, "")) : undefined;
+  const m = pl.outside < 100 ? Math.max(10, Math.round(pl.outside / 10) * 10) : Math.round(pl.outside / 50) * 50;
+  return { cell, text: `liegt ${m} m ausserhalb ${rep || "des Feldes"}${cell && cell !== rep ? ` (in ${cell})` : ""}` };
+}
+
 /** Strassen eines Kandidaten (für die Hervorhebung auf der Karte) */
 function roadPts(c: RoadPlacement, roads: RoadSegment[]): LV95[][] {
   if (c.road) { const n = normRoadText(c.road); return roads.filter((s) => s.name && normRoadText(s.name) === n).map((s) => s.pts); }
@@ -100,9 +113,11 @@ interface Props {
   manual?: boolean;
   /** Hinweis «mehrdeutig» zeigen (Standard: ohne Wahl und mehrdeutig) */
   hint?: boolean;
+  /** Raster: Hinweis, wenn die Strasse ausserhalb des gemeldeten Feldes liegt */
+  sheets?: RasterSheet[];
 }
 
-export function RoadChoice({ where, res, pick, onPick, onMap, map, compact, manual = !!pick, hint }: Props) {
+export function RoadChoice({ where, res, pick, onPick, onMap, map, compact, manual = !!pick, hint, sheets }: Props) {
   const [open, setOpen] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
   const [box, setBox] = useState<{ left: number; top: number; maxH: number } | null>(null);
@@ -207,6 +222,7 @@ export function RoadChoice({ where, res, pick, onPick, onMap, map, compact, manu
   }, [open, hover, cur, cands.map((c) => `${c.segId}@${c.pos.e},${c.pos.n}`).join("|"), map]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const label = pl ? `auf ${roadLabel(pl)}` : pick?.none ? "ohne Strasse" : res.loading ? "Strasse …" : "";
+  const out = sheets ? roadOutside(pl, where, sheets) : null;
   if (!hasChoice) {
     return <span className={"chip where" + (compact ? " rc-compact" : "")} title={res.loading ? "Strassen werden geladen …" : "keine Strasse bekannt"}>📍 {where}{label && label !== "Strasse …" ? ` · ${label}` : ""}</span>;
   }
@@ -221,7 +237,7 @@ export function RoadChoice({ where, res, pick, onPick, onMap, map, compact, manu
         aria-expanded={open}
         title={ambiguous ? "Mehrere Strassen möglich – bitte prüfen" : manual ? "Strasse von Hand gewählt – ändern" : pl?.named === "text" ? "Strasse aus der Meldung – ändern" : "Strasse ändern"}
       >
-        📍 {where}{label ? ` · ${label}` : ""} ▾
+        <span className="rc-lbl">📍 {where}{label ? ` · ${label}` : ""}{out && <span className="rc-out"> · {out.text}</span>}</span> ▾
         {ambiguous && <span className="rc-dot" aria-label="mehrdeutig" />}
       </button>
       {open && createPortal(
@@ -293,8 +309,8 @@ function centerOf(t: RoadTarget): LV95 {
   return { e: t.reduce((s, p) => s + p.e, 0) / t.length, n: t.reduce((s, p) => s + p.n, 0) / t.length };
 }
 
-/** Änderung aus der Strassenwahl beim Bearbeiten */
-export interface RoadPatch { pos: LV95; where: string; angle?: number; road?: string; roadNone?: boolean }
+/** Änderung aus der Strassenwahl beim Bearbeiten (`cells`: Feld nachgeführt, wenn die Strasse ausserhalb liegt) */
+export interface RoadPatch { pos: LV95; where: string; angle?: number; road?: string; roadNone?: boolean; cells?: string[] }
 
 /**
  * Strassenwahl in der Bearbeiten-Zeile. Ändert nichts, solange nicht gewählt wird.
@@ -315,11 +331,14 @@ export function RoadEdit({ e, ex, map, symKey, text, where, onChange, onMap, fal
     if (!touched || !t || res.loading) return;
     const w = baseWhere(e.where) || baseWhere(where);
     if (pick?.none || !res.pl) onChange({ pos: centerOf(t.target), where: w, roadNone: !!pick?.none, angle: undefined, road: undefined });
-    else onChange({ pos: res.pl.pos, where: `${w}${res.pl.road ? ` · auf ${res.pl.road}` : ""}`, angle: res.pl.angle, road: res.pl.road, roadNone: undefined });
+    else {
+      const out = roadOutside(res.pl, w, ex.sheets);
+      onChange({ pos: res.pl.pos, where: `${w}${res.pl.road ? ` · auf ${res.pl.road}` : ""}`, angle: res.pl.angle, road: res.pl.road, roadNone: undefined, ...(out?.cell ? { cells: [out.cell] } : {}) });
+    }
   }, [touched, pick, res.pl?.segId, res.pl?.pos.e, res.pl?.pos.n, res.loading]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!t) return <>{fallback}</>;
   return (
-    <RoadChoice where={baseWhere(e.where) || "Ort"} res={shown} pick={pick} compact map={map} onMap={onMap}
+    <RoadChoice where={baseWhere(e.where) || "Ort"} res={shown} pick={pick} compact map={map} onMap={onMap} sheets={ex.sheets}
       manual={touched && !!pick} hint={touched || e.road || e.roadNone ? false : undefined}
       onPick={(p) => { setPick(p); setTouched(true); }} />
   );

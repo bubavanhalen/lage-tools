@@ -60,12 +60,14 @@
 @media (pointer: coarse) { .lt-drawbar button { min-height: 40px; padding: 6px 14px; } }
 .lt-drawbar .lt-db-x { display: none; }
 @media (max-width: 640px) {
-  .lt-drawbar { bottom: 8px; flex-wrap: nowrap; gap: 4px; padding: 4px 4px 4px 10px; }
+  .lt-drawbar { bottom: 8px; left: 8px; right: 8px; transform: none; max-width: none; flex-wrap: nowrap; gap: 4px; padding: 4px 4px 4px 10px; }
   .lt-drawbar .lt-db-help, .lt-drawbar .lt-db-t { display: none; }
   .lt-drawbar .lt-db-x { display: inline; }
-  .lt-drawbar b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
-  .lt-drawbar button { min-width: 40px; padding: 4px 10px; }
+  .lt-drawbar b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0; }
+  .lt-drawbar button { min-width: 40px; padding: 4px 10px; flex: none; }
 }
+@media (max-width: 420px) { .lt-drawbar .lt-db-n { display: none; } }
+.lt-drawbar button[hidden] { display: none; }
 
 /* Knopf «Fläche/Linie zeichnen» im Journal */
 .shapebtn { display: inline-flex; align-items: center; gap: 4px; }

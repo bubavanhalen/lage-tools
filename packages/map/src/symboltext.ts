@@ -49,7 +49,7 @@ export const GERMAN_TEXT: TextRule[] = [
   { en: "B", de: "Bus", fn: "SGEVUB" },
   { en: "D", de: "Zerst", fn: "GTD" },
   { en: "K", de: "Entf", fn: "OOK" },
-  { en: "S", de: "Schaf", fn: "OVS" },
+  { en: "S", de: "Scharfs", fn: "OVS" },
   { en: "U", de: "Trsp", fn: "SGUCVRU" },
 ];
 
