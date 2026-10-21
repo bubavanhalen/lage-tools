@@ -37,6 +37,8 @@ export interface SituationOptions {
   from?: string | null;
   /** Zeichen auf der Karte verschoben: neuer Ort der Meldung (ohne Angabe kein Verschieben) */
   onMove?: (e: LageEvent, pos: LV95) => void;
+  /** Meldungen eines gewählten Hinweises: Zeichen erhalten die Klasse `hl` (übrige blass, siehe hints.css) */
+  highlight?: ReadonlySet<string> | null;
 }
 
 const SIZE = 18;
@@ -337,7 +339,7 @@ class SituationLayer extends L.LayerGroup {
       const udW = it.ud ? it.ud.length * 7 + 6 : 0;
       const core: Box = [-ax, -ay, s.w - ax, s.h - ay];
       const boxWith = (time: boolean): Box => [-ax - 2, -ay - 2 - (time ? TIME_H : 0), s.w - ax + 2 + Math.max(udW, time ? TIME_W : 0), s.h - ay + 2];
-      const cls = ["lt-ev", `k-${it.kind}`, it.selected ? "sel" : "", it.opacity < 1 ? "old" : ""].filter(Boolean).join(" ");
+      const cls = ["lt-ev", `k-${it.kind}`, it.selected ? "sel" : "", it.opacity < 1 ? "old" : "", o.highlight?.has(it.e.id) ? "hl" : ""].filter(Boolean).join(" ");
       const html = `${s.svg}`
         + (it.ud ? `<span class="lt-ud" style="--x:${s.w + 2}px;top:${Math.max(0, ay - 8)}px">${escapeHtml(it.ud)}</span>` : "")
         + (showTimes ? `<span class="lt-tl${it.showTime ? "" : " opt"}" style="--x:${s.w + 2}px">${it.e.t.slice(11, 16)}</span>` : "");

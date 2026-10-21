@@ -28,7 +28,7 @@
 1. Projektgerüst, Kern, Karten-Shell, GitHub Pages ✅
 2. Führungsraster-Editor (beide Varianten, PDF-Export) und NAI-Import ✅
 3. Lagejournal: Texteingabe, Karte, Zeitstrahl, offline (Kartenpakete) ✅
-4. Lagejournal: Foto- und Spracheingabe, Hinweise zu Rot, KI optional
+4. Lagejournal: Hinweise zu Rot (4a ✅), Foto- und Spracheingabe (4b), KI optional (4c)
 5. Übungsauswertung: Import, Auswertung, AAR-Regie
 6. vNext: Abgleich Gerät ↔ Gerät
 
@@ -74,3 +74,14 @@ Offline: App als PWA; Karte für das Raster-Gebiet vorab speichern, angesehene K
 - **Flächen und Linien:** Bereitstellungsraum, Minenfeld, Sperrgebiet, verseuchtes Gebiet, Beobachtungs-, Ziel-, Feuerraum, Landezone, Evakuierungsraum; Stacheldraht, Sperrlinie, Panzergraben, Kontakt-, Phasenlinie, Abschnittsgrenze, Vormarsch-/Verschiebungsachse. Automatisch aus Planquadrat, Unterquadrant, NAI oder Koordinate; von Hand zeichnen und bearbeiten.
 - **Deutsche Kürzel** in allen Zeichen (Spez, EKF, Mil Pol, Log …); IED bleibt.
 - **Strassenwahl:** bei mehrdeutigen Feldern Auswahl der Kandidaten; Strassenname im Text gewinnt; «Kein Strassenbezug».
+
+## Lagejournal – Hinweise zu Rot (Etappe 4a)
+Das Lagejournal gibt **Hinweise, keine Fakten**: Jeder Hinweis nennt Auslöser (Meldungen), Regel und Quelle (Reglement-Nr. und Ziffer; Regeln in eigenen Worten). Der Zfhr bestätigt oder verwirft. Alles offline, Regeln in `packages/core/src/hints.ts` mit dokumentierten Schwellen.
+- **A Normallage:** Grundlast je NAI lernen (Referenz), Abweichung, auffällige Ruhe.
+- **B Eigene Präsenz:** Reaktion nach Patrouille, Checkpoint verbraucht, Ausweichen vor Checkpoint.
+- **C Absicht Rot:** Übergabe/Zusammenschluss, Pendel mit Prognose der nächsten Durchfahrt, Aufklärung vor Aktion, Schwergewicht, Hinterhalt-Gefahr an Engnis, Formation.
+- **D Rot sieht Blau:** eigener Stao aufgeklärt (Drohne/Beobachter ≤ 500 m), Stao zu nahe an Rot, Lücke in der Überwachung (NAI ohne Meldung des zugeteilten Trupps).
+- **E Qualität:** bestätigt durch zweite Quelle, unvollständig (AEIOU), Plausibilität (Tempo), mögliche Täuschung (fremde, unbestätigte Quelle).
+- NAI mit zugeteiltem Trupp und Geländetyp («NAI 2 · H03»).
+- Bedienung: Reiter «Hinweise» mit Zahl der offenen, kompakte Liste, Klick zeigt Begründung, Auslöser, Karte; Entscheide haften auch bei Nachträgen; Hinweise folgen Lagezeit und Zeitfenster; CSV und Anhang im Journal-PDF.
+- Leitlinie gegen Alarm-Müdigkeit: «hoch» nur, wenn etwas zu prüfen oder zu tun ist. Messung: 25 ruhige 6-h-Lagen ohne einen «hoch»-Hinweis.
