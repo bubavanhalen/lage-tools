@@ -2,7 +2,7 @@
  * Über der Karte: Banner mit der gewählten Meldung (oben links neben dem Zoom) und
  * Legende (unten links, aus dem tatsächlich Sichtbaren gebaut, einklappbar).
  */
-import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { kindLabel, symbolDef, type Area, type LageEvent } from "@lage/core";
 import { symbolSvg } from "@lage/map";
 import type { LayerFlags } from "./layers";
@@ -54,6 +54,18 @@ export function EventBanner({ event, days, onClose, onEdit }: EventBannerProps) 
     if (tools) ro.observe(tools);
     return () => ro.disconnect();
   }, [event === null]);
+
+  // Esc schliesst (nicht während der Eingabe in einem Feld)
+  useEffect(() => {
+    if (!event) return;
+    const key = (ev: KeyboardEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (ev.key !== "Escape" || ev.defaultPrevented || (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      onClose();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [event, onClose]);
 
   if (!event) return null;
   const kind = kindOf(event);
@@ -142,7 +154,7 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
     if (model.items.some((i) => i.kind === "eigen" && i.isUnit && i.silentMin > STALE_MIN)) out.push({ key: "alt", icon: <span className="mo-tl tnum">75′</span>, label: `keine Meldung seit über ${STALE_MIN} min` });
     if (layout.moved > 0) out.push({
       key: "lead",
-      icon: <svg viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M4 10 L20 4" stroke="#101414" strokeWidth="1.5" /><circle cx="4" cy="10" r="3" fill="#101414" /></svg>,
+      icon: <svg viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M4 10 L20 4" stroke="currentColor" strokeWidth="1.5" /><circle cx="4" cy="10" r="3" fill="currentColor" /></svg>,
       label: "versetzt, Punkt = wahrer Ort",
     });
     return out;

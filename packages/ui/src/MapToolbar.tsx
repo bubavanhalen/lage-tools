@@ -144,7 +144,7 @@ function MeasurePanel({ s, map }: { s: MeasureState; map: L.Map }) {
     <div className="nav-pop nav-measure" role="region" aria-label="Messen" aria-live="polite">
       <div className="nav-mh">
         <b>Messen</b>
-        <span className="nav-mtot mono">{legs.length ? formatDistance(total) : "–"}</span>
+        <span className="nav-mtot mono">{legs.length ? formatDistance(total) : ""}</span>
         <button type="button" className="nav-x" onClick={() => c()?.cancel()} aria-label="Messung schliessen" title="Schliessen (Esc)"><IconClose /></button>
       </div>
       {legs.length > 0 && (

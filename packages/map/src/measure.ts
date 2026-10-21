@@ -59,6 +59,15 @@ export function formatAzimuth(deg: number, mils: number): { deg: string; mils: s
   return { deg: `${String(d).padStart(3, "0")}°`, mils: `${String(a).padStart(4, "0")} ‰` };
 }
 
+/** Während des Messens sind Zeichen/Flächen nicht klickbar (Klick setzt einen Messpunkt statt eine Meldung zu wählen). */
+function injectStyle() {
+  if (typeof document === "undefined" || document.getElementById("lt-measure-style")) return;
+  const st = document.createElement("style");
+  st.id = "lt-measure-style";
+  st.textContent = ".lt-measuring .leaflet-interactive{pointer-events:none!important}";
+  document.head.appendChild(st);
+}
+
 const legOf = (a: LV95, b: LV95): MeasureLeg => ({ from: a, to: b, ...distanceAzimuth(a, b) });
 
 const active = new WeakMap<L.Map, MeasureController>();
@@ -75,11 +84,11 @@ export function activeMeasure(map: L.Map): MeasureController | undefined {
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const LBL = "font:600 11px/1.25 var(--f-mono,ui-monospace,monospace);font-variant-numeric:tabular-nums;color:#101414;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.18);border-radius:3px;padding:1px 5px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.18);";
 
-function label(html: string, kind: "leg" | "total" | "live"): L.DivIcon {
+function label(html: string, kind: "leg" | "total" | "live", left = false): L.DivIcon {
   const extra = kind === "total" ? "background:#101414;color:#fff;border-color:#101414;font-weight:600;" : kind === "live" ? "opacity:.92;" : "";
   return L.divIcon({
     className: "lt-measure-lbl",
-    html: `<span style="position:absolute;left:0;top:0;transform:translate(${kind === "leg" ? "-50%,-50%" : "10px,-50%"});${LBL}${extra}">${html}</span>`,
+    html: `<span style="position:absolute;left:0;top:0;transform:translate(${kind === "leg" ? "-50%,-50%" : left ? "calc(-100% - 10px),-50%" : "10px,-50%"});${LBL}${extra}">${html}</span>`,
     iconSize: [0, 0],
   });
 }
@@ -102,7 +111,8 @@ export function startMeasure(map: L.Map, opts: { start?: LV95 } = {}): MeasureCo
   const g = L.layerGroup().addTo(map);
   const pane = overlayPane(map, "ltMeasure", 640);
   const container = map.getContainer();
-  container.classList.add("lt-picking");
+  container.classList.add("lt-picking", "lt-measuring");
+  injectStyle();
 
   const state = (): MeasureState => {
     const legs = points.slice(1).map((p, i) => legOf(points[i]!, p));
@@ -136,11 +146,14 @@ export function startMeasure(map: L.Map, opts: { start?: LV95 } = {}): MeasureCo
     });
     if (s.live && live) {
       const tot = s.total + s.live.m;
-      L.marker(toLatLng(live), { icon: label(`${legHtml(s.live)}${s.legs.length ? `<br>Σ ${esc(formatDistance(tot))}` : ""}`, "live"), pane, interactive: false, keyboard: false }).addTo(g);
+      // rechts im Kartenbild (unter den Werkzeugen) links vom Mauszeiger beschriften
+      const left = map.latLngToContainerPoint(toLatLng(live)).x > map.getSize().x - 560;
+      L.marker(toLatLng(live), { icon: label(`${legHtml(s.live)}${s.legs.length ? `<br>Σ ${esc(formatDistance(tot))}` : ""}`, "live", left), pane, interactive: false, keyboard: false }).addTo(g);
     } else if (s.legs.length) {
       const last = points[points.length - 1]!;
       const html = s.legs.length === 1 ? legHtml(s.legs[0]!) : `Σ ${esc(formatDistance(s.total))}`;
-      L.marker(toLatLng(last), { icon: label(html, "total"), pane, interactive: false, keyboard: false }).addTo(g);
+      const left = map.latLngToContainerPoint(toLatLng(last)).x > map.getSize().x - 560;
+      L.marker(toLatLng(last), { icon: label(html, "total", left), pane, interactive: false, keyboard: false }).addTo(g);
     }
     fire();
   };
@@ -177,7 +190,7 @@ export function startMeasure(map: L.Map, opts: { start?: LV95 } = {}): MeasureCo
     map.off("click", onClick);
     map.off("mousemove", onMove);
     map.off("dblclick", onDbl);
-    container.classList.remove("lt-picking");
+    container.classList.remove("lt-picking", "lt-measuring");
   };
 
   const ctl: MeasureController = {

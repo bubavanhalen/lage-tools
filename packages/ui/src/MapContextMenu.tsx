@@ -72,6 +72,11 @@ export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; shee
     let start: { x: number; y: number; id: number } | null = null;
     let suppressClick = false;
     const cancel = () => { window.clearTimeout(timer); start = null; };
+    // Klick nach dem Loslassen eines langen Drückens schlucken – aber nur kurz (nicht jeder Browser sendet ihn)
+    const onUp = () => {
+      cancel();
+      if (suppressClick) window.setTimeout(() => { suppressClick = false; }, 400);
+    };
     const onDown = (e: PointerEvent) => {
       if (e.pointerType === "mouse") return;
       if (start) { cancel(); return; } // zweiter Finger: Pinch
@@ -93,7 +98,7 @@ export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; shee
     };
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", cancel);
+    el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", cancel);
     el.addEventListener("click", onClickCapture, true);
     return () => {
@@ -101,7 +106,7 @@ export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; shee
       cancel();
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", cancel);
+      el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", cancel);
       el.removeEventListener("click", onClickCapture, true);
     };

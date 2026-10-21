@@ -186,7 +186,12 @@ class SituationLayer extends L.LayerGroup {
     if (!map) return;
     const pts = this.placed.map((p) => map.latLngToLayerPoint(p.ll));
     const input: DeclutterItem[] = this.placed.map((p, i) => ({ x: pts[i]!.x, y: pts[i]!.y, core: p.core, box: p.box, pinned: p.it.selected }));
-    const res = declutter(input);
+    // weit herausgezoomt (Feld kleiner als ca. 10 px): nicht auffächern, sonst entstehen kilometerlange Striche
+    const mPerPx = 1 / map.options.crs!.scale(map.getZoom());
+    const cell = Math.min(...this.o.sheets.map((s) => Math.min(s.cellW, s.cellH)), 2000);
+    const res = cell / mPerPx < 10
+      ? input.map((it) => ({ x: it.x, y: it.y, moved: false, side: 1 as const, group: -1 }))
+      : declutter(input);
     this.leaders.clearLayers();
     const lines: Record<"on" | "off", L.LatLng[][]> = { on: [], off: [] };
     let moved = 0;

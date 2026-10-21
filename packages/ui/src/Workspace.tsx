@@ -432,7 +432,7 @@ export function Workspace({ product, tagline }: Props) {
           {mapReady && sm.current && (
             <>
               <div className="maptools">
-                <MapSearch ex={ex} map={sm.current.map} onSelectEvent={(id) => { setTab("journal"); selectEvent(id); }} />
+                <MapSearch ex={ex} map={sm.current.map} onSelectEvent={(id) => { setTab("journal"); setSelEvent(id); const e = (ex.events ?? []).find((x) => x.id === id); if (e && tCursor && e.t > tCursor) setTCursor(e.t); }} />
                 <MapToolbar map={sm.current.map} basemap={basemap} onBasemap={(b) => { setBasemap(b); sm.current?.setBasemap(b); }}
                   flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} />
               </div>

@@ -44,6 +44,8 @@ export function navPadding(map: L.Map, b: Bounds): NavPadding {
   if (!t) return NAV_PADDING;
   const below: NavPadding = [Math.max(28, t.h + 10), 28, 44, 28];
   const beside: NavPadding = [28, Math.max(28, t.w + 12), 44, 28];
+  // daneben nur, wenn links der Werkzeuge genug Platz bleibt (sonst würden sie den Bereich verdecken)
+  if (beside[1] + beside[3] > map.getSize().x * 0.6) return below;
   return rawZoom(map, b, beside) > rawZoom(map, b, below) + 0.01 ? beside : below;
 }
 

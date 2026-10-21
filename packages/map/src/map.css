@@ -34,8 +34,8 @@
 }
 /* NAI / Stao: beginnt am Schwerpunkt-x, 20 px über der obersten Ecke */
 .lt-area-lbl.top span { transform: translate(0, -6px); }
-/* AO: links neben der westlichsten Ecke */
-.lt-area-lbl.ao span { font-size: 13px; transform: translate(calc(-100% - 10px), 50%); }
+/* AO: an der westlichsten Ecke, innen (links daneben stünde sie auf der Randbeschriftung des Rasters) */
+.lt-area-lbl.ao span { font-size: 13px; transform: translate(8px, calc(100% + 5px)); }
 
 /* ---------- Taktische Zeichen ---------- */
 .lt-sym { background: none; border: 0; }

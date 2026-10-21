@@ -82,6 +82,16 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const [editing, setEditing] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Taste «N» (ausserhalb von Eingabefeldern): zurück in die Meldungszeile
+  useEffect(() => {
+    const key = (ev: KeyboardEvent) => {
+      const el = ev.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if ((ev.key === "n" || ev.key === "N") && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); inputRef.current?.focus(); }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   useEffect(() => { if (reportAt) { setManualPos(reportAt.pos); inputRef.current?.focus(); } }, [reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!ex.days.includes(day)) setDay(ex.days[ex.days.length - 1] ?? todayIso()); }, [ex.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -210,7 +220,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
           </div>
         ) : (
-          <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen.</p>
+          <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen · <b>↑</b> = letzte korrigieren · <b>N</b> = zurück ins Feld.</p>
         )}
         <div className="btnrow">
           <button className="primary" disabled={!draft} onClick={add}>Eintragen</button>
