@@ -33,6 +33,7 @@ import {
   toLatLng,
   createSwissMap,
   enableCellZoom,
+  flyToBoundsSharp,
   drawRect,
   rasterLayer,
   toLv95,
@@ -82,6 +83,7 @@ export function Workspace({ product, tagline }: Props) {
   const setFlags = (f: LayerFlags) => { setFlagsState(f); saveFlags(f); };
   const [reportAt, setReportAt] = useState<{ pos: LV95; n: number } | null>(null);
   const [present, setPresent] = useState(false);
+  const [editReq, setEditReq] = useState<{ id: string; n: number } | null>(null);
   const [night, setNight] = useState(() => { try { return localStorage.getItem("lage-tools.night") === "1"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("lage-tools.night", night ? "1" : "0"); } catch { /* egal */ } }, [night]);
   const [selEvent, setSelEvent] = useState<string | null>(null);
@@ -172,7 +174,7 @@ export function Workspace({ product, tagline }: Props) {
     if (!s || !ex) return;
     journalRef.current?.remove();
     const g = situationLayer(s.map, ex.events ?? [], {
-      t: tNow, flags, selectedId: selEvent, sheets: ex.sheets,
+      t: tNow, flags, selectedId: selEvent, sheets: ex.sheets, days: ex.days,
       onClick: (e) => { setTab("journal"); setSelEvent(e.id); },
     });
     g.addTo(s.map);
@@ -188,7 +190,7 @@ export function Workspace({ product, tagline }: Props) {
     if (c && sh) {
       const b = cellBounds(sh, c.col, c.row, c.quadrant);
       const pad = Math.max(b.maxE - b.minE, b.maxN - b.minN) * 1.2;
-      map.flyToBounds(L.latLngBounds(toLatLng({ e: b.minE - pad, n: b.minN - pad }), toLatLng({ e: b.maxE + pad, n: b.maxN + pad })), { duration: 0.6, maxZoom: 22 });
+      flyToBoundsSharp(map, { minE: b.minE - pad, minN: b.minN - pad, maxE: b.maxE + pad, maxN: b.maxN + pad }, { maxZoom: 22 });
     } else if (e.nai && ex.areas.some((a) => a.name === e.nai)) {
       const a = ex.areas.find((x) => x.name === e.nai)!;
       map.flyToBounds(L.latLngBounds(a.ring.map(toLatLng)).pad(0.6), { duration: 0.6, maxZoom: 22 });
@@ -223,7 +225,9 @@ export function Workspace({ product, tagline }: Props) {
     x.sheets.forEach((s) => { const b = sheetBounds(s); pts.push({ e: b.minE, n: b.minN }, { e: b.maxE, n: b.maxN }); });
     x.areas.forEach((a) => pts.push(...a.ring));
     if (!pts.length) return;
-    sm.current?.fitLv95({ e: Math.min(...pts.map((p) => p.e)), n: Math.min(...pts.map((p) => p.n)) }, { e: Math.max(...pts.map((p) => p.e)), n: Math.max(...pts.map((p) => p.n)) }, 30);
+    if (!sm.current) return;
+    const b = { minE: Math.min(...pts.map((p) => p.e)), minN: Math.min(...pts.map((p) => p.n)), maxE: Math.max(...pts.map((p) => p.e)), maxN: Math.max(...pts.map((p) => p.n)) };
+    flyToBoundsSharp(sm.current.map, b, { duration: 0 });
   };
   useEffect(() => { if (ex && sm.current) fitAll(ex); /* nur beim Laden */ // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ex?.id, mapReady]);
@@ -387,7 +391,7 @@ export function Workspace({ product, tagline }: Props) {
             <div className="panel"><p className="help">Karte wird geladen …</p></div>
           ) : tab === "journal" ? (
             <JournalPanel ex={ex} map={sm.current!.map} device={device} selected={selEvent}
-              onSelect={selectEvent} reportAt={reportAt} update={update} say={say} onExport={exportJournal} />
+              onSelect={selectEvent} reportAt={reportAt} editRequest={editReq} update={update} say={say} onExport={exportJournal} />
           ) : tab === "raster" ? (
             <div className="panel">
               {ex.sheets.length === 0 && (
@@ -425,7 +429,7 @@ export function Workspace({ product, tagline }: Props) {
             <SwimTimeline events={ex.events ?? []} days={ex.days} units={ex.units} value={tCursor} onChange={setTCursor}
               selectedId={selEvent} compact={present}
               onSelect={(id) => { setSelEvent(id); setTab("journal"); const e = (ex.events ?? []).find((x) => x.id === id); if (e) { setTCursor(e.t); focusEvent(e); } }}
-              extra={present ? <button className="presx" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button> : undefined} />
+              extra={present ? <button className="swt-chip" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button> : undefined} />
           )}
           <div className="mapbox">
           <div ref={el} className="map" />
@@ -436,8 +440,9 @@ export function Workspace({ product, tagline }: Props) {
                 <MapToolbar map={sm.current.map} basemap={basemap} onBasemap={(b) => { setBasemap(b); sm.current?.setBasemap(b); }}
                   flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} />
               </div>
-              <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)} />
-              {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} />}
+              <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)}
+                onEdit={present ? undefined : (e) => { setTab("journal"); setEditReq({ id: e.id, n: Date.now() }); }} />
+              {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} />}
               <MapContextMenu map={sm.current.map} sheets={ex.sheets} onReportHere={(pos) => { setTab("journal"); setReportAt({ pos, n: Date.now() }); }} />
             </>
           )}
