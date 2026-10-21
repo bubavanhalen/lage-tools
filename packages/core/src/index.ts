@@ -13,3 +13,5 @@ export * from "./demo";
 export * from "./search";
 export * from "./declutter";
 export * from "./lanes";
+export * from "./catalog";
+export * from "./roads";

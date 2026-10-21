@@ -52,6 +52,18 @@ export interface LageEvent {
   dir?: number;
   /** Herkunft des Standorts, z. B. «NAI 3», «UK7 C», «Koordinate», «Karte» */
   where?: string;
+  /** vollständiger SIDC (APP-6/2525C) inkl. Stufe und Status – hat Vorrang vor `sym` + `aff` */
+  sidc?: string;
+  /** Stufe, z. B. «hz» (Halbzug) */
+  echelon?: import("./catalog").Echelon;
+  /** «anticipated» = vermutet/geplant (gestrichelter Rahmen), z. B. «mögliche IED» */
+  status?: import("./catalog").Status;
+  /** ausgeschriebener Sinn, z. B. «1 gegnerischer Halbzug Infanterie» */
+  desc?: string;
+  /** Ausrichtung im Gelände in Grad (0 = Nord), z. B. Strassenrichtung bei einer Sperre */
+  angle?: number;
+  /** Strasse, auf die das Zeichen gelegt wurde */
+  road?: string;
   source?: SourceRef;
   /** Vom Benutzer bestätigt (sonst Vorschlag der Erkennung) */
   confirmed: boolean;
