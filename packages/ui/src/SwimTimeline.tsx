@@ -42,15 +42,16 @@ const writeLS = (k: string, v: string) => { try { localStorage.setItem(k, v); } 
 const lastIndex = <T,>(a: T[], f: (v: T) => boolean) => { for (let i = a.length - 1; i >= 0; i--) if (f(a[i]!)) return i; return -1; };
 const isField = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName));
 
-function useWindowHeight() {
-  const [h, setH] = useState(() => (typeof window === "undefined" ? 800 : window.innerHeight));
+function useWindowSize() {
+  const get = () => (typeof window === "undefined" ? { w: 1440, h: 900 } : { w: window.innerWidth, h: window.innerHeight });
+  const [sz, setSz] = useState(get);
   useEffect(() => {
     let id = 0;
-    const on = () => { window.clearTimeout(id); id = window.setTimeout(() => setH(window.innerHeight), 120); };
+    const on = () => { window.clearTimeout(id); id = window.setTimeout(() => setSz(get()), 120); };
     window.addEventListener("resize", on);
     return () => { window.removeEventListener("resize", on); window.clearTimeout(id); };
   }, []);
-  return h;
+  return sz;
 }
 
 interface Tip { e: LageEvent; x: number; y: number; melder?: boolean }
@@ -72,8 +73,14 @@ export function SwimTimeline(p: SwimTimelineProps) {
   const multiDay = days.length > 1 || (firstMs !== undefined && new Date(t0).getDate() !== new Date(liveMs).getDate());
 
   // ---------- Zustand ----------
-  const [ownFold, setOwnFold] = useState(() => readLS(FOLD_KEY) === "1");
-  const collapsed = p.collapsed ?? ownFold;
+  const { w: winW, h: winH } = useWindowSize();
+  /** kleiner Bildschirm (Tablet hochkant, Laptop mit wenig Höhe): standardmässig eingeklappt, offen höchstens ca. 20 % */
+  const small = winW < 900 || winH < 800;
+  /** wenig Höhe: dichte Spuren (14 px) */
+  const dense = !compact && winH < 800;
+  // Wahl des Benutzers (eingeklappt/offen) hat Vorrang vor der Voreinstellung nach Bildschirmgrösse
+  const [ownFold, setOwnFold] = useState<boolean | null>(() => { const v = readLS(FOLD_KEY); return v === "1" ? true : v === "0" ? false : null; });
+  const collapsed = p.collapsed ?? ownFold ?? small;
   const setCollapsed = (c: boolean) => { setOwnFold(c); writeLS(FOLD_KEY, c ? "1" : "0"); p.onCollapsedChange?.(c); };
   const [speed, setSpeedState] = useState(() => { const s = Number(readLS(SPEED_KEY)); return SPEEDS.includes(s) ? s : 0; });
   const setSpeed = (s: number) => { setSpeedState(s); writeLS(SPEED_KEY, String(s)); };
@@ -82,7 +89,6 @@ export function SwimTimeline(p: SwimTimelineProps) {
   const [zoom, setZoom] = useState<{ v0: number; v1: number } | null>(null);
   const [tip, setTip] = useState<Tip | null>(null);
   const [width, setWidth] = useState(0);
-  const winH = useWindowHeight();
 
   const live = value === null;
   const valueMs = value ? Date.parse(value) : NaN;
@@ -142,6 +148,17 @@ export function SwimTimeline(p: SwimTimelineProps) {
   // ---------- Geometrie ----------
   const chartRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const [headH, setHeadH] = useState(62);
+  useLayoutEffect(() => {
+    const el = headRef.current;
+    if (!el) return;
+    const on = () => setHeadH(el.offsetHeight || 62);
+    on();
+    const ro = new ResizeObserver(on);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   useLayoutEffect(() => {
     const el = chartRef.current;
     if (!el) return;
@@ -165,12 +182,13 @@ export function SwimTimeline(p: SwimTimelineProps) {
 
   const TOP = compact ? 20 : 24, FOOT = compact ? 16 : 20, GAP = compact ? 5 : 10, PAD = compact ? 2 : 4;
   const gaps = Math.max(0, nGroups - 1) * GAP + 2 * PAD;
-  // Höhe: höchstens ca. 30 % (Präsentation 25 %) des Fensters, darüber scrollen die Spuren
-  const budget = compact ? winH * 0.25 - 44 - TOP - FOOT : winH * 0.3 - 62 - TOP - FOOT;
+  // Höhe: höchstens ca. 30 % des Fensters (kleiner Bildschirm 20 %, Präsentation 25 %), darüber scrollen die Spuren
+  const share = compact ? 0.25 : small ? 0.2 : 0.3;
+  const budget = winH * share - headH - TOP - FOOT - 1;
   const LANE = compact
     ? clamp(Math.floor((budget - gaps) / Math.max(1, nLanes)), 10, 26)
-    : clamp(Math.floor((budget - gaps) / Math.max(1, nLanes)), 18, 34);
-  const R = compact ? clamp(LANE * 0.42, 3.5, 6) : 6;
+    : dense ? 14 : clamp(Math.floor((budget - gaps) / Math.max(1, nLanes)), 18, 34);
+  const R = compact ? clamp(LANE * 0.42, 3.5, 6) : dense ? 5 : 6;
   const bodyMax = Math.max(budget, LANE * 2.5 + gaps);
   const laneY = new Map<string, number>();
   {
@@ -183,6 +201,20 @@ export function SwimTimeline(p: SwimTimelineProps) {
     }
   }
   const bodyH = nLanes * LANE + gaps; // gaps enthält Gruppenabstände und Rand oben/unten
+
+  // Hinweis «+n Spuren», wenn nicht alle Spuren Platz haben
+  const [hidden, setHidden] = useState({ above: 0, below: 0 });
+  const laneYs = lanes.map((l) => laneY.get(l.key)!);
+  const updateHidden = () => {
+    const b = bodyRef.current;
+    if (!b) { setHidden((h) => (h.above || h.below ? { above: 0, below: 0 } : h)); return; }
+    const top = b.scrollTop, bottom = top + b.clientHeight;
+    const above = laneYs.filter((y) => y < top + LANE * 0.3).length;
+    const below = laneYs.filter((y) => y > bottom - LANE * 0.3).length;
+    setHidden((h) => (h.above === above && h.below === below ? h : { above, below }));
+  };
+  useLayoutEffect(updateHidden); // nach jeder Darstellung prüfen (billig, setzt nur bei Änderung)
+  const scrollLanes = (dir: 1 | -1) => { const b = bodyRef.current; if (b) b.scrollBy({ top: dir * Math.max(LANE * 2, b.clientHeight * 0.8), behavior: "smooth" }); };
 
   // Ausschnitt folgt der Lagezeit (Abspielen, Live), wenn hineingezoomt
   useEffect(() => {
@@ -250,7 +282,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
     if (ev.button !== 0 && ev.pointerType === "mouse") return;
     const target = ev.target as Element;
     if (chartRef.current) { chartRef.current.dataset.maus = "1"; chartRef.current.focus({ preventScroll: true }); }
-    if (target.closest("[data-id],[data-zoom]")) return;
+    if (target.closest("[data-id],[data-zoom],button")) return;
     const r = chartRef.current!.getBoundingClientRect();
     if (ev.clientX - r.left < LM - 4) return; // Spurnamen
     pointers.current.set(ev.pointerId, ev.clientX);
@@ -424,7 +456,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
 
   const laneLabel = (l: Lane) => {
     const y = laneY.get(l.key)!;
-    const fs = compact ? Math.min(12, LANE - 1) : 15;
+    const fs = compact ? Math.min(12, LANE - 1) : Math.min(15, LANE - 1);
     return (
       <g key={l.key} className={"swt-lane" + (l.sammel ? " sammel" : "") + (l.count === 0 ? " leer" : "")}>
         {!compact && <rect x={4} y={y - 7} width={4} height={14} rx={1} style={{ fill: GROUP_VAR[l.group] }} />}
@@ -444,7 +476,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
     : null;
 
   const header = (
-    <div className="swt-bar">
+    <div className="swt-bar" ref={headRef}>
       <button className="swt-play" onClick={togglePlay} disabled={empty} aria-label={playing ? "Anhalten" : "Abspielen"} title={playing ? "Anhalten (Leertaste)" : "Abspielen (Leertaste)"}>
         {playing
           ? <svg viewBox="0 0 15 15" aria-hidden="true"><rect x="2.5" y="2" width="3.6" height="11" rx="1" /><rect x="8.9" y="2" width="3.6" height="11" rx="1" /></svg>
@@ -462,7 +494,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
       <button className="swt-chip swt-live" aria-pressed={live} onClick={goLive} title="Immer die neuste Lage zeigen (L)"><i aria-hidden="true" />Live</button>
       {!compact || !collapsed ? (
         <button className="swt-chip" aria-pressed={fit} onClick={() => setZoom(null)} disabled={empty}
-          title="Ganze Übung im Zeitstrahl zeigen. Vergrössern: Ctrl + Mausrad, zwei Finger oder + / −">Ganze Übung</button>
+          title="Ganze Zeitachse zeigen (Zoom zurücksetzen). Vergrössern: Ctrl + Mausrad, zwei Finger oder + / −. Neuste Lage: «Live»">Alles</button>
       ) : null}
       {extra}
       <button className="swt-fold" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed} aria-label={collapsed ? "Zeitstrahl aufklappen" : "Zeitstrahl einklappen"} title={collapsed ? "Spuren zeigen" : "Spuren ausblenden"}>
@@ -522,7 +554,14 @@ export function SwimTimeline(p: SwimTimelineProps) {
           {veil(TOP - 8, 8)}
           {curVisible && <line className="swt-cursor" x1={cx} x2={cx} y1={TOP - 8} y2={TOP} />}
         </svg>
-        <div className="swt-body" ref={bodyRef} style={{ maxHeight: Math.round(bodyMax) }}>
+        <div className="swt-bodywrap">
+        {hidden.above > 0 && (
+          <button className="swt-more up" onClick={() => scrollLanes(-1)} style={{ width: LM - 8 }} aria-label={`${hidden.above} Spuren weiter oben zeigen`}>▴ +{hidden.above} Spuren</button>
+        )}
+        {hidden.below > 0 && (
+          <button className="swt-more down" onClick={() => scrollLanes(1)} style={{ width: LM - 8 }} aria-label={`${hidden.below} weitere Spuren zeigen`}>▾ +{hidden.below} Spuren</button>
+        )}
+        <div className="swt-body" ref={bodyRef} onScroll={updateHidden} style={{ maxHeight: Math.round(bodyMax) }}>
           <svg width={W} height={bodyH} role="presentation">
             <rect className="swt-plotbg" x={LM} y={0} width={plotW} height={bodyH} />
             {ticks.minor.map((t) => <line key={t} className="swt-minor" x1={x(t)} x2={x(t)} y1={0} y2={bodyH} />)}
@@ -533,6 +572,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
             {veil(0, bodyH)}
             {curVisible && <line className="swt-cursor" x1={cx} x2={cx} y1={0} y2={bodyH} />}
           </svg>
+        </div>
         </div>
         <svg className="swt-foot" width={W} height={FOOT} role="presentation">
           {curVisible && <line className="swt-cursor" x1={cx} x2={cx} y1={0} y2={4} />}
@@ -548,7 +588,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
   }
 
   return (
-    <section ref={rootRef} className={"swt" + (compact ? " compact" : "") + (collapsed ? " collapsed" : "") + (playing ? " playing" : "")}
+    <section ref={rootRef} className={"swt" + (compact ? " compact" : "") + (dense ? " dense" : "") + (collapsed ? " collapsed" : "") + (playing ? " playing" : "")}
       aria-label="Zeitstrahl" onKeyDown={onKeyDown}>
       {header}
       {body}

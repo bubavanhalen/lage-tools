@@ -8,11 +8,11 @@
  */
 import L from "leaflet";
 import {
-  cellBounds, declutter, findCells, kindLabel, lastPosition, symbolDef,
+  cellBounds, declutter, mirrorBox, findCells, kindLabel, lastPosition, symbolDef,
   type Box, type DeclutterItem, type LageEvent, type RasterSheet,
 } from "@lage/core";
 import { escapeHtml, symbolSvg, toLatLng } from "@lage/map";
-import { MAP_INK, SIDE_COLOR, situationModel, type SituationItem } from "./journalLayer";
+import { KIND_COLOR, MAP_INK, SIDE_COLOR, situationModel, type SituationItem } from "./journalLayer";
 import type { LayerFlags } from "./layers";
 import { dayLabel } from "./Timeline";
 import "./mapoverlays.css";
@@ -85,12 +85,12 @@ class SituationLayer extends L.LayerGroup {
     const selected = model.items.find((i) => i.selected);
 
     // Planquadrate der Sichtungen (Seitenfarbe 12 %, ältere blass), je Farbe/Deckkraft eine Fläche
-    const fills = new Map<string, { col: string; o: number; rings: L.LatLng[][][]; seen: Set<string> }>();
+    const fills = new Map<string, { line: string; fill: string; o: number; rings: L.LatLng[][][]; seen: Set<string> }>();
     for (const it of model.items) {
       if (it.kind === "eigen" || it.selected || !it.e.cells?.length) continue;
-      const col = SIDE_COLOR[it.e.side];
-      const key = `${col}|${it.opacity}`;
-      const f = fills.get(key) ?? { col, o: it.opacity, rings: [], seen: new Set<string>() };
+      const c = KIND_COLOR[it.kind];
+      const key = `${it.kind}|${it.opacity}`;
+      const f = fills.get(key) ?? { ...c, o: it.opacity, rings: [], seen: new Set<string>() };
       fills.set(key, f);
       for (const label of it.e.cells) {
         const ring = cellRing(label, o.sheets);
@@ -100,17 +100,17 @@ class SituationLayer extends L.LayerGroup {
       }
     }
     for (const f of [...fills.values()].sort((a, b) => a.o - b.o)) {
-      if (f.rings.length) L.polygon(f.rings, { color: f.col, weight: 1.2, opacity: 0.8 * f.o, fillColor: f.col, fillOpacity: 0.12 * f.o, interactive: false }).addTo(this);
+      if (f.rings.length) L.polygon(f.rings, { color: f.line, weight: 1.2, opacity: 0.8 * f.o, fillColor: f.fill, fillOpacity: (f.fill === f.line ? 0.12 : 0.2) * f.o, interactive: false }).addTo(this);
     }
 
     // gewählte Meldung: Planquadrat(e) hinterlegt (inkl. Unterquadrant)
     if (selected) {
-      const col = SIDE_COLOR[selected.e.side];
+      const kc = KIND_COLOR[selected.kind];
       for (const label of selected.e.cells ?? []) {
         const ring = cellRing(label, o.sheets);
         if (ring) {
           L.polygon(ring, { color: "#fff", weight: 5, opacity: 0.85, fill: false, interactive: false }).addTo(this);
-          L.polygon(ring, { color: col, weight: 2.5, opacity: 1, dashArray: "7 4", fillColor: col, fillOpacity: 0.24, interactive: false, className: "lt-selcell" }).addTo(this);
+          L.polygon(ring, { color: kc.line, weight: 2.5, opacity: 1, dashArray: "7 4", fillColor: kc.fill, fillOpacity: kc.fill === kc.line ? 0.24 : 0.32, interactive: false, className: "lt-selcell" }).addTo(this);
         }
       }
     }
@@ -161,8 +161,9 @@ class SituationLayer extends L.LayerGroup {
         keyboard: false,
         riseOnHover: true,
       });
-      marker.bindTooltip(() => this.tooltip(it), { direction: "top", offset: [0, -ay - 2], className: "lt-tip", opacity: 1 });
-      marker.on("click", () => o.onClick(it.e));
+      // gewählte Meldung: kein Tooltip (das Meldungsband zeigt dasselbe)
+      if (!it.selected) marker.bindTooltip(() => this.tooltip(it), { direction: "top", offset: [0, -ay - 2], className: "lt-tip", opacity: 1 });
+      marker.on("click", () => { marker.closeTooltip(); o.onClick(it.e); });
       marker.addTo(this);
       this.placed.push({ it, ll, marker, core, box, w: s.w, ax });
     }
@@ -217,7 +218,35 @@ class SituationLayer extends L.LayerGroup {
       L.polyline(lines[k], { color: MAP_INK, weight: 1.5, opacity, interactive: false }).addTo(this.leaders);
     }
     publish(moved);
+    // Flächenbeschriftungen (NAI, AO, Stao) den Zeichen ausweichen lassen
+    const rects = res.map((r, i) => {
+      const p = this.placed[i]!;
+      const b = r.side < 0 ? mirrorBox(p.box, p.core) : p.box;
+      const c = map.layerPointToContainerPoint(L.point(r.x, r.y));
+      return [c.x + b[0], c.y + b[1], c.x + b[2], c.y + b[3]] as const;
+    });
+    avoidAreaLabels(map, rects);
   }
+}
+
+/**
+ * Verschiebt die Beschriftungen der Flächen (aus `areasLayer`), wenn sie auf einem Zeichen liegen:
+ * zuerst nach oben, dann seitlich. Wird nach jeder Kollisionsauflösung neu berechnet.
+ */
+function avoidAreaLabels(map: L.Map, rects: ReadonlyArray<readonly [number, number, number, number]>) {
+  const cont = map.getContainer();
+  const spans = cont.querySelectorAll<HTMLElement>(".lt-area-lbl span");
+  if (!spans.length) return;
+  const cr = cont.getBoundingClientRect();
+  const hit = (a: readonly number[]) => rects.some((r) => a[0]! < r[2] && a[2]! > r[0] && a[1]! < r[3] && a[3]! > r[1]);
+  const tries: Array<[number, number]> = [[0, 0], [0, -16], [0, -32], [24, 0], [-24, 0], [48, -16], [-48, -16], [0, -48]];
+  spans.forEach((sp) => {
+    sp.style.translate = "";
+    const b = sp.getBoundingClientRect();
+    const r0 = [b.left - cr.left - 2, b.top - cr.top - 1, b.right - cr.left + 2, b.bottom - cr.top + 1];
+    const ok = tries.find(([dx, dy]) => !hit([r0[0]! + dx, r0[1]! + dy, r0[2]! + dx, r0[3]! + dy]));
+    if (ok && (ok[0] || ok[1])) sp.style.translate = `${ok[0]}px ${ok[1]}px`;
+  });
 }
 
 /** Umriss eines Planquadrats (inkl. Unterquadrant), null wenn unbekannt */

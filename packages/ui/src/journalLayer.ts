@@ -9,6 +9,14 @@ import type { LayerFlags } from "./layers";
 export const SIDE_COLOR: Record<Side, string> = { rot: "#D3262D", blau: "#1F5FB8", ul: "#A86F12" };
 export const MAP_INK = "#101414";
 
+/** Kartenfarbe nach Art (unklar = gelb wie das Zeichen, nicht rot wie die Seite): Linie und Füllung */
+export const KIND_COLOR: Record<"eigen" | "feind" | "unklar" | "ul", { line: string; fill: string }> = {
+  eigen: { line: "#1F5FB8", fill: "#1F5FB8" },
+  feind: { line: "#D3262D", fill: "#D3262D" },
+  unklar: { line: "#B88A00", fill: "#FFD400" },
+  ul: { line: "#A86F12", fill: "#A86F12" },
+};
+
 export type ItemKind = "eigen" | "feind" | "unklar" | "ul";
 
 export interface SituationItem {

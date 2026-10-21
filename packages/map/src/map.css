@@ -16,7 +16,7 @@
   paint-order: stroke;
 }
 .lt-edge-t { font-size: 13px; font-weight: 600; stroke-width: 3.5px; stroke-opacity: .95; text-anchor: middle; dominant-baseline: central; }
-.lt-cell-t { font-weight: 600; opacity: .75; }
+.lt-cell-t { font-weight: 600; opacity: .9; }
 .lt-quad-x { fill: none; stroke: #111; stroke-opacity: .4; stroke-width: 1; stroke-dasharray: 6 5; }
 .lt-quad-t { font-size: 12px; font-weight: 600; stroke-width: 3px; text-anchor: middle; dominant-baseline: central; opacity: .7; }
 

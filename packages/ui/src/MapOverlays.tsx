@@ -30,28 +30,39 @@ export interface EventBannerProps {
 
 export function EventBanner({ event, days, onClose, onEdit }: EventBannerProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<{ maxW?: number; top?: number }>({});
+  const [place, setPlace] = useState<{ maxW?: number; top?: number; maxH?: number }>({});
 
-  // nicht unter die Kartenwerkzeuge (oben rechts) schieben: Breite begrenzen oder darunter ausweichen
+  // Platz finden: nicht unter die Kartenwerkzeuge (oben rechts, ggf. zwei Zeilen), die Legende und die Statuszeile
   useLayoutEffect(() => {
     const el = ref.current;
     const box = el?.parentElement;
     if (!el || !box) return;
     const fit = () => {
-      const tools = box.querySelector<HTMLElement>(".maptools");
       const b = box.getBoundingClientRect();
       const left = el.offsetLeft;
-      if (!tools) { setPlace({}); return; }
-      const t = tools.getBoundingClientRect();
-      const free = t.left - b.left - left - 12;
-      if (free >= 360) setPlace({ maxW: Math.min(free, 900) });
-      else setPlace({ maxW: b.width - left - 12, top: t.bottom - b.top + 8 });
+      const tools = box.querySelector<HTMLElement>(".maptools");
+      let top = 10, maxW = Math.min(900, b.width - left - 12);
+      if (tools && tools.offsetWidth) {
+        const t = tools.getBoundingClientRect();
+        const free = t.left - b.left - left - 12;
+        if (free >= 360) maxW = Math.min(free, 900);
+        else top = t.bottom - b.top + 8;
+      }
+      // unten: Legende bzw. Statuszeile (die höhere der beiden)
+      let bottom = b.height;
+      for (const sel of ["[data-legend]", ".status"]) {
+        const o = box.querySelector<HTMLElement>(sel);
+        if (o && o.offsetHeight) bottom = Math.min(bottom, o.getBoundingClientRect().top - b.top);
+      }
+      setPlace({ maxW, top, maxH: Math.max(48, bottom - top - 8) });
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(box);
-    const tools = box.querySelector(".maptools");
-    if (tools) ro.observe(tools);
+    for (const sel of [".maptools", "[data-legend]", ".status"]) {
+      const o = box.querySelector(sel);
+      if (o) ro.observe(o);
+    }
     return () => ro.disconnect();
   }, [event === null]);
 
@@ -74,7 +85,7 @@ export function EventBanner({ event, days, onClose, onEdit }: EventBannerProps) 
   const unit = event.unit || (kind === "eigen" ? event.melder ?? "" : "");
   return (
     <div ref={ref} className="mo-banner" role="status" aria-label="Gewählte Meldung"
-      style={{ maxWidth: place.maxW, top: place.top }}>
+      style={{ maxWidth: place.maxW, top: place.top, maxHeight: place.maxH }}>
       <span className="mo-time tnum">{time}</span>
       <span className={`mo-kind k-${kind}`}>{kindLabel(event)}</span>
       <Sym k={event.sym} aff={event.aff} size={14} />
@@ -104,28 +115,54 @@ export interface LegendProps {
 const FOLD_KEY = "lage-tools.legende.zu";
 const AFF_SUFFIX: Record<string, string> = { F: " (eigene)", U: " (unklar)", N: " (neutral / UL)" };
 
+/** Muster in Kartenfarben auf hellem «Kartengrund» (auch im Dunkelmodus erkennbar) */
 const LineSample = ({ color, dash, dots, width = 2.5 }: { color: string; dash?: string; dots?: boolean; width?: number }) => (
-  <svg viewBox="0 0 24 14" width="24" height="14" aria-hidden>
+  <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden>
     <path d="M1 7 H23" stroke={color} strokeWidth={width} strokeDasharray={dash} />
     {dots && <circle cx="6" cy="7" r="2.3" fill="#fff" stroke={color} strokeWidth="1.4" />}
   </svg>
 );
 const AreaSample = ({ color, dash, fill }: { color: string; dash?: string; fill?: string }) => (
-  <svg viewBox="0 0 24 14" width="24" height="14" aria-hidden>
+  <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden>
     <rect x="2" y="2" width="20" height="10" fill={fill ?? "none"} fillOpacity=".14" stroke={color} strokeWidth="2" strokeDasharray={dash} />
   </svg>
 );
 
-function readFold(): boolean {
+/** gespeicherte Wahl (null = keine, dann automatisch) */
+function readFold(): boolean | null {
   try {
     const v = localStorage.getItem(FOLD_KEY);
     if (v !== null) return v === "1";
   } catch { /* egal */ }
-  return typeof window !== "undefined" && (window.innerWidth < 1100 || window.matchMedia?.("(pointer: coarse)").matches);
+  return null;
 }
 
 export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = null }: LegendProps) {
-  const [folded, setFolded] = useState(readFold);
+  const ref = useRef<HTMLElement>(null);
+  const [userFold, setUserFold] = useState<boolean | null>(readFold);
+  /** automatisch zu: kleine Karte (Höhe < 700 px) oder schmales Fenster (< 1100 px) */
+  const [autoFold, setAutoFold] = useState(true);
+  /** Präsentation: standardmässig zu, Wahl wird nicht gespeichert */
+  const [present, setPresent] = useState(false);
+  const [presentOpen, setPresentOpen] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const box = el?.parentElement;
+    if (!el || !box) return;
+    const app = el.closest(".app");
+    const check = () => {
+      setAutoFold(box.clientHeight < 700 || window.innerWidth < 1100 || !!window.matchMedia?.("(pointer: coarse)").matches);
+      const p = !!app?.classList.contains("present");
+      setPresent((old) => { if (old !== p) setPresentOpen(false); return p; });
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(box);
+    const mo = app ? new MutationObserver(check) : null;
+    if (app) mo!.observe(app, { attributes: true, attributeFilter: ["class"] });
+    return () => { ro.disconnect(); mo?.disconnect(); };
+  }, []);
+  const folded = present ? !presentOpen : userFold ?? autoFold;
   const layout = useSyncExternalStore(subscribeSituationLayout, getSituationLayout);
   const model = useMemo(() => situationModel(events, t, flags, { recentMin, selectedId }), [events, t, flags, recentMin, selectedId]);
 
@@ -160,14 +197,16 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
     return out;
   }, [model, flags.nai, areas, recentMin, layout.moved]);
 
-  if (!entries.length) return null;
   const toggle = () => {
     const v = !folded;
-    setFolded(v);
+    if (present) { setPresentOpen(!v); return; }
+    setUserFold(v);
     try { localStorage.setItem(FOLD_KEY, v ? "1" : "0"); } catch { /* egal */ }
   };
+  // bleibt immer im DOM (data-legend): das Einpassen der Karte liest seine Grösse
+  if (!entries.length) return <section ref={ref} className="mo-legend" data-legend hidden aria-hidden />;
   return (
-    <section className={`mo-legend${folded ? " folded" : ""}`} aria-label="Legende">
+    <section ref={ref} className={`mo-legend${folded ? " folded" : ""}`} aria-label="Legende" data-legend>
       <button className="mo-legend-h" onClick={toggle} aria-expanded={!folded}>
         <span>Legende</span>
         <span className="mo-chev" aria-hidden>{folded ? "▴" : "▾"}</span>

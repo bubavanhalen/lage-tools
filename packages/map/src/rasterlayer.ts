@@ -1,6 +1,6 @@
 /**
  * Führungsraster-Blatt auf der Karte (wie Lagebild-Prototyp):
- * - Feldlinien: jede 5. Linie betont (1.6 px / .75), übrige 1 px / .45; Rand wie 5er-Linie.
+ * - Feldlinien auf weisser Unterlage: jede 5. Linie betont (1.6 px / .75), übrige 1 px / .45; Rand wie 5er-Linie.
  * - Randbeschriftung auf allen vier Seiten (Plex Mono 600 13px, weisser Halo), bei kleinen Feldern ausgedünnt.
  * - Grosse Feldbeschriftung in jedem Feld, skaliert mit dem Zoom (≈ 14,5 % der Feldhöhe), halbtransparent.
  * - Bei grossem Zoom zusätzlich Unterquadranten A B / D C (feines Kreuz + kleine Buchstaben).
@@ -40,6 +40,8 @@ export function rasterLayer(map: L.Map, sheet: RasterSheet, opts: RasterLayerOpt
     const n = b.maxN - r * sheet.cellH;
     (r % 5 === 0 || r === rows ? major : minor).push([toLatLng({ e: b.minE, n }), toLatLng({ e: b.maxE, n })]);
   }
+  // weisse Unterlage: Linien bleiben auch auf der dichten Stadtkarte lesbar
+  L.polyline([...minor, ...major], { color: "#fff", weight: 3, opacity: 0.55, interactive: false, className: "lt-grid-casing" }).addTo(group);
   if (minor.length) L.polyline(minor, { color, weight: 1, opacity: 0.45, interactive: false, className: "lt-grid" }).addTo(group);
   L.polyline(major, { color, weight: 1.6, opacity: 0.75, interactive: false, className: "lt-grid" }).addTo(group);
   group.addLayer(new RasterLabels(sheet, opts));

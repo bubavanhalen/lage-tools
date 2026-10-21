@@ -16,7 +16,7 @@ import {
   type LV95,
   type SearchHit,
 } from "@lage/core";
-import { boundsAround, flashBounds, flashPoint, flashRing, flyToBoundsSharp, toLatLng } from "@lage/map";
+import { boundsAround, flashBounds, flashPoint, flashRing, flyToBoundsSharp, flyToCell, growBounds, NAV_MAX_ZOOM, toLatLng, whenSettled } from "@lage/map";
 import { IconClose, IconGlobe, IconSearch } from "./navicons";
 import "./navigation.css";
 
@@ -29,14 +29,6 @@ const isTyping = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
 };
-
-/** Nach Ende der Kamerafahrt (oder spätestens nach 700 ms, falls sich nichts bewegt) ausführen. Vor dem Fliegen aufrufen. */
-function afterMove(map: L.Map, fn: () => void) {
-  let ran = false;
-  const run = () => { if (!ran) { ran = true; map.off("moveend", run); window.clearTimeout(t); fn(); } };
-  map.on("moveend", run);
-  const t = window.setTimeout(run, 700);
-}
 
 /** swisstopo-Ortssuche (online). */
 async function lookupPlaces(q: string, signal: AbortSignal): Promise<OnlineHit[]> {
@@ -147,8 +139,10 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
     if (h.kind === "element" && h.eventId) onSelectEvent?.(h.eventId);
     if (h.bounds) {
       const b = h.bounds, ring = h.ring;
-      afterMove(map, () => (ring ? flashRing(map, ring) : flashBounds(map, b)));
-      flyToBoundsSharp(map, b);
+      whenSettled(map, () => (ring ? flashRing(map, ring) : flashBounds(map, b)));
+      // Planquadrat/Unterquadrant mit Nachbarkontext (höchstens Stufe 23/24), Flächen/Orte höchstens Stufe 23
+      if (h.kind === "pq") flyToCell(map, b, !!h.quadrant);
+      else flyToBoundsSharp(map, h.kind === "blatt" ? b : growBounds(b, Math.max(b.maxE - b.minE, b.maxN - b.minN) * 0.25), { maxZoom: NAV_MAX_ZOOM.feld });
       if (h.kind === "ort") setPin(h.pos ?? { e: (b.minE + b.maxE) / 2, n: (b.minN + b.maxN) / 2 }, h.label);
       return;
     }
@@ -158,8 +152,8 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
     const ref = cellAtAny(ex.sheets, p);
     const s = ref && ex.sheets.find((x) => x.id === ref.sheetId);
     const half = s ? Math.max(s.cellW, s.cellH) * (h.kind === "element" ? 1.5 : 1) : 500;
-    afterMove(map, () => flashPoint(map, p));
-    flyToBoundsSharp(map, boundsAround(p, half));
+    whenSettled(map, () => flashPoint(map, p));
+    flyToBoundsSharp(map, boundsAround(p, half), { maxZoom: NAV_MAX_ZOOM.feld });
     if (h.kind === "koordinate" || h.kind === "ort") setPin(p, h.label);
   };
 

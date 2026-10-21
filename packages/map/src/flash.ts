@@ -22,6 +22,24 @@ export function overlayPane(map: L.Map, name = "ltFlash", z = 630): string {
   return name;
 }
 
+/**
+ * `fn` ausführen, sobald die Karte nach einer Kamerafahrt zur Ruhe kommt (spätestens nach `maxMs`,
+ * falls sich nichts bewegt). Vor dem Fliegen aufrufen.
+ */
+export function whenSettled(map: L.Map, fn: () => void, maxMs = 750): void {
+  let ran = false;
+  const run = () => {
+    if (ran) return;
+    ran = true;
+    map.off("moveend", run);
+    window.clearTimeout(t);
+    // ein Bild warten, damit Kacheln/Ebenen gezeichnet sind und das Aufblitzen sicher sichtbar ist
+    requestAnimationFrame(() => fn());
+  };
+  map.on("moveend", run);
+  const t = window.setTimeout(run, maxMs);
+}
+
 const reduceMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Entfernt ein laufendes Aufblitzen. */

@@ -6,17 +6,24 @@
  *
  * Schärfe: Leaflet zeigt bei gebrochener Zoomstufe die Kacheln der *gerundeten* Stufe skaliert an.
  * Bei x.25 werden die Kacheln der Stufe x um ca. 10–20 % vergrössert (unscharf), bei x.5 und x.75 die der
- * Stufe x+1 verkleinert (scharf). Deshalb werden Zielstufen x.25 auf x.5 (wenn es passt) bzw. x.0 gelegt.
+ * Stufe x+1 verkleinert (scharf). Deshalb werden Zielstufen auf x.0 oder x.5 gelegt (die Karte hat zoomSnap 0.5).
  */
 import L from "leaflet";
 import { cellAt, cellAtAny, cellBounds, type Bounds, type CellRef, type LV95, type RasterSheet } from "@lage/core";
+import { flashBounds, whenSettled } from "./flash";
 import { isMeasuring } from "./measure";
 import { toLatLng, toLv95 } from "./swissmap";
 
 /** Rand in Pixeln: oben, rechts, unten, links */
 export type NavPadding = [number, number, number, number];
-/** Standardrand: oben Platz für Suchfeld/Werkzeuge, unten für Statuszeile */
-export const NAV_PADDING: NavPadding = [64, 28, 44, 28];
+/** Grundrand ohne Bedienelemente: unten Platz für die Statuszeile */
+export const NAV_PADDING: NavPadding = [28, 28, 44, 28];
+
+/**
+ * Höchste Zoomstufen beim Navigieren (swisstopo-Stufen: 22 = 2,5 m/px, 23 = 2 m/px, 24 = 1,5 m/px, 25 = 1 m/px).
+ * Tiefer bringt keinen Gewinn: Schrift wird riesig, der Nachbarkontext fehlt.
+ */
+export const NAV_MAX_ZOOM = { feld: 23, quadrant: 24, doppelklick: 25 } as const;
 
 /** Rand an kleine Karten anpassen (höchstens 40 % der Breite/Höhe pro Seite). */
 function fitPadding(map: L.Map, pad: NavPadding): NavPadding {
@@ -25,33 +32,66 @@ function fitPadding(map: L.Map, pad: NavPadding): NavPadding {
   return [cy(pad[0]), cx(pad[1]), cy(pad[2]), cx(pad[3])];
 }
 
-/** Platz, den die Bedienelemente oben rechts (`.maptools` neben der Karte) belegen. */
-function toolsBox(map: L.Map): { w: number; h: number } | null {
+/** Bedienelemente über der Karte (im selben Container wie die Karte): Werkzeuge, Meldungsband, Legende. */
+const OBSTACLES = [".maptools", ".mo-banner", "[data-legend]", ".mo-legend"];
+
+interface Obstacle { top: number; right: number; bottom: number; left: number }
+
+function obstacles(map: L.Map): Obstacle[] {
   const c = map.getContainer();
-  const t = c.parentElement?.querySelector<HTMLElement>(".maptools");
-  if (!t || !t.offsetParent) return null;
-  const r = t.getBoundingClientRect(), m = c.getBoundingClientRect();
-  if (r.width === 0) return null;
-  return { w: Math.max(0, m.right - r.left), h: Math.max(0, r.bottom - m.top) };
+  const host = c.parentElement;
+  if (!host) return [];
+  const m = c.getBoundingClientRect();
+  const seen = new Set<Element>();
+  const out: Obstacle[] = [];
+  for (const sel of OBSTACLES) {
+    host.querySelectorAll<HTMLElement>(sel).forEach((el) => {
+      if (seen.has(el) || el === c || c.contains(el)) return;
+      seen.add(el);
+      if (!el.offsetParent) return;
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || r.right <= m.left || r.left >= m.right || r.bottom <= m.top || r.top >= m.bottom) return;
+      out.push({ top: r.top - m.top, right: r.right - m.left, bottom: r.bottom - m.top, left: r.left - m.left });
+    });
+  }
+  return out;
 }
 
 /**
- * Rand für das Einpassen: entweder unter den Werkzeugen oben rechts (Bereich mittig) oder links davon
- * (Bereich nach links verschoben) – je nachdem, was den Bereich grösser zeigt.
+ * Rand für das Einpassen, so dass Werkzeuge (oben rechts), Meldungsband (oben links) und Legende (unten links)
+ * den Bereich nicht verdecken. Jedes Element wird entweder vertikal (darunter/darüber) oder seitlich umgangen –
+ * gewählt wird die Kombination, die den Bereich am grössten zeigt.
  */
 export function navPadding(map: L.Map, b: Bounds): NavPadding {
-  const t = toolsBox(map);
-  if (!t) return NAV_PADDING;
-  const below: NavPadding = [Math.max(28, t.h + 10), 28, 44, 28];
-  const beside: NavPadding = [28, Math.max(28, t.w + 12), 44, 28];
-  // daneben nur, wenn links der Werkzeuge genug Platz bleibt (sonst würden sie den Bereich verdecken)
-  if (beside[1] + beside[3] > map.getSize().x * 0.6) return below;
-  return rawZoom(map, b, beside) > rawZoom(map, b, below) + 0.01 ? beside : below;
+  const size = map.getSize();
+  if (!size.x || !size.y) return NAV_PADDING;
+  const obs = obstacles(map);
+  if (!obs.length) return [64, 28, 44, 28];
+  const GAP = 10;
+  let best: NavPadding = NAV_PADDING, bestZ = -Infinity;
+  for (let mask = 0; mask < 1 << obs.length; mask++) {
+    const p: NavPadding = [...NAV_PADDING];
+    obs.forEach((o, i) => {
+      const cx = (o.left + o.right) / 2, cy = (o.top + o.bottom) / 2;
+      if (mask & (1 << i)) {
+        // seitlich ausweichen
+        if (cx > size.x / 2) p[1] = Math.max(p[1], size.x - o.left + GAP);
+        else p[3] = Math.max(p[3], o.right + GAP);
+      } else if (cy < size.y / 2) p[0] = Math.max(p[0], o.bottom + GAP);
+      else p[2] = Math.max(p[2], size.y - o.top + GAP);
+    });
+    // höchstens 60 % pro Achse für Ränder, sonst bleibt zu wenig Karte
+    if (p[1] + p[3] > size.x * 0.6 || p[0] + p[2] > size.y * 0.6) continue;
+    const z = rawZoom(map, b, p);
+    if (z > bestZ + 0.01) { bestZ = z; best = p; }
+  }
+  return bestZ === -Infinity ? [64, 28, 44, 28] : best;
 }
 
 function rawZoom(map: L.Map, b: Bounds, pad: NavPadding): number {
   const p = fitPadding(map, pad);
   const size = map.getSize().subtract(L.point(p[1] + p[3], p[0] + p[2]));
+  if (size.x <= 0 || size.y <= 0) return map.getZoom();
   const z0 = map.getZoom();
   const bs = pxSize(map, b, z0);
   const z = map.getScaleZoom(Math.min(size.x / Math.max(1, bs.x), size.y / Math.max(1, bs.y)), z0);
@@ -67,23 +107,25 @@ function pxSize(map: L.Map, b: Bounds, z: number): L.Point {
 
 /**
  * Zoomstufe, bei der `b` mit Rand `pad` ganz sichtbar ist – auf eine scharfe Stufe gelegt (siehe oben).
+ * Liegt sie auf x.0 (bzw. x.25), wird x.5 genommen, wenn der Bereich dann mit dem halben Rand noch passt:
+ * so zeigt die Karte die feinere Kachelstufe verkleinert statt der gröberen (z. B. Übersicht nicht auf der Kleinmassstabkarte).
  * @param maxZoom obere Grenze (z. B. damit ein Punkt nicht bis auf 10 cm/px gezoomt wird)
  */
 export function sharpZoomFor(map: L.Map, b: Bounds, pad: NavPadding = navPadding(map, b), maxZoom = map.getMaxZoom()): number {
   // wie map.getBoundsZoom, aber immer auf zoomSnap (Leaflet rundet ohne CSS-3D auf ganze Stufen)
-  const snap = map.options.zoomSnap || 0.25;
+  const snap = map.options.zoomSnap || 0.5;
   let z = rawZoom(map, b, pad);
   z = Math.floor(Math.round(z / (snap / 100)) * (snap / 100) / snap) * snap;
   z = Math.min(z, maxZoom);
   const base = Math.floor(z + 1e-6);
   const frac = z - base;
-  if (frac > 0.01 && frac < 0.49) {
-    // eine Viertelstufe höher (x.5) nehmen, wenn der Bereich dabei höchstens den halben Rand braucht
+  if (frac < 0.49) {
     const up = base + 0.5;
     const p = fitPadding(map, pad);
     const full = map.getSize();
     const s = pxSize(map, b, up);
-    z = up <= maxZoom && s.x <= full.x - (p[1] + p[3]) / 2 && s.y <= full.y - (p[0] + p[2]) / 2 ? up : base;
+    const fits = up <= maxZoom && s.x <= full.x - (p[1] + p[3]) / 2 && s.y <= full.y - (p[0] + p[2]) / 2;
+    z = fits ? up : base;
   }
   return Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), z));
 }
@@ -95,19 +137,41 @@ export interface FlyOptions {
   duration?: number;
 }
 
-/** Fliegt auf einen LV95-Bereich (Feld, Unterquadrant, NAI …), scharf und mit Rand für die Bedienelemente. */
-export function flyToBoundsSharp(map: L.Map, b: Bounds, o: FlyOptions = {}): void {
+/**
+ * Fliegt auf einen LV95-Bereich (Feld, Unterquadrant, NAI …), scharf und mit Rand für die Bedienelemente.
+ * @returns false, wenn nicht geflogen wurde (Karte ohne Grösse, z. B. ausgeblendet)
+ */
+export function flyToBoundsSharp(map: L.Map, b: Bounds, o: FlyOptions = {}): boolean {
+  const size = map.getSize();
+  if (!size.x || !size.y || ![b.minE, b.maxE, b.minN, b.maxN].every(Number.isFinite)) return false;
   const pad = fitPadding(map, o.padding ?? navPadding(map, b));
   const z = sharpZoomFor(map, b, pad, o.maxZoom);
+  if (!Number.isFinite(z)) return false;
   // Mitte unter Berücksichtigung des ungleichen Rands (wie Leaflet `_getBoundsCenterZoom`)
   const off = L.point((pad[1] - pad[3]) / 2, (pad[2] - pad[0]) / 2);
   const a = map.project(toLatLng({ e: b.minE, n: b.minN }), z);
   const c = map.project(toLatLng({ e: b.maxE, n: b.maxN }), z);
   const center = map.unproject(a.add(c).divideBy(2).add(off), z);
+  if (!Number.isFinite(center.lat) || !Number.isFinite(center.lng)) return false;
   const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   const duration = o.duration ?? 0.6;
   if (duration <= 0 || reduce) map.setView(center, z, { animate: false });
   else map.flyTo(center, z, { duration });
+  return true;
+}
+
+/** Bereich um `m` Meter nach allen Seiten vergrössert (Nachbarkontext). */
+export function growBounds(b: Bounds, m: number): Bounds {
+  return { minE: b.minE - m, maxE: b.maxE + m, minN: b.minN - m, maxN: b.maxN + m };
+}
+
+/** Planquadrat oder Unterquadrant mit Nachbarkontext anfliegen (1 Feld bzw. 1 Unterquadrant Rand, Höchststufe 23/24). */
+export function flyToCell(map: L.Map, b: Bounds, quadrant: boolean, duration = 0.6): boolean {
+  return flyToBoundsSharp(map, cellView(b), { maxZoom: quadrant ? NAV_MAX_ZOOM.quadrant : NAV_MAX_ZOOM.feld, duration });
+}
+
+function cellView(b: Bounds): Bounds {
+  return growBounds(b, Math.max(b.maxE - b.minE, b.maxN - b.minN));
 }
 
 /** Bereich rund um einen Punkt: halbe Seitenlänge in Metern. */
@@ -119,9 +183,10 @@ export function boundsAround(p: LV95, half: number): Bounds {
 
 const registry = new WeakMap<L.Map, () => RasterSheet[]>();
 
-/** Ist der Bereich bereits bildschirmfüllend gezeigt (Zoom ≈ Ziel, Mitte nahe der Kartenmitte)? */
-function isFilled(map: L.Map, b: Bounds): boolean {
-  const target = sharpZoomFor(map, b);
+/** Wird der Bereich bereits so gezeigt, wie `flyToCell` ihn zeigen würde (Zoom ≈ Ziel, Mitte nahe der Kartenmitte)? */
+function isFilled(map: L.Map, b: Bounds, maxZoom: number): boolean {
+  const v = cellView(b);
+  const target = sharpZoomFor(map, v, navPadding(map, v), maxZoom);
   if (map.getZoom() < target - 0.3) return false;
   if (map.getZoom() > target + 0.3) return true; // schon näher dran als «gefüllt»
   const size = map.getSize();
@@ -153,11 +218,12 @@ export function zoomToCell(map: L.Map, p: LV95, level: CellZoomLevel = "auto", s
   let lvl: "feld" | "quadrant";
   if (level === "feld") lvl = "feld";
   else if (level === "quadrant") lvl = "quadrant";
-  else if (!isFilled(map, feld)) lvl = "feld";
-  else if (!isFilled(map, quad)) lvl = "quadrant";
+  else if (!isFilled(map, feld, NAV_MAX_ZOOM.feld)) lvl = "feld";
+  else if (!isFilled(map, quad, NAV_MAX_ZOOM.quadrant)) lvl = "quadrant";
   else return null;
   const bounds = lvl === "feld" ? feld : quad;
-  flyToBoundsSharp(map, bounds, { duration: 0.45 });
+  whenSettled(map, () => flashBounds(map, bounds));
+  if (!flyToCell(map, bounds, lvl === "quadrant", 0.45)) return null;
   const label = lvl === "feld" ? cellAt(s, p, false)!.label : `${cellAt(s, p, false)!.label} ${q}`;
   return { cell: { ...ref, quadrant: lvl === "quadrant" ? q : undefined, label }, bounds, level: lvl };
 }
@@ -182,7 +248,9 @@ export function enableCellZoom(map: L.Map, getSheets: () => RasterSheet[]): () =
       return;
     }
     const hit = zoomToCell(map, toLv95(ev.latlng), "auto", getSheets());
-    if (!hit) map.setZoomAround(ev.containerPoint, Math.min(map.getMaxZoom(), Math.round(map.getZoom()) + 1));
+    // sonst normal hineinzoomen, aber nie tiefer als Stufe 25 (1 m/px)
+    const z = Math.min(NAV_MAX_ZOOM.doppelklick, Math.round(map.getZoom()) + 1);
+    if (!hit && z > map.getZoom()) map.setZoomAround(ev.containerPoint, z);
   };
   map.on("dblclick", onDbl);
   return () => {

@@ -68,7 +68,10 @@
   gap: 4px 10px;
   max-width: min(900px, calc(100% - 66px));
   padding: 7px 34px 7px 12px;
-  background: color-mix(in srgb, var(--card) 94%, transparent);
+  overflow: auto;
+  background: color-mix(in srgb, var(--card) 97%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   border: 1px solid var(--line);
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
@@ -122,9 +125,12 @@
   max-width: min(560px, calc(100% - 24px));
   max-height: calc(100% - 140px);
   overflow: auto;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+  background: color-mix(in srgb, var(--card) 97%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   border: 1px solid var(--line);
   border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
   font-size: 12.5px;
   color: var(--muted);
 }
@@ -133,7 +139,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 0;
+  min-height: 32px;
   width: 100%;
   padding: 4px 10px;
   border: 0;
@@ -151,6 +157,8 @@
 .mo-legend-l li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .mo-ic { display: inline-flex; justify-content: center; align-items: center; min-width: 24px; height: 20px; }
 .mo-ic .mo-sym svg { height: 18px; }
+/* Kartenfarben-Muster auf hellem Kartengrund (lesbar auch im Dunkelmodus) */
+.mo-swatch { background: #F4F5F1; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); }
 .mo-tl {
   font: 600 10.5px/13px var(--f-mono);
   color: #101414;

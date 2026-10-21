@@ -190,7 +190,7 @@ export function Workspace({ product, tagline }: Props) {
     if (c && sh) {
       const b = cellBounds(sh, c.col, c.row, c.quadrant);
       const pad = Math.max(b.maxE - b.minE, b.maxN - b.minN) * 1.2;
-      flyToBoundsSharp(map, { minE: b.minE - pad, minN: b.minN - pad, maxE: b.maxE + pad, maxN: b.maxN + pad }, { maxZoom: 22 });
+      flyToBoundsSharp(map, { minE: b.minE - pad, minN: b.minN - pad, maxE: b.maxE + pad, maxN: b.maxN + pad }, { maxZoom: 22.5 });
     } else if (e.nai && ex.areas.some((a) => a.name === e.nai)) {
       const a = ex.areas.find((x) => x.name === e.nai)!;
       map.flyToBounds(L.latLngBounds(a.ring.map(toLatLng)).pad(0.6), { duration: 0.6, maxZoom: 22 });
@@ -229,8 +229,12 @@ export function Workspace({ product, tagline }: Props) {
     const b = { minE: Math.min(...pts.map((p) => p.e)), minN: Math.min(...pts.map((p) => p.n)), maxE: Math.max(...pts.map((p) => p.e)), maxN: Math.max(...pts.map((p) => p.n)) };
     flyToBoundsSharp(sm.current.map, b, { duration: 0 });
   };
-  useEffect(() => { if (ex && sm.current) fitAll(ex); /* nur beim Laden */ // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ex?.id, mapReady]);
+  // Beim Laden einpassen – erst wenn das Layout (Zeitstrahl, Werkzeuge) steht
+  useEffect(() => {
+    if (!ex || !sm.current) return;
+    const id = window.setTimeout(() => { sm.current?.map.invalidateSize(); if (exRef.current) fitAll(exRef.current); }, 350);
+    return () => window.clearTimeout(id);
+  }, [ex?.id, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const exRef = useRef<Exercise | null>(null);
   exRef.current = ex;
@@ -391,7 +395,8 @@ export function Workspace({ product, tagline }: Props) {
             <div className="panel"><p className="help">Karte wird geladen …</p></div>
           ) : tab === "journal" ? (
             <JournalPanel ex={ex} map={sm.current!.map} device={device} selected={selEvent}
-              onSelect={selectEvent} reportAt={reportAt} editRequest={editReq} update={update} say={say} onExport={exportJournal} />
+              onSelect={selectEvent} reportAt={reportAt} editRequest={editReq}
+              onGoto={(t) => setTab(t)} onDemo={() => { const x = demoExercise(); setEx(x); setSelSheet(null); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); }} update={update} say={say} onExport={exportJournal} />
           ) : tab === "raster" ? (
             <div className="panel">
               {ex.sheets.length === 0 && (
@@ -415,7 +420,7 @@ export function Workspace({ product, tagline }: Props) {
               </ul>
               {sel && <SheetForm sheet={sel} onPatch={(p) => patchSheet(sel.id, p)} onPdf={(paper) => pdf(sel, paper)}
                 onDelete={() => { update((x) => { x.sheets = x.sheets.filter((s) => s.id !== sel.id); return x; }); setSelSheet(null); }} />}
-              <OfflineBox ex={ex} map={sm.current.map} />
+              {ex.sheets.length > 0 ? <OfflineBox ex={ex} map={sm.current.map} /> : <p className="help">Karte für den Einsatz ohne Netz speichern: zuerst ein Raster anlegen.</p>}
             </div>
           ) : (
             <NaiPanel exercise={ex} selected={selArea} onSelect={(id) => setSelArea(id)} map={sm.current!.map}
@@ -507,7 +512,7 @@ function Stats({ events }: { events: LageEvent[] }) {
   useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(id); }, []);
   const live = events.filter((e) => !e.deleted);
   if (!live.length) return null;
-  const own = new Set(live.filter((e) => e.side === "blau" && e.unit).map((e) => e.unit.toLowerCase())).size;
+  const own = new Set(live.flatMap((e) => [e.melder, e.side === "blau" ? e.unit : undefined]).filter((u): u is string => !!u).map((u) => u.toLowerCase())).size;
   const sight = live.filter((e) => e.side === "rot").length;
   const last = live.reduce((m, e) => (e.t > m ? e.t : m), "");
   const ago = Math.round((now - Date.parse(last)) / 60000);
