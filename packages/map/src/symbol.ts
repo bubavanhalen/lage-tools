@@ -7,7 +7,7 @@
  */
 import L from "leaflet";
 import ms from "milsymbol";
-import { sidcFor, symbolDef, type Affiliation } from "@lage/core";
+import { buildSidc, catalogEntry, sidcFor, SYMBOLS, symbolDef, type Affiliation, type Status } from "@lage/core";
 
 export const SYMBOL_FILL: Record<Affiliation, string> = { F: "#80E0FF", H: "#FF8080", U: "#FFFF80", N: "#AAFFAA" };
 
@@ -18,7 +18,41 @@ export interface SymbolText {
   count?: number;
   /** Bewegungsrichtung in Grad (Pfeil am Zeichen) */
   dir?: number;
+  /** vollständiger SIDC (APP-6/2525C, 15 Stellen) – hat Vorrang vor Schlüssel + Zugehörigkeit */
+  sidc?: string;
+  /** «anticipated» = vermutet (gestrichelter Rahmen), falls nicht schon im SIDC */
+  status?: Status;
 }
+
+const OLD_KEYS = new Set(SYMBOLS.map((x) => x.key));
+
+/**
+ * SIDC für die Darstellung: voller SIDC der Meldung, sonst Katalogeintrag, sonst alter Zeichenschlüssel.
+ * Zugehörigkeit (Stelle 2) und Status (Stelle 4) werden gesetzt.
+ */
+export function resolveSidc(key: string, aff: Affiliation, text: Pick<SymbolText, "sidc" | "status"> = {}): string {
+  let sidc = text.sidc && text.sidc.length >= 10 ? text.sidc.toUpperCase().padEnd(15, "-") : "";
+  if (!sidc) {
+    const cat = catalogEntry(key);
+    sidc = cat ? buildSidc(cat, aff) : sidcFor(OLD_KEYS.has(key) ? key : "einheit", aff);
+  }
+  if (text.status === "anticipated") sidc = sidc.slice(0, 3) + "A" + sidc.slice(4);
+  return sidc;
+}
+
+/** Zugehörigkeit aus dem SIDC (Stelle 2), sonst `aff` */
+export function sidcAffiliation(sidc: string | undefined, aff: Affiliation): Affiliation {
+  const a = sidc?.[1]?.toUpperCase();
+  if (a === "F" || a === "H" || a === "U" || a === "N") return a;
+  if (a === "A" || a === "D" || a === "M") return "F";
+  if (a === "S" || a === "J" || a === "K") return "H";
+  if (a === "P" || a === "G" || a === "W") return "U";
+  if (a === "L") return "N";
+  return aff;
+}
+
+/** vermutet / geplant (SIDC Stelle 4 = A) */
+export const isAnticipated = (sidc: string | undefined, status?: Status) => status === "anticipated" || sidc?.[3]?.toUpperCase() === "A";
 
 export interface SymbolGraphic {
   svg: string;
@@ -34,7 +68,7 @@ const cache = new Map<string, SymbolGraphic>();
  * @param outline Farbe der Umrandung (Standard weiss); z. B. blau für «von Blau gemeldet»
  */
 export function symbolSvg(key: string, aff: Affiliation, size = 22, text: SymbolText = {}, outline = "#ffffff"): SymbolGraphic {
-  const ck = `${key}|${aff}|${size}|${text.dir ?? ""}|${outline}`;
+  const ck = `${key}|${aff}|${size}|${text.dir ?? ""}|${outline}|${text.sidc ?? ""}|${text.status ?? ""}`;
   const hit = cache.get(ck);
   if (hit) return hit;
   const g = draw(key, aff, size, text, outline);
@@ -44,8 +78,10 @@ export function symbolSvg(key: string, aff: Affiliation, size = 22, text: Symbol
 }
 
 function draw(key: string, aff: Affiliation, size: number, text: SymbolText, outline: string): SymbolGraphic {
-  const def = symbolDef(key);
-  if (def.triangle) {
+  const triangle = (OLD_KEYS.has(key) ? symbolDef(key).triangle : catalogEntry(key)?.triangle) ?? false;
+  const dashed = isAnticipated(text.sidc, text.status);
+  if (text.sidc) aff = sidcAffiliation(text.sidc, aff);
+  if (triangle) {
     const w = Math.round(size * 1.15), h = Math.round(size), p = 3;
     const W = w + 2 * p, H = h + 2 * p;
     const A = [p, H - p], B = [W - p, H - p], C = [W / 2, p];
@@ -56,14 +92,15 @@ function draw(key: string, aff: Affiliation, size: number, text: SymbolText, out
       : "";
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`
       + `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${coloured ? 6 : 4}" stroke-linejoin="round"/>`
-      + `<polygon points="${pts}" fill="${SYMBOL_FILL[aff]}" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/>`
+      + `<polygon points="${pts}" fill="${SYMBOL_FILL[aff]}" stroke="#000" stroke-width="1.5" stroke-linejoin="round"${dashed ? ' stroke-dasharray="3 2"' : ""}/>`
       + slash
       + `<circle cx="${W / 2}" cy="${p + (h * 2) / 3}" r="1.6" fill="#000"/></svg>`;
     return { svg, w: W, h: H, anchor: [W / 2, p + (h * 2) / 3] };
   }
   const opts: Record<string, unknown> = { size, outlineWidth: 4, outlineColor: outline, fill: true };
   if (text.dir !== undefined) opts.direction = String(text.dir);
-  const sym = new ms.Symbol(sidcFor(key, aff), opts);
+  let sym = new ms.Symbol(resolveSidc(key, aff, text), opts);
+  if (!sym.isValid()) sym = new ms.Symbol(resolveSidc(key, aff, { status: text.status }), opts);
   const a = sym.getAnchor();
   const s = sym.getSize();
   return { svg: sym.asSVG(), w: Math.ceil(s.width), h: Math.ceil(s.height), anchor: [a.x, a.y] };

@@ -42,6 +42,7 @@
 .lt-tip-h b.tnum { font-family: var(--f-mono, ui-monospace, monospace); font-weight: 600; }
 .lt-tip-u { font-family: var(--f-display, "Arial Narrow", sans-serif); font-size: 15px; font-weight: 600; }
 .lt-tip-t { margin-top: 2px; }
+.lt-tip-d { margin-top: 2px; font-weight: 600; }
 .lt-tip-m { margin-top: 2px; font: 500 11.5px var(--f-mono, ui-monospace, monospace); color: #5B655F; }
 .lt-kind {
   font: 600 10.5px/1.4 var(--f-mono, ui-monospace, monospace);
@@ -97,6 +98,8 @@
 .mo-unit { font: 600 16px/1.1 var(--f-display); white-space: nowrap; }
 .mo-via { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .mo-pq { font: 500 12px var(--f-mono); border: 1px solid var(--line); border-radius: 3px; padding: 0 6px; white-space: nowrap; }
+.mo-road { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.mo-desc { font-weight: 600; }
 .mo-msg { min-width: 0; overflow-wrap: anywhere; flex: 1 1 180px; }
 .mo-banner .mo-btn { min-height: 0; padding: 1px 8px; font-size: 13px; border-radius: 4px; align-self: center; }
 .mo-banner .mo-x {

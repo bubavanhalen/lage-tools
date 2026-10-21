@@ -8,7 +8,7 @@
  */
 import L from "leaflet";
 import {
-  cellBounds, declutter, mirrorBox, findCells, kindLabel, lastPosition, symbolDef,
+  cellBounds, declutter, mirrorBox, findCells, kindLabel, lastPosition,
   type Box, type DeclutterItem, type LageEvent, type RasterSheet,
 } from "@lage/core";
 import { escapeHtml, symbolSvg, toLatLng } from "@lage/map";
@@ -55,11 +55,15 @@ interface Placed {
   /** Zeichenbreite und Anker (für den Führungsstrich) */
   w: number;
   ax: number;
+  /** Zeichen neben dem wahren Ort (Hindernis an der Strasse): Versatz in Bildschirmpixeln */
+  offset?: [number, number];
 }
 
 class SituationLayer extends L.LayerGroup {
   private placed: Placed[] = [];
   private leaders = L.layerGroup();
+  private roadMarks = L.layerGroup();
+  private roadItems: SituationItem[] = [];
 
   constructor(private events: LageEvent[], private o: SituationOptions) {
     super();
@@ -135,13 +139,22 @@ class SituationLayer extends L.LayerGroup {
       }
     }
 
+    // Hindernisse / Zeichen quer zur Strasse (im Gelände; bei jedem Zoom neu, damit sie nie zu klein werden)
+    const roadOffsets = new Map<SituationItem, [number, number]>();
+    for (const it of model.items) {
+      if (!it.road) continue;
+      const a = ((it.e.angle ?? 0) * Math.PI) / 180;
+      roadOffsets.set(it, [Math.cos(a) * 30, Math.sin(a) * 30]); // quer zur Strasse (Bildschirm: x Ost, y Süd)
+      this.roadItems.push(it);
+    }
+    this.roadMarks.addTo(this);
     this.leaders.addTo(this);
 
     // Zeichen (gewählte zuletzt → oben; zusätzlich zIndexOffset)
     const items = [...model.items].sort((a, b) => Number(a.selected) - Number(b.selected) || a.e.t.localeCompare(b.e.t));
     for (const it of items) {
       const size = it.selected ? SIZE_SEL : SIZE;
-      const s = symbolSvg(it.sym, it.aff, size, { dir: it.e.dir });
+      const s = symbolSvg(it.sym, it.aff, size, { dir: it.e.dir, sidc: it.sidc, status: it.status });
       const [ax, ay] = s.anchor;
       const udW = it.ud ? it.ud.length * 7 + 6 : 0;
       const ext = Math.max(udW, it.showTime ? TIME_W : 0);
@@ -165,7 +178,52 @@ class SituationLayer extends L.LayerGroup {
       if (!it.selected) marker.bindTooltip(() => this.tooltip(it), { direction: "top", offset: [0, -ay - 2], className: "lt-tip", opacity: 1 });
       marker.on("click", () => { marker.closeTooltip(); o.onClick(it.e); });
       marker.addTo(this);
-      this.placed.push({ it, ll, marker, core, box, w: s.w, ax });
+      this.placed.push({ it, ll, marker, core, box, w: s.w, ax, offset: roadOffsets.get(it) });
+    }
+  }
+
+  /**
+   * Zeichnet ein Hindernis quer zur Strasse: Balken senkrecht zur Strassenrichtung (Sperre mit Zacken
+   * zur Gegenseite, Checkpoint als Schranke, sonst kurzer Strich mit Punkt).
+   * Länge ca. 44 m im Gelände, auf dem Bildschirm aber mindestens ca. 34 px.
+   */
+  private drawRoadMark(it: SituationItem, mPerPx: number): void {
+    const p = it.pos;
+    const a = ((it.e.angle ?? 0) * Math.PI) / 180;
+    const u = { e: Math.cos(a), n: -Math.sin(a) }; // quer zur Strasse
+    const v = { e: Math.sin(a), n: Math.cos(a) }; // entlang der Strasse
+    const k = Math.max(1, (17 * mPerPx) / 22); // Massstab: halbe Balkenlänge mind. 17 px
+    const at = (du: number, dv: number) => toLatLng({ e: p.e + (u.e * du + v.e * dv) * k, n: p.n + (u.n * du + v.n * dv) * k });
+    // Zacken zur Gegenseite: bei Feind/unklar zum Melder (das sind wir), sonst in Strassenrichtung
+    let side = 1;
+    if (it.kind !== "eigen" && it.e.melder) {
+      const m = lastPosition(this.events, "blau", it.e.melder, it.e.t);
+      if (m) side = Math.sign((m.e - p.e) * v.e + (m.n - p.n) * v.n) || 1;
+    }
+    const col = KIND_COLOR[it.kind].line;
+    const o = it.opacity;
+    const opt = (color: string, weight: number, opacity: number): L.PolylineOptions => ({ color, weight, opacity: opacity * o, interactive: false, lineCap: "butt", lineJoin: "miter", dashArray: it.anticipated && color !== "#fff" ? "6 4" : undefined });
+    const g = this.roadMarks;
+    const casing = (ll: L.LatLng[] | L.LatLng[][], w: number) => L.polyline(ll, opt("#fff", w, 0.9)).addTo(g);
+    const line = (ll: L.LatLng[] | L.LatLng[][], w: number) => L.polyline(ll, opt(col, w, 1)).addTo(g);
+    if (it.road === "sperre") {
+      const L2 = 22, depth = 7, n = 4;
+      const bar = [at(-L2, 0), at(L2, 0)];
+      const teeth: L.LatLng[] = [];
+      for (let i = 0; i < n; i++) {
+        const a0 = -L2 + (2 * L2 * i) / n, a1 = -L2 + (2 * L2 * (i + 1)) / n;
+        teeth.push(at(a0, 0), at((a0 + a1) / 2, side * depth), at(a1, 0));
+      }
+      casing(teeth, 5); casing(bar, 9);
+      line(teeth, 2); line(bar, 5);
+    } else if (it.road === "checkpoint") {
+      const L2 = 12;
+      const gate = [[at(-L2, -5), at(-L2, 5)], [at(-L2, 0), at(L2, 0)], [at(L2, -5), at(L2, 5)]];
+      casing(gate, 6); line(gate, 3);
+    } else {
+      const tick = [at(-8, 0), at(8, 0)];
+      casing(tick, 6); line(tick, 3);
+      L.circleMarker(toLatLng(p), { radius: 3.5, color: col, weight: 2, fillColor: "#fff", fillOpacity: o, opacity: o, interactive: false }).addTo(g);
     }
   }
 
@@ -175,8 +233,9 @@ class SituationLayer extends L.LayerGroup {
     const who = e.unit || (it.kind === "eigen" ? e.melder ?? "" : "");
     const via = it.kind !== "eigen" && e.melder ? `via ${e.melder}` : "";
     const where = (e.cells?.length ? e.cells.join(", ") : e.where) ?? "";
-    const meta = [where, symbolDef(it.sym).name, e.nai && e.nai !== where ? e.nai : "", via].filter(Boolean).join(" · ");
+    const meta = [where, e.road ? `auf ${e.road}` : "", it.name, e.nai && e.nai !== where ? e.nai : "", via].filter(Boolean).join(" · ");
     return `<div class="lt-tip-h"><b class="tnum">${escapeHtml(time)}</b><span class="lt-kind k-${it.kind}">${escapeHtml(kindLabel(e))}</span>${who ? `<b class="lt-tip-u">${escapeHtml(who)}</b>` : ""}</div>`
+      + (e.desc ? `<div class="lt-tip-d">${escapeHtml(e.desc)}</div>` : "")
       + `<div class="lt-tip-t">${escapeHtml(e.text)}</div>`
       + (meta ? `<div class="lt-tip-m tnum">${escapeHtml(meta)}</div>` : "");
   }
@@ -186,13 +245,15 @@ class SituationLayer extends L.LayerGroup {
     const map = this._map;
     if (!map) return;
     const pts = this.placed.map((p) => map.latLngToLayerPoint(p.ll));
-    const input: DeclutterItem[] = this.placed.map((p, i) => ({ x: pts[i]!.x, y: pts[i]!.y, core: p.core, box: p.box, pinned: p.it.selected }));
+    const input: DeclutterItem[] = this.placed.map((p, i) => ({ x: pts[i]!.x + (p.offset?.[0] ?? 0), y: pts[i]!.y + (p.offset?.[1] ?? 0), core: p.core, box: p.box, pinned: p.it.selected }));
     // weit herausgezoomt (Feld kleiner als ca. 10 px): nicht auffächern, sonst entstehen kilometerlange Striche
     const mPerPx = 1 / map.options.crs!.scale(map.getZoom());
     const cell = Math.min(...this.o.sheets.map((s) => Math.min(s.cellW, s.cellH)), 2000);
     const res = cell / mPerPx < 10
       ? input.map((it) => ({ x: it.x, y: it.y, moved: false, side: 1 as const, group: -1 }))
       : declutter(input);
+    this.roadMarks.clearLayers();
+    for (const it of this.roadItems) this.drawRoadMark(it, mPerPx);
     this.leaders.clearLayers();
     const lines: Record<"on" | "off", L.LatLng[][]> = { on: [], off: [] };
     let moved = 0;
@@ -200,16 +261,16 @@ class SituationLayer extends L.LayerGroup {
       const p = this.placed[i]!;
       const el = p.marker.getElement();
       if (el) el.classList.toggle("left", r.side < 0);
-      if (!r.moved) {
+      if (!r.moved && !p.offset) {
         if (!p.marker.getLatLng().equals(p.ll)) p.marker.setLatLng(p.ll);
         return;
       }
-      moved++;
+      if (r.moved) moved++;
       p.marker.setLatLng(map.layerPointToLatLng(L.point(r.x, r.y)));
-      // Strich vom wahren Ort zum Zeichenrand (der dem Ort zugewandten Seite)
-      const edge = map.layerPointToLatLng(L.point(r.x + (r.side < 0 ? p.w - p.ax : -p.ax), r.y));
+      // Strich vom wahren Ort zum Zeichenrand (der dem Ort zugewandten Seite); neben der Strasse zum Anker
+      const edge = map.layerPointToLatLng(r.moved ? L.point(r.x + (r.side < 0 ? p.w - p.ax : -p.ax), r.y) : L.point(r.x, r.y));
       lines[p.it.opacity < 1 ? "off" : "on"].push([p.ll, edge]);
-      L.circleMarker(p.ll, { radius: 3.5, color: "#fff", weight: 1.5, fillColor: MAP_INK, fillOpacity: 1, opacity: p.it.opacity, interactive: false }).addTo(this.leaders);
+      if (r.moved || !p.offset) L.circleMarker(p.ll, { radius: 3.5, color: "#fff", weight: 1.5, fillColor: MAP_INK, fillOpacity: 1, opacity: p.it.opacity, interactive: false }).addTo(this.leaders);
     });
     for (const k of ["on", "off"] as const) {
       if (!lines[k].length) continue;
