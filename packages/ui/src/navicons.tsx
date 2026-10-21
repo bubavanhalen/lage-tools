@@ -20,3 +20,4 @@ export const IconUndo = () => <Svg><path d="M5 3 2 6l3 3" /><path d="M2 6h7.5a4.
 export const IconCheck = () => <Svg><path d="m3 8.5 3.2 3L13 4.5" /></Svg>;
 export const IconGlobe = () => <Svg size={12}><circle cx="8" cy="8" r="6" /><path d="M2 8h12M8 2c2 2.2 2 9.8 0 12M8 2c-2 2.2-2 9.8 0 12" /></Svg>;
 export const IconChevron = () => <Svg size={12}><path d="m4 6 4 4 4-4" /></Svg>;
+export const IconMore = () => <Svg><circle cx="3.5" cy="8" r="1.1" fill="currentColor" /><circle cx="8" cy="8" r="1.1" fill="currentColor" /><circle cx="12.5" cy="8" r="1.1" fill="currentColor" /></Svg>;

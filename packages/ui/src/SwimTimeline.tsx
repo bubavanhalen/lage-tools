@@ -183,7 +183,8 @@ export function SwimTimeline(p: SwimTimelineProps) {
   const TOP = compact ? 20 : 24, FOOT = compact ? 16 : 20, GAP = compact ? 5 : 10, PAD = compact ? 2 : 4;
   const gaps = Math.max(0, nGroups - 1) * GAP + 2 * PAD;
   // Höhe: höchstens ca. 30 % des Fensters (kleiner Bildschirm 20 %, Präsentation 25 %), darüber scrollen die Spuren
-  const share = compact ? 0.25 : small ? 0.2 : 0.3;
+  // schmal (< 900 px): 20 %; nur wenig Höhe: dichte Spuren (14 px), damit trotzdem alle Platz haben
+  const share = compact ? 0.25 : winW < 900 ? 0.2 : 0.3;
   const budget = winH * share - headH - TOP - FOOT - 1;
   const LANE = compact
     ? clamp(Math.floor((budget - gaps) / Math.max(1, nLanes)), 10, 26)
@@ -494,7 +495,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
       <button className="swt-chip swt-live" aria-pressed={live} onClick={goLive} title="Immer die neuste Lage zeigen (L)"><i aria-hidden="true" />Live</button>
       {!compact || !collapsed ? (
         <button className="swt-chip" aria-pressed={fit} onClick={() => setZoom(null)} disabled={empty}
-          title="Ganze Zeitachse zeigen (Zoom zurücksetzen). Vergrössern: Ctrl + Mausrad, zwei Finger oder + / −. Neuste Lage: «Live»">Alles</button>
+          title="Ganze Zeitachse zeigen (Zoom zurücksetzen) – die Lagezeit bleibt. Vergrössern: Ctrl + Mausrad, zwei Finger oder + / −. Neuste Lage: «Live»">Ganze Achse</button>
       ) : null}
       {extra}
       <button className="swt-fold" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed} aria-label={collapsed ? "Zeitstrahl aufklappen" : "Zeitstrahl einklappen"} title={collapsed ? "Spuren zeigen" : "Spuren ausblenden"}>

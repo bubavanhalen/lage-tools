@@ -228,6 +228,11 @@ export function zoomToCell(map: L.Map, p: LV95, level: CellZoomLevel = "auto", s
   return { cell: { ...ref, quadrant: lvl === "quadrant" ? q : undefined, label }, bounds, level: lvl };
 }
 
+/** Raster der Übung, wie bei `enableCellZoom` angemeldet (leer, wenn keins). */
+export function registeredSheets(map: L.Map): RasterSheet[] {
+  return registry.get(map)?.() ?? [];
+}
+
 /** Feld in der Kartenmitte (für die Werkzeugleiste). */
 export function zoomToCellAtCenter(map: L.Map, level: CellZoomLevel = "auto"): CellZoomResult | null {
   return zoomToCell(map, toLv95(map.getCenter()), level);
