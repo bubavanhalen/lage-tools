@@ -60,6 +60,11 @@ import { MapContextMenu } from "./MapContextMenu";
 import { loadFlags, saveFlags, type LayerFlags } from "./layers";
 import { windowStart } from "@lage/core";
 import { useMoveEvent, useTimeWindow } from "./mapedit";
+import { HintsPanel } from "./HintsPanel";
+import { hintExtent, hintLayer } from "./hintLayer";
+import { newCount, useHints } from "./hintsData";
+import { hintsToCsv } from "./hintsExport";
+import type { Hint } from "@lage/core";
 
 function deviceId(): string {
   try {
@@ -74,7 +79,7 @@ interface Props {
   tagline: string;
 }
 
-type Tab = "journal" | "raster" | "nai";
+type Tab = "journal" | "hinweise" | "raster" | "nai";
 type SheetPatch = Partial<{ name: string; prefix: string; cellSize: number; cols: number; rows: number; basemap: "lk" | "img"; classification: string; quadrants: boolean }>;
 
 export function Workspace({ product, tagline }: Props) {
@@ -185,7 +190,9 @@ export function Workspace({ product, tagline }: Props) {
     const g = L.layerGroup();
     for (const o of ex.overlays ?? []) if (o.visible) g.addLayer(new AffineImageLayer(o.dataUrl, o.width, o.height, o.affine, o.opacity));
     if (flags.raster || tab === "raster") for (const sh of ex.sheets) g.addLayer(rasterLayer(s.map, sh, { color: sh.id === selSheet ? "#c8102e" : "#111111" }));
-    if (flags.nai || tab === "nai") g.addLayer(areasLayer(ex.areas, { selectedId: selArea ?? undefined, onClick: (a) => { setTab("nai"); setSelArea(a.id); } }));
+    // NAI mit zugeteiltem Trupp: «NAI 2 · H03»
+    const areas = ex.areas.map((a) => (a.kind === "nai" && a.trupp ? { ...a, name: `${a.name} · ${a.trupp}` } : a));
+    if (flags.nai || tab === "nai") g.addLayer(areasLayer(areas, { selectedId: selArea ?? undefined, onClick: (a) => { setTab("nai"); setSelArea(a.id); } }));
     g.addTo(s.map);
     layerRef.current = g;
   }, [ex, selSheet, selArea, mapReady, flags.raster, flags.nai, tab]);
@@ -202,6 +209,26 @@ export function Workspace({ product, tagline }: Props) {
   // Zeitfenster (pro Übung gemerkt): Anfang zur Lagezeit, null = alles
   const [win, setWin] = useTimeWindow(ex?.id);
   const winFrom = windowStart(win, tNow);
+
+  // ---------- Hinweise zu Rot (folgen Lagezeit und Zeitfenster)
+  const { hints, quality } = useHints(ex, tNow, winFrom);
+  const [selHint, setSelHint] = useState<string | null>(null);
+  const [presentHints, setPresentHints] = useState(false);
+  const hintSel = hints.find((h) => h.id === selHint) ?? null;
+  /** gewählter Hinweis hebt seine Auslöser hervor – nur solange die Hinweise sichtbar sind */
+  const hintFocus = !!hintSel && (present ? presentHints : tab === "hinweise");
+  const hintHl = (() => {
+    if (!hintFocus || !hintSel) return null;
+    const ids = new Set(hintSel.events);
+    if (hintSel.unit) for (const e of ex?.events ?? []) if (e.side === "blau" && e.unit === hintSel.unit) ids.add(e.id);
+    return ids;
+  })();
+  const nNew = ex ? newCount(ex, hints) : 0;
+  const nHoch = ex ? hints.some((h) => h.level === "hoch" && !ex.hintDecisions?.[h.id]) : false;
+  // Zahl am Reiter pulsiert einmal, wenn neue Hinweise dazukommen (kein Pop-up, kein Ton)
+  const prevNew = useRef(nNew);
+  const [pulse, setPulse] = useState(0);
+  useEffect(() => { if (nNew > prevNew.current) setPulse((n) => n + 1); prevNew.current = nNew; }, [nNew]);
 
   // Hindernisse, Checkpoint, IED … (und Meldungen «auf Hauptstrasse/Autobahn») ohne Ausrichtung nachträglich auf die
   // Strasse legen (z. B. Beispiel, Import, Meldung offline erfasst). Erledigt erst mit Ergebnis; fehlten Strassendaten
@@ -267,11 +294,12 @@ export function Workspace({ product, tagline }: Props) {
       t: tNow, flags, selectedId: selEvent, sheets: ex.sheets, days: ex.days, from: winFrom,
       onClick: (e) => { setTab("journal"); setSelEvent(e.id); },
       onMove: present ? undefined : mover.move,
+      highlight: hintHl,
     });
     g.addTo(s.map);
     journalRef.current = g;
     });
-  }, [ex?.events, ex?.sheets, tNow, winFrom, flags, selEvent, mapReady, present]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ex?.events, ex?.sheets, tNow, winFrom, flags, selEvent, mapReady, present, hintHl ? [...hintHl].join() : ""]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flächen- und Linienzeichen (unter den Zeichen); Zeitfenster: `from` = Anfang des Fensters (null = alles)
   const shapeRef = useRef<L.LayerGroup | null>(null);
@@ -288,6 +316,34 @@ export function Workspace({ product, tagline }: Props) {
     g.addTo(s.map);
     shapeRef.current = g;
   }, [ex?.events, ex?.sheets, ex?.areas, tNow, shapeFrom, flags, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hinweise auf der Karte (Ebene «Hinweise»; im Reiter «Hinweise» immer)
+  const hintRef = useRef<L.LayerGroup | null>(null);
+  useEffect(() => {
+    const s = sm.current;
+    hintRef.current?.remove();
+    hintRef.current = null;
+    if (!s || !ex || !(flags.hinweise || tab === "hinweise" || (present && presentHints))) return;
+    const g = hintLayer(s.map, {
+      hints, ex, t: tNow, selectedId: selHint, focus: hintFocus,
+      onClick: (h) => { if (present) setPresentHints(true); else setTab("hinweise"); setSelHint(h.id); },
+    });
+    g.addTo(s.map);
+    hintRef.current = g;
+  }, [hints, selHint, hintFocus, flags.hinweise, tab, present, presentHints, ex?.hintDecisions, ex?.events, ex?.sheets, ex?.areas, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Karte auf einen Hinweis: Planquadrate/NAI bzw. Auslöser mit Rand */
+  const focusHint = (h: Hint) => {
+    const map = sm.current?.map;
+    if (!map || !ex) return;
+    setSelHint(h.id);
+    const { box } = hintExtent(h, ex);
+    if (!box) return;
+    // Handy: Karte liegt oben – hinscrollen
+    if (window.innerWidth <= 560) window.scrollTo({ top: 0, behavior: "smooth" });
+    const pad = Math.max(250, Math.max(box.maxE - box.minE, box.maxN - box.minN) * 0.6);
+    flyToBoundsSharp(map, { minE: box.minE - pad, minN: box.minN - pad, maxE: box.maxE + pad, maxN: box.maxN + pad }, { maxZoom: 21 });
+  };
 
   /** Karte auf eine Meldung: Planquadrat (bzw. Unterquadrant) mit Rand, sonst Ort */
   const focusEvent = (e: LageEvent) => {
@@ -319,7 +375,7 @@ export function Workspace({ product, tagline }: Props) {
     if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days), "text/csv;charset=utf-8"); return; }
     const { journalPdf } = await import("./journalpdf");
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN"));
+    a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN", hints));
     a.download = `Lagejournal_${safeFileName(ex.name)}.pdf`;
     a.click();
   };
@@ -501,8 +557,11 @@ export function Workspace({ product, tagline }: Props) {
         <aside className="side">
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={tab === "journal"} onClick={() => setTab("journal")}>Journal</button>
-            <button role="tab" aria-selected={tab === "raster"} onClick={() => setTab("raster")}>Führungsraster</button>
-            <button role="tab" aria-selected={tab === "nai"} onClick={() => setTab("nai")}>NAI / BNB</button>
+            <button role="tab" aria-selected={tab === "hinweise"} onClick={() => setTab("hinweise")} title={nNew ? `${nNew} neue Hinweise zu Rot` : "Hinweise zu Rot"}>
+              Hinweise{nNew > 0 && <span key={pulse} className={"tab-n" + (nHoch ? "" : " mittel") + (pulse ? " pulse" : "")} aria-label={`${nNew} neu`}>{nNew}</span>}
+            </button>
+            <button role="tab" aria-selected={tab === "raster"} onClick={() => setTab("raster")}><span className="tab-l-long">Führungsraster</span><span className="tab-l-short">Raster</span></button>
+            <button role="tab" aria-selected={tab === "nai"} onClick={() => setTab("nai")}><span className="tab-l-long">NAI / BNB</span><span className="tab-l-short">NAI</span></button>
           </div>
           {georef ? (
             <GeorefPane candidates={georef} map={sm.current!.map} existing={ex.areas} onAreas={onGeorefAreas} onClose={() => { setGeoref(null); setTab("nai"); }} />
@@ -512,7 +571,12 @@ export function Workspace({ product, tagline }: Props) {
             <JournalPanel ex={ex} map={sm.current!.map} device={device} selected={selEvent}
               win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => setWin({ mode: "alles" })}
               onSelect={selectEvent} reportAt={reportAt} editRequest={editReq}
-              onGoto={(t) => setTab(t)} onDemo={() => { const x = demoExercise(); setEx(x); setSelSheet(null); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); }} update={update} say={say} onExport={exportJournal} />
+              onGoto={(t) => setTab(t)} onDemo={() => { const x = demoExercise(); setEx(x); setSelSheet(null); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); }} update={update} say={say} onExport={exportJournal}
+              quality={quality} />
+          ) : tab === "hinweise" ? (
+            <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint}
+              onMap={focusHint} onEvent={selectEvent} update={update} winFrom={winFrom} onWinClear={() => setWin({ mode: "alles" })}
+              onCsv={() => downloadText(`Hinweise_${safeFileName(ex.name)}.csv`, hintsToCsv(ex, hints), "text/csv;charset=utf-8")} />
           ) : tab === "raster" ? (
             <div className="panel">
               {ex.sheets.length === 0 && (
@@ -550,10 +614,20 @@ export function Workspace({ product, tagline }: Props) {
             <SwimTimeline events={ex.events ?? []} days={ex.days} units={ex.units} value={tCursor} onChange={setTCursor}
               selectedId={selEvent} compact={present} win={win} onWin={setWin}
               onSelect={(id) => { setSelEvent(id); setTab("journal"); const e = (ex.events ?? []).find((x) => x.id === id); if (e) { setTCursor(e.t); focusEvent(e); } }}
-              extra={present ? <button className="swt-chip" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button> : undefined} />
+              extra={present ? <>
+                <button className={"swt-chip" + (presentHints ? " on" : "")} aria-pressed={presentHints} onClick={() => { setPresentHints(!presentHints); window.setTimeout(() => sm.current?.map.invalidateSize(), 50); }}
+                  title="Hinweise zu Rot als Spalte rechts">Hinweise{nNew ? ` (${nNew})` : ""}</button>
+                <button className="swt-chip" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button>
+              </> : undefined} />
           )}
           <div className="mapbox">
           <div ref={el} className="map" />
+          {present && presentHints && (
+            <aside className="hp-present" aria-label="Hinweise zu Rot">
+              <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint} compact
+                onMap={focusHint} onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update} />
+            </aside>
+          )}
           {mapReady && sm.current && (
             <>
               <div className="maptools">

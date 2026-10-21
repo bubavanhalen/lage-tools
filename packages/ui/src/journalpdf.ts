@@ -2,9 +2,11 @@
  * Lagejournal als PDF (A4 hoch): Zeit, Seite, Element, Meldung, Ort – chronologisch.
  */
 import { jsPDF } from "jspdf";
-import { kindLabel, type Exercise } from "@lage/core";
+import { kindLabel, type Exercise, type Hint } from "@lage/core";
+import { appendHintsPdf } from "./hintsExport";
 
-export function journalPdf(ex: Exercise, classification = "INTERN"): Blob {
+/** `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite) */
+export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[]): Blob {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210, M = 12;
   const cols = [
@@ -45,5 +47,6 @@ export function journalPdf(ex: Exercise, classification = "INTERN"): Blob {
     doc.setDrawColor(210); doc.line(M, y - 3.2 + h, W - M, y - 3.2 + h);
     y += h;
   }
+  if (hints?.length) appendHintsPdf(doc, ex, hints, classification, page);
   return doc.output("blob");
 }

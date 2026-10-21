@@ -26,7 +26,9 @@ import {
   type LageEvent,
   type LV95,
   type Side,
+  type EventQuality,
 } from "@lage/core";
+import { QualityMarks, useDraftMissing } from "./QualityMarks";
 import { iconSvg, pickPoint, toLatLng, toLv95 } from "@lage/map";
 import { dayLabel } from "./Timeline";
 import { SymbolPicker, choiceSvg, makeChoice, pickerEntry, rebaseSidc, type SymbolChoice } from "./SymbolPicker";
@@ -55,6 +57,8 @@ interface Props {
   /** Zeitfenster der Karte: Liste nur [from, to] (ISO lokal), null = alles */
   win?: { from: string; to: string } | null;
   onWinClear?: () => void;
+  /** Meldungsqualität (E1 bestätigt/unbestätigt, E2 unvollständig) zur Lagezeit */
+  quality?: Map<string, EventQuality>;
 }
 
 /** Auf Handy/Tablet nicht automatisch fokussieren (sonst springt die Seite und die Tastatur geht auf) */
@@ -111,7 +115,7 @@ function SymbolMini({ k, aff, sidc, status }: { k: string; aff: LageEvent["aff"]
   return <span className="symmini" dangerouslySetInnerHTML={html} />;
 }
 
-export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt, editRequest, onGoto, onDemo, win, onWinClear }: Props) {
+export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt, editRequest, onGoto, onDemo, win, onWinClear, quality }: Props) {
   const events = ex.events ?? [];
   const [kindOverride, setKindOverride] = useState<Kind | null>(null);
   const [day, setDay] = useState(() => (ex.days.includes(todayIso()) ? todayIso() : ex.days[ex.days.length - 1] ?? todayIso()));
@@ -164,6 +168,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
   }), [ex, kindOverride, day, events]);
   const draft: Draft | null = useMemo(() => (text.trim() ? parseMeldung(text, ctx) : null), [text, ctx]);
+  /** E2: was der Meldung fehlt (Rückfrage nach AEIOU) */
+  const draftMissing = useDraftMissing(draft, ex);
 
   // Ortsname online nachschlagen (nur wenn sonst kein Ort erkannt wurde)
   useEffect(() => {
@@ -364,6 +370,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             </span>
             {(draft.dir !== undefined || draft.dirLabel) && <span className="chip" title="Bewegungsrichtung">{draft.dirLabel ?? `Rtg ${compass(draft.dir!)}`}</span>}
             {(draft.from !== undefined || draft.fromLabel) && <span className="chip" title="Herkunft (woher) – kein Bewegungspfeil">{draft.fromLabel ?? `aus ${compass(draft.from!)}`}</span>}
+            {(() => {
+              // «Melder fehlt» und «kein Ort» stehen schon als eigene Chips
+              const m = draftMissing.filter((x) => x !== "Melder" && !(x === "Ort" && !effPos));
+              return m.length > 0 && <span className="chip aeiou" title={`Unvollständig: ${m.join(", ")} – Rückfrage nach AEIOU (Wann · Wer tut was · Wie · Wo · Umwelt)`}>unvollständig: {m.join(", ")}</span>;
+            })()}
             {draft.roadHint && <span className="chip soft" title="wird auf die passende Strasse gelegt">{draft.roadHint === "autobahn" ? "auf Autobahn" : "auf Hauptstrasse"}</span>}
             {effPos ? (roadTarget ? <RoadChoice where={effWhere0 ?? ""} res={roadRes} pick={roadPick} onPick={setRoadPick} onMap={pickOnMap} map={map} sheets={ex.sheets} /> : <span className="chip where">📍 {effWhere}</span>) : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
@@ -417,6 +428,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
                         {(e.cells ?? []).slice(0, 2).map((c) => <span key={c} className="pq">{c}</span>)}
                         {e.nai && <span className="naichip">{e.nai}</span>}
                         {!e.cells?.length && !e.nai && (e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>)}
+                        {quality && <QualityMarks e={e} q={quality.get(e.id)} events={events} />}
                         {fresh && <span className="newdot" title="in den letzten 10 Minuten erfasst">neu</span>}
                       </span>
                     </span>

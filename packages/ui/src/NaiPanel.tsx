@@ -1,9 +1,10 @@
 import { useState } from "react";
 import L from "leaflet";
-import { areaFromRing, kmlUrlFromGeoAdminLink, parseGisText, type Area, type Exercise, type Overlay } from "@lage/core";
+import { areaFromRing, kmlUrlFromGeoAdminLink, parseGisText, type Area, type Exercise, type NaiTyp, type Overlay } from "@lage/core";
 import { toLatLng } from "@lage/map";
 import { pickFile } from "./store";
 import { candidatesFromFile, type Candidate } from "./imageimport";
+import "./hints.css";
 
 interface Props {
   exercise: Exercise;
@@ -17,6 +18,8 @@ interface Props {
 }
 
 const KINDS: Array<[Area["kind"], string]> = [["nai", "NAI"], ["ao", "AO / Raum"], ["stao", "Standort"], ["other", "Andere"]];
+/** Geländetyp eines NAI (steuert Hinweise, z. B. Engnis → Hinterhalt-Gefahr) */
+const TYPEN: Array<[NaiTyp, string]> = [["strasse", "Strasse"], ["engnis", "Engnis"], ["siedlung", "Siedlung"], ["bruecke", "Brücke"], ["wald", "Wald"], ["offen", "offenes Gelände"], ["anlage", "Anlage"]];
 
 export function NaiPanel({ exercise, map, selected, onSelect, onChange, onOverlays, onImage, say }: Props) {
   const [link, setLink] = useState("");
@@ -91,6 +94,7 @@ export function NaiPanel({ exercise, map, selected, onSelect, onChange, onOverla
         </div>
       </div>
 
+      <datalist id="nai-trupps">{exercise.units.blau.map((u) => <option key={u} value={u} />)}</datalist>
       {areas.length === 0 ? (
         <div className="empty"><p>Noch keine NAI. Lade eine BNB-Skizze (Bild, PDF oder Word mit Kartenausschnitten): Sie wird automatisch auf der Karte eingepasst, die NAI werden als Linien übernommen. Oder eine GIS-Datei bzw. einen Link aus map.geo.admin.ch.</p></div>
       ) : (
@@ -106,6 +110,20 @@ export function NaiPanel({ exercise, map, selected, onSelect, onChange, onOverla
                 <button title="Zeigen" onClick={() => { onSelect(a.id); zoomTo([a]); }}>◎</button>
                 <button title="Löschen" className="danger" onClick={() => onChange(areas.filter((x) => x.id !== a.id))}>✕</button>
               </div>
+              {a.kind === "nai" && (
+                <div className="nairow2">
+                  <label>Trupp
+                    <input list="nai-trupps" value={a.trupp ?? ""} placeholder="nicht zugeteilt" onFocus={() => onSelect(a.id)}
+                      onChange={(e) => patch(a.id, { trupp: e.target.value.trimStart() || undefined })} title="Eigenes Element, das den NAI überwacht (Auswahl oder frei)" />
+                  </label>
+                  <label>Typ
+                    <select value={a.typ ?? ""} onChange={(e) => patch(a.id, { typ: (e.target.value || undefined) as NaiTyp | undefined })} title="Geländetyp – steuert Hinweise (z. B. Engnis → Hinterhalt)">
+                      <option value="">– wählen –</option>
+                      {TYPEN.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                </div>
+              )}
             </li>
           ))}
         </ul>
