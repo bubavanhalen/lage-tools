@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoExercise, type Hint } from "@lage/core";
-import { decide, decisionOf, hhmm, newCount } from "../src/hintsData";
+import { decide, decisionOf, hhmm, newCount, nextLabel } from "../src/hintsData";
 import { hintsToCsv } from "../src/hintsExport";
 
 /** fiktive Hinweise zur Beispielübung (Raum Bern) – unabhängig von den Regeln im Kern */
@@ -16,18 +16,41 @@ function fixture() {
 }
 
 describe("Hinweise: Entscheide", () => {
-  it("bestätigen, verwerfen und rückgängig machen; Zahl am Reiter zählt nur neue hoch/mittel", () => {
+  const T = "2030-05-15T07:30";
+  it("bestätigen, verwerfen und rückgängig machen; Zahl am Reiter zählt nur offene hoch/mittel", () => {
     const { ex, hints } = fixture();
-    expect(newCount(ex, hints)).toBe(2);
-    decide(ex, "t-C1-AK9", "bestaetigt", new Date(2030, 4, 15, 7, 12));
+    expect(newCount(ex, hints, T)).toBe(2);
+    decide(ex, hints[0]!, "bestaetigt", new Date(2030, 4, 15, 7, 12));
     expect(decisionOf(ex, hints[0]!)).toBe("bestaetigt");
-    expect(ex.hintDecisions?.["t-C1-AK9"]?.at).toBe("2030-05-15T07:12");
-    expect(newCount(ex, hints)).toBe(1);
-    decide(ex, "t-C2-Det1", "verworfen");
-    expect(newCount(ex, hints)).toBe(0);
-    decide(ex, "t-C2-Det1", null);
+    expect(ex.hintDecisions?.["t-C1-AK9"]).toMatchObject({ at: "2030-05-15T07:12", rule: "C1", events: hints[0]!.events });
+    expect(newCount(ex, hints, T)).toBe(1);
+    decide(ex, hints[1]!, "verworfen");
+    expect(newCount(ex, hints, T)).toBe(0);
+    decide(ex, hints[1]!, null);
     expect(decisionOf(ex, hints[1]!)).toBe("neu");
-    expect(newCount(ex, hints)).toBe(1);
+    expect(newCount(ex, hints, T)).toBe(1);
+  });
+  it("beendete Hinweise zählen nicht als offen", () => {
+    const { ex, hints } = fixture();
+    hints[1]!.until = "2030-05-15T07:20";
+    expect(newCount(ex, hints, T)).toBe(1);
+    expect(newCount(ex, hints, "2030-05-15T07:15")).toBe(2);
+  });
+  it("Entscheid haftet nach Nachtrag (neue ID, gleiche Regel und Auslöser) und lässt sich dort rückgängig machen", () => {
+    const { ex, hints } = fixture();
+    decide(ex, hints[0]!, "verworfen");
+    const moved: Hint = { ...hints[0]!, id: "t-C1-AK9-neu", events: [...hints[0]!.events, "nachtrag"] };
+    expect(decisionOf(ex, moved)).toBe("verworfen");
+    expect(newCount(ex, [moved, hints[1]!], T)).toBe(1);
+    decide(ex, moved, null);
+    expect(ex.hintDecisions).toEqual({});
+  });
+  it("Prognose nur aus `next`: nächste bzw. überfällig, beendet ohne", () => {
+    const { ex, hints } = fixture();
+    expect(nextLabel(hints[1]!, "2030-05-15T07:30", ex.days)).toEqual({ text: "nächste ca. 07:40", late: false });
+    expect(nextLabel(hints[1]!, "2030-05-15T07:55", ex.days)).toEqual({ text: "seit 07:40 überfällig", late: true });
+    expect(nextLabel(hints[0]!, T, ex.days)).toBeNull();
+    expect(nextLabel({ ...hints[1]!, until: "2030-05-15T07:50" }, "2030-05-15T07:55", ex.days)).toBeNull();
   });
   it("Zeit mit Tag nur, wenn der Tag nicht der Lagezeit entspricht", () => {
     const days = ["2030-05-14", "2030-05-15"];
@@ -39,7 +62,7 @@ describe("Hinweise: Entscheide", () => {
 describe("Hinweise: CSV", () => {
   it("enthält Stufe, Regel, Auslöser, Prognose und Entscheid", () => {
     const { ex, hints } = fixture();
-    decide(ex, "t-C1-AK9", "bestaetigt", new Date(2030, 4, 15, 7, 12));
+    decide(ex, hints[0]!, "bestaetigt", new Date(2030, 4, 15, 7, 12));
     const csv = hintsToCsv(ex, hints);
     const lines = csv.replace(/^﻿/, "").split("\r\n");
     expect(lines[0]).toContain("Stufe;Regel;Gruppe;Hinweis");

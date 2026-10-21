@@ -152,6 +152,10 @@ export interface HintDecision {
   /** ISO-Zeit des Entscheids */
   at: string;
   note?: string;
+  /** Regel des Hinweises beim Entscheid (z. B. «C1») – damit der Entscheid bei ID-Wechsel haftet (`decisionFor`) */
+  rule?: string;
+  /** Auslöser-Meldungen (IDs) beim Entscheid – für die Zuordnung nach Nachträgen (`decisionFor`) */
+  events?: string[];
 }
 
 /** Sortierbare, eindeutige ID (Zeit + Zufall), ohne Abhängigkeiten. */

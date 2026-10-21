@@ -46,7 +46,7 @@ const LINES = [
   "T2 0530 H02: Det 2 bezieht Stellung AM9",
   "T2 0540 H02 Ablösung, Beo Stao AL9 A",
   "T2 0545 H03: 3 Fz in NAI 2 Rtg O",
-  "T2 0600 H03: 2 Fz in NAI 2 Rtg O",
+  "T2 0600 H03: 3 Fz in NAI 2 Rtg O",
   "T2 0605 Det 1 2 Fz AO7 Rtg W",
   "T2 0620 H05: Sperre aus Baumstämmen in NAI 3, Strasse blockiert",
   "T2 0630 H01 4 Pers AD7 unklar",
@@ -58,6 +58,7 @@ const LINES = [
   "T2 0710 H02: 2 Kpz AK9 Rtg W",
   "T2 0712 H05: 2 Kpz AJ9 Rtg W",
   "T2 0715 H05: 3 Fz in Kolonne AP10 Rtg W",
+  "T2 0720 H03: 1 Fz in NAI 2 Rtg N",
   "T2 0725 H02: 4 Pers in Linie AK10 Rtg N",
 ];
 

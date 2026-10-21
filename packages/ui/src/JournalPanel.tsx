@@ -125,7 +125,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const [shapeDraft, setShapeDraft] = useState<LageEvent["shape"]>(undefined);
   const [found, setFound] = useState<{ q: string; name: string; pos: LV95 } | null>(null);
   const [picking, setPicking] = useState(false);
-  const [filter, setFilter] = useState<"alle" | Kind>("alle");
+  const [filter, setFilter] = useState<"alle" | Kind | "unbest">("alle");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -300,10 +300,10 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     return events
-      .filter((e) => !e.deleted && (filter === "alle" || kindOf(e) === filter) && (!q || `${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")}`.toLowerCase().includes(q)))
+      .filter((e) => !e.deleted && (filter === "alle" || (filter === "unbest" ? quality?.get(e.id)?.status === "unbestaetigt" : kindOf(e) === filter)) && (!q || `${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")}`.toLowerCase().includes(q)))
       .filter((e) => !win || inWindow(e.t, win.from, win.to))
       .sort((a, b) => b.t.localeCompare(a.t) || b.id.localeCompare(a.id));
-  }, [events, filter, search, win?.from, win?.to]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [events, filter, search, win?.from, win?.to, filter === "unbest" && quality]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addDay = () => {
     const last = ex.days[ex.days.length - 1] ?? todayIso();
@@ -452,7 +452,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       )}
 
       <div className="btnrow foot">
-        <span className="help">{(() => { const n = events.filter((e) => !e.deleted).length; return `${n} ${n === 1 ? "Eintrag" : "Einträge"}`; })()}</span>
+        <span className="help">{(() => { const n = events.filter((e) => !e.deleted).length; return `${n} ${n === 1 ? "Eintrag" : "Einträge"}`; })()}
+          {(() => { const u = quality ? events.filter((e) => !e.deleted && quality.get(e.id)?.status === "unbestaetigt").length : 0; return u > 0 || filter === "unbest" ? <> · <button className="linkbtn" aria-pressed={filter === "unbest"} title="Sichtungen aus nur einer Quelle – bestätigt, sobald ein zweiter Melder dasselbe in der Nähe meldet" onClick={() => setFilter(filter === "unbest" ? "alle" : "unbest")}>{filter === "unbest" ? "alle zeigen" : `${u} unbestätigt`}</button></> : null; })()}</span>
         <button onClick={() => onExport("csv")} disabled={!events.length}>CSV</button>
         <button onClick={() => onExport("pdf")} disabled={!events.length}>PDF</button>
       </div>

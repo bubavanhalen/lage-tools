@@ -25,7 +25,7 @@ import {
 } from "./hintgeo";
 import { areaCenter } from "./journal";
 import type { LV95 } from "./lv95";
-import type { Area, Exercise, LageEvent } from "./model";
+import type { Area, Exercise, HintDecision, LageEvent } from "./model";
 
 export { baseCellAt, sameOrNeighbor, distToRing, type BaseCell } from "./hintgeo";
 
@@ -41,15 +41,22 @@ export const HINT_THRESHOLDS = {
   A2_WINDOW_MIN: 60,
   /** A2: Abweichung ab dem Mehrfachen der Normallage … */
   A2_FACTOR: 2,
-  /** … und mindestens so vielen Fz bzw. Personen im Fenster */
-  A2_MIN_FZ: 3,
-  A2_MIN_PERS: 4,
-  /** A2: neue Richtung, wenn sie von allen bekannten Richtungen um mehr als so viele Grad abweicht */
+  /** … und mindestens so vielen Fz bzw. Personen im Fenster … */
+  A2_MIN_FZ: 5,
+  A2_MIN_PERS: 6,
+  /**
+   * … und deutlich über dem Zufall: Erwartung + Z · √(Erwartung · Gruppengrösse) (Gruppengrösse = Fz bzw. Pers je Meldung
+   * in der Normallage; Erwartung mindestens 1). Verhindert Hinweise, nur weil zufällig drei Fz kurz nacheinander kommen.
+   */
+  A2_Z: 3,
+  /** A2: neue Richtung, wenn sie von allen bekannten Richtungen um mehr als so viele Grad abweicht … */
   A2_DIR_DEG: 45,
-  /** A3: so lange ohne Rot-Meldung im NAI mit Normallage = auffällige Ruhe */
+  /** … und die Normallage mindestens so viele Meldungen mit Richtung hat (sonst ist keine Richtung «bekannt») */
+  A2_MIN_DIRS: 5,
+  /** A3: mindestens so lange ohne Rot-Meldung im NAI mit Normallage = auffällige Ruhe … */
   A3_QUIET_MIN: 60,
-  /** A3: nur wenn in dieser Zeit nach Normallage mindestens so viele Meldungen zu erwarten wären */
-  A3_MIN_EXPECTED: 1,
+  /** … und so lange, bis nach Normallage mindestens so viele Meldungen zu erwarten gewesen wären (Zufall ≤ 5 %) */
+  A3_MIN_EXPECTED: 3,
   /** B1: Rot-Bewegung bis so lange nach dem Abzug der eigenen Patrouille */
   B1_AFTER_MIN: 30,
   /** B2: Checkpoint steht länger als … */
@@ -59,6 +66,8 @@ export const HINT_THRESHOLDS = {
   /** B3: Fz entfernt sich vom eigenen Checkpoint (Richtung weg vom CP ± Grad, innerhalb Abstand) */
   B3_AWAY_DEG: 45,
   B3_DIST_M: 1000,
+  /** B3: Verkehr am CP hat eine Hauptachse, wenn die Richtungen so einheitlich sind (0–1, achsial) */
+  B3_AXIS_R: 0.7,
   /** C1: mindestens 2 haltende Fz im gleichen/benachbarten PQ innert … */
   C1_WINDOW_MIN: 10,
   C1_MIN_FZ: 2,
@@ -66,6 +75,8 @@ export const HINT_THRESHOLDS = {
   C1_GROUP_MIN: 30,
   /** C2: gleiche Strecke (Ort A ↔ Ort B) mindestens so oft befahren */
   C2_MIN_PASSES: 3,
+  /** C2: nach so vielen Takten ohne weitere Durchfahrt gilt das Pendel als beendet */
+  C2_END_TAKTS: 3,
   /** C3: Drohne bzw. dasselbe einzelne Fz mindestens 2× im gleichen/benachbarten PQ innert … */
   C3_WINDOW_MIN: 60,
   C3_MIN_SIGHTINGS: 2,
@@ -73,10 +84,16 @@ export const HINT_THRESHOLDS = {
   C4_WINDOW_MIN: 30,
   C4_MIN_FZ: 3,
   C4_MIN_PERS: 6,
+  /** C4: «hoch» nur bei deutlicher Abnahme anderswo (Stunde davor mindestens so viele Meldungen, jetzt höchstens die Hälfte) */
+  C4_DROP_MIN: 3,
   /** C5: Hindernisse im gleichen Raum innert … zusammenfassen */
   C5_GROUP_MIN: 60,
-  /** D1: verdächtige Tätigkeit so nahe am eigenen Stao */
+  /** D1: Drohne/Beobachter so nahe am eigenen Stao (hoch) … */
   D1_DIST_M: 500,
+  /** … haltendes Fz so nahe (mittel) */
+  D1_HALT_M: 250,
+  /** D1: Stellungswechsel, wenn der neue Standort so weit vom alten entfernt ist */
+  D1_MOVED_M: 200,
   /** D2: Rot-Element gilt als Stao, wenn es so lange am gleichen Ort gemeldet ist */
   D2_STAO_MIN: 30,
   /** D3: Trupp gilt als stumm nach … ; Rot «in der Nähe» bis … vom NAI; Rot-Tätigkeit zählt so lange */
@@ -90,7 +107,16 @@ export const HINT_THRESHOLDS = {
   E3_FZ_KMH: 90,
   E3_TOL_M: 500,
   E3_NAI_TOL_M: 500,
-  /** Flut vermeiden: höchstens so viele Hinweise je Regel (neueste) */
+  /** E3: Sprung über so viele m innert so vieler Min wird immer gemeldet (Tippfehler) */
+  E3_JUMP_M: 2000,
+  E3_JUMP_MIN: 5,
+  /**
+   * Augenblicks-Lagen (B1, C1, C3, C4) und Prüfaufträge (E3, E4) gelten so lange nach dem letzten Auslöser als vorbei (`until`),
+   * A2 nach einem Vergleichsfenster ohne weitere Abweichung, C6 (Formation) nach `C6_VALID_MIN`.
+   */
+  STALE_MIN: 120,
+  C6_VALID_MIN: 60,
+  /** Flut vermeiden: je Regel höchstens so viele Hinweise – offene nie abschneiden, zuerst die ältesten beendeten weglassen */
   MAX_PER_RULE: 12,
 } as const;
 
@@ -206,8 +232,22 @@ const word = (alt: string, flags = "iu") => new RegExp(`(?<!${L})(?:${alt})(?!${
 
 const HALT_RE = word("hält|halten|halt|hielt|hielten|steht|stehen|stand|stoppt|stoppen|parkiert|parkieren|angehalten");
 const MOVE_RE = word("fährt|fahren|rollt|rollen|verschiebt|verschieben|bewegt|bewegen|marschiert|marschieren|rtg|richtung");
-const TURN_RE = word("wendet|wenden|wendete|dreht ab|drehen ab|biegt ab|biegen ab|kehrt um|kehren um|weicht aus|weichen aus|umfährt|umfahren");
-const HANDOVER_RE = /(kofferraum|umlad|lädt\s+\S+\s+um|laden\s+\S+(?:\s+\S+)?\s+um\b|übergabe|übergeben|übergibt|steig(?:t|en)\s+um|umsteig)/iu;
+/** B3: Ausweichen ausdrücklich gemeldet */
+const TURN_RE = word("wendet|wenden|wendete|dreht ab|drehen ab|drehte ab|biegt ab|biegen ab|bog ab|kehrt um|kehren um|kehrte um|weicht aus|weichen aus|wich aus|umfährt|umfahren");
+/** B3: Fz hat den Checkpoint passiert (kein Ausweichen) */
+const PASSED_RE = word("kontrolliert|passiert|durchgelassen|durchgewinkt|weitergefahren|nach kontrolle|kontrolle i\\.?\\s?o|ohne befund");
+/** C1: Umladen/Übergabe ausdrücklich gemeldet (hoch) */
+const HANDOVER_RE = /(kofferraum|umlad|lädt\s+\S+(?:\s+\S+)?\s+um\b|laden\s+\S+(?:\s+\S+)?\s+um\b|übergabe|übergeben|übergibt)/iu;
+/** C1: Umsteigen (wie ein Halt: mittel) */
+const TRANSFER_RE = /(steig(?:t|en)\s+(?:\S+\s+)?um\b|umsteig)/iu;
+/** Alltagsverkehr: Halt im Stau, an Ampel, Haltestelle, Bus, Tankstelle – kein Hinweis auf Übergabe oder Aufklärung */
+const CIVIL_STOP_RE = new RegExp(`(?:stau|ampel|rotlicht|haltestelle|bushaltestelle|tankstelle|bahnübergang|barriere|baustelle)(?!${L})|(?<!${L})(?:bus|busse|postauto|linienbus|schulbus|kehrichtwagen|müllabfuhr)(?!${L})`, "iu");
+/** Parkieren (nicht für C1; für D1 haltendes Fz weiterhin «mittel») */
+const PARK_RE = new RegExp(`parkplatz|parkplätze|(?<!${L})(?:parkiert|parkieren|parkt|abgestellt)(?!${L})`, "iu");
+/** C5: kurze Blockade durch Zivil-Fz (Holzlaster, Traktor, Lastwagen ohne «gn») */
+const CIVIL_FZ_RE = new RegExp(`(?:holz|lang)?laster|holztransport|traktor|landwirt|(?<!${L})(?:lastwagen|lw|lkw|lieferwagen|bus|postauto|kehrichtwagen|müllabfuhr|baumaschine|bagger)(?!${L})`, "iu");
+const SHORT_RE = word("kurz|kurzzeitig|kurzfristig|beim wenden|wendet|rangiert|rangieren|lädt ab|laden ab|ablad|abladen");
+const GN_RE = word("gn|gegn|gegner|gegnerisch|gegnerische|gegnerischer|feindlich|feindliche|bewaffnet|bewaffnete|bewaffneter");
 const BLOCK_RE = word("blockiert|blockieren|blockade|hindernis|hindernisse|barrikade|baumstamm|baumstämme|baumstämmen|umgestürzt");
 const SPOT_RE = /(handy|telefon|fotograf|filmt|filmen|feldstecher|fernglas|beobacht|späht|spähen|kundschaft|ausspäh)/iu;
 const CP_RE = word("checkpoint|checkpoints|kontrollposten|cp|strassenkontrolle");
@@ -215,16 +255,27 @@ const REMOVE_RE = word("abgebaut|aufgehoben|aufgelöst|geräumt|abgezogen|weg|ni
 const PRESENCE_RE = word("pat|patr|patrouille|patrouilliert|präsenz|kontrolle|kontrolliert|durchsuchung|durchsucht");
 const DEPART_RE = word("zurück|retour|rückt ab|rücken ab|verlässt|verlassen|beendet|abgeschlossen|rückkehr");
 const STAO_RE = word("stellung|stao|standort|biwak|unterkunft|lager|bezieht|beziehen|eingerichtet|verschanzt");
-const DECEPTION_RE = word("sofort|dringend|dringende|zivilperson|zivilist|angeblich|angebliche|gerücht|anonym|hörensagen|soll\\s+angeblich");
+/** E4: Angabe aus fremder, nicht überprüfbarer Quelle (eigene Beobachtung zählt nicht, auch nicht «sofort»/«dringend») */
+const DECEPTION_RE = word("zivilperson|zivilist|zivilisten|anwohner|anwohnerin|passant|passantin|einwohner|angeblich|angebliche|angeblicher|gerücht|gerüchte|anonym|anonymer|anonyme|hörensagen|soll|sollen|es heisst|es heißt|man sagt|laut aussage|gemäss aussage|vom hörensagen");
 const PERS_RE = word("pers|personen|person|mann|sdt|soldaten|bewaffnete|bewaffneter|ag");
 const VEH_RE = word("fz|fahrzeug|fahrzeuge|auto|lieferwagen|kastenwagen|transporter|pw|personenwagen|lw|lastwagen|lkw|bus|kleinbus|motorrad|töff|quad|traktor|pick-?up|suv|limousine|kombi|jeep|duro|g-klasse|van");
+/** eigenes Element motorisiert unterwegs */
+const OWN_MOT_RE = word("rollt|rollen|fährt|fahren|mot|motorisiert|mit fz|im fz|per fz|duro|puch");
+/** C4: zusätzliche Gruppe («weitere 3 Pers», «zusätzlich 2 Fz») */
+const MORE_RE = word("weitere|weiterer|weiteres|zusätzlich|zusätzliche|kommen hinzu|kommt hinzu|dazu");
 const FOOT_RE = word("zu fuss|zu fuß|fusspatrouille|marschiert|marschieren");
-const FORMATIONS: Array<{ re: RegExp; name: string; level: HintLevel; meaning: string }> = [
-  { re: word("kolonne"), name: "Kolonne", level: "mittel", meaning: "vermutlich Verschiebung" },
-  { re: word("linie|in linie|schützenlinie"), name: "Linie", level: "hoch", meaning: "Kontakt erwartet" },
-  { re: /(?<![\p{L}\d])Y(?:-formation)?(?![\p{L}\d])/u, name: "Y", level: "hoch", meaning: "Kontakt erwartet" },
-  { re: word("igel"), name: "Igel", level: "mittel", meaning: "Halt mit Rundumsicherung" },
+/**
+ * C6: nur ausdrückliche Formationsangaben («in Linie», «Schützenlinie», «Y-Formation», «im Igel», «in Kolonne»),
+ * nicht «Linie 10», «Buslinie», «Y-Kreuzung». Linie/Y/Igel nur bei Personen bzw. Einheiten.
+ */
+const FORMATIONS: Array<{ re: RegExp; name: string; level: HintLevel; meaning: string; persOnly: boolean }> = [
+  { re: new RegExp(`(?<!${L})(?:in|als|bilden|bildet)\\s+(?:einer\\s+|eine\\s+)?linie(?![\\p{L}\\d-])(?!\\s*\\d)|schützenlinie|schuetzenlinie`, "iu"), name: "Linie", level: "hoch", meaning: "Kontakt erwartet", persOnly: true },
+  { re: new RegExp(`(?<![\\p{L}\\d])y-?formation|(?<!${L})(?:in|als)\\s+(?:einer\\s+)?y(?:-form)?(?![\\p{L}\\d-])`, "iu"), name: "Y", level: "hoch", meaning: "Kontakt erwartet", persOnly: true },
+  { re: new RegExp(`(?<!${L})(?:im|in|als)\\s+(?:einem\\s+)?igel(?!${L})|igelstellung|igelformation|igel-formation`, "iu"), name: "Igel", level: "mittel", meaning: "Halt mit Rundumsicherung", persOnly: true },
+  { re: new RegExp(`(?<!${L})(?:in|als)\\s+(?:einer\\s+)?kolonne(?!${L})|marschkolonne|fz-?kolonne|fahrzeugkolonne`, "iu"), name: "Kolonne", level: "mittel", meaning: "vermutlich Verschiebung", persOnly: false },
 ];
+/** Zivile Personen (keine Formation, keine Rot-Tätigkeit): Wanderer, Jogger, Schulklasse … */
+const CIVIL_PERS_RE = new RegExp(`(?:wanderer|wandergruppe|spaziergänger|jogger|velofahrer|radfahrer|schulklasse|kinder|touristen|pfadi|familie)(?!${L})`, "iu");
 
 const COLOR_RE = new RegExp(`(?<!${L})(weiss|weiß|schwarz|grau|silber|silbern|blau|grün|gelb|orange|braun|beige|rot|dunkel|hell)(e[rsnm]?|en)?(?!${L})`, "iu");
 const VEH_NOUN_RE = word("lieferwagen|kastenwagen|transporter|pw|personenwagen|lw|lastwagen|lkw|bus|kleinbus|motorrad|töff|quad|traktor|pick-?up|suv|limousine|kombi|jeep|duro|g-klasse|van");
@@ -270,6 +321,12 @@ interface Ev {
   isCp: boolean;
   obstacle: boolean;
   halt: boolean;
+  /** Halt im Alltagsverkehr (Stau, Ampel, Haltestelle, Bus …) */
+  civilStop: boolean;
+  /** parkiert / Parkplatz */
+  park: boolean;
+  /** zivile Personen (Wanderer, Jogger …) */
+  civilPers: boolean;
   moving: boolean;
   fz: number;
   pers: number;
@@ -310,6 +367,10 @@ const dur = (min: number) => { const m = Math.round(min); return m < 60 ? `${m} 
 const num = (v: number) => (v >= 10 || Number.isInteger(v) ? String(Math.round(v)) : v.toFixed(1).replace(".", ","));
 const quote = (s: string) => { const x = s.replace(/\s+/g, " ").trim(); return `«${x.length > 70 ? x.slice(0, 68) + "…" : x}»`; };
 const uniq = <X>(xs: X[]) => [...new Set(xs)];
+const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
+/** A2: so viele Fz/Pers im Fenster sind auffällig (mehr als Faktor · Erwartung, deutlich über Zufall, Mindestzahl) */
+const a2Need = (exp: number, group: number, min: number) =>
+  Math.max(min, Math.floor(T.A2_FACTOR * exp) + 1, Math.ceil(exp + T.A2_Z * Math.sqrt(Math.max(exp, 1) * group)));
 
 /** aktuelle Revision je ID (höhere Revision, dann spätere Änderung, dann Gerät – wie `mergeEvents`) */
 function currentEvents(events: LageEvent[]): LageEvent[] {
@@ -362,6 +423,9 @@ function toEv(e: LageEvent, ex: Pick<Exercise, "sheets" | "areas">, nais: Area[]
     isCp: CP_SYMS.has(e.sym) || CP_RE.test(text),
     obstacle: cat?.category === "Hindernisse" || BLOCK_RE.test(text),
     halt: HALT_RE.test(text),
+    civilStop: CIVIL_STOP_RE.test(text),
+    park: PARK_RE.test(text),
+    civilPers: CIVIL_PERS_RE.test(text),
     moving: e.dir !== undefined || MOVE_RE.test(text),
     fz: isFz ? e.count ?? 1 : 0,
     pers,
@@ -393,10 +457,11 @@ function prepare(ex: Exercise, tMs: number): Ctx {
       const k = nk(v.e.unit);
       blauName.set(k, v.e.unit);
       push(reports, k, v);
-      // wie `situationAt`: Tätigkeiten/Räume verschieben den Melder nicht
+      // wie `situationAt`: Tätigkeiten/Räume verschieben den Melder nicht.
+      // Standort nur aus Meldungen mit genauem Ort – «Vbk i.O.» (letzter Standort) ist kein neuer Stao
       const cat = v.cat;
       const activityOnly = cat?.activity && (cat.lean !== "eigen" || (cat.geometry && cat.geometry !== "punkt"));
-      if (v.pos && !activityOnly) push(blauPos, k, v);
+      if (v.pos && v.precise && !activityOnly) push(blauPos, k, v);
     } else if (v.melder) {
       push(reports, v.melder, v);
       if (v.e.melder) blauName.set(v.melder, blauName.get(v.melder) ?? v.e.melder);
@@ -427,6 +492,33 @@ function posAt(list: Ev[] | undefined, ms: number): Ev | undefined {
     const mid = (lo + hi) >> 1;
     if (list[mid]!.ms <= ms) { best = list[mid]; lo = mid + 1; } else hi = mid - 1;
   }
+  return best;
+}
+
+/** Aufenthalt eines eigenen Elements an einem Ort (Stao); Patrouillen/Präsenz unterwegs sind Abstecher, kein neuer Stao */
+interface Stay { anchor: Ev; from: number; to: number }
+
+const isExcursion = (v: Ev) => v.e.sym === "patrouille" || v.e.sym === "durchsuchung" || CP_SYMS.has(v.e.sym) || PRESENCE_RE.test(v.e.text);
+
+function staysOf(c: Ctx, k: string): Stay[] {
+  const key = `stays:${k}`;
+  const hit = c.cache.get(key) as Stay[] | undefined;
+  if (hit) return hit;
+  const out: Stay[] = [];
+  for (const v of c.blauPos.get(k) ?? []) {
+    if (!v.pos || isExcursion(v)) continue;
+    const cur = out[out.length - 1];
+    if (cur && dist(cur.anchor.pos!, v.pos) <= T.D1_MOVED_M) continue;
+    if (cur) cur.to = v.ms;
+    out.push({ anchor: v, from: v.ms, to: Infinity });
+  }
+  c.cache.set(key, out);
+  return out;
+}
+
+function stayAt(c: Ctx, k: string, ms: number): Stay | undefined {
+  let best: Stay | undefined;
+  for (const s of staysOf(c, k)) if (s.from <= ms) best = s;
   return best;
 }
 
@@ -473,26 +565,56 @@ function qualityOf(evs: Ev[]): Map<string, EventQuality> {
   const out = new Map<string, EventQuality>();
   const rot = evs.filter((v) => v.rot);
   const w = T.E1_WINDOW_MIN * MIN;
-  let lo = 0;
-  for (let i = 0; i < rot.length; i++) {
-    const a = rot[i]!;
-    while (rot[lo]!.ms < a.ms - w) lo++;
-    const conf: Ev[] = [];
+  // Index nach Grundfeld und NAI (zeitlich sortiert), damit jede Meldung nur ihre Nachbarn prüft
+  const byCell = new Map<string, Ev[]>(), byNai = new Map<string, Ev[]>(), loose: Ev[] = [];
+  const sheetNo = new Map<string, number>();
+  const cellKey = (sheet: string, col: number, row: number) => {
+    let n = sheetNo.get(sheet);
+    if (n === undefined) { n = sheetNo.size; sheetNo.set(sheet, n); }
+    return `${n}|${col}|${row}`;
+  };
+  const TIME_RE = /T\d\d:\d\d/;
+  for (const v of rot) {
+    if (!v.melder) continue;
+    for (const n of v.nais) addTo(byNai, n, v);
+    if (v.precise && v.cell) addTo(byCell, cellKey(v.cell.sheetId, v.cell.col, v.cell.row), v);
+    else if (v.precise && v.pos) loose.push(v);
+  }
+  /** Meldungen einer zeitlich sortierten Liste in [from, to] */
+  const inWindow = (list: Ev[], from: number, to: number, f: (b: Ev) => void) => {
+    let lo = 0, hi = list.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (list[mid]!.ms < from) lo = mid + 1; else hi = mid; }
+    for (let i = lo; i < list.length && list[i]!.ms <= to; i++) f(list[i]!);
+  };
+  for (const a of rot) {
+    const conf = new Set<Ev>();
     if (a.melder && (a.pos || a.nais.length)) {
-      for (let j = lo; j < rot.length && rot[j]!.ms <= a.ms + w; j++) {
-        const b = rot[j]!;
-        if (b === a || !b.melder || b.melder === a.melder || !sameType(a, b)) continue;
+      const test = (b: Ev) => {
+        if (b === a || conf.has(b) || !b.melder || b.melder === a.melder || !sameType(a, b)) return;
         const near = (a.nais.length && a.nais.some((n) => b.nais.includes(n))) || (a.precise && b.precise && sameOrNeighbor(a, b));
-        if (near) conf.push(b);
+        if (near) conf.add(b);
+      };
+      const from = a.ms - w, to = a.ms + w;
+      for (const n of a.nais) inWindow(byNai.get(n) ?? [], from, to, test);
+      if (a.precise && a.cell) {
+        for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++) {
+          const l = byCell.get(cellKey(a.cell.sheetId, a.cell.col + dc, a.cell.row + dr));
+          if (l) inWindow(l, from, to, test);
+        }
+        inWindow(loose, from, to, test);
+      } else if (a.precise && a.pos) {
+        // ausserhalb des Rasters: alle mit genauem Ort prüfen (selten)
+        for (const l of byCell.values()) inWindow(l, from, to, test);
+        inWindow(loose, from, to, test);
       }
     }
     const missing: string[] = [];
     if (a.e.sym === "einheit" && !a.e.unit && a.e.count === undefined) missing.push("Wer");
     if (!a.precise && !a.nais.length) missing.push("Ort");
-    if (!/T\d\d:\d\d/.test(a.e.t)) missing.push("Zeit");
+    if (!TIME_RE.test(a.e.t)) missing.push("Zeit");
     if (!a.melder) missing.push("Melder");
-    const q: EventQuality = { status: conf.length ? "bestaetigt" : "unbestaetigt" };
-    if (conf.length) q.confirmedBy = conf.map((v) => v.id);
+    const q: EventQuality = { status: conf.size ? "bestaetigt" : "unbestaetigt" };
+    if (conf.size) q.confirmedBy = [...conf].sort((x, y) => x.ms - y.ms || x.id.localeCompare(y.id)).map((v) => v.id);
     if (missing.length) q.missing = missing;
     out.set(a.id, q);
   }
@@ -522,6 +644,9 @@ interface Baseline {
   end: number;
   fzRate: number;
   persRate: number;
+  /** mittlere Fz bzw. Pers je Meldung (≥ 1) */
+  fzGroup: number;
+  persGroup: number;
   evRate: number;
   dirs: number[];
   types: Set<string>;
@@ -542,6 +667,8 @@ function baselines(c: Ctx): Baseline[] {
         a, evs, base, start, end,
         fzRate: base.reduce((s, v) => s + v.fz, 0) / h,
         persRate: base.reduce((s, v) => s + v.pers, 0) / h,
+        fzGroup: Math.max(1, mean(base.filter((v) => v.fz).map((v) => v.fz))),
+        persGroup: Math.max(1, mean(base.filter((v) => v.pers).map((v) => v.pers))),
         evRate: base.length / h,
         dirs: base.filter((v) => v.e.dir !== undefined).map((v) => v.e.dir!),
         types: new Set(base.filter((v) => v.isFz && !GENERIC_FZ.has(v.e.sym)).map((v) => v.e.sym)),
@@ -578,6 +705,8 @@ function ruleA2(c: Ctx): Hint[] {
   const out: Hint[] = [];
   for (const b of baselines(c)) {
     const after = b.evs.filter((v) => v.ms >= b.end);
+    const road = b.a.typ === "strasse";
+    const known = b.dirs.length >= T.A2_MIN_DIRS ? [...b.dirs, ...(road ? b.dirs.map((d) => (d + 180) % 360) : [])] : [];
     type Dev = { v: Ev; reasons: Map<string, string>; trig: Ev[] };
     const devs: Dev[] = [];
     let lo = 0;
@@ -590,18 +719,21 @@ function ruleA2(c: Ctx): Hint[] {
       const fzW = win.reduce((s, x) => s + x.fz, 0);
       const persW = win.reduce((s, x) => s + x.pers, 0);
       const perWin = T.A2_WINDOW_MIN / 60;
-      if (v.fz && fzW > T.A2_FACTOR * b.fzRate * perWin && fzW >= T.A2_MIN_FZ) {
+      if (v.fz && fzW >= a2Need(b.fzRate * perWin, b.fzGroup, T.A2_MIN_FZ)) {
         reasons.set("fz", `${fzW} Fz innert ${T.A2_WINDOW_MIN} Min (normal ~${num(b.fzRate * perWin)})`);
         trig.push(...win.filter((x) => x.fz));
       }
-      if (v.pers && persW > T.A2_FACTOR * b.persRate * perWin && persW >= T.A2_MIN_PERS) {
+      if (v.pers && persW >= a2Need(b.persRate * perWin, b.persGroup, T.A2_MIN_PERS)) {
         reasons.set("pers", `${persW} Pers innert ${T.A2_WINDOW_MIN} Min (normal ~${num(b.persRate * perWin)})`);
         trig.push(...win.filter((x) => x.pers));
       }
       if (v.isFz && !GENERIC_FZ.has(v.e.sym) && !b.types.has(v.e.sym)) reasons.set(`typ:${v.e.sym}`, `neuer Fz-Typ ${v.cat?.name ?? v.e.sym}`);
-      if (v.e.dir !== undefined && b.dirs.length && b.dirs.every((d) => angleDiff(d, v.e.dir!) > T.A2_DIR_DEG)) {
+      // neue Richtung: nur mit genügend bekannten Richtungen; auf einer Strasse gilt die Gegenrichtung als bekannt;
+      // einmal gemeldete Richtungen gelten danach als gelernt (kein neuer Hinweis nach jeder Pause)
+      if (v.e.dir !== undefined && known.length && known.every((d) => angleDiff(d, v.e.dir!) > T.A2_DIR_DEG)) {
         reasons.set(`dir:${dirName(v.e.dir)}`, `neue Richtung ${dirName(v.e.dir)}`);
       }
+      if (v.e.dir !== undefined && known.length) { known.push(v.e.dir); if (road) known.push((v.e.dir + 180) % 360); }
       if (reasons.size) devs.push({ v, reasons, trig });
     }
     // zusammenhängende Abweichungen = eine Situation
@@ -630,12 +762,14 @@ function ruleA3(c: Ctx): Hint[] {
   const out: Hint[] = [];
   for (const b of baselines(c)) {
     const expected = (min: number) => (b.evRate * min) / 60;
+    // Ruhe erst, wenn nach Normallage mindestens A3_MIN_EXPECTED Meldungen ausgeblieben sind (bei wenig Verkehr länger)
+    const quietMin = Math.max(T.A3_QUIET_MIN, b.evRate > 0 ? (T.A3_MIN_EXPECTED / b.evRate) * 60 : Infinity);
+    if (!Number.isFinite(quietMin)) continue;
     for (let i = 0; i < b.evs.length; i++) {
       const v = b.evs[i]!, next = b.evs[i + 1];
       const endMs = next ? next.ms : c.tMs;
-      const at = Math.max(v.ms + T.A3_QUIET_MIN * MIN, b.end);
-      if (at > c.tMs || endMs - v.ms <= T.A3_QUIET_MIN * MIN || at >= endMs) continue;
-      if (expected(T.A3_QUIET_MIN) < T.A3_MIN_EXPECTED) continue;
+      const at = Math.max(v.ms + quietMin * MIN, b.end);
+      if (at > c.tMs || at >= endMs) continue;
       const quiet = (endMs - v.ms) / MIN;
       const exp = Math.round(expected(quiet));
       const text = next
@@ -651,6 +785,17 @@ function ruleA3(c: Ctx): Hint[] {
 // ---------------------------------------------------------------------------------------------
 // B – Reaktion auf eigene Präsenz
 // ---------------------------------------------------------------------------------------------
+/**
+ * Rot mit Tätigkeit (Halt, Beobachtung, Laden, Kontakt, Sperre, Drohne …) oder bekanntes Rot-Element –
+ * ziviler Durchgangsverkehr («1 Fz AM10 Rtg W») zählt nicht.
+ */
+function rotActivity(v: Ev): boolean {
+  if (v.civilPers || (v.civilStop && !v.unitKey)) return false;
+  if (v.unitKey) return true;
+  const t = v.e.text;
+  return (v.halt && !v.park) || v.isDrone || v.obstacle || v.isCp || !!v.cat?.activity || SPOT_RE.test(t) || HANDOVER_RE.test(t) || TRANSFER_RE.test(t) || GN_RE.test(t) || OBSERVER_SYMS.has(v.e.sym);
+}
+
 function ruleB1(c: Ctx): Hint[] {
   const out: Hint[] = [];
   for (const [k, list] of c.reports) {
@@ -666,7 +811,7 @@ function ruleB1(c: Ctx): Hint[] {
         if ((q.precise && !sameOrNeighbor(p, q)) || DEPART_RE.test(q.e.text)) { dep = q; break; }
       }
       if (!dep) continue;
-      const react = between(c, dep.ms + 1, dep.ms + T.B1_AFTER_MIN * MIN).filter((v) => v.rot && v.precise && sameOrNeighbor(p, v));
+      const react = between(c, dep.ms + 1, dep.ms + T.B1_AFTER_MIN * MIN).filter((v) => v.rot && v.precise && sameOrNeighbor(p, v) && rotActivity(v));
       if (!react.length) continue;
       const name = c.blauName.get(k) ?? p.e.unit;
       const r0 = react[0]!;
@@ -714,32 +859,54 @@ function ruleB2(c: Ctx): Hint[] {
     const endTxt = p.end ? ` bis ${hm(p.end.ms)}` : "";
     out.push(mk("B2", p.first.id, "mittel", `${who[0]!.toUpperCase()}${who.slice(1)} in ${placeOf(p.first)} steht seit ${hm(p.first.ms)}`,
       `Steht seit ${hm(p.first.ms)}${endTxt} (über ${T.B2_STAND_MIN} Min) – ${advice}`,
-      p.evs, at, { until: p.end ? iso(p.end.ms) : undefined, pos: p.first.pos, nai: p.first.nais[0] }));
+      p.evs, at, { until: cpEnd(p) <= c.tMs ? iso(cpEnd(p)) : undefined, pos: p.first.pos, nai: p.first.nais[0] }));
   }
   return out;
+}
+
+/** Hauptachse des Verkehrs am Checkpoint (Grad 0–180) aus den gemeldeten Fz-Richtungen in der Nähe; undefined = unklar */
+function trafficAxis(c: Ctx, p: Checkpoint): number | undefined {
+  if (p.first.e.angle !== undefined) return ((p.first.e.angle % 180) + 180) % 180;
+  const dirs = c.evs.filter((v) => v.rot && v.isFz && v.e.dir !== undefined && v.pos && dist(p.first.pos!, v.pos) <= T.B3_DIST_M).map((v) => v.e.dir!);
+  if (dirs.length < 2) return undefined;
+  // achsiales Mittel (Richtung und Gegenrichtung gleich): doppelte Winkel mitteln
+  let x = 0, y = 0;
+  for (const d of dirs) { x += Math.cos((2 * d * Math.PI) / 180); y += Math.sin((2 * d * Math.PI) / 180); }
+  if (Math.hypot(x, y) / dirs.length < T.B3_AXIS_R) return undefined;
+  return (((Math.atan2(y, x) * 180) / Math.PI / 2) + 180) % 180;
 }
 
 function ruleB3(c: Ctx): Hint[] {
   const out: Hint[] = [];
   for (const p of checkpoints(c)) {
     const end = cpEnd(p);
-    const evaders = between(c, p.first.ms, Math.min(end, c.tMs)).filter((v) => {
-      if (!v.rot || !v.isFz || !v.pos || p.evs.includes(v)) return false;
+    let axis: number | undefined | null = null;
+    const turned: Ev[] = [], away: Ev[] = [];
+    for (const v of between(c, p.first.ms, Math.min(end, c.tMs))) {
+      if (!v.rot || !v.isFz || !v.pos || p.evs.includes(v)) continue;
       const near = sameOrNeighbor(p.first, v) || dist(p.first.pos!, v.pos) <= T.B3_DIST_M;
-      if (!near) return false;
-      if (TURN_RE.test(v.e.text)) return true;
-      // eigener Checkpoint: Fz bewegt sich in der Nähe vom CP weg
-      if (p.own && v.e.dir !== undefined && v.precise) {
-        const d = dist(p.first.pos!, v.pos);
-        return d > 50 && d <= T.B3_DIST_M && angleDiff(bearing(p.first.pos!, v.pos), v.e.dir) <= T.B3_AWAY_DEG;
-      }
-      return false;
-    });
+      if (!near) continue;
+      // ausdrücklich gemeldetes Ausweichen = hoch
+      if (TURN_RE.test(v.e.text)) { turned.push(v); continue; }
+      // eigener Checkpoint: Fz entfernt sich (nur Richtung) = höchstens «mittel – prüfen»,
+      // nicht wenn es den CP passiert hat und nicht entlang der Hauptachse (Durchgangsverkehr)
+      if (!p.own || v.e.dir === undefined || !v.precise || PASSED_RE.test(v.e.text)) continue;
+      const d = dist(p.first.pos!, v.pos);
+      if (d <= 50 || d > T.B3_DIST_M || angleDiff(bearing(p.first.pos!, v.pos), v.e.dir) > T.B3_AWAY_DEG) continue;
+      if (axis === null) axis = trafficAxis(c, p);
+      if (axis !== undefined && Math.min(angleDiff(v.e.dir, axis), angleDiff(v.e.dir, axis + 180)) <= T.B3_AWAY_DEG) continue;
+      away.push(v);
+    }
+    const evaders = turned.length ? turned : away;
     if (!evaders.length) continue;
     const v0 = evaders[0]!;
-    out.push(mk("B3", p.first.id, "hoch", `Fz weicht ${p.own ? "eigenem " : ""}Checkpoint aus (${placeOf(p.first)})`,
-      `${hm(v0.ms)} ${quote(v0.e.text)}${evaders.length > 1 ? ` und ${evaders.length - 1} weitere` : ""} beim ${cpWho(p)} (seit ${hm(p.first.ms)}). Ausweichende Fz sind die eigentlich Verdächtigen – verfolgen und melden.`,
-      [p.first, ...evaders], v0.ms, { pos: p.first.pos }));
+    const hoch = turned.length > 0;
+    out.push(mk("B3", p.first.id, hoch ? "hoch" : "mittel",
+      hoch ? `Fz weicht ${p.own ? "eigenem " : ""}Checkpoint aus (${placeOf(p.first)})` : `Fz entfernt sich vom Checkpoint (${placeOf(p.first)}) – prüfen`,
+      hoch
+        ? `${hm(v0.ms)} ${quote(v0.e.text)}${evaders.length > 1 ? ` und ${evaders.length - 1} weitere` : ""} beim ${cpWho(p)} (seit ${hm(p.first.ms)}). Ausweichende Fz sind die eigentlich Verdächtigen – verfolgen und melden.`
+        : `${hm(v0.ms)} ${quote(v0.e.text)}${evaders.length > 1 ? ` und ${evaders.length - 1} weitere` : ""}: fährt vom ${cpWho(p)} weg, ohne ihn passiert zu haben? Prüfen, ob es ausweicht.`,
+      [p.first, ...evaders], v0.ms, { pos: p.first.pos, until: end <= c.tMs ? iso(end) : undefined }));
   }
   return out;
 }
@@ -748,9 +915,13 @@ function ruleB3(c: Ctx): Hint[] {
 // C – Absicht von Rot erkennen
 // ---------------------------------------------------------------------------------------------
 function ruleC1(c: Ctx): Hint[] {
-  const textHits = c.evs.filter((v) => v.rot && v.pos && (v.e.sym === "uebergabe" || HANDOVER_RE.test(v.e.text)));
-  const halts = c.evs.filter((v) => v.rot && v.isFz && v.halt && v.pos);
-  const ok = new Set<Ev>(textHits);
+  // hoch: Umladen/Übergabe ausdrücklich gemeldet (auch auf einem Parkplatz); mittel: nur haltende Fz bzw. Umsteigen.
+  // Alltagsverkehr (Stau, Ampel, Haltestelle, Bus, Parkplatz, Tankstelle) zählt nicht als Halt.
+  const strong = new Set(c.evs.filter((v) => v.rot && v.pos && (v.e.sym === "uebergabe" || HANDOVER_RE.test(v.e.text))));
+  const civil = (v: Ev) => v.civilStop || v.park;
+  const transfer = c.evs.filter((v) => v.rot && v.pos && !strong.has(v) && TRANSFER_RE.test(v.e.text) && !civil(v));
+  const halts = c.evs.filter((v) => v.rot && v.isFz && v.halt && v.pos && !civil(v));
+  const ok = new Set<Ev>([...strong, ...transfer]);
   const met = new Map<Ev, number>();
   // haltende Fz aus mindestens zwei Meldungen (Fz kommen zusammen); eine einzelne Meldung «3 Fz stehen» ist C4
   for (const v of halts) {
@@ -762,12 +933,14 @@ function ruleC1(c: Ctx): Hint[] {
   }
   const list = [...ok].sort((a, b) => a.ms - b.ms);
   return cluster(list, T.C1_GROUP_MIN).map((g) => {
-    const at = Math.min(...g.map((v) => (textHits.includes(v) ? v.ms : met.get(v) ?? v.ms)));
+    const at = Math.min(...g.map((v) => (met.get(v) ?? v.ms)));
     const v0 = g[0]!;
     const fz = g.reduce((s, v) => s + v.fz, 0);
-    const why = g.some((v) => textHits.includes(v)) ? quote(g.find((v) => textHits.includes(v))!.e.text) : `${fz} Fz halten im gleichen Raum`;
-    return mk("C1", v0.id, "hoch", `Mögliche Übergabe in ${placeOf(v0)}`,
-      `${hm(v0.ms)} ${why}${g.length > 1 ? ` (${g.length} Meldungen)` : ""}. Mögliche Übergabe oder Zusammenschluss bewaffneter Gruppen.`,
+    const s0 = g.find((v) => strong.has(v)), t0 = g.find((v) => transfer.includes(v));
+    const why = s0 ? quote(s0.e.text) : t0 ? quote(t0.e.text) : `${fz} Fz halten im gleichen Raum`;
+    const hoch = !!s0;
+    return mk("C1", v0.id, hoch ? "hoch" : "mittel", hoch ? `Mögliche Übergabe in ${placeOf(v0)}` : `Fz halten zusammen in ${placeOf(v0)}`,
+      `${hm(v0.ms)} ${why}${g.length > 1 ? ` (${g.length} Meldungen)` : ""}. ${hoch ? "Mögliche Übergabe oder Zusammenschluss bewaffneter Gruppen." : "Übergabe oder Zusammenschluss möglich – beobachten, ob umgeladen wird."}`,
       g, at);
   });
 }
@@ -827,10 +1000,12 @@ function ruleC2(c: Ctx): Hint[] {
     const lastMs = p.arrivals[p.arrivals.length - 1]!;
     const next = takt > 0 ? lastMs + takt : undefined;
     const at = p.arrivals[T.C2_MIN_PASSES - 1]!;
-    const nextTxt = next ? ` – nächste Durchfahrt ca. ${hm(next)}` : "";
+    // Prognose nur als Feld `next` (die Anzeige rechnet «nächste ca. …» bzw. «überfällig» selbst);
+    // bleibt das Pendel über mehrere Takte aus, ist die Situation vorbei
+    const endMs = takt > 0 ? lastMs + T.C2_END_TAKTS * takt : undefined;
     return mk("C2", `${p.key}:${p.zones.join("~")}`, "mittel", `Pendelverkehr ${p.label} zwischen ${p.zones[0]} und ${p.zones[1]}`,
-      `${p.arrivals.length} Durchfahrten seit ${hm(p.trig[0]!.ms)}, Takt ca. ${dur(takt / MIN)}${nextTxt}.`,
-      p.trig, at, { next: next ? iso(next) : undefined });
+      `${p.arrivals.length} Durchfahrten seit ${hm(p.trig[0]!.ms)}, Takt ca. ${dur(takt / MIN)}.`,
+      p.trig, at, { next: next ? iso(next) : undefined, until: endMs !== undefined && endMs <= c.tMs ? iso(endMs) : undefined });
   });
 }
 
@@ -862,7 +1037,19 @@ function ruleC3(c: Ctx): Hint[] {
 }
 
 function ruleC4(c: Ctx): Hint[] {
-  const stand = c.evs.filter((v) => v.feind && v.cell && (v.fz || v.pers) && (!v.moving || v.halt));
+  // nur Meldungen mit Planquadrat (nicht bloss «in NAI 1»), ohne Alltagsverkehr
+  const stand = c.evs.filter((v) => v.feind && v.cell && v.precise && !v.naiOnly && (v.fz || v.pers) && (!v.moving || v.halt) && !v.civilStop && !v.park && !v.civilPers);
+  /** Summe im Fenster: je Melder die grösste Meldung (wiederholte Meldung derselben Gruppe), «weitere» wird dazugezählt */
+  const total = (win: Ev[], f: (v: Ev) => number) => {
+    const byMelder = new Map<string, number>();
+    let extra = 0;
+    for (const v of win) {
+      if (MORE_RE.test(v.e.text)) { extra += f(v); continue; }
+      const k = v.melder || v.id;
+      byMelder.set(k, Math.max(byMelder.get(k) ?? 0, f(v)));
+    }
+    return [...byMelder.values()].reduce((s, x) => s + x, extra);
+  };
   const byCell = new Map<string, Ev[]>();
   for (const v of stand) {
     const k = `${v.cell!.sheetId}:${v.cell!.label}`;
@@ -875,12 +1062,12 @@ function ruleC4(c: Ctx): Hint[] {
     const flush = () => {
       if (at && ep.length) {
         const v0 = ep[0]!;
-        const fz = ep.reduce((s, v) => s + v.fz, 0), pers = ep.reduce((s, v) => s + v.pers, 0);
-        // Abnahme anderswo: weniger Rot-Meldungen ausserhalb in der Stunde vor `at` als in der Stunde davor
+        const fz = total(ep, (v) => v.fz), pers = total(ep, (v) => v.pers);
+        // deutliche Abnahme anderswo: in der Stunde vor `at` höchstens halb so viele Rot-Meldungen ausserhalb wie in der Stunde davor
         const outside = between(c, at - 120 * MIN, at - 1).filter((v) => v.rot && v.cell && !sameOrNeighbor(v, v0));
         const now = outside.filter((v) => v.ms >= at - 60 * MIN).length;
         const before = outside.length - now;
-        const drop = before > 0 && now < before;
+        const drop = before >= T.C4_DROP_MIN && now <= before / 2;
         const what = [fz ? `${fz} Fz` : "", pers ? `~${pers} Pers` : ""].filter(Boolean).join(" und ");
         out.push(mk("C4", `${v0.cell!.label}:${v0.id}`, drop ? "hoch" : "mittel", `Schwergewicht Rot in ${v0.cell!.label}`,
           `${what} stehend in ${v0.cell!.label} seit ${hm(v0.ms)}${drop ? `; anderswo weniger Meldungen (${now} statt ${before} je Stunde)` : ""}. Bereitstellung – Aktion steht evtl. unmittelbar bevor.`,
@@ -893,7 +1080,7 @@ function ruleC4(c: Ctx): Hint[] {
       if (ep.length && v.ms - ep[ep.length - 1]!.ms > T.C4_WINDOW_MIN * MIN) flush();
       ep.push(v);
       const win = ep.filter((x) => x.ms > v.ms - T.C4_WINDOW_MIN * MIN);
-      const fz = win.reduce((s, x) => s + x.fz, 0), pers = win.reduce((s, x) => s + x.pers, 0);
+      const fz = total(win, (x) => x.fz), pers = total(win, (x) => x.pers);
       if (!at && (fz >= T.C4_MIN_FZ || pers >= T.C4_MIN_PERS)) at = v.ms;
     }
     flush();
@@ -902,18 +1089,29 @@ function ruleC4(c: Ctx): Hint[] {
 }
 
 function ruleC5(c: Ctx): Hint[] {
+  // hoch: Hinterhalt gemeldet oder Hindernis/Halt in einem Engnis-NAI; ausserhalb Engnis höchstens mittel.
+  // Kurze Blockade durch Zivil-Fz (Holzlaster, Traktor, Lastwagen ohne «gn») ist kein Hinweis.
   const engnis = new Set(c.nais.filter((a) => a.typ === "engnis").map((a) => a.name));
-  const hits = c.evs.filter((v) => {
-    if (!v.rot || !v.pos) return false;
-    if (v.e.sym === "hinterhalt" || BLOCK_RE.test(v.e.text)) return true;
-    return v.nais.some((n) => engnis.has(n)) && (v.obstacle || (v.isFz && v.halt));
-  });
+  const level = new Map<Ev, HintLevel>();
+  for (const v of c.evs) {
+    if (!v.rot || !v.pos) continue;
+    const t = v.e.text;
+    if (v.e.sym === "hinterhalt") { level.set(v, "hoch"); continue; }
+    const civilBlock = CIVIL_FZ_RE.test(t) && !GN_RE.test(t) && !v.unitKey;
+    if (civilBlock && SHORT_RE.test(t)) continue;
+    const inEngnis = v.nais.some((n) => engnis.has(n));
+    const block = BLOCK_RE.test(t);
+    if (inEngnis && (v.obstacle || block || (v.isFz && v.halt && !v.civilStop && !v.park))) level.set(v, civilBlock ? "mittel" : "hoch");
+    else if (block) level.set(v, "mittel");
+  }
+  const hits = [...level.keys()];
   return cluster(hits, T.C5_GROUP_MIN).map((g) => {
     const v0 = g[0]!;
     const nai = g.flatMap((v) => v.nais).find((n) => engnis.has(n));
     const where = nai ? `${nai} (Engnis)` : placeOf(v0);
-    return mk("C5", v0.id, "hoch", `Hinterhalt-Gefahr in ${nai ?? placeOf(v0)}`,
-      `${hm(v0.ms)} ${quote(v0.e.text)} in ${where}. Hindernis in der Geländekammer – möglicher Hinterhalt; Umgehung prüfen.`,
+    const hoch = g.some((v) => level.get(v) === "hoch");
+    return mk("C5", v0.id, hoch ? "hoch" : "mittel", `${hoch ? "Hinterhalt-Gefahr" : "Blockade"} in ${nai ?? placeOf(v0)}`,
+      `${hm(v0.ms)} ${quote(v0.e.text)} in ${where}. ${hoch ? "Hindernis in der Geländekammer – möglicher Hinterhalt; Umgehung prüfen." : "Kein Engnis – beobachten, ob daraus eine Sperre oder ein Hinterhalt wird."}`,
       g, v0.ms, { nai });
   });
 }
@@ -921,8 +1119,10 @@ function ruleC5(c: Ctx): Hint[] {
 function ruleC6(c: Ctx): Hint[] {
   const out: Hint[] = [];
   for (const v of c.evs) {
-    if (!v.rot) continue;
-    const f = v.e.sym === "kolonne" ? FORMATIONS[0]! : FORMATIONS.find((x) => x.re.test(v.e.text));
+    if (!v.rot || v.civilPers || v.civilStop) continue;
+    // Personen bzw. Einheiten (auch Kampffahrzeuge mit Element); ziviler Verkehr hat keine Formation
+    const unitLike = v.isPers || !!v.unitKey || v.cat?.category === "Kampftruppen" || (v.cat?.kind === "geraet" && v.cat.category === "Fahrzeuge" && !GENERIC_FZ.has(v.e.sym) && v.e.sym !== "bus" && v.e.sym !== "kolonne");
+    const f = v.e.sym === "kolonne" ? FORMATIONS.find((x) => x.name === "Kolonne")! : FORMATIONS.find((x) => x.re.test(v.e.text) && (!x.persOnly || unitLike));
     if (!f) continue;
     out.push(mk("C6", v.id, f.level, `Formation ${f.name} in ${placeOf(v)}`,
       `${hm(v.ms)} ${quote(v.e.text)}: ${f.name} – ${f.meaning}.`, [v], v.ms));
@@ -934,27 +1134,34 @@ function ruleC6(c: Ctx): Hint[] {
 // D – Rot sieht Blau
 // ---------------------------------------------------------------------------------------------
 function ruleD1(c: Ctx): Hint[] {
-  const groups = new Map<string, { unit: string; stao: Ev; trig: Ev[]; at: number; best: number; kinds: string[] }>();
+  // Drohne/Beobachter ≤ 500 m = hoch; haltendes Fz ≤ 250 m = mittel (Alltagsverkehr wie Stau/Bus/Haltestelle nicht)
+  type G = { unit: string; k: string; stao: Ev; end: number; trig: Ev[]; at: number; hoch: boolean; kinds: string[] };
+  const groups = new Map<string, G>();
   for (const v of c.evs) {
     if (!v.rot || !v.pos) continue;
-    const kind = v.isDrone ? "Drohne" : OBSERVER_SYMS.has(v.e.sym) || SPOT_RE.test(v.e.text) ? "Beobachter" : v.isFz && v.halt ? "haltendes Fz" : "";
+    const kind = v.isDrone ? "Drohne" : OBSERVER_SYMS.has(v.e.sym) || SPOT_RE.test(v.e.text) ? "Beobachter" : v.isFz && v.halt && !v.civilStop ? "haltendes Fz" : "";
     if (!kind || (kind === "haltendes Fz" && !v.precise)) continue;
-    for (const [k, list] of c.blauPos) {
-      const s = posAt(list, v.ms);
+    const maxD = kind === "haltendes Fz" ? T.D1_HALT_M : T.D1_DIST_M;
+    for (const k of c.blauPos.keys()) {
+      const st = stayAt(c, k, v.ms);
+      const s = st?.anchor;
       if (!s?.pos) continue;
       const d = dist(s.pos, v.pos);
-      if (d > T.D1_DIST_M) continue;
+      if (d > maxD) continue;
       const key = `${c.blauName.get(k) ?? k}:${s.id}`;
-      const g = groups.get(key) ?? { unit: c.blauName.get(k) ?? k, stao: s, trig: [], at: v.ms, best: d, kinds: [] };
+      const g = groups.get(key) ?? { unit: c.blauName.get(k) ?? k, k, stao: s, end: st!.to, trig: [], at: v.ms, hoch: false, kinds: [] };
       g.trig.push(v);
-      g.best = Math.min(g.best, d);
+      if (kind !== "haltendes Fz") g.hoch = true;
       g.kinds.push(`${hm(v.ms)} ${kind}${v.precise ? ` ${placeOf(v)}` : ""}${v.precise ? ` (ca. ${Math.round(d / 10) * 10} m)` : ""}`);
       groups.set(key, g);
     }
   }
-  return [...groups.entries()].map(([key, g]) => mk("D1", key, "hoch", `Stao ${g.unit} möglicherweise aufgeklärt`,
-    `${uniq(g.kinds).join(", ")} beim Stao ${g.unit} (${placeOf(g.stao)}). Stellungswechsel prüfen.`,
-    [g.stao, ...g.trig], g.at, { unit: g.unit, pos: g.stao.pos, radius: T.D1_DIST_M, cells: g.stao.cell ? [g.stao.cell.label] : undefined }));
+  return [...groups.entries()].map(([key, g]) => {
+    // Stellungswechsel (neuer Stao an anderem Ort, nicht bloss Patrouille) beendet den Hinweis
+    return mk("D1", key, g.hoch ? "hoch" : "mittel", `Stao ${g.unit} möglicherweise aufgeklärt`,
+      `${uniq(g.kinds).join(", ")} beim Stao ${g.unit} (${placeOf(g.stao)}). ${g.hoch ? "Stellungswechsel prüfen." : "Beobachten; bleibt das Fz, Stellungswechsel prüfen."}`,
+      [g.stao, ...g.trig], g.at, { unit: g.unit, pos: g.stao.pos, radius: g.hoch ? T.D1_DIST_M : T.D1_HALT_M, cells: g.stao.cell ? [g.stao.cell.label] : undefined, until: g.end <= c.tMs ? iso(g.end) : undefined });
+  });
 }
 
 interface RotStao { anchor: Ev; label: string; from: number; to: number; evs: Ev[] }
@@ -988,20 +1195,21 @@ function rotStaos(c: Ctx): RotStao[] {
 
 function ruleD2(c: Ctx): Hint[] {
   const staos = rotStaos(c);
-  const groups = new Map<string, { unit: string; own: Ev[]; s: RotStao; at: number }>();
-  for (const [k, list] of c.blauPos) {
-    for (let i = 0; i < list.length; i++) {
-      const p = list[i]!;
-      if (!p.precise) continue;
-      const pEnd = list[i + 1]?.ms ?? Infinity;
+  const groups = new Map<string, { unit: string; own: Ev[]; s: RotStao; at: number; end: number }>();
+  for (const k of c.blauPos.keys()) {
+    for (const stay of staysOf(c, k)) {
+      const p = stay.anchor;
+      const pEnd = stay.to;
       for (const s of staos) {
         const a = Math.max(p.ms, s.from), b = Math.min(pEnd, s.to, c.tMs);
         if (a > b || !sameOrNeighbor(p, s.anchor)) continue;
         const name = c.blauName.get(k) ?? k;
         const key = `${name}:${s.anchor.id}`;
-        const g = groups.get(key) ?? { unit: name, own: [], s, at: a };
+        const g = groups.get(key) ?? { unit: name, own: [], s, at: a, end: 0 };
         g.own.push(p);
         g.at = Math.min(g.at, a);
+        // Ende: Stellungswechsel des eigenen Elements bzw. Rot-Stao verlassen
+        g.end = Math.max(g.end, Math.min(pEnd, s.to));
         groups.set(key, g);
       }
     }
@@ -1011,7 +1219,7 @@ function ruleD2(c: Ctx): Hint[] {
     const rel = sameCell(p, g.s.anchor) ? "im PQ" : "im Nachbar-PQ";
     return mk("D2", key, "hoch", `${g.unit} zu nahe am Rot-Stao`,
       `${g.unit} (${placeOf(p)}) liegt ${rel} des Rot-Stao ${g.s.label}, seit ${hm(g.s.from)}. Hohes Entdeckungsrisiko – Stellungswechsel prüfen.`,
-      [...g.own, ...g.s.evs], g.at, { unit: g.unit, pos: p.pos });
+      [...g.own, ...g.s.evs], g.at, { unit: g.unit, pos: p.pos, until: g.end <= c.tMs ? iso(g.end) : undefined });
   });
 }
 
@@ -1019,19 +1227,23 @@ function ruleD3(c: Ctx): Hint[] {
   const out: Hint[] = [];
   const anyTrupp = c.nais.some((a) => a.trupp);
   for (const a of c.nais) {
-    const near = c.evs.filter((v) => v.rot && ((v.precise && v.pos && distToRing(v.pos, a.ring) <= T.D3_NEAR_M) || v.nais.includes(a.name)));
+    const bb = a.ring.reduce((b, p) => ({ e0: Math.min(b.e0, p.e), e1: Math.max(b.e1, p.e), n0: Math.min(b.n0, p.n), n1: Math.max(b.n1, p.n) }), { e0: Infinity, e1: -Infinity, n0: Infinity, n1: -Infinity });
+    const inBox = (p: LV95) => p.e >= bb.e0 - T.D3_NEAR_M && p.e <= bb.e1 + T.D3_NEAR_M && p.n >= bb.n0 - T.D3_NEAR_M && p.n <= bb.n1 + T.D3_NEAR_M;
+    const near = c.evs.filter((v) => v.rot && ((v.precise && v.pos && inBox(v.pos) && distToRing(v.pos, a.ring) <= T.D3_NEAR_M) || v.nais.includes(a.name)));
     if (!near.length) continue;
     if (!a.trupp) {
       if (!anyTrupp) continue; // Trupps werden in dieser Übung nicht zugeteilt
       for (const g of cluster(near, T.D3_RECENT_MIN, () => true)) {
+        // vorbei, wenn Rot in der Nähe so lange nicht mehr aktiv war
+        const endMs = g[g.length - 1]!.ms + T.D3_RECENT_MIN * MIN;
         out.push(mk("D3", `${a.name}:ohne:${g[0]!.id}`, "hoch", `${a.name} nicht überwacht`,
           `Kein Trupp zugeteilt, Rot in der Nähe aktiv (${g.map((v) => `${hm(v.ms)} ${placeOf(v)}`).slice(0, 3).join(", ")}). Infiltration oder unbeobachtete Aktion möglich.`,
-          g, g[0]!.ms, { nai: a.name, pos: areaCenter(a) }));
+          g, g[0]!.ms, { nai: a.name, pos: areaCenter(a), until: endMs <= c.tMs ? iso(endMs) : undefined }));
       }
       continue;
     }
     const reps = c.reports.get(nk(a.trupp)) ?? [];
-    const groups = new Map<string, { last?: Ev; trig: Ev[]; at: number }>();
+    const groups = new Map<string, { last?: Ev; trig: Ev[]; at: number; next?: Ev }>();
     for (const r of near) {
       const last = posAt(reps, r.ms);
       const lastMs = last?.ms ?? c.start;
@@ -1041,16 +1253,17 @@ function ruleD3(c: Ctx): Hint[] {
       const nextRep = reps.find((x) => x.ms > lastMs);
       if (nextRep && nextRep.ms <= at) continue;
       const key = last ? last.id : "start";
-      const g = groups.get(key) ?? { last, trig: [], at };
+      const g = groups.get(key) ?? { last, trig: [], at, next: nextRep };
       g.trig.push(r);
       g.at = Math.min(g.at, at);
       groups.set(key, g);
     }
     for (const [key, g] of groups) {
-      const since = g.last ? `seit ${hm(g.last.ms)} ohne Meldung` : "noch ohne Meldung";
+      // vorbei, sobald sich der Trupp wieder meldet
+      const since = g.next ? `${hm(g.last?.ms ?? c.start)}–${hm(g.next.ms)} ohne Meldung` : g.last ? `seit ${hm(g.last.ms)} ohne Meldung` : "noch ohne Meldung";
       out.push(mk("D3", `${a.name}:${key}`, "hoch", `${a.name} nicht überwacht`,
-        `${a.trupp} ${since}, Rot in der Nähe aktiv (${g.trig.map((v) => `${hm(v.ms)} ${placeOf(v)}`).slice(0, 3).join(", ")}). Infiltration oder unbeobachtete Aktion möglich – ${a.trupp} abfragen.`,
-        [...(g.last ? [g.last] : []), ...g.trig], g.at, { nai: a.name, unit: a.trupp, pos: areaCenter(a) }));
+        `${a.trupp} ${since}, Rot in der Nähe aktiv (${g.trig.map((v) => `${hm(v.ms)} ${placeOf(v)}`).slice(0, 3).join(", ")}). ${g.next ? `Lücke in der Überwachung; ${a.trupp} hat sich ${hm(g.next.ms)} wieder gemeldet – nachfragen, was in der Zeit lief.` : `Infiltration oder unbeobachtete Aktion möglich – ${a.trupp} abfragen.`}`,
+        [...(g.last ? [g.last] : []), ...g.trig], g.at, { nai: a.name, unit: a.trupp, pos: areaCenter(a), until: g.next ? iso(g.next.ms) : undefined }));
     }
   }
   return out;
@@ -1071,11 +1284,17 @@ function ruleE3(c: Ctx): Hint[] {
       const tol = 2 * T.E3_TOL_M + (a.naiOnly ? T.E3_NAI_TOL_M : 0) + (b.naiOnly ? T.E3_NAI_TOL_M : 0);
       const d = dist(a.pos, b.pos);
       if (d <= tol) continue;
-      const foot = (a.isPers || b.isPers || FOOT_RE.test(a.e.text) || FOOT_RE.test(b.e.text)) && !a.isFz && !b.isFz && !VEH_RE.test(a.e.text + " " + b.e.text);
+      const both = a.e.text + " " + b.e.text;
+      // eigene Beob Trupps / Patrouillen sind zu Fuss, ausser die Meldung nennt ein Fz («rollt», «mit Fz»)
+      const foot = a.blau
+        ? !VEH_RE.test(both) && !OWN_MOT_RE.test(both)
+        : (a.isPers || b.isPers || FOOT_RE.test(a.e.text) || FOOT_RE.test(b.e.text)) && !a.isFz && !b.isFz && !VEH_RE.test(both);
       const limit = foot ? T.E3_FOOT_KMH : T.E3_FZ_KMH;
       const h = (b.ms - a.ms) / 3600000;
       const kmh = h > 0 ? (d - tol / 2) / 1000 / h : Infinity;
-      if (kmh <= limit) continue;
+      // grosser Sprung in kurzer Zeit (meist Tippfehler im Planquadrat) wird immer gemeldet
+      const jump = d > T.E3_JUMP_M && b.ms - a.ms <= T.E3_JUMP_MIN * MIN;
+      if (kmh <= limit && !jump) continue;
       const name = b.e.unit || a.e.unit;
       const speed = Number.isFinite(kmh) ? `≈ ${Math.round(kmh)} km/h` : "gleichzeitig";
       out.push(mk("E3", `${a.id}:${b.id}`, "mittel", `${name}: Zeit oder Ort prüfen`,
@@ -1089,10 +1308,11 @@ function ruleE3(c: Ctx): Hint[] {
 function ruleE4(c: Ctx): Hint[] {
   const out: Hint[] = [];
   for (const v of c.evs) {
+    // nur Angaben aus fremder Quelle (Zivilperson, angeblich, anonym, Gerücht, «soll») – eigene Beobachtung nicht
     if (!(v.rot || v.e.side === "ul") || !DECEPTION_RE.test(v.e.text)) continue;
     if (c.quality.get(v.id)?.status === "bestaetigt") continue;
     out.push(mk("E4", v.id, "mittel", `Plausibilität prüfen (${placeOf(v)})`,
-      `${hm(v.ms)} ${quote(v.e.text)} – dringend oder nicht überprüfbar und unbestätigt. Mögliche Täuschung; vor dem Handeln bestätigen lassen.`,
+      `${hm(v.ms)} ${quote(v.e.text)} – aus fremder Quelle, nicht überprüfbar und unbestätigt. Mögliche Täuschung; vor dem Handeln bestätigen lassen.`,
       [v], v.ms));
   }
   return out;
@@ -1116,12 +1336,22 @@ export function compareHints(a: Hint, b: Hint): number {
   return LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || b.t.localeCompare(a.t) || a.id.localeCompare(b.id);
 }
 
-/** Alle Hinweise zur Lagezeit, wichtigste zuerst, dann neueste */
-export function computeHints(ex: Exercise, o: HintOptions): Hint[] {
+/** Regeln mit Augenblicks-Lagen und ihre Gültigkeit nach dem letzten Auslöser (Min) */
+const STALE_RULES: Record<string, number> = { A2: T.A2_WINDOW_MIN, B1: T.STALE_MIN, C1: T.STALE_MIN, C3: T.STALE_MIN, C4: T.STALE_MIN, C6: T.C6_VALID_MIN, E3: T.STALE_MIN, E4: T.STALE_MIN };
+
+/** Hinweis gilt zur Lagezeit `t` noch (nicht beendet) */
+const isOpen = (h: Hint, t: string) => !h.until || h.until > t;
+
+/**
+ * Hinweise und Meldungsqualität zur Lagezeit in einem Durchgang (eine Aufbereitung).
+ * Hinweise: wichtigste zuerst, dann neueste. Qualität (E1/E2) je Meldungs-ID.
+ */
+export function analyzeJournal(ex: Exercise, o: HintOptions): { hints: Hint[]; quality: Map<string, EventQuality> } {
   const tMs = parseMs(o.t);
   const c = prepare(ex, Number.isFinite(tMs) ? tMs : Infinity);
-  if (!c.evs.length) return [];
+  if (!c.evs.length) return { hints: [], quality: c.quality };
   if (!Number.isFinite(c.tMs)) c.tMs = c.evs[c.evs.length - 1]!.ms;
+  const tIso = iso(c.tMs);
   const off = new Set(o.disabled ?? []);
   const byId = new Map<string, Hint>();
   for (const [id, fn] of RULE_FNS) {
@@ -1133,13 +1363,63 @@ export function computeHints(ex: Exercise, o: HintOptions): Hint[] {
       if (o.strict) throw err;
       continue; // eine fehlerhafte Regel darf das Journal nie stören
     }
-    // Flut vermeiden: je Regel die neuesten
-    list.sort((a, b) => b.t.localeCompare(a.t));
-    for (const h of list.slice(0, T.MAX_PER_RULE)) {
+    const stale = STALE_RULES[id];
+    if (stale) {
+      for (const h of list) {
+        if (h.until) continue;
+        const end = Date.parse(h.last ?? h.t) + stale * MIN;
+        if (end <= c.tMs) h.until = iso(end);
+      }
+    }
+    // Flut vermeiden: offene Hinweise nie abschneiden; beendete nur so viele, bis die Höchstzahl erreicht ist (neueste zuerst)
+    if (list.length > T.MAX_PER_RULE) {
+      const open = list.filter((h) => isOpen(h, tIso));
+      const done = list.filter((h) => !isOpen(h, tIso)).sort((a, b) => (b.until ?? b.t).localeCompare(a.until ?? a.t));
+      list = [...open, ...done.slice(0, Math.max(0, T.MAX_PER_RULE - open.length))];
+    }
+    for (const h of list) {
       const cur = byId.get(h.id);
       if (cur) cur.events = uniq([...cur.events, ...h.events]);
       else byId.set(h.id, h);
     }
   }
-  return [...byId.values()].sort(compareHints);
+  return { hints: [...byId.values()].sort(compareHints), quality: c.quality };
+}
+
+/** Alle Hinweise zur Lagezeit, wichtigste zuerst, dann neueste (Hülle um `analyzeJournal`) */
+export function computeHints(ex: Exercise, o: HintOptions): Hint[] {
+  return analyzeJournal(ex, o).hints;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Entscheide zuordnen
+// ---------------------------------------------------------------------------------------------
+/** Regeln, deren Hinweise ineinander übergehen (Aufklärung C3 wird bei weiterer Durchfahrt zum Pendel C2) */
+const RULE_FAMILY: Record<string, string> = { C3: "C2" };
+const family = (rule: string) => RULE_FAMILY[rule] ?? rule;
+/** Mindestanteil gemeinsamer Auslöser, damit ein Entscheid auf einen Hinweis mit neuer ID übergeht */
+export const DECISION_OVERLAP = 0.5;
+
+/**
+ * Entscheid zu einem Hinweis: zuerst über die ID; sonst ein Entscheid derselben Regel (bzw. C3 → C2),
+ * dessen gespeicherte Auslöser zu mindestens 50 % im Hinweis vorkommen (Nachträge, ID-Wechsel).
+ * Entscheide ohne gespeicherte Auslöser haften nur über die ID.
+ * @param others IDs der übrigen aktuellen Hinweise (optional): deren eigene Entscheide werden nicht übernommen
+ */
+export function decisionFor(hint: Pick<Hint, "id" | "rule" | "events">, decisions: Record<string, HintDecision> | undefined, others?: Iterable<string>): HintDecision | undefined {
+  if (!decisions) return undefined;
+  const own = decisions[hint.id];
+  if (own) return own;
+  const taken = others ? new Set(others) : undefined;
+  const evs = new Set(hint.events);
+  const fam = family(hint.rule);
+  let best: HintDecision | undefined, bestShare = 0;
+  for (const [key, d] of Object.entries(decisions)) {
+    if (!d.events?.length || taken?.has(key)) continue;
+    const rule = d.rule ?? key.slice(0, key.indexOf(":"));
+    if (family(rule) !== fam) continue;
+    const share = d.events.filter((e) => evs.has(e)).length / d.events.length;
+    if (share >= DECISION_OVERLAP && (share > bestShare || (share === bestShare && best && d.at > best.at))) { best = d; bestShare = share; }
+  }
+  return best;
 }

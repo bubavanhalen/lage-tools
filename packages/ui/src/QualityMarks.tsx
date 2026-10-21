@@ -1,6 +1,6 @@
 /**
- * Meldungsqualität im Journal: E1 «bestätigt» (zweite Quelle) / «unbestätigt» bei Feind und Unklar,
- * E2 «unvollständig: …» (Rückfrage nach AEIOU) – in der Liste und in der Vorschau der Meldungszeile.
+ * Meldungsqualität im Journal: E1 nur «bestätigt» (zweite Quelle) als Marke – «unbestätigt» wäre an fast jeder
+ * Sichtung Rauschen (dafür Filter «Unbest.» in der Liste); E2 «unvollständig: …» (Rückfrage nach AEIOU) in Liste und Vorschau.
  */
 import { useMemo } from "react";
 import { eventFromDraft, eventQuality, type Draft, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
@@ -17,9 +17,9 @@ export function QualityMarks({ e, q, events }: { e: LageEvent; q?: EventQuality;
   const by = (q.confirmedBy ?? []).map((id) => events.find((x) => x.id === id)).filter((x): x is LageEvent => !!x && !x.deleted);
   return (
     <>
-      {enemy && (q.status === "bestaetigt" || by.length
-        ? <span className="qmark ok" title={by.length ? `bestätigt durch ${by.map((x) => `${x.melder ?? x.unit ?? "?"} ${x.t.slice(11, 16)}`).join(", ")}` : "bestätigt durch zweite Quelle"}>bestätigt</span>
-        : <span className="qmark" title="nur eine Quelle – bestätigt, sobald ein zweiter Melder dasselbe in der Nähe meldet">unbestätigt</span>)}
+      {enemy && (q.status === "bestaetigt" || by.length > 0) && (
+        <span className="qmark ok" title={by.length ? `bestätigt durch ${by.map((x) => `${x.melder ?? x.unit ?? "?"} ${x.t.slice(11, 16)}`).join(", ")}` : "bestätigt durch zweite Quelle"}>bestätigt</span>
+      )}
       {missing.length > 0 && <span className="qmark inc" title={`${missing.join(", ")} fehlt – ${AEIOU}`}>unvollständig: {missing.join(", ")}</span>}
     </>
   );

@@ -3,7 +3,7 @@
  */
 import type { jsPDF } from "jspdf";
 import type { Exercise, Hint } from "@lage/core";
-import { decisionOf, GROUP_LABEL, groupOf, LEVEL_LABEL, ruleOf } from "./hintsData";
+import { decisionOf, decisionRec, GROUP_LABEL, groupOf, LEVEL_LABEL, ruleOf } from "./hintsData";
 
 const csvCell = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 const dayOf = (t: string, days: string[]) => { const i = days.indexOf(t.slice(0, 10)); return i >= 0 ? `T${i + 1}` : t.slice(0, 10); };
@@ -13,7 +13,7 @@ function rows(ex: Exercise, hints: Hint[]) {
   const by = new Map((ex.events ?? []).map((e) => [e.id, e]));
   return [...hints].sort((a, b) => a.t.localeCompare(b.t) || a.rule.localeCompare(b.rule)).map((h) => {
     const r = ruleOf(h.rule);
-    const d = ex.hintDecisions?.[h.id];
+    const d = decisionRec(ex, h);
     const trig = h.events.map((id) => by.get(id)).filter((e) => !!e && !e.deleted)
       .map((e) => `${e!.t.slice(11, 16)} ${e!.melder ?? ""} ${e!.text}`.replace(/\s+/g, " ").trim());
     return {

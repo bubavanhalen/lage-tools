@@ -1,11 +1,12 @@
 /**
- * Reiter «Hinweise»: Hinweise zu Rot aus dem Journal (Regeln, offline). Jeder Hinweis zeigt Stufe, Begründung,
- * Auslöser-Meldungen, Regel und Quelle; der Zfhr bestätigt oder verwirft (rückgängig machbar).
+ * Reiter «Hinweise»: Hinweise zu Rot aus dem Journal (Regeln, offline). Kompakte Liste – eine Zeile je Hinweis
+ * (Stufe · Regel · Titel · seit). Klick klappt einen Hinweis auf (Begründung, Prognose, Auslöser, Knöpfe, Regel und
+ * Quelle) und markiert ihn auf der Karte; es ist immer nur einer offen. Der Zfhr bestätigt oder verwirft (rückgängig).
  */
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Exercise, Hint, HintGroup, HintLevel, LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
-import { decide, decisionOf, GROUPS, GROUP_LABEL, groupOf, hhmm, isOver, ruleOf, type DecisionState } from "./hintsData";
+import { decide, decisionOf, decisionRec, GROUPS, GROUP_LABEL, groupOf, hhmm, isOpen, isOver, nextLabel, ruleOf, type DecisionState } from "./hintsData";
 import { dayLabel } from "./Timeline";
 import "./hints.css";
 
@@ -18,6 +19,7 @@ interface Props {
   hints: Hint[];
   /** Lagezeit (ISO lokal) */
   t: string;
+  /** gewählter (aufgeklappter) Hinweis */
   selected: string | null;
   onSelect: (id: string | null) => void;
   /** «Auf Karte»: Hinweis wählen und hinfliegen */
@@ -42,34 +44,42 @@ export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, u
   const main = hints.filter((h) => h.level !== "info");
   const refs = hints.filter((h) => h.level === "info");
   const stateOf = (h: Hint) => decisionOf(ex, h);
+  // «Neu» = offen: nicht entschieden und nicht beendet (beendete, nicht entschiedene nur unter «Alle»)
+  const filterOf = (h: Hint): Filter | null => {
+    const st = stateOf(h);
+    return st !== "neu" ? st : isOpen(ex, h, t) ? "neu" : null;
+  };
   const counts: Record<Filter, number> = { neu: 0, bestaetigt: 0, verworfen: 0, alle: main.length };
-  for (const h of main) counts[stateOf(h)]++;
-  const inFilter = (h: Hint) => (compact ? stateOf(h) !== "verworfen" : filter === "alle" || stateOf(h) === filter);
+  for (const h of main) { const f = filterOf(h); if (f) counts[f]++; }
+  const inFilter = (h: Hint) => (compact ? filterOf(h) === "neu" || filterOf(h) === "bestaetigt" : filter === "alle" || filterOf(h) === filter);
   const groupCount = new Map<HintGroup, number>();
   for (const h of main) if (inFilter(h)) groupCount.set(groupOf(h), (groupCount.get(groupOf(h)) ?? 0) + 1);
   const list = main.filter((h) => inFilter(h) && (!group || groupOf(h) === group));
   // gewählte Gruppe hat im aktuellen Filter nichts mehr: zurück auf alle
   useEffect(() => { if (group && !groupCount.get(group)) setGroup(null); }); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Entscheid: Karte verschwindet aus «Neu» – kurz «Rückgängig» anbieten (wie beim Löschen im Journal)
+  // Entscheid: Zeile verschwindet aus «Neu» – kurz «Rückgängig» anbieten (wie beim Löschen im Journal)
   const [undo, setUndo] = useState<{ h: Hint; s: DecisionState } | null>(null);
   const undoTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
   const set = (h: Hint, s: DecisionState | null) => {
-    update((x) => decide(x, h.id, s === "neu" ? null : s));
+    update((x) => decide(x, h, s === "neu" ? null : s));
     window.clearTimeout(undoTimer.current);
-    if (s === "neu" || s === null) { setUndo(null); return; }
+    if (s === "neu" || s === null) { setUndo(null); if (undo?.h.id === h.id) onSelect(h.id); return; }
+    // Zeile verlässt die Liste «Neu»: Auswahl (und Hervorhebung auf der Karte) aufheben
+    if (filter === "neu" && h.id === selected) onSelect(null);
     setUndo({ h, s });
     undoTimer.current = window.setTimeout(() => setUndo(null), 6000);
   };
 
-  // Auswahl von aussen (Karte): Karte zeigen
+  // Auswahl von aussen (Karte): Zeile zeigen
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!selected) return;
     const h = hints.find((x) => x.id === selected);
     if (h && h.level === "info") setRefOpen(true);
     if (h && h.level !== "info" && !inFilter(h)) setFilter("alle");
+    if (h && group && groupOf(h) !== group) setGroup(null);
     const id = window.setTimeout(() => {
       const el = listRef.current?.querySelector<HTMLElement>(`[data-hint="${CSS.escape(selected)}"]`);
       el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -77,9 +87,9 @@ export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, u
     return () => window.clearTimeout(id);
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const card = (h: Hint) => (
-    <HintCard key={h.id} h={h} ex={ex} t={t} state={stateOf(h)} sel={h.id === selected} evById={evById} compact={compact}
-      onSelect={() => onSelect(h.id === selected ? null : h.id)} onMap={() => onMap(h)} onEvent={(id) => { if (h.id !== selected) onSelect(h.id); onEvent(id); }}
+  const row = (h: Hint) => (
+    <HintRow key={h.id} h={h} ex={ex} t={t} state={stateOf(h)} open={h.id === selected} evById={evById} compact={compact}
+      onToggle={() => onSelect(h.id === selected ? null : h.id)} onMap={() => onMap(h)} onEvent={onEvent}
       onDecide={(s) => set(h, s)} />
   );
 
@@ -90,11 +100,11 @@ export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, u
           <h3>Hinweise zu Rot</h3>
           <span className="hp-sub">Lage {dayLabel(t, ex.days)} {t.slice(11, 16)}</span>
         </div>
-        {!compact && <p className="hp-lead">Hinweise, keine Fakten: Jeder Hinweis nennt Auslöser, Regel und Quelle – du entscheidest.</p>}
+        {!compact && <p className="hp-lead">Hinweise, keine Fakten – jeder nennt Auslöser, Regel und Quelle. Du entscheidest.</p>}
         {!compact && (
           <div className="seg hp-filter" role="group" aria-label="Entscheid">
             {FILTERS.map(([f, l]) => (
-              <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>
+              <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)} title={f === "neu" ? "offen: nicht entschieden und nicht beendet" : undefined}>
                 {l}{counts[f] > 0 && <span className="hp-n tnum">{counts[f]}</span>}
               </button>
             ))}
@@ -116,12 +126,12 @@ export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, u
       </div>
 
       {list.length ? (
-        <ol className="hp-list">{list.map(card)}</ol>
+        <ol className="hp-list">{list.map(row)}</ol>
       ) : (
         <div className="hp-empty">
           <p>{main.length === 0
             ? "Noch keine Hinweise. Sie entstehen aus dem Journal, sobald Meldungen ein Muster zeigen – zum Beispiel Pendelverkehr, Übergaben oder Rot nahe bei einem eigenen Stao."
-            : filter === "neu" ? "Keine neuen Hinweise – alle sind entschieden." : "Keine Hinweise für diesen Filter."}</p>
+            : filter === "neu" ? "Keine offenen Hinweise – alle sind entschieden oder beendet." : "Keine Hinweise für diesen Filter."}</p>
         </div>
       )}
 
@@ -133,7 +143,7 @@ export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, u
             <span className="hp-n tnum">{refs.length}</span>
             <span className="hp-chev" aria-hidden="true">▸</span>
           </button>
-          {refOpen && <ol className="hp-list">{refs.map(card)}</ol>}
+          {refOpen && <ol className="hp-list">{refs.map(row)}</ol>}
         </section>
       )}
 
@@ -154,48 +164,61 @@ export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, u
   );
 }
 
-function HintCard({ h, ex, t, state, sel, evById, compact, onSelect, onMap, onEvent, onDecide }: {
-  h: Hint; ex: Exercise; t: string; state: DecisionState; sel: boolean; evById: Map<string, LageEvent>; compact?: boolean;
-  onSelect: () => void; onMap: () => void; onEvent: (id: string) => void; onDecide: (s: DecisionState) => void;
+/** Eine Zeile je Hinweis; aufgeklappt (gewählt) mit Begründung, Prognose, Auslösern, Knöpfen und Quelle */
+function HintRow({ h, ex, t, state, open, evById, compact, onToggle, onMap, onEvent, onDecide }: {
+  h: Hint; ex: Exercise; t: string; state: DecisionState; open: boolean; evById: Map<string, LageEvent>; compact?: boolean;
+  onToggle: () => void; onMap: () => void; onEvent: (id: string) => void; onDecide: (s: DecisionState) => void;
 }) {
   const [srcOpen, setSrcOpen] = useState(false);
   const [allEv, setAllEv] = useState(false);
   const rule = ruleOf(h.rule);
+  const over = isOver(h, t);
+  const nx = nextLabel(h, t, ex.days);
+  const timeTitle = over
+    ? `galt ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)} bis ${dayLabel(h.until!, ex.days)} ${h.until!.slice(11, 16)}`
+    : `gilt seit ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)}${h.last && h.last > h.t ? `, zuletzt ${h.last.slice(11, 16)}` : ""}${nx ? ` · ${nx.text}` : ""}`;
+  return (
+    <li className={`hrow l-${h.level} d-${state}` + (open ? " open" : "") + (over ? " over" : "")} data-hint={h.id}>
+      <button className="hr-line" aria-expanded={open} onClick={onToggle}
+        title={`${rule?.name ?? GROUP_LABEL[groupOf(h)]} – ${h.title}`}>
+        <LevelIcon level={h.level} />
+        <span className="hr-rule">{h.rule}</span>
+        <span className="hr-title">{h.title}</span>
+        {state === "bestaetigt" && <span className="hr-dec ok" title="bestätigt" aria-label="bestätigt">✓</span>}
+        {nx?.late && !open && <span className="hr-late" title={nx.text} aria-label={nx.text} />}
+        <span className="hr-time tnum" title={timeTitle}>{over ? <><span className="hr-over">beendet</span> {hhmm(h.until!, ex.days, t)}</> : <>seit {hhmm(h.t, ex.days, t)}</>}</span>
+      </button>
+      {open && <HintDetail h={h} ex={ex} t={t} state={state} evById={evById} compact={compact} nx={nx} srcOpen={srcOpen} setSrcOpen={setSrcOpen}
+        allEv={allEv} setAllEv={setAllEv} onMap={onMap} onEvent={onEvent} onDecide={onDecide} />}
+    </li>
+  );
+}
+
+function HintDetail({ h, ex, t, state, evById, compact, nx, srcOpen, setSrcOpen, allEv, setAllEv, onMap, onEvent, onDecide }: {
+  h: Hint; ex: Exercise; t: string; state: DecisionState; evById: Map<string, LageEvent>; compact?: boolean;
+  nx: { text: string; late: boolean } | null; srcOpen: boolean; setSrcOpen: (v: boolean) => void; allEv: boolean; setAllEv: (v: boolean) => void;
+  onMap: () => void; onEvent: (id: string) => void; onDecide: (s: DecisionState) => void;
+}) {
+  const rule = ruleOf(h.rule);
   const evs = h.events.map((id) => evById.get(id)).filter((e): e is LageEvent => !!e && !e.deleted).sort((a, b) => b.t.localeCompare(a.t));
   const shown = allEv || evs.length <= 3 ? evs : evs.slice(0, 2);
-  const dec = ex.hintDecisions?.[h.id];
-  const over = isOver(h, t);
-  const folded = state === "verworfen" && !sel;
-  // Prognose: kurz überfällig = auffällig; lange vorbei = nur noch Hinweis «war erwartet»
-  const late = h.next && h.next <= t ? (Date.parse(t) - Date.parse(h.next)) / 60000 : -1;
-  const stop = (f: () => void) => (ev: MouseEvent) => { ev.stopPropagation(); f(); };
+  const dec = decisionRec(ex, h);
   return (
-    <li className={`hcard l-${h.level} d-${state}` + (sel ? " sel" : "") + (folded ? " folded" : "") + (over ? " over" : "")} data-hint={h.id} tabIndex={0}
-      aria-label={`${h.title}, Stufe ${h.level}`} aria-current={sel || undefined}
-      onClick={onSelect} onKeyDown={(ev) => { if (ev.key === "Enter" && ev.target === ev.currentTarget) onSelect(); }}>
-      <div className="hc-head">
-        <LevelIcon level={h.level} />
-        <span className="hc-rule">{h.rule}</span>
-        <span className="hc-group">{rule?.name ?? GROUP_LABEL[groupOf(h)]}</span>
-        {over
-          ? <span className="hc-time tnum" title={`galt ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)} bis ${dayLabel(h.until!, ex.days)} ${h.until!.slice(11, 16)}`}><span className="hc-over">beendet</span> {hhmm(h.until!, ex.days, t)}</span>
-          : <span className="hc-time tnum" title={`gilt seit ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)}${h.last && h.last > h.t ? `, zuletzt ${h.last.slice(11, 16)}` : ""}`}>seit {hhmm(h.t, ex.days, t)}</span>}
-      </div>
-      <h4 className="hc-title">{h.title}</h4>
-      {!folded && <p className="hc-text">{h.text}</p>}
-      {!folded && h.next && late <= 60 && (
-        <p className={"hc-next" + (late >= 0 ? " late" : "")}>
+    <div className="hr-body">
+      <p className="hc-text">{h.text}</p>
+      {nx && (
+        <p className={"hc-next" + (nx.late ? " late" : "")}>
           <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h9M8 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          {late < 0 ? "nächste ca." : "erwartet ca."} <b className="tnum">{hhmm(h.next, ex.days, t)}</b>
-          {late >= 0 && <span className="hc-late"> – überfällig</span>}
+          {nx.late
+            ? <>seit <b className="tnum">{hhmm(h.next!, ex.days, t)}</b> <span className="hc-late">überfällig</span></>
+            : <>nächste ca. <b className="tnum">{hhmm(h.next!, ex.days, t)}</b></>}
         </p>
       )}
-      {!folded && h.next && late > 60 && <p className="hc-was">Seit der erwarteten Durchfahrt (ca. {hhmm(h.next, ex.days, t)}) keine Meldung mehr.</p>}
-      {!folded && evs.length > 0 && (
+      {evs.length > 0 && (
         <ol className="hc-evs" aria-label="Auslöser">
           {shown.map((e) => (
             <li key={e.id}>
-              <button className="hc-ev" onClick={stop(() => onEvent(e.id))} title="Meldung zeigen">
+              <button className="hc-ev" onClick={() => onEvent(e.id)} title="Meldung zeigen">
                 <span className="tnum">{e.t.slice(11, 16)}</span>
                 <EvSym e={e} />
                 <span className="hc-evt">{e.desc && e.desc.length < 48 ? e.desc : e.text}</span>
@@ -204,18 +227,18 @@ function HintCard({ h, ex, t, state, sel, evById, compact, onSelect, onMap, onEv
             </li>
           ))}
           {evs.length > shown.length && (
-            <li><button className="linkbtn hc-more" onClick={stop(() => setAllEv(true))}>+ {evs.length - shown.length} weitere Meldungen</button></li>
+            <li><button className="linkbtn hc-more" onClick={() => setAllEv(true)}>+ {evs.length - shown.length} weitere Meldungen</button></li>
           )}
         </ol>
       )}
       <div className="hc-foot">
         {!compact && h.level !== "info" && (state === "neu" ? (
           <>
-            <button className="hc-btn ok" onClick={stop(() => onDecide("bestaetigt"))} title="Hinweis trifft zu – bleibt in der Liste «Bestätigt»">
+            <button className="hc-btn ok" onClick={() => onDecide("bestaetigt")} title="Hinweis trifft zu – bleibt in der Liste «Bestätigt»">
               <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
               Bestätigen
             </button>
-            <button className="hc-btn" onClick={stop(() => onDecide("verworfen"))} title="Hinweis trifft nicht zu – bleibt auch bei neuen Meldungen verworfen">
+            <button className="hc-btn" onClick={() => onDecide("verworfen")} title="Hinweis trifft nicht zu – bleibt auch bei neuen Meldungen verworfen">
               <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
               Verwerfen
             </button>
@@ -223,27 +246,26 @@ function HintCard({ h, ex, t, state, sel, evById, compact, onSelect, onMap, onEv
         ) : (
           <>
             <span className={"hc-state " + state}>{state === "bestaetigt" ? "Bestätigt" : "Verworfen"}{dec?.at ? <span className="tnum"> {dec.at.slice(11, 16)}</span> : null}</span>
-            <button className="linkbtn" onClick={stop(() => onDecide("neu"))}>Rückgängig</button>
+            <button className="linkbtn" onClick={() => onDecide("neu")}>Rückgängig</button>
           </>
         ))}
         {(h.pos || h.cells?.length || h.nai || evs.some((e) => e.pos)) && (
-          <button className="hc-btn ghost" onClick={stop(onMap)} title="Auf der Karte zeigen">
+          <button className="hc-btn ghost" onClick={onMap} title="Auf der Karte zeigen">
             <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><circle cx="8" cy="8" r="1.6" fill="currentColor" /></svg>
             Auf Karte
           </button>
         )}
-        <button className="hc-src" aria-expanded={srcOpen} onClick={stop(() => setSrcOpen(!srcOpen))} title="Regel und Quelle">
-          Regel {h.rule}{rule?.source ? ` · ${rule.source}` : ""} <span aria-hidden="true" className="hp-chev">▸</span>
-        </button>
       </div>
+      <button className="hc-src" aria-expanded={srcOpen} onClick={() => setSrcOpen(!srcOpen)} title="Regel und Quelle">
+        <span className="hp-chev" aria-hidden="true">▸</span> {h.rule} {rule?.name ?? ""}{rule?.source ? <span className="hc-srcref"> · {rule.source}</span> : null}
+      </button>
       {srcOpen && rule && (
-        <div className="hc-rulebox" onClick={(ev) => ev.stopPropagation()}>
-          <b>{rule.id} · {rule.name}</b> <span className="hc-grp">({GROUP_LABEL[rule.group]})</span>
+        <div className="hc-rulebox">
           <p>{rule.rule}</p>
-          {rule.source && <p className="hc-srcline">Quelle: <span className="mono">{rule.source}</span></p>}
+          <p className="hc-srcline">{GROUP_LABEL[rule.group]}{rule.source ? <> · Quelle: <span className="mono">{rule.source}</span></> : null}</p>
         </div>
       )}
-    </li>
+    </div>
   );
 }
 

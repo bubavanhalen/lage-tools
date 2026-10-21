@@ -62,7 +62,7 @@ import { windowStart } from "@lage/core";
 import { useMoveEvent, useTimeWindow } from "./mapedit";
 import { HintsPanel } from "./HintsPanel";
 import { hintExtent, hintLayer } from "./hintLayer";
-import { newCount, useHints } from "./hintsData";
+import { hasOpenHoch, newCount, useHints } from "./hintsData";
 import { hintsToCsv } from "./hintsExport";
 import type { Hint } from "@lage/core";
 
@@ -223,8 +223,8 @@ export function Workspace({ product, tagline }: Props) {
     if (hintSel.unit) for (const e of ex?.events ?? []) if (e.side === "blau" && e.unit === hintSel.unit) ids.add(e.id);
     return ids;
   })();
-  const nNew = ex ? newCount(ex, hints) : 0;
-  const nHoch = ex ? hints.some((h) => h.level === "hoch" && !ex.hintDecisions?.[h.id]) : false;
+  const nNew = ex ? newCount(ex, hints, tNow) : 0;
+  const nHoch = ex ? hasOpenHoch(ex, hints, tNow) : false;
   // Zahl am Reiter pulsiert einmal, wenn neue Hinweise dazukommen (kein Pop-up, kein Ton)
   const prevNew = useRef(nNew);
   const [pulse, setPulse] = useState(0);
@@ -557,8 +557,8 @@ export function Workspace({ product, tagline }: Props) {
         <aside className="side">
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={tab === "journal"} onClick={() => setTab("journal")}>Journal</button>
-            <button role="tab" aria-selected={tab === "hinweise"} onClick={() => setTab("hinweise")} title={nNew ? `${nNew} neue Hinweise zu Rot` : "Hinweise zu Rot"}>
-              Hinweise{nNew > 0 && <span key={pulse} className={"tab-n" + (nHoch ? "" : " mittel") + (pulse ? " pulse" : "")} aria-label={`${nNew} neu`}>{nNew}</span>}
+            <button role="tab" aria-selected={tab === "hinweise"} onClick={() => setTab("hinweise")} title={nNew ? `${nNew} offene Hinweise zu Rot` : "Hinweise zu Rot"}>
+              Hinweise{nNew > 0 && <span key={pulse} className={"tab-n" + (nHoch ? "" : " mittel") + (pulse ? " pulse" : "")} aria-label={`${nNew} offen`}>{nNew}</span>}
             </button>
             <button role="tab" aria-selected={tab === "raster"} onClick={() => setTab("raster")}><span className="tab-l-long">Führungsraster</span><span className="tab-l-short">Raster</span></button>
             <button role="tab" aria-selected={tab === "nai"} onClick={() => setTab("nai")}><span className="tab-l-long">NAI / BNB</span><span className="tab-l-short">NAI</span></button>

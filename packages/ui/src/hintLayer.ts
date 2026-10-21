@@ -8,7 +8,7 @@
 import L from "leaflet";
 import { cellBounds, findCells, lastPosition, type Bounds, type Exercise, type Hint, type LV95 } from "@lage/core";
 import { escapeHtml, toLatLng } from "@lage/map";
-import { decisionOf, hhmm, isOver } from "./hintsData";
+import { decisionOf, isOver, nextLabel } from "./hintsData";
 import "./hints.css";
 
 export interface HintLayerOptions {
@@ -100,23 +100,31 @@ export function hintLayer(map: L.Map, o: HintLayerOptions): L.LayerGroup {
       const pts = triggerPts(h, ex).map((x) => x.p).filter((p, i, a) => i === 0 || Math.hypot(p.e - a[i - 1]!.e, p.n - a[i - 1]!.n) > 5);
       if (pts.length >= 2) {
         const ll = pts.map(toLatLng);
-        L.polyline(ll, { pane: GEO_PANE, color: "#fff", weight: on ? 6 : 4.5, opacity: on ? 0.9 : 0.6, interactive: false }).addTo(g);
-        L.polyline(ll, { pane: GEO_PANE, color: ROT, weight: on ? 3 : 2, opacity: on ? 1 : 0.55, dashArray: on ? "9 6" : "6 6", interactive: false }).addTo(g);
+        L.polyline(ll, { pane: GEO_PANE, color: "#fff", weight: on ? 7 : 5.5, opacity: on ? 0.95 : 0.75, interactive: false }).addTo(g);
+        L.polyline(ll, { pane: GEO_PANE, color: ROT, weight: on ? 3 : 2.2, opacity: on ? 1 : 0.7, dashArray: on ? "9 6" : "6 6", interactive: false }).addTo(g);
+        // Pfeile je Abschnitt und Richtung (einmal), mit weissem Saum. Pendel hin und zurück: die beiden Pfeile
+        // stehen rechts der Linie in Fahrtrichtung (wie Gegenverkehr) – sie decken sich nicht.
+        const seen = new Set<string>();
         for (let i = 1; i < pts.length; i++) {
           const a = pts[i - 1]!, b = pts[i]!;
-          const deg = (Math.atan2(-(b.n - a.n), b.e - a.e) * 180) / Math.PI;
-          const s = on ? 16 : 12;
+          const k = `${Math.round(a.e)},${Math.round(a.n)}>${Math.round(b.e)},${Math.round(b.n)}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const rad = Math.atan2(-(b.n - a.n), b.e - a.e);
+          const s = on ? 22 : 18, off = on ? 11 : 9;
+          const ox = -Math.sin(rad) * off, oy = Math.cos(rad) * off;
           L.marker(toLatLng({ e: (a.e + b.e) / 2, n: (a.n + b.n) / 2 }), {
             pane: GEO_PANE, interactive: false, keyboard: false,
-            icon: L.divIcon({ className: "lt-hb-arrow", iconSize: [s, s], iconAnchor: [s / 2, s / 2], html: `<svg width="${s}" height="${s}" viewBox="0 0 16 16" style="transform:rotate(${deg}deg);opacity:${on ? 1 : 0.7}"><path d="M4 2.5L12 8 4 13.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>` }),
+            icon: L.divIcon({ className: "lt-hb-arrow", iconSize: [s, s], iconAnchor: [s / 2 - ox, s / 2 - oy], html: `<svg width="${s}" height="${s}" viewBox="0 0 16 16" style="transform:rotate(${(rad * 180) / Math.PI}deg);opacity:${on ? 1 : 0.9}"><path d="M4.5 2.5L11.5 8 4.5 13.5" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 2.5L11.5 8 4.5 13.5" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>` }),
           }).addTo(g);
         }
-        // Prognose nur, solange sie noch aktuell ist (höchstens 60 Min überfällig)
-        if (on && h.next && Date.parse(o.t) - Date.parse(h.next) <= 60 * 60000) {
+        // Prognose aus `next` (nie aus dem Text): «nächste ca.» bzw. «seit … überfällig»
+        const nx = on ? nextLabel(h, o.t, ex.days) : null;
+        if (nx) {
           const last = pts.at(-1)!;
           L.marker(toLatLng(last), {
             pane: BADGE_PANE, interactive: false, keyboard: false,
-            icon: L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="lt-hb-next" style="margin-top:26px">nächste ca. ${escapeHtml(hhmm(h.next, ex.days, o.t))}</div>` }),
+            icon: L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="lt-hb-next${nx.late ? " late" : ""}" style="margin-top:26px">${escapeHtml(nx.text)}</div>` }),
           }).addTo(g);
         }
       }

@@ -108,6 +108,15 @@ const DIRS: Record<string, number> = {
 /** «3 Pers», «2 Fz» – nicht in Elementnamen wie «H05», «Det 2» (Lookbehind: kein Buchstabe/Ziffer davor) */
 const COUNT_RE = /(?<![\p{L}\d'’.:])(\d{1,3})\s*(?:x|×)?\s*(fz|fahrzeuge?|pw|lw|lastwagen|g-?klasse|duros?|pers(?:onen)?\.?|mann|sdt|soldaten|ag|angehörige|drohnen?|motorräder|töff)(?![\p{L}\d])/giu;
 
+/**
+ * Sichtung ohne Katalogbegriff: «1 weisser Lieferwagen», «1 Velo», «2 Traktoren», «1 Pw schwarz» – Zahl, höchstens zwei
+ * Beschreibungswörter, dann ein Fahrzeug bzw. eine Person. Das ist nie die eigene Lage des Melders.
+ */
+const SIGHT_RE = /(?<![\p{L}\d'’.:])(\d{1,3})\s+(?:[\p{L}\-]+\s+){0,2}?(velos?|fahrr(?:ad|äder)|velofahrer(?:in)?|radfahrer(?:in)?|traktor(?:en)?|landwirtschaftsfahrzeug(?:e)?|lieferwagen|kastenwagen|transporter|pick-?ups?|suvs?|limousinen?|kombis?|jeeps?|vans?|motorr(?:ad|äder)|töffs?|roller|quads?|lkws?|lastwagen|laster|holzlaster|kleinbus(?:se)?|wohnmobile?|autos?|pws?|personenwagen|fahrzeuge?|fz|pers(?:onen)?|leute|männer|frauen|wanderer|jogger(?:in)?|fussgänger(?:in)?|spaziergänger(?:in)?)(?![\p{L}\d])/iu;
+/** zivil geprägte Sichtungen → Zugehörigkeit unklar (Velo, Traktor, Wanderer …) */
+const SIGHT_CIVIL_RE = /^(?:velo|fahrr|velofahrer|radfahrer|traktor|landwirtschaft|wohnmobil|wanderer|jogger|fussgänger|spaziergänger)/i;
+const SIGHT_SYM = (noun: string): string => (/^(?:pers|leute|männer|frauen)/i.test(noun) ? "inf_trp" : SIGHT_CIVIL_RE.test(noun) ? (/^(?:traktor|landwirtschaft|wohnmobil)/i.test(noun) ? "ziv_fz" : "zivil") : "fz");
+
 /** Herkunft: «aus Rtg O», «aus Richtung Bern», «von N», «aus W» (keine Bewegungsrichtung) */
 const FROM_RE = /(?<![\p{L}\d])(?:aus|von)\s+(?:der\s+)?(?:(rtg|richtung)\.?\s+)?([\p{L}][\p{L}\d\-]*)/iu;
 /** Strassenart: «auf Hauptstrasse», «auf der HS», «auf Autobahn», «auf A1» – geht nicht in die Ortssuche */
@@ -208,8 +217,17 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const enemyHit = hits.find((h) => h.side === "rot");
   const melder = melderHit?.u ?? "";
 
+  // ---- Sichtung ohne Katalogbegriff («1 weisser Lieferwagen AO2»): Anzahl und allgemeines Zeichen
+  let sight: { count: number; sym: string; civil: boolean } | undefined;
+  if (!reading) {
+    const m = SIGHT_RE.exec(text);
+    if (m && !skip.some(([a, b]) => m.index < b && m.index + m[1]!.length > a)) {
+      sight = { count: +m[1]!, sym: SIGHT_SYM(m[2]!), civil: SIGHT_CIVIL_RE.test(m[2]!) };
+    }
+  }
+
   // ---- Anzahl, Zeichen, Einordnung
-  const sym = reading?.key ?? "einheit";
+  const sym = reading?.key ?? sight?.sym ?? "einheit";
   const entry = catalogEntry(sym) ?? catalogEntry("einheit")!;
   const isElement = entry.kind === "einheit" || entry.kind === "geraet";
   // Anzahl aus der Erkennung; sonst (nur bei Elementen) «3 Pers», «2 Fz» irgendwo im Text (nicht in Elementnamen)
@@ -221,10 +239,10 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
       break;
     }
   }
-  const count = reading?.count ?? cmCount;
+  const count = reading?.count ?? cmCount ?? sight?.count;
   let kindFrom: Draft["kindFrom"] = explicit ? "text" : "inhalt";
   if (ctx.kind) { kind = ctx.kind; kindFrom = "vorgabe"; }
-  if (!kind) kind = kindOf(text, reading, entry, { melder, enemy: !!enemyHit, count });
+  if (!kind) kind = kindOf(text, reading, entry, { melder, enemy: !!enemyHit, count, civil: sight?.civil });
   const side = sideOf(kind);
   const unit = kind === "eigen" ? melder : enemyHit?.u ?? "";
 
@@ -334,8 +352,10 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
  * - Ereignis/Tätigkeit/Anlage/Grafik: nie eigen ohne «eig» (ausser eigene Lage wie Beo Stao, Stellung); sonst unklar,
  *   Feind bei inhärent feindlichen Zeichen oder bekanntem Feindelement. Eine Anzahl macht nur Einheiten/Geräte zu Feind.
  */
-function kindOf(text: string, reading: ReturnType<typeof readTactical>, entry: CatalogEntry, o: { melder: string; enemy: boolean; count?: number }): Kind {
+function kindOf(text: string, reading: ReturnType<typeof readTactical>, entry: CatalogEntry, o: { melder: string; enemy: boolean; count?: number; civil?: boolean }): Kind {
   if (UNCLEAR_RE.test(text)) return "unklar";
+  // gezählte zivile Sichtung (Velo, Traktor, Wanderer) ohne «gn»: unklar
+  if (o.civil && !o.enemy && !STRONG_ENEMY_RE.test(text) && !ENEMY_RE.test(text)) return "unklar";
   if (STRONG_ENEMY_RE.test(text) || reading?.aff === "H" && reading.status !== "anticipated") return "feind";
   if (reading?.aff === "F") return "eigen";
   if (reading?.status === "anticipated" || MAYBE_RE.test(text)) return entry.hostile || o.enemy ? "feind" : "unklar";
