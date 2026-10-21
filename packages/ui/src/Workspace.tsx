@@ -518,9 +518,9 @@ function Stats({ events }: { events: LageEvent[] }) {
   const ago = Math.round((now - Date.parse(last)) / 60000);
   return (
     <span className="stats" aria-label="Kopfzahlen">
-      <span><b className="tnum">{live.length}</b> Meldungen</span>
-      <span><b className="tnum">{own}</b> eigene Elemente</span>
-      <span><b className="tnum">{sight}</b> Sichtungen</span>
+      <span><b className="tnum">{live.length}</b> {live.length === 1 ? "Meldung" : "Meldungen"}</span>
+      <span><b className="tnum">{own}</b> {own === 1 ? "eigenes Element" : "eigene Elemente"}</span>
+      <span><b className="tnum">{sight}</b> {sight === 1 ? "Sichtung" : "Sichtungen"}</span>
       {ago >= 0 && ago < 24 * 60 && <span>letzte vor <b className="tnum">{ago < 60 ? `${ago}′` : `${Math.floor(ago / 60)} h ${ago % 60}′`}</b></span>}
     </span>
   );

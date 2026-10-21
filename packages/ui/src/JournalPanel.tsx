@@ -43,6 +43,8 @@ interface Props {
   editRequest?: { id: string; n: number } | null;
 }
 
+/** Auf Handy/Tablet nicht automatisch fokussieren (sonst springt die Seite und die Tastatur geht auf) */
+const wideScreen = typeof window !== "undefined" && window.innerWidth >= 860 && !window.matchMedia?.("(pointer: coarse)").matches;
 const KINDS: Array<[Kind, string]> = [["eigen", "Eigene"], ["feind", "Feind"], ["unklar", "Unklar"]];
 export const KIND_COLOR: Record<Kind, string> = { eigen: "#1f5fb8", feind: "#c8102e", unklar: "#b8860b" };
 const kindOf = (e: Pick<LageEvent, "side" | "aff">): Kind => (e.side === "blau" ? "eigen" : e.aff === "U" ? "unklar" : "feind");
@@ -215,7 +217,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             <option value="__add">+ Tag</option>
           </select>
         </div>
-        <textarea ref={inputRef} className="msg" value={text} autoFocus rows={1} placeholder="z. B. 1015 H04 2 Fz in NAI 3 Rtg N" aria-label="Meldung"
+        <textarea ref={inputRef} className="msg" value={text} autoFocus={wideScreen} rows={1} placeholder={wideScreen ? "z. B. 1015 H04 2 Fz in NAI 3 Rtg N" : "1015 H04 2 Fz NAI 3"} aria-label="Meldung"
           onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; }}
           onChange={(e) => { setText(e.target.value.replace(/\n/g, " ")); setConfirmNoMelder(false); if (!e.target.value) { setManualPos(null); setKindOverride(null); e.target.style.height = "auto"; } }}
           onKeyDown={(e) => {

@@ -212,3 +212,16 @@ button:disabled { opacity: .45; cursor: default; }
 .chip.err { color: #fff; background: var(--rot); border-color: var(--rot); }
 .chip.warnsoft { color: var(--warn); border-color: var(--warn); }
 .jrow { scroll-margin-top: 230px; }
+
+/* Handy: ganze Seite scrollt, Karte 55 % der Höhe, Journal darunter in voller Länge */
+@media (max-width: 560px) {
+  html, body, #root { height: auto; min-height: 100%; }
+  .app { height: auto; min-height: 100%; }
+  .work { grid-template-rows: auto auto; }
+  .mapwrap { height: 62vh; min-height: 360px; overflow: hidden; }
+  .mapbox { min-height: 0; }
+  .side { max-height: none; overflow: visible; }
+  .tabs { position: static; }
+  .entry { position: static; box-shadow: none; }
+  .jrow { scroll-margin-top: 12px; }
+}
