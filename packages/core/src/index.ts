@@ -18,3 +18,4 @@ export * from "./lanes";
 export * from "./catalog";
 export * from "./roads";
 export * from "./shapes";
+export * from "./hints";

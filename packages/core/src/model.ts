@@ -101,7 +101,14 @@ export interface Area {
   /** Umriss in LV95 */
   ring: LV95[];
   color?: string;
+  /** NAI: zugeteiltes eigenes Element (Beob Trupp), z. B. «H03» */
+  trupp?: string;
+  /** NAI: Geländetyp – steuert Hinweise (z. B. Engnis → Hinterhalt-Gefahr) */
+  typ?: NaiTyp;
 }
+
+/** Geländetyp eines NAI */
+export type NaiTyp = "strasse" | "engnis" | "siedlung" | "bruecke" | "wald" | "offen" | "anlage";
 
 /** Georeferenziertes Bild (z. B. BNB-Skizze, Kartenausschnitt) */
 export interface Overlay {
@@ -135,6 +142,16 @@ export interface Exercise {
   /** Lagejournal */
   events?: LageEvent[];
   places?: Place[];
+  /** Entscheide zu Hinweisen (Hinweis-ID → bestätigt/verworfen) */
+  hintDecisions?: Record<string, HintDecision>;
+}
+
+/** Entscheid des Benutzers zu einem Hinweis */
+export interface HintDecision {
+  state: "bestaetigt" | "verworfen";
+  /** ISO-Zeit des Entscheids */
+  at: string;
+  note?: string;
 }
 
 /** Sortierbare, eindeutige ID (Zeit + Zufall), ohne Abhängigkeiten. */
