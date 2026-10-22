@@ -4,7 +4,10 @@
  * (`BatchReview` nach Foto bzw. Sprachmemo).
  */
 import {
+  cellAtAny,
   eventFromDraft,
+  geometryOf,
+  shapeCenter,
   lastPosition,
   parseMeldung,
   type Attachment,
@@ -21,7 +24,15 @@ import {
   type Status,
   type Echelon,
 } from "@lage/core";
-import { shapeFits, shapePatch } from "./ShapeDraw";
+
+// gleich wie `shapeFits`/`shapePatch` in ShapeDraw.tsx (hier ohne Leaflet, damit der Eintrage-Weg ohne Browser testbar bleibt)
+const shapeFits = (shape: EventShape, sym: string) => geometryOf(sym) === shape.kind;
+function shapePatch(shape: EventShape, sheets: Exercise["sheets"]): Partial<LageEvent> {
+  const c = shapeCenter(shape);
+  const pos = { e: Math.round(c.e), n: Math.round(c.n) };
+  const cell = cellAtAny(sheets, pos);
+  return { shape, pos, where: "Karte", cells: cell ? [cell.label] : undefined, angle: undefined, road: undefined };
+}
 
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 

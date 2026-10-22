@@ -46,6 +46,8 @@
   .ph-back { padding: 0; align-items: stretch; }
   .ph-dlg { max-height: none; height: 100%; border-radius: 0; border: 0; }
   .ph-stage { padding: 8px; }
+  .ph-title { white-space: nowrap; }
+  .ph-meta { display: none; }
   .ph-imgwrap img { max-height: 48vh; }
   .ph-foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
   .ph-foot button { flex: 1 1 40%; min-height: 44px; }
@@ -85,7 +87,13 @@
 .av-strip { display: flex; gap: 6px; padding: 8px 16px 12px; overflow-x: auto; justify-content: center; }
 .av-strip-b { padding: 2px; min-height: 0; border: 2px solid transparent; background: transparent; border-radius: 5px; line-height: 0; }
 .av-strip-b.on { border-color: var(--m-flash); }
-@media (max-width: 640px) { .av-head { padding: 6px 8px 6px 12px; } .av-meta { display: none; } .av-nav { display: none; } .av-b { min-width: 44px; min-height: 44px; } }
+@media (max-width: 640px) {
+  .av-back { background: rgb(12, 15, 14); }
+  .av-head { padding: 6px 8px 6px 12px; flex-wrap: nowrap; gap: 6px; }
+  .av-title { white-space: nowrap; font-size: 18px; }
+  .av-meta, .av-nav, .av-z { display: none; }
+  .av-b { min-width: 44px; min-height: 44px; padding: 0 8px; }
+}
 
 /* Kartenebene «Anhänge»: Kamera am Planquadrat */
 .att-cam { background: none; border: 0; }

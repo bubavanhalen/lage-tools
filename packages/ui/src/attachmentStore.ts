@@ -86,13 +86,13 @@ export const attLabel = (a: Attachment) => `${a.kind === "audio" ? "Memo" : "Fot
 
 const CAM = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M4 7.5h3l1.6-2h6.8l1.6 2h3c.6 0 1 .4 1 1V18c0 .6-.4 1-1 1H4c-.6 0-1-.4-1-1V8.5c0-.6.4-1 1-1z" fill="#fff" stroke="#101414" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" fill="none" stroke="#101414" stroke-width="1.6"/></svg>';
 
-/** Mittelpunkt eines Planquadrats (auch mit Unterquadrant) */
+/** Ort fürs Kamera-Symbol: oben links im Planquadrat (die Mitte gehört den Zeichen) */
 function cellCenter(ex: Exercise, cell: string): LV95 | null {
   const c = findCells(cell, ex.sheets)[0];
   const sh = c && ex.sheets.find((s) => s.id === c.sheetId);
   if (!c || !sh) return null;
   const b = cellBounds(sh, c.col, c.row, c.quadrant);
-  return { e: (b.minE + b.maxE) / 2, n: (b.minN + b.maxN) / 2 };
+  return { e: b.minE + 0.2 * (b.maxE - b.minE), n: b.maxN - 0.2 * (b.maxN - b.minN) };
 }
 
 /** Kamera-Symbol an jedem Planquadrat mit Foto (Zahl bei mehreren) */

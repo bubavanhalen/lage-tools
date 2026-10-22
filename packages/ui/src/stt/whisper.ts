@@ -114,13 +114,37 @@ export async function clearWhisper(size: WhisperSize): Promise<void> {
  * Typische Whisper-Erfindungen bei Stille/Rauschen entfernen (Untertitel-Abspann u. ä. aus den Trainingsdaten).
  */
 export function cleanWhisper(text: string): string {
-  return text
+  return collapseRepeats(text
+
     .replace(/\[[^\]]*\]|\([^)]*(musik|applaus|lachen|stille)[^)]*\)|\*[^*]*\*/gi, " ")
-    .replace(/untertitel(ung)?\b[^.!?]*(zdf|amara|swr|ard|funk|community)[^.!?]*[.!?]?/gi, " ")
+    .replace(/untertitel(ung)?\b[^!?\n]*(zdf|amara|swr|\bard\b|\bfunk\b|community)\S*(\s*,?\s*\d{4})?[.!?]?/gi, " ")
     .replace(/(vielen dank|danke)\s+(fürs|für's|für das|für ihre)\s+(zuschauen|zuhören|aufmerksamkeit)[.!]?/gi, " ")
     .replace(/\bcopyright\b[^.!?]*[.!?]?/gi, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim());
+}
+
+/**
+ * Wiederholungsschleifen von Whisper entfernen: derselbe Abschnitt (≥ 4 Wörter) mehrmals direkt hintereinander
+ * → einmal behalten. Auch ein angefangener letzter Durchgang wird entfernt.
+ */
+export function collapseRepeats(text: string): string {
+  let w = text.split(" ").filter(Boolean);
+  const norm = (x: string) => x.toLowerCase().replace(/[.,!?;:]+$/, "");
+  for (let n = Math.min(40, Math.floor(w.length / 2)); n >= 4; n--) {
+    for (let i = 0; i + 2 * n <= w.length; i++) {
+      let k = 1;
+      while (i + (k + 1) * n <= w.length && w.slice(i + k * n, i + (k + 1) * n).every((x, j) => norm(x) === norm(w[i + j]!))) k++;
+      if (k < 2) continue;
+      // angefangene weitere Wiederholung am Ende
+      let rest = i + k * n;
+      let m = 0;
+      while (rest + m < w.length && m < n && norm(w[rest + m]!) === norm(w[i + m]!)) m++;
+      if (rest + m === w.length) rest += m;
+      w = [...w.slice(0, i + n), ...w.slice(rest)];
+    }
+  }
+  return w.join(" ");
 }
 
 export const whisperEngine = (size: WhisperSize): SttEngine => ({

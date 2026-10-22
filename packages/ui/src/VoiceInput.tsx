@@ -361,6 +361,15 @@ function SettingsPop({ anchor, onClose }: { anchor: HTMLElement | null; onClose:
 
 // ---------------------------------------------------------------- Status unter dem Meldungsfeld
 
+/** Sekunden seit Beginn (Erkennung dauert offline je nach Gerät etwa 1–5 × die Memo-Länge) */
+function Elapsed() {
+  const [t0] = useState(() => Date.now());
+  const [, setN] = useState(0);
+  useEffect(() => { const i = window.setInterval(() => setN((n) => n + 1), 1000); return () => window.clearInterval(i); }, []);
+  const s = Math.floor((Date.now() - t0) / 1000);
+  return s >= 2 ? <span className="tnum vc-pct">{s} s</span> : null;
+}
+
 function Bars({ level }: { level: number }) {
   const n = 14;
   return (
@@ -393,7 +402,8 @@ export function VoiceStatus({ v }: { v: Voice }) {
     body = (
       <div className="vc-status" role="status">
         <span className="vc-spin" aria-hidden="true" /> {st.label}
-        {pct !== null && <span className="tnum vc-pct">{pct} % von {Math.round(model.total / 1e6)} MB</span>}
+        {pct !== null ? <span className="tnum vc-pct">{pct} % von {Math.round(model.total / 1e6)} MB</span> : <Elapsed key={st.att.id} />}
+        {st.att.duration ? <span className="vc-pct">Memo {fmtDuration(st.att.duration)}</span> : null}
       </div>
     );
   } else if (st.s === "ergebnis") {

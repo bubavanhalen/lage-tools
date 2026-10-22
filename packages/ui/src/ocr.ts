@@ -89,6 +89,23 @@ export async function downloadOcr(onProgress?: (done: number, total: number) => 
   onProgress?.(total, total);
 }
 
+/** Wörter, die fast sicher zu einer Meldung gehören (Zeit, Element, Planquadrat) – auch bei geringer Sicherheit behalten */
+const KEY_WORD = /^[^\p{L}\d]*(?:[0-2Oo]?[0-9OoIl][0-5Oo][0-9OoIlSB]|[Hh][O0o\d]{1,2}\d|A[A-Z]\d{1,2}|NAI)[^\p{L}\d]*$/u;
+
+/**
+ * Unsichere Störwörter (Flecken, Ränder, Linienreste) einer Zeile weglassen; ganze Zeile weg, wenn unsicher.
+ * @returns Text und mittlere Sicherheit, oder null
+ */
+export function filterLine(words: Array<{ text: string; confidence: number }>): { text: string; confidence: number } | null {
+  const kept = words.filter((w) => w.text.trim() && (w.confidence >= WORD_MIN || (w.confidence >= 15 && /^[\p{L}\d]{2,}$/u.test(w.text)) || KEY_WORD.test(w.text)
+    // zusammengeklebte Kurzmeldung («2FzAG13RIgN») – unsicher, wird danach aufgetrennt
+    || (w.confidence >= 3 && /^[\p{L}\d]{6,}$/u.test(w.text) && /\d/.test(w.text) && /\p{L}/u.test(w.text))));
+  const text = kept.map((w) => w.text).join(" ").trim();
+  if (!/[\p{L}\d]{2}/u.test(text)) return null;
+  const confidence = kept.reduce((a, w) => a + w.confidence * w.text.length, 0) / Math.max(1, kept.reduce((a, w) => a + w.text.length, 0));
+  return confidence < LINE_MIN && !KEY_WORD.test(kept[0]?.text ?? "") ? null : { text, confidence };
+}
+
 type TWorker = import("tesseract.js").Worker;
 let workerP: Promise<TWorker> | null = null;
 let idle: number | undefined;
@@ -159,16 +176,14 @@ export async function recognize(img: HTMLCanvasElement | Blob, onProgress?: (p: 
     const r = await w.recognize(img, {}, { text: true, blocks: true });
     // Prüfhilfe (nur Tests): aufbereitetes Bild ablesen
     const dbg = window as unknown as { __ltOcrDebug?: string | boolean };
-    if (dbg.__ltOcrDebug && img instanceof HTMLCanvasElement) dbg.__ltOcrDebug = img.toDataURL("image/png");
+    if (dbg.__ltOcrDebug && img instanceof HTMLCanvasElement) {
+      dbg.__ltOcrDebug = img.toDataURL("image/png");
+      (window as unknown as { __ltOcrWords?: string }).__ltOcrWords = (r.data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines.map((l) => l.words.map((w) => `${w.text}(${Math.round(w.confidence)})`).join(" ")))).join("\n");
+    }
     const lines: OcrLine[] = [];
     for (const b of r.data.blocks ?? []) for (const p of b.paragraphs) for (const l of p.lines) {
-      // unsichere Störwörter (Flecken, Ränder, Linienreste) weglassen
-      const words = l.words.filter((w) => w.text.trim() && (w.confidence >= WORD_MIN || (w.confidence >= 15 && /^[\p{L}\d]{2,}$/u.test(w.text))));
-      const text = words.map((w) => w.text).join(" ").trim();
-      if (!/[\p{L}\d]{2}/u.test(text)) continue;
-      const conf = words.reduce((a, w) => a + w.confidence * w.text.length, 0) / Math.max(1, words.reduce((a, w) => a + w.text.length, 0));
-      if (conf < LINE_MIN) continue;
-      lines.push({ text, confidence: conf, bbox: l.bbox });
+      const f = filterLine(l.words);
+      if (f) lines.push({ ...f, bbox: l.bbox });
     }
     // mittlere Sicherheit, gewichtet mit der Textlänge (kurze Störzeilen zählen wenig)
     const n = lines.reduce((a, l) => a + l.text.length, 0);
@@ -207,25 +222,27 @@ const VOCAB: Array<[RegExp, (m: string) => string]> = [
   [/^R[TI1lı]G/i, () => "Rtg"],
   [/^(?:KPZ|SPZ|PZ|FZ|LW|PW|PERS|INF|DET|GR|ZUG|HZ|GN|ZIV|NAI|STAO|BEO)/i, (m) => ({ KPZ: "Kpz", SPZ: "Spz", PZ: "Pz", FZ: "Fz", LW: "Lw", PW: "Pw", PERS: "Pers", INF: "Inf", DET: "Det", GR: "Gr", ZUG: "Zug", HZ: "Hz", GN: "gn", ZIV: "ziv", NAI: "NAI", STAO: "Stao", BEO: "Beo" } as Record<string, string>)[m.toUpperCase()]!],
   [/^H\d{2}/, (m) => m],
-  [/^A[A-Z]\d{1,2}/, (m) => m],
+  [/^A[A-Z]\d{1,2}(?:[A-D](?![a-z]))?/, (m) => (/[A-D]$/.test(m) && /\d[A-D]$/.test(m) ? m.slice(0, -1) + " " + m.slice(-1) : m)],
   [/^\d{1,4}/, (m) => m],
   [new RegExp(`^(?:${DIRS.join("|")})`), (m) => m],
 ];
 function segment(tok: string): string | null {
-  const best: Array<string[] | null> = new Array(tok.length + 1).fill(null);
-  best[0] = [];
+  type St = { parts: string[]; cost: number; skips: number } | null;
+  const best: St[] = new Array(tok.length + 1).fill(null);
+  best[0] = { parts: [], cost: 0, skips: 0 };
+  const put = (j: number, st: NonNullable<St>) => { if (!best[j] || st.cost < best[j]!.cost) best[j] = st; };
   for (let i = 0; i < tok.length; i++) {
-    if (!best[i]) continue;
+    const b = best[i];
+    if (!b) continue;
     for (const [re, f] of VOCAB) {
       const m = re.exec(tok.slice(i));
-      if (!m) continue;
-      const j = i + m[0].length;
-      const cand = [...best[i]!, f(m[0])];
-      if (!best[j] || cand.length < best[j]!.length) best[j] = cand;
+      if (m) put(i + m[0].length, { parts: [...b.parts, f(m[0])], cost: b.cost + 1, skips: b.skips });
     }
+    // höchstens ein Störzeichen überspringen (z. B. doppelt gelesenes «Z»)
+    if (b.skips < 1 && /\p{L}/u.test(tok[i]!)) put(i + 1, { parts: b.parts, cost: b.cost + 3, skips: b.skips + 1 });
   }
   const r = best[tok.length];
-  return r && r.length >= 3 ? r.join(" ") : null;
+  return r && r.parts.length >= 3 ? r.parts.join(" ") : null;
 }
 
 /**
@@ -238,18 +255,62 @@ export function fixOcrTokens(line: string, isCell?: (c: string) => boolean): str
     const m = /^([^\p{L}\d]*)(.*?)([^\p{L}\d]*)$/u.exec(t)!;
     const [, pre, core, post] = m as unknown as [string, string, string, string];
     let c = core;
-    if (/^[Hh][OoDQ0-9IlL|SsZzB]{2}$/.test(c)) c = "H" + toDigits(c.slice(1));
+    if (/^[Hh][OoDQ0-9IlL|SsZzB]{2,3}$/.test(c)) c = "H" + toDigits(c.slice(1).replace(/[Oo]{2}/, "O")).slice(0, 2);
+    else if (/^[0-2Oo][0-9OoIlSB][0-5Oo][0-9OoIlSB]$/.test(c) && /\d/.test(c)) c = toDigits(c);
     else if (/^R[Iıil1t][gq]$/.test(c)) c = "Rtg";
+    else if (/^R[Iıil1tT][gqGQ](N|NO|O|SO|S|SW|W|NW)$/.test(c)) c = "Rtg " + c.slice(3);
+    else if (/^R[Iıil1tT][GQ]$/.test(c)) c = "Rtg";
+    else if (/^[2z]iv$/.test(c)) c = "ziv";
+    else if (/^[9g][nm]$/.test(c)) c = "gn";
+    else if (/^A[A-Z]\d{1,2}[A-D]$/.test(c) && isCell?.(c.slice(0, -1))) c = c.slice(0, -1) + " " + c.slice(-1);
     else if (/^\d\.(?:gn|ziv|Fz|Pers)$/i.test(c)) c = c.replace(".", " ");
     else if (/^A[A-Z][0-9OoDQIlL|SsZzGBTg]{1,2}$/.test(c) && /[^0-9]/.test(c.slice(2)) && isCell) {
       const cell = c.slice(0, 2) + toDigits(c.slice(2));
       if (isCell(cell)) c = cell;
-    } else if (c.length >= 6 && /^[\p{Lu}\d]+$/u.test(c) && /\d/.test(c)) {
+    } else if (c.length >= 6 && /^[\p{L}\d]+$/u.test(c) && /\d/.test(c) && /\p{L}/u.test(c)) {
       const seg = segment(c);
       if (seg) c = seg;
     }
     return pre + c + post;
   }).join("");
+}
+
+const LABELS: Array<[RegExp, "zeit" | "melder" | "text" | "datum" | "sonst"]> = [
+  [/^(?:zeit|uhrzeit|zeitpunkt|dtg)\b\s*[:.]?\s*/i, "zeit"],
+  [/^(?:absender|melder|von|abs\.?|meldender)\b\s*[:.]?\s*/i, "melder"],
+  [/^(?:meldung|inhalt|text|beobachtung|sachverhalt)\b\s*[:.]?\s*/i, "text"],
+  [/^(?:datum|tag)\b\s*[:.]?\s*/i, "datum"],
+  [/^(?:empfänger|empfaenger|an|unterschrift|visum|visa|quittung|nr\.?|übermittelt|uebermittelt)\b\s*[:.]?\s*/i, "sonst"],
+];
+
+/**
+ * Meldezettel (Formular mit Feldern «Zeit», «Absender», «Meldung» …) → eine Meldung wie getippt,
+ * z. B. «T2 0645 H05 3 Fz in Kolonne AP10 Rtg W». null, wenn es kein solches Formular ist.
+ */
+export function formToMeldung(text: string, days?: string[]): string | null {
+  const got: Record<string, string> = {};
+  let cur: string | null = null;
+  for (const raw of text.split("\n")) {
+    const l = raw.trim();
+    if (!l) continue;
+    const hit = LABELS.find(([re]) => re.test(l));
+    if (hit) { cur = hit[1]; got[cur] = (got[cur] ? got[cur] + " " : "") + l.replace(hit[0], "").trim(); continue; }
+    // Folgezeile gehört zum Meldungstext
+    if (cur === "text") got.text += " " + l;
+  }
+  const n = ["zeit", "melder", "text"].filter((k) => got[k] !== undefined).length;
+  if (n < 2 || !got.text?.trim()) return null;
+  let day = "";
+  const dm = /(\d{1,2})\.(\d{1,2})\.(\d{2,4})/.exec(got.datum ?? "");
+  if (dm && days?.length) {
+    const y = dm[3]!.length === 2 ? "20" + dm[3] : dm[3]!;
+    const iso = `${y}-${dm[2]!.padStart(2, "0")}-${dm[1]!.padStart(2, "0")}`;
+    const i = days.indexOf(iso);
+    if (i >= 0) day = `T${i + 1}`;
+  }
+  const time = /\b([0-2]?\d)[:.]?([0-5]\d)\b/.exec(got.zeit ?? "");
+  const melder = (got.melder ?? "").split(/\s+/)[0] ?? "";
+  return [day, time ? time[1]!.padStart(2, "0") + time[2] : "", melder, got.text.trim()].filter(Boolean).join(" ");
 }
 
 const TIME_START = /^\s*(?:\d+[.)]\s*)?(?:T\d\s+)?[0-2]?\d[:.]?[0-5]\d\b/;
@@ -259,13 +320,20 @@ const HEADER = /^\s*(?:datum|zeit|meldung|lagejournal|journal|melder|nr\.?|seite
  * Erkannten Text in einzelne Meldungen trennen: `splitMeldungen` aus dem Kern; trennt der (noch) nicht,
  * hier nach Zeilen mit Zeitangabe am Anfang (Folgezeilen hängen an der vorherigen).
  */
-export function ocrToMeldungen(text: string, isCell?: (c: string) => boolean): string[] {
-  const clean = cleanOcrText(text).split("\n").map((l) => fixOcrTokens(l, isCell)).join("\n");
+export function ocrToMeldungen(text: string, isCell?: (c: string) => boolean, days?: string[]): string[] {
+  const clean = cleanOcrText(text).split("\n").map((l) => stripTail(fixOcrTokens(l, isCell))).join("\n");
+  const form = formToMeldung(clean, days);
+  if (form) return [form];
   const k = kern.splitMeldungen(clean).map((x) => x.trim()).filter(Boolean);
   const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (k.length > 1 || lines.length <= 1) return k.map(tidy).filter(Boolean);
+  if (k.length > 1 || lines.length <= 1) {
+    // Kopfzeilen vor der ersten Meldung mit Zeit weglassen (Titel, Übungsname, Spaltenköpfe)
+    const first = k.findIndex((x) => TIME_START.test(x));
+    return (first > 0 ? k.slice(first) : k).map(tidy).filter(Boolean);
+  }
   const out: string[] = [];
-  for (const l of lines) {
+  const first = lines.findIndex((l) => TIME_START.test(l));
+  for (const l of first > 0 ? lines.slice(first) : lines) {
     if (HEADER.test(l) && !TIME_START.test(l)) continue;
     if (TIME_START.test(l) || !out.length) out.push(l);
     else out[out.length - 1] += " " + l;
@@ -274,8 +342,9 @@ export function ocrToMeldungen(text: string, isCell?: (c: string) => boolean): s
 }
 
 /** Tabellenstriche zu Leerzeichen; Visum-Kürzel/Störzeichen am Ende («… Rtg N mb», «\\s») weg */
-const tidy = (s: string) => {
-  let t = s.replace(/\s*[|¦]\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+const tidy = (s: string) => stripTail(s.replace(/\s*[|¦]\s*/g, " ").replace(/\s{2,}/g, " ").trim());
+function stripTail(s: string): string {
+  let t = s.trim();
   for (let k = 0; k < 3; k++) if (!/\s(?:ab|an|in|um|zu|da|ob|vor|aus)$/i.test(t)) t = t.replace(/\s+(?:[\\/|}{\]\[()~_.,;:'"‚„“”-]*[a-zäöü]{0,2}[\\/|}{\]\[~_.,;:'"‚„“”-]*)$/u, "").trim();
   return t;
 };

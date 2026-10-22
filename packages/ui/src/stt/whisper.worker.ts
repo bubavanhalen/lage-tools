@@ -50,7 +50,10 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
     } else if (m.type === "transcribe") {
       const p = await load(m.model, m.allowRemote);
       const long = m.audio.length > 16000 * 28;
-      const out = await p(m.audio, { language: "german", task: "transcribe", ...(long ? { chunk_length_s: 30, stride_length_s: 5 } : {}) });
+      // Obergrenze der Ausgabe nach Länge (Funk ≈ 3 Wörter/s): verhindert endlose Wiederholungsschleifen
+      const sec = m.audio.length / 16000;
+      const maxTokens = Math.min(440, Math.ceil(Math.min(sec, 30) * 9) + 16);
+      const out = await p(m.audio, { language: "german", task: "transcribe", max_new_tokens: maxTokens, ...(long ? { chunk_length_s: 30, stride_length_s: 5 } : {}) });
       const text = (Array.isArray(out) ? out.map((o) => o.text).join(" ") : out.text) ?? "";
       post({ type: "result", id: m.id, text });
     }

@@ -177,7 +177,7 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose }
       const cv = ocrCanvas(ph.canvas, rect);
       const r = await recognize(cv, (q) => setStep({ s: "ocr", label: q.label, p: q.phase === "erkennen" ? 0.6 + 0.4 * q.p : 0.5 + 0.1 * q.p }));
       if (abort.current.signal.aborted) return;
-      const texts = ocrToMeldungen(r.text, (c) => findCells(c, ex.sheets).length > 0);
+      const texts = ocrToMeldungen(r.text, (c) => findCells(c, ex.sheets).length > 0, ex.days);
       const a: Attachment = { ...att(), text: r.text.trim(), engine: "ocr-offline" };
       if (!texts.length) { setStep({ s: "leer", conf: r.confidence }); return; }
       const stamp = attLabel(a);
@@ -287,7 +287,7 @@ export function OcrOffline() {
         <div className="progress"><div style={{ width: `${Math.round((prog.d / Math.max(1, prog.t)) * 100)}%` }} /><span>Texterkennung {fmtSize(prog.d)} / {fmtSize(prog.t)}</span></div>
       ) : (
         <div className="btnrow">
-          <button onClick={load} disabled={!navigator.onLine} title="Gedruckten Text auf Fotos (Meldezettel, Journalseite) ohne Netz erkennen">Texterkennung offline verfügbar machen (≈ {OCR_MB} MB) – laden</button>
+          <button onClick={load} disabled={!navigator.onLine} title="Gedruckten Text auf Fotos (Meldezettel, Journalseite) ohne Netz erkennen">Texterkennung offline (≈ {OCR_MB} MB) – laden</button>
         </div>
       )}
       {err && <p className="help warn">Texterkennung: {err}</p>}

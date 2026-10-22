@@ -175,6 +175,43 @@ export function findPaper(g: Gray): Quad | null {
   let inS = 0, outS = 0, outN = 0;
   for (let i = 0; i < w * h; i++) { if (lab[i] === bestId) inS += s.d[i]!; else { outS += s.d[i]!; outN++; } }
   if (outN && inS / bestN - outS / outN < 40) return null;
+  // Kanten als Geraden einpassen (mittlerer Teil jeder Seite – Schatten an den Ecken stören so nicht), Ecken = Schnittpunkte
+  const xl = new Float64Array(h).fill(NaN), xr = new Float64Array(h).fill(NaN), yt = new Float64Array(w).fill(NaN), yb = new Float64Array(w).fill(NaN);
+  let ymin = h, ymax = -1, xmin = w, xmax = -1;
+  for (let i = 0; i < w * h; i++) {
+    if (lab[i] !== bestId) continue;
+    const x = i % w, y = (i - x) / w;
+    if (isNaN(xl[y]!)) xl[y] = x;
+    xr[y] = x;
+    if (isNaN(yt[x]!)) yt[x] = y;
+    yb[x] = y;
+    if (y < ymin) ymin = y; if (y > ymax) ymax = y; if (x < xmin) xmin = x; if (x > xmax) xmax = x;
+  }
+  /** Gerade v = a·u + b durch die Punkte (u, arr[u]) im mittleren Bereich, Ausreisser weg */
+  const fit = (arr: Float64Array, u0: number, u1: number): [number, number] | null => {
+    const a0 = Math.round(u0 + 0.2 * (u1 - u0)), a1 = Math.round(u1 - 0.2 * (u1 - u0));
+    let pts: Array<[number, number]> = [];
+    for (let u = a0; u <= a1; u++) if (!isNaN(arr[u]!)) pts.push([u, arr[u]!]);
+    for (let it = 0; it < 3; it++) {
+      if (pts.length < 5) return null;
+      let su = 0, sv = 0, suu = 0, suv = 0;
+      for (const [u, v] of pts) { su += u; sv += v; suu += u * u; suv += u * v; }
+      const n = pts.length, den = n * suu - su * su;
+      if (!den) return null;
+      const A = (n * suv - su * sv) / den, B = (sv - A * su) / n;
+      if (it === 2) return [A, B];
+      const res = pts.map(([u, v]) => Math.abs(v - (A * u + B)));
+      const lim = Math.max(1.5, [...res].sort((x, y) => x - y)[Math.floor(res.length * 0.7)]! * 1.5);
+      pts = pts.filter((_, k) => res[k]! <= lim);
+    }
+    return null;
+  };
+  const L = fit(xl, ymin, ymax), R = fit(xr, ymin, ymax), T = fit(yt, xmin, xmax), Bo = fit(yb, xmin, xmax);
+  if (!L || !R || !T || !Bo) return null;
+  // Schnitt x = a·y + b (senkrechte Kante) mit y = c·x + d (waagrechte Kante)
+  const cross = ([a, b]: [number, number], [c, d]: [number, number]) => { const y = (c * b + d) / (1 - a * c); return { x: a * y + b, y }; };
+  const sc = (p: { x: number; y: number }) => ({ x: (p.x + 0.5) * f, y: (p.y + 0.5) * f });
+  // Ecken auch als äusserste Punkte (Rückfall, wenn eine Kante schlecht eingepasst ist, z. B. ungleiches Licht)
   let tl = { x: 0, y: 0, v: Infinity }, br = { x: 0, y: 0, v: -Infinity }, tr = { x: 0, y: 0, v: -Infinity }, bl = { x: 0, y: 0, v: Infinity };
   for (let i = 0; i < w * h; i++) {
     if (lab[i] !== bestId) continue;
@@ -184,8 +221,10 @@ export function findPaper(g: Gray): Quad | null {
     if (x - y > tr.v) tr = { x, y, v: x - y };
     if (x - y < bl.v) bl = { x, y, v: x - y };
   }
-  const sc = (p: { x: number; y: number }) => ({ x: (p.x + 0.5) * f, y: (p.y + 0.5) * f });
-  const q: Quad = [sc(tl), sc(tr), sc(br), sc(bl)];
+  const fitted = [cross(L, T), cross(R, T), cross(R, Bo), cross(L, Bo)];
+  const ext = [tl, tr, br, bl];
+  const diag = Math.hypot(xmax - xmin, ymax - ymin);
+  const q = fitted.map((p, k) => sc(isFinite(p.x) && isFinite(p.y) && Math.hypot(p.x - ext[k]!.x, p.y - ext[k]!.y) < 0.05 * diag ? p : ext[k]!)) as Quad;
   // plausibles Viereck (nicht zu schmal)
   const len = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
   if (Math.min(len(q[0], q[1]), len(q[3], q[2])) < 0.2 * g.w || Math.min(len(q[0], q[3]), len(q[1], q[2])) < 0.2 * g.h) return null;
@@ -264,6 +303,14 @@ export function removeLines(b: Gray, min?: number): Gray {
       else { if (run >= L) for (let k = x - run; k < x; k++) d[y * w + k] = 255; run = 0; }
     }
   }
+  const LV = min ?? Math.max(60, Math.round(0.08 * h));
+  for (let x = 0; x < w; x++) {
+    let run = 0;
+    for (let y = 0; y <= h; y++) {
+      if (y < h && d[y * w + x] === 0) run++;
+      else { if (run >= LV) for (let k = y - run; k < y; k++) d[k * w + x] = 255; run = 0; }
+    }
+  }
   // lange, dünne Teile (8er-Nachbarschaft)
   const seen = new Uint8Array(w * h);
   const stack: number[] = [], comp: number[] = [];
@@ -287,20 +334,35 @@ export function removeLines(b: Gray, min?: number): Gray {
     const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
     // lang und dünn (Linienstück zwischen zwei Querlinien) oder grosses, lockeres Gitter
     const len = Math.max(bw, bh);
-    const long = len >= S && comp.length < len * 8 && Math.min(bw, bh) < len * 0.25;
+    const long = len >= S && comp.length < len * 12 && Math.min(bw, bh) < len * 0.25;
     const grid = bw * bh > 0.04 * w * h && comp.length < 0.12 * bw * bh;
     // Störpunkte (Rauschen, Staub)
     const speck = comp.length <= 8;
-    if (long || grid || speck) for (const j of comp) d[j] = 255;
+    // flache Striche (Reste schräger Linien), aber keine Satzzeichen
+    const dash = (bh <= Math.max(4, h / 400) && bw >= 10) || (bh <= Math.max(6, h / 300) && bw >= 18);
+    if (long || grid || speck || dash) for (const j of comp) d[j] = 255;
   }
   return { w, h, d };
 }
 
-/** ganze Aufbereitung für die Texterkennung (Graustufen → schwarz/weiss ohne Linien) */
-export function prepareForOcr(g: Gray, o: { lines?: boolean } = {}): Gray {
+/**
+ * ganze Aufbereitung für die Texterkennung: Licht ausgleichen, Kontrast; Linien und Rauschen über ein Schwarz/weiss-Bild
+ * finden und im Graustufenbild weiss machen (Graustufen erkennt tesseract besser als ein fettes Schwarz/weiss).
+ */
+export function prepareForOcr(g: Gray): Gray {
   const flat = stretch(flattenBackground(g));
-  const bin = binarize(sharpen(flat, 0.4), Math.max(8, Math.round(Math.max(g.w, g.h) / 120)));
-  return o.lines === false ? bin : removeLines(bin);
+  const bin = binarize(boxBlur(flat, 1), Math.max(8, Math.round(Math.max(g.w, g.h) / 120)));
+  const nl = removeLines(bin);
+  const d = new Uint8ClampedArray(flat.d);
+  // entfernte Linien samt ihrem grauen Rand weiss
+  const gone = new Uint8ClampedArray(d.length);
+  for (let i = 0; i < d.length; i++) gone[i] = bin.d[i] === 0 && nl.d[i] === 255 ? 0 : 255;
+  const goneWide = boxBlur({ w: g.w, h: g.h, d: gone }, 3);
+  for (let i = 0; i < d.length; i++) if (goneWide.d[i]! < 250 && nl.d[i] === 255) d[i] = 255;
+  // weit weg von Schrift: ganz weiss (Rauschen, Papierstruktur)
+  const near = boxBlur({ w: g.w, h: g.h, d: nl.d }, 3);
+  for (let i = 0; i < d.length; i++) if (near.d[i] === 255) d[i] = 255;
+  return { w: g.w, h: g.h, d };
 }
 
 /** Markiertes Rechteck auf die Bildgrenzen beschränken (null = zu klein / ausserhalb) */
@@ -415,17 +477,3 @@ export function imageFromTransfer(dt: DataTransfer | null): File | null {
 
 export const fmtSize = (b?: number) => (b === undefined ? "" : b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} kB` : `${(b / 1048576).toFixed(1).replace(".", ",")} MB`);
 
-/** Versuch: Varianten der Aufbereitung */
-export function prepareForOcrMode(g: Gray, mode: string): Gray {
-  const flat = stretch(flattenBackground(g));
-  if (mode === "flat") return flat;
-  const bin = binarize(boxBlur(flat, 1), Math.max(8, Math.round(Math.max(g.w, g.h) / 120)));
-  if (mode === "bin") return removeLines(bin);
-  const nl = removeLines(bin);
-  const d = new Uint8ClampedArray(flat.d);
-  for (let i = 0; i < d.length; i++) if (bin.d[i] === 0 && nl.d[i] === 255) d[i] = 255; // Linien weiss
-  // Hintergrund (nicht Schrift-Umgebung) ganz weiss: Rauschen weg
-  const near = boxBlur({ w: g.w, h: g.h, d: nl.d }, 3);
-  for (let i = 0; i < d.length; i++) if (near.d[i] === 255) d[i] = 255;
-  return { w: g.w, h: g.h, d };
-}
