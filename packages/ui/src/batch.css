@@ -1,0 +1,75 @@
+/* Mehrere Meldungen prüfen (BatchReview) – Dialog über der App, Handy: ganze Fläche */
+.br-back { position: fixed; inset: 0; z-index: 2000; background: rgba(16, 20, 20, .42); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.br { width: min(860px, 100%); max-height: min(860px, calc(100vh - 48px)); display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 18px 48px -16px rgba(0,0,0,.45); overflow: hidden; }
+.br.withraw { width: min(1280px, 100%); }
+.br-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 10px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+.br-title { font: 600 21px/1.1 var(--f-display); letter-spacing: .01em; }
+.br-done { font-size: 13px; color: var(--ok); font-weight: 600; }
+.br-sp { flex: 1; }
+.br-x { min-height: 34px; width: 36px; padding: 0; font-size: 22px; line-height: 1; border-color: transparent; background: transparent; }
+.br-notice { padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--card); font-size: 13.5px; }
+.br-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.br.withraw .br-body { grid-template-columns: minmax(280px, 42%) minmax(0, 1fr); }
+.br-raw { min-height: 0; overflow: auto; border-right: 1px solid var(--line); background: var(--card); padding: 12px; display: grid; gap: 10px; align-content: start; }
+.br-raw img { width: 100%; height: auto; border-radius: 4px; border: 1px solid var(--line); background: #fff; }
+.br-raw audio { width: 100%; }
+.br-rawtext { margin: 0; font: 12.5px/1.45 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; }
+.br-list { list-style: none; margin: 0; padding: 6px 10px 10px; overflow: auto; min-height: 0; display: grid; gap: 6px; align-content: start; }
+.br-row { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 9px 8px 9px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.br-row::before { content: ""; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--line); }
+.br-row.k-eigen::before { background: var(--blau); }
+.br-row.k-feind::before { background: var(--rot); }
+.br-row.k-unklar::before { background: var(--unklar); }
+.br-row.k-neutral::before { background: var(--ok); }
+.br-row.cur { border-color: var(--ink); box-shadow: inset 0 0 0 .5px var(--ink); }
+.br-row.off { opacity: .6; }
+.br-check { display: flex; align-items: center; justify-content: center; min-height: 40px; cursor: pointer; }
+.br-check input { width: 18px; height: 18px; accent-color: var(--ink); cursor: pointer; }
+.br-main { display: grid; gap: 6px; min-width: 0; }
+.br-origin { font: 500 11.5px/1.2 var(--f-body); color: var(--muted); letter-spacing: .02em; }
+.br-text { font: 500 15px/1.35 var(--f-mono); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%; resize: none; overflow: hidden; display: block; min-height: 38px; }
+.br-text:focus { outline: 2px solid var(--blau); outline-offset: 0; border-color: transparent; }
+.br-preview { gap: 4px; }
+.br-preview .chip { font-size: 12.5px; padding: 3px 8px; }
+.br-kind.k-eigen { color: var(--blau); border-color: var(--blau); }
+.br-kind.k-feind { color: var(--rot); border-color: var(--rot); }
+.br-kind.k-unklar { color: var(--unklar); border-color: var(--unklar); }
+.br-kind.k-neutral { color: var(--ok); border-color: var(--ok); }
+.br-acts { display: flex; gap: 4px; align-items: center; min-height: 40px; }
+.br-take { font-weight: 600; min-height: 34px; padding: 4px 10px; }
+.br-take:not(:disabled):hover { background: var(--ink); color: var(--paper); }
+.br-drop { min-height: 34px; width: 34px; padding: 0; color: var(--muted); border-color: transparent; background: transparent; }
+.br-drop:hover { color: var(--rot); border-color: var(--rot); }
+.br-row.closed { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; padding: 5px 8px 5px 12px; background: transparent; border-style: dashed; }
+.br-row.closed::before { display: none; }
+.br-state { font: 600 12px/1.2 var(--f-body); color: var(--muted); white-space: nowrap; }
+.br-row.eingetragen .br-state { color: var(--ok); }
+.br-closedtext { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.br-row.verworfen .br-closedtext { text-decoration: line-through; }
+.br-foot { display: flex; align-items: center; gap: 8px; justify-content: flex-end; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--card); }
+.br-keys { margin-right: auto; font-size: 12.5px; color: var(--muted); }
+.br-keys b { color: var(--ink); font-weight: 600; }
+.br-foot .primary { min-height: 40px; padding: 6px 16px; }
+
+/* Tablet: Bild oben statt daneben */
+@media (max-width: 900px) {
+  .br.withraw .br-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(120px, 34%) minmax(0, 1fr); }
+  .br-raw { border-right: 0; border-bottom: 1px solid var(--line); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .br-raw:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }
+}
+/* Handy: ganze Fläche, grosse Knöpfe */
+@media (max-width: 640px) {
+  .br-back { padding: 0; align-items: stretch; }
+  .br, .br.withraw { width: 100%; max-height: none; height: 100%; border-radius: 0; border: 0; }
+  .br-head { padding: 10px 10px 8px 16px; }
+  .br-keys { display: none; }
+  .br-row { grid-template-columns: 24px minmax(0, 1fr); padding-right: 8px; }
+  .br-acts { grid-column: 2; justify-content: flex-end; min-height: 0; }
+  .br-take { min-height: 40px; padding: 6px 14px; }
+  .br-drop { min-height: 40px; width: 40px; border-color: var(--line); }
+  .br-text { font-size: 16px; }
+  .br-raw { grid-template-columns: minmax(0, 1fr); }
+  .br-foot { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .br-foot button { flex: 1; min-height: 44px; }
+}
+@media (hover: none) { .br-take span { display: inline; } }
