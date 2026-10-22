@@ -5,9 +5,10 @@ import { openDB, type IDBPDatabase } from "idb";
 import type { Exercise } from "@lage/core";
 
 const DB_NAME = "lage-tools";
-/** 1: exercises, meta · 2: roads (Strassen-Kacheln, siehe roadsource.ts) */
-const DB_VERSION = 2;
+/** 1: exercises, meta · 2: roads (Strassen-Kacheln, siehe roadsource.ts) · 3: blobs (Anhänge: Fotos, Sprachmemos) */
+const DB_VERSION = 3;
 export const ROADS_STORE = "roads";
+export const BLOB_STORE = "blobs";
 
 /** so lange höchstens auf die Datenbank warten, wenn ein anderes Fenster das Öffnen blockiert */
 const BLOCKED_WAIT_MS = 6000;
@@ -42,6 +43,7 @@ export function db(): Promise<IDBPDatabase> {
         if (!d.objectStoreNames.contains("exercises")) d.createObjectStore("exercises", { keyPath: "id" });
         if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
         if (!d.objectStoreNames.contains(ROADS_STORE)) d.createObjectStore(ROADS_STORE, { keyPath: "key" });
+        if (!d.objectStoreNames.contains(BLOB_STORE)) d.createObjectStore(BLOB_STORE);
       },
       // ein älteres Fenster hält die Datenbank offen und lässt das Aktualisieren nicht zu
       blocked() { notify("blocked"); },
@@ -127,4 +129,24 @@ export function pickFile(accept: string): Promise<File | null> {
 
 export function safeFileName(s: string): string {
   return s.replace(/[^\p{L}\p{N}_ -]+/gu, "").trim().replace(/\s+/g, "_") || "uebung";
+}
+
+// ---------- Anhänge (Inhalt; Metadaten stehen in Exercise.attachments)
+
+/** Inhalt eines Anhangs speichern (Schlüssel = Attachment.id) */
+export async function putBlob(id: string, blob: Blob): Promise<void> {
+  await (await db()).put(BLOB_STORE, blob, id);
+}
+
+/** Inhalt eines Anhangs lesen (null, wenn nicht auf diesem Gerät) */
+export async function getBlob(id: string): Promise<Blob | null> {
+  try {
+    return ((await (await db()).get(BLOB_STORE, id)) as Blob | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteBlob(id: string): Promise<void> {
+  try { await (await db()).delete(BLOB_STORE, id); } catch { /* egal */ }
 }
