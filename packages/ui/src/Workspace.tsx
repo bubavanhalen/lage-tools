@@ -3,7 +3,6 @@ import L from "leaflet";
 import {
   blattFromRect,
   cellAtAny,
-  exerciseFromFile,
   exerciseToFile,
   feldFromRect,
   formatLv95,
@@ -43,7 +42,9 @@ import {
   type Basemap,
   type SwissMap,
 } from "@lage/map";
-import { currentExerciseId, downloadText, listExercises, loadExercise, onDbNotice, pickFile, safeFileName, saveExercise } from "./store";
+import { currentExerciseId, downloadText, getBlob, listExercises, loadExercise, onDbNotice, pickFile, putBlob, safeFileName, saveExercise } from "./store";
+import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
+import { attachmentLayer, attachmentsOf, forgetBlobUrls } from "./attachmentStore";
 import { NaiPanel } from "./NaiPanel";
 import { GeorefPane } from "./GeorefPane";
 import type { Candidate } from "./imageimport";
@@ -317,6 +318,16 @@ export function Workspace({ product, tagline }: Props) {
     shapeRef.current = g;
   }, [ex?.events, ex?.sheets, ex?.areas, tNow, shapeFrom, flags, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fotos an Planquadraten (Ebene «Anhänge»): Kamera-Symbol, Klick öffnet den Betrachter
+  const attRef = useRef<L.LayerGroup | null>(null);
+  useEffect(() => {
+    const s = sm.current;
+    attRef.current?.remove();
+    attRef.current = null;
+    if (!s || !ex || flags.anhaenge === false || !(ex.attachments ?? []).some((a) => a.cell)) return;
+    attRef.current = attachmentLayer(ex, (list) => openViewer(list, 0, `Fotos an ${list[0]!.cell}`)).addTo(s.map);
+  }, [ex?.attachments, ex?.sheets, flags.anhaenge, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Hinweise auf der Karte (Ebene «Hinweise»; im Reiter «Hinweise» immer)
   const hintRef = useRef<L.LayerGroup | null>(null);
   useEffect(() => {
@@ -465,15 +476,27 @@ export function Workspace({ product, tagline }: Props) {
   };
 
   // ---------- Datei ----------
-  const saveFile = () => ex && downloadText(`${safeFileName(ex.name)}.lage.json`, exerciseToFile(ex));
+  // mit Anhängen (Fotos, Memos) als .lage.zip, sonst .lage.json
+  const saveFile = async () => {
+    if (!ex) return;
+    if (!ex.attachments?.length) { downloadText(`${safeFileName(ex.name)}.lage.json`, exerciseToFile(ex)); return; }
+    const { exerciseFile, sizeText } = await import("./exportZip");
+    const r = await exerciseFile(ex, safeFileName(ex.name), getBlob);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(r.blob); a.download = r.name; a.click();
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    say(`Gespeichert als ZIP mit ${r.files} ${r.files === 1 ? "Anhang" : "Anhängen"} (${sizeText(r.blob.size)})${r.missing ? ` – ${r.missing} nicht auf diesem Gerät` : ""}`);
+  };
   const openFile = async () => {
-    const f = await pickFile(".json,.lage.json,application/json");
+    const f = await pickFile(".json,.lage.json,.zip,.lage.zip,application/json,application/zip");
     if (!f) return;
     try {
-      const x = exerciseFromFile(await f.text());
+      const { exerciseFromAny } = await import("./exportZip");
+      const { ex: x, files } = await exerciseFromAny(f, putBlob);
+      forgetBlobUrls();
       setEx(x);
       setSelSheet(null);
-      say(`«${x.name}» geladen`);
+      say(`«${x.name}» geladen${files ? ` (${files} ${files === 1 ? "Anhang" : "Anhänge"})` : ""}`);
     } catch (e) {
       say((e as Error).message);
     }
@@ -636,6 +659,7 @@ export function Workspace({ product, tagline }: Props) {
                   flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} canFitAll={ex.sheets.length + ex.areas.length > 0} />
               </div>
               <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)}
+                extra={(() => { const e = (ex.events ?? []).find((x) => x.id === selEvent); return e?.attachments?.length ? <AttachmentChips list={attachmentsOf(ex, e.attachments)} size={22} /> : null; })()}
                 onEdit={present ? undefined : (e) => { setTab("journal"); setEditReq({ id: e.id, n: Date.now() }); }} />
               {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} from={winFrom} />}
               <MapContextMenu map={sm.current.map} sheets={ex.sheets} onReportHere={(pos) => { setTab("journal"); setReportAt({ pos, n: Date.now() }); }} />
@@ -651,6 +675,7 @@ export function Workspace({ product, tagline }: Props) {
       {busy && <div className="busy"><div>{busy}</div></div>}
       {toast && <div className="toast" role="status">{toast}</div>}
       {mover.notice}
+      <ViewerHost />
       {dbBlocked && <div className="toast dbblocked" role="alert">Speicher blockiert: Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</div>}
     </div>
   );

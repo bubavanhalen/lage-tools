@@ -1,13 +1,18 @@
 /**
  * Offline-Spracherkennung mit Whisper im Browser (Web Worker, siehe `whisper.worker.ts`).
- * Modell: `onnx-community/whisper-base`, quantisiert (q8): Encoder 23 MB + Decoder 54 MB + Tokenizer ≈ 80 MB.
+ * Modelle (quantisiert q8, vom Hugging Face Hub, danach im Browser-Zwischenspeicher):
+ * - «small» (Standard): Encoder 92 MB + Decoder 157 MB ≈ 250 MB – versteht Funksprache deutlich besser
+ *   (Test mit Sprachausgabe: «Hotel null vier, zwo Fahrzeuge, Alpha Golf eins drei» → «Hotel 04 2 Fahrzeuge, Alpha Golf 1 3»).
+ * - «base»: Encoder 23 MB + Decoder 54 MB ≈ 80 MB – schneller, aber viele Fehler («Hote 04-2 Fahrzeuge … Golf 123»).
  */
 import { decodeTo16k } from "../audio";
 import type { LoadProgress, SttEngine } from "./index";
 
-export const WHISPER_MODEL = "onnx-community/whisper-base";
-/** ungefähre Downloadgrösse in MB (für Anzeige vor dem Laden) */
-export const WHISPER_MB = 80;
+export type WhisperSize = "small" | "base";
+export const WHISPER_MODELS: Record<WhisperSize, { id: string; mb: number; name: string }> = {
+  small: { id: "onnx-community/whisper-small", mb: 250, name: "Genau" },
+  base: { id: "onnx-community/whisper-base", mb: 80, name: "Klein" },
+};
 /** Dateien des Modells im Zwischenspeicher von transformers.js – daran erkennen wir «geladen» */
 const MODEL_FILES = ["onnx/encoder_model_quantized.onnx", "onnx/decoder_model_merged_quantized.onnx", "tokenizer.json", "config.json"];
 const HF_CACHE = "transformers-cache";
@@ -17,7 +22,7 @@ export type WorkerIn =
   | { type: "transcribe"; id: number; model: string; allowRemote: boolean; audio: Float32Array };
 export type WorkerOut =
   | { type: "progress"; file: string; loaded: number; total: number; status: string }
-  | { type: "ready"; id: number }
+  | { type: "ready"; id: number; wasm?: string[] }
   | { type: "result"; id: number; text: string }
   | { type: "error"; id: number; message: string };
 
@@ -26,6 +31,7 @@ let seq = 0;
 const waiting = new Map<number, { resolve: (v: string) => void; reject: (e: Error) => void }>();
 let progressCb: ((p: LoadProgress) => void) | null = null;
 const files = new Map<string, { loaded: number; total: number }>();
+let expectMb = 80;
 
 function getWorker(): Worker {
   if (worker) return worker;
@@ -42,14 +48,14 @@ function getWorker(): Worker {
       const loaded = [...files.values()].reduce((s, f) => s + f.loaded, 0);
       const known = [...files.values()].reduce((s, f) => s + f.total, 0);
       // vor dem Start der grossen Dateien ist die Summe noch klein: mindestens die erwartete Grösse annehmen
-      progressCb?.({ phase: "laden", loaded, total: Math.max(known, WHISPER_MB * 1e6), file: m.file });
+      progressCb?.({ phase: "laden", loaded, total: Math.max(known, expectMb * 1e6), file: m.file });
       return;
     }
     const w = waiting.get(m.id);
     if (!w) return;
     waiting.delete(m.id);
     if (m.type === "error") w.reject(new Error(m.message));
-    else w.resolve(m.type === "result" ? m.text : "");
+    else w.resolve(m.type === "result" ? m.text : m.type === "ready" ? JSON.stringify(m.wasm ?? []) : "");
   };
   worker.onerror = (ev) => {
     const err = new Error(ev.message || "Spracherkennung abgestürzt");
@@ -70,42 +76,38 @@ function call(msg: WithoutId<WorkerIn>, transfer?: Transferable[]): Promise<stri
   });
 }
 
+/** Zwischenspeicher für die ONNX-Laufzeit (gleich wie im Service Worker, `sw.template.js`) */
+const RUNTIME_CACHE = "lt-stt-v1";
+/** Laufzeit (WASM) sicher für offline ablegen – falls der Service Worker beim Laden noch nicht aktiv war */
+async function keepRuntime(urls: string[]): Promise<void> {
+  try {
+    const c = await caches.open(RUNTIME_CACHE);
+    for (const u of urls) if (new URL(u).origin === location.origin && !(await c.match(u, { ignoreSearch: true }))) await c.add(u);
+  } catch { /* z. B. Entwicklungsserver – egal */ }
+}
+
 /** Liegt das Modell schon im Browser-Zwischenspeicher? */
-export async function whisperCached(): Promise<boolean> {
+export async function whisperCached(size: WhisperSize): Promise<boolean> {
+  const id = WHISPER_MODELS[size].id;
   try {
     if (!("caches" in self)) return false;
     const c = await caches.open(HF_CACHE);
     const keys = (await c.keys()).map((r) => r.url);
-    return MODEL_FILES.every((f) => keys.some((k) => k.includes(WHISPER_MODEL) && k.endsWith(f)));
+    return MODEL_FILES.every((f) => keys.some((k) => k.includes(`/${id}/`) && k.endsWith(f)));
   } catch {
     return false;
   }
 }
 
 /** Modell aus dem Zwischenspeicher löschen (Speicher freigeben) */
-export async function clearWhisper(): Promise<void> {
+export async function clearWhisper(size: WhisperSize): Promise<void> {
+  const id = WHISPER_MODELS[size].id;
   worker?.terminate();
   worker = null;
   try {
     const c = await caches.open(HF_CACHE);
-    for (const r of await c.keys()) if (r.url.includes(WHISPER_MODEL)) await c.delete(r);
+    for (const r of await c.keys()) if (r.url.includes(`/${id}/`)) await c.delete(r);
   } catch { /* egal */ }
-}
-
-/** Belegter Platz des Modells im Zwischenspeicher (MB, grob) */
-export async function whisperSizeMb(): Promise<number> {
-  try {
-    const c = await caches.open(HF_CACHE);
-    let n = 0;
-    for (const r of await c.keys()) {
-      if (!r.url.includes(WHISPER_MODEL)) continue;
-      const res = await c.match(r);
-      n += +(res?.headers.get("content-length") ?? 0);
-    }
-    return n / 1e6;
-  } catch {
-    return 0;
-  }
 }
 
 /**
@@ -121,15 +123,17 @@ export function cleanWhisper(text: string): string {
     .trim();
 }
 
-export const whisperEngine: SttEngine = {
-  id: "whisper-offline",
-  label: "Offline (Whisper)",
-  ready: whisperCached,
+export const whisperEngine = (size: WhisperSize): SttEngine => ({
+  id: `whisper-${size}`,
+  label: `Offline (Whisper ${size})`,
+  ready: () => whisperCached(size),
   async load(onProgress) {
     progressCb = onProgress ?? null;
     files.clear();
+    expectMb = WHISPER_MODELS[size].mb;
     try {
-      await call({ type: "load", model: WHISPER_MODEL, allowRemote: true });
+      const wasm = JSON.parse(await call({ type: "load", model: WHISPER_MODELS[size].id, allowRemote: true }) || "[]") as string[];
+      await keepRuntime(wasm);
       onProgress?.({ phase: "starten", loaded: 1, total: 1 });
     } finally {
       progressCb = null;
@@ -138,7 +142,7 @@ export const whisperEngine: SttEngine = {
   async transcribe(blob) {
     const audio = await decodeTo16k(blob);
     if (audio.length < 16000 * 0.3) return "";
-    const text = await call({ type: "transcribe", model: WHISPER_MODEL, allowRemote: navigator.onLine, audio }, [audio.buffer]);
+    const text = await call({ type: "transcribe", model: WHISPER_MODELS[size].id, allowRemote: navigator.onLine, audio }, [audio.buffer]);
     return cleanWhisper(text);
   },
-};
+});

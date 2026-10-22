@@ -49,6 +49,7 @@ const LAYERS: Array<{ key: keyof LayerFlags; label: string; title: string; sw: s
   { key: "spuren", label: "Spuren", title: "Bisherige Standorte der Elemente als Linie", sw: "spur" },
   { key: "zeiten", label: "Zeiten", title: "Zeit neben frischen Meldungen", sw: "zeit" },
   { key: "hinweise", label: "Hinweise", title: "Hinweise zu Rot: Fähnchen am Ort, Pendel-Routen, Kreis um eigenen Stao", sw: "hinweis" },
+  { key: "anhaenge", label: "Anhänge", title: "Fotos an Planquadraten (Kamera-Symbol)", sw: "anhang" },
   { key: "legende", label: "Legende", title: "Legende der Zeichen", sw: "leg" },
 ];
 

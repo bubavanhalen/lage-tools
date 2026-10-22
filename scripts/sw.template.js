@@ -3,6 +3,8 @@ const VERSION = "__VERSION__";
 const APP = "__APP__";
 const APP_CACHE = `lt-${APP}-${VERSION}`;
 const TILE_CACHE = "lt-tiles-v1";
+/** erst bei Gebrauch geladen (nicht beim Installieren): Ordner → Zwischenspeicher (gleich wie in der App) */
+const ON_DEMAND = { "ocr/": "lt-ocr-v1", "assets/ort-wasm-": "lt-stt-v1" };
 
 self.addEventListener("install", (ev) => {
   ev.waitUntil((async () => {
@@ -41,6 +43,24 @@ self.addEventListener("fetch", (ev) => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  // Texterkennung u. ä.: zuerst Zwischenspeicher, sonst laden und ablegen (bleibt über App-Updates)
+  const scope = new URL(self.registration.scope).pathname;
+  const lazy = Object.keys(ON_DEMAND).find((d) => url.pathname.startsWith(scope + d));
+  if (lazy) {
+    ev.respondWith((async () => {
+      const c = await caches.open(ON_DEMAND[lazy]);
+      const hit = await c.match(url.href, { ignoreSearch: true });
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res.ok) {
+        // Dateiname mit Hash (z. B. Spracherkennung): ältere Fassung desselben Namens freigeben
+        if (!lazy.endsWith("/")) for (const k of await c.keys()) if (new URL(k.url).pathname.startsWith(scope + lazy) && k.url !== url.href) await c.delete(k);
+        c.put(url.href, res.clone());
+      }
+      return res;
+    })());
+    return;
+  }
   ev.respondWith((async () => {
     const c = await caches.open(APP_CACHE);
     if (req.mode === "navigate") {

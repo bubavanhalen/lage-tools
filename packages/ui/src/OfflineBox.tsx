@@ -8,6 +8,8 @@ import { toLv95 } from "@lage/map";
 import { clearTileCache, downloadTiles, estimateTiles, offlineReady, tileCacheCount } from "./offline";
 import { clearRoads, estimateRoadTiles, prefetchRoads, roadTileCount } from "./roadsource";
 import type { Bounds } from "./tiles";
+import { OcrOffline } from "./PhotoInput";
+import { SpeechModelRow } from "./SpeechSettings";
 
 const DETAIL: Array<[number, string]> = [[5, "Übersicht (bis 5 m)"], [2, "Normal (bis 2 m)"], [1, "Detail (bis 1 m)"]];
 
@@ -107,6 +109,8 @@ export function OfflineBox({ ex, map }: { ex: Exercise; map: L.Map }) {
           <button onClick={async () => { await clearRoads(); setRoadCount(0); }}>Löschen</button>
         </div>
       )}
+      <OcrOffline />
+      <SpeechModelRow compact />
     </div>
   );
 }

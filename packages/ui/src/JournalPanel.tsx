@@ -39,7 +39,9 @@ import { ShapeButton, shapePatch, takeDrawing } from "./ShapeDraw";
 import { addEvents, buildEvent, commitTexts } from "./commit";
 import { PhotoButton, PendingAttachment } from "./PhotoInput";
 import { AttachmentChips } from "./Attachments";
+import { attachmentsOf } from "./attachmentStore";
 import type { Attachment } from "@lage/core";
+import { VoiceButton, VoiceStatus, useVoice } from "./VoiceInput";
 
 interface Props {
   ex: Exercise;
@@ -153,6 +155,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const [roadPick, setRoadPick] = useState<RoadPick | null>(null);
   /** Anhang (Foto), der an die nächste eingetragene Meldung gehängt wird */
   const [pendingAtt, setPendingAtt] = useState<Attachment | null>(null);
+  /** Sprechen: Memo → Meldungsfeld (eine Meldung) bzw. Übersicht (mehrere) */
+  const voice = useVoice({ ex, update, say, text, setText, day, input: inputRef, onAttach: setPendingAtt, pendingId: pendingAtt?.id,
+    onCommit: (texts, a) => { const evs = commitTexts(texts, { ex, device, update, day, attachment: a }); const last = evs[evs.length - 1]; if (last) onSelect(last.id); } });
 
   // Taste «N» (ausserhalb von Eingabefeldern): zurück in die Meldungszeile
   useEffect(() => {
@@ -338,6 +343,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             // Alt+1/2/3: Einordnung festlegen
             if (e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setKind(KINDS[+e.key - 1]![0]); }
           }} />
+        <VoiceStatus v={voice} />
         {draft ? (
           <div className="preview">
             <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}>{dayLabel(draft.t, ex.days)} {draft.t.slice(11, 16)}</span>
@@ -379,6 +385,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         )}
         <div className="btnrow">
           <button className="primary" disabled={!draft} onClick={add}>Eintragen</button>
+          <PhotoButton ex={ex} day={day} say={say} onAttach={(a) => { setPendingAtt(a); inputRef.current?.focus(); }}
+            onCell={(a) => update((x) => addEvents(x, [], { attachments: [a] }))}
+            onCommit={(texts, a) => { const evs = commitTexts(texts, { ex, device, update, day, attachment: a }); const last = evs[evs.length - 1]; if (last) onSelect(last.id); }} />
+          <VoiceButton v={voice} />
+          {pendingAtt && <PendingAttachment att={pendingAtt} onRemove={() => setPendingAtt(null)} />}
           {manualPos && <span className="help mono">{formatLv95(manualPos)}</span>}
         </div>
       </div>
@@ -422,6 +433,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
                         {e.nai && <span className="naichip">{e.nai}</span>}
                         {!e.cells?.length && !e.nai && (e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>)}
                         {quality && <QualityMarks e={e} q={quality.get(e.id)} events={events} />}
+                        {e.attachments?.length ? <AttachmentChips list={attachmentsOf(ex, e.attachments)} /> : null}
                         {fresh && <span className="newdot" title="in den letzten 10 Minuten erfasst">neu</span>}
                       </span>
                     </span>

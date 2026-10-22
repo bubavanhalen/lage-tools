@@ -1,11 +1,11 @@
 /**
  * Spracherkennung: Auswahl der Engine, Einstellungen pro Gerät und Zustand des Offline-Modells.
- * - «offline» (empfohlen): Whisper im Browser – einmal ca. 80 MB laden, danach ohne Netz.
+ * - «offline» (empfohlen): Whisper im Browser – einmal laden (small ≈ 250 MB, base ≈ 80 MB), danach ohne Netz.
  * - «browser»: Erkennung des Browsers – schnell, nur online, Ton geht an Google/Microsoft/Apple.
  *   Nur nach ausdrücklichem Einschalten (`browserOk`).
  */
 import { useEffect, useState } from "react";
-import { WHISPER_MB, clearWhisper, whisperCached, whisperEngine } from "./whisper";
+import { WHISPER_MODELS, clearWhisper, whisperEngine, type WhisperSize } from "./whisper";
 import { browserSttAvailable } from "./browser";
 
 export interface LoadProgress {
@@ -32,11 +32,13 @@ export interface SttEngine {
 
 export interface SpeechPrefs {
   mode: "offline" | "browser";
+  /** Offline-Modell: «small» genau (≈ 250 MB, Standard), «base» klein (≈ 80 MB) */
+  model: WhisperSize;
   /** Browser-Erkennung ausdrücklich erlaubt (Hinweis «Ton geht an …» gelesen) */
   browserOk: boolean;
 }
 const PREFS_KEY = "lage.speech";
-const DEFAULT_PREFS: SpeechPrefs = { mode: "offline", browserOk: false };
+const DEFAULT_PREFS: SpeechPrefs = { mode: "offline", model: "small", browserOk: false };
 const prefListeners = new Set<(p: SpeechPrefs) => void>();
 
 export function getSpeechPrefs(): SpeechPrefs {
@@ -46,6 +48,7 @@ export function getSpeechPrefs(): SpeechPrefs {
     const p = { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<SpeechPrefs>) };
     // ohne Zustimmung nie Browser-Erkennung
     if (p.mode === "browser" && !p.browserOk) p.mode = "offline";
+    if (!(p.model in WHISPER_MODELS)) p.model = "small";
     return p;
   } catch {
     return DEFAULT_PREFS;
@@ -53,11 +56,13 @@ export function getSpeechPrefs(): SpeechPrefs {
 }
 
 export function setSpeechPrefs(p: Partial<SpeechPrefs>): SpeechPrefs {
-  const next = { ...getSpeechPrefs(), ...p };
+  const prev = getSpeechPrefs();
+  const next = { ...prev, ...p };
   if (!next.browserOk) next.mode = "offline";
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); } catch { /* privates Fenster: gilt bis zum Neuladen nicht */ }
   prefCache = next;
   prefListeners.forEach((f) => f(next));
+  if (next.model !== prev.model) { engineCache = null; setModel({ status: "pruefen", loaded: 0, total: WHISPER_MODELS[next.model].mb * 1e6, error: undefined }); checkModel(); }
   return next;
 }
 let prefCache: SpeechPrefs | null = null;
@@ -82,7 +87,7 @@ export interface ModelState {
   total: number;
   error?: string;
 }
-let modelState: ModelState = { status: "pruefen", loaded: 0, total: WHISPER_MB * 1e6 };
+let modelState: ModelState = { status: "pruefen", loaded: 0, total: WHISPER_MODELS[getSpeechPrefs().model].mb * 1e6 };
 const modelListeners = new Set<(s: ModelState) => void>();
 const setModel = (s: Partial<ModelState>) => { modelState = { ...modelState, ...s }; modelListeners.forEach((f) => f(modelState)); };
 let checked = false;
@@ -101,7 +106,7 @@ const mockEngine = (cfg: MockCfg): SttEngine => ({
   label: "Ersatz (Test)",
   ready: async () => mockLoaded,
   async load(onProgress) {
-    const total = (cfg.mb ?? WHISPER_MB) * 1e6;
+    const total = (cfg.mb ?? WHISPER_MODELS[(prefCache ?? getSpeechPrefs()).model].mb) * 1e6;
     for (let i = 1; i <= 10; i++) {
       await new Promise((r) => setTimeout(r, (cfg.delayMs ?? 1500) / 10));
       onProgress?.({ phase: "laden", loaded: (total * i) / 10, total, file: i < 4 ? "onnx/encoder_model_quantized.onnx" : "onnx/decoder_model_merged_quantized.onnx" });
@@ -118,7 +123,7 @@ const mockEngine = (cfg: MockCfg): SttEngine => ({
 /** Engine für «offline» (Whisper, in Tests der Ersatz) */
 export function offlineEngine(): SttEngine {
   const m = mockCfg();
-  return m ? mockEngine(m) : whisperEngine;
+  return m ? mockEngine(m) : whisperEngine((prefCache ?? getSpeechPrefs()).model);
 }
 let engineCache: SttEngine | null = null;
 const engine = () => (engineCache ??= offlineEngine());
@@ -127,13 +132,16 @@ export function useModelState(): ModelState {
   const [s, setS] = useState<ModelState>(modelState);
   useEffect(() => {
     modelListeners.add(setS);
-    if (!checked) {
-      checked = true;
-      engine().ready().then((ok) => { if (modelState.status === "pruefen") setModel({ status: ok ? "bereit" : "fehlt" }); });
-    }
+    setS(modelState);
+    if (!checked) { checked = true; checkModel(); }
     return () => { modelListeners.delete(setS); };
   }, []);
   return s;
+}
+
+function checkModel() {
+  const e = engine();
+  e.ready().then((ok) => { if (modelState.status === "pruefen" && e === engineCache) setModel({ status: ok ? "bereit" : "fehlt" }); }, () => setModel({ status: "fehlt" }));
 }
 
 /** Modell laden (einmal; mehrere Aufrufe teilen sich den Download) */
@@ -164,9 +172,9 @@ export async function transcribeOffline(blob: Blob): Promise<{ text: string; eng
 /** Modell löschen */
 export async function removeModel(): Promise<void> {
   if (mockCfg()) mockLoaded = false;
-  else await clearWhisper();
+  else await clearWhisper((prefCache ?? getSpeechPrefs()).model);
   setModel({ status: "fehlt", loaded: 0 });
 }
 
-export { WHISPER_MB, whisperCached } from "./whisper";
+export { WHISPER_MODELS, whisperCached, type WhisperSize } from "./whisper";
 export { browserSttAvailable, browserSttVendor, startLive, type LiveSession } from "./browser";

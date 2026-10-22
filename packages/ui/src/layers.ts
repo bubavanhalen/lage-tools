@@ -11,8 +11,10 @@ export interface LayerFlags {
   flaechen: boolean;
   /** Hinweise zu Rot (Fähnchen, Pendel-Routen, Kreis um Stao) */
   hinweise: boolean;
+  /** Fotos an Planquadraten (Kamera-Symbol) */
+  anhaenge: boolean;
 }
-export const DEFAULT_FLAGS: LayerFlags = { raster: true, nai: true, eigene: true, feind: true, spuren: true, zeiten: true, legende: true, flaechen: true, hinweise: true };
+export const DEFAULT_FLAGS: LayerFlags = { raster: true, nai: true, eigene: true, feind: true, spuren: true, zeiten: true, legende: true, flaechen: true, hinweise: true, anhaenge: true };
 const KEY = "lage-tools.layers";
 export function loadFlags(): LayerFlags {
   try { return { ...DEFAULT_FLAGS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") }; } catch { return { ...DEFAULT_FLAGS }; }

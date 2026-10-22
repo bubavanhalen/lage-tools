@@ -23,15 +23,19 @@ const post = (m: WorkerOut, transfer?: Transferable[]) => (self as unknown as Wo
 
 function load(model: string, allowRemote: boolean): Promise<AutomaticSpeechRecognitionPipeline> {
   if (asr && currentModel === model) return asr;
+  // anderes Modell gewählt: altes freigeben (Speicher)
+  asr?.then((p) => p.dispose()).catch(() => { /* egal */ });
   currentModel = model;
   env.allowRemoteModels = allowRemote;
-  asr = (pipeline("automatic-speech-recognition", model, {
+  // (Typen von `pipeline` sind für tsc zu komplex – Aufgabe hier fest)
+  const make = pipeline as unknown as (task: "automatic-speech-recognition", model: string, o: object) => Promise<AutomaticSpeechRecognitionPipeline>;
+  asr = make("automatic-speech-recognition", model, {
     dtype: "q8",
     device: "wasm",
     progress_callback: (p: { status: string; file?: string; loaded?: number; total?: number }) => {
       if (p.status === "progress" || p.status === "initiate" || p.status === "done") post({ type: "progress", file: p.file ?? "", loaded: p.loaded ?? 0, total: p.total ?? 0, status: p.status });
     },
-  }) as Promise<AutomaticSpeechRecognitionPipeline>).catch((e) => { asr = null; throw e; });
+  }).catch((e) => { asr = null; throw e; });
   return asr;
 }
 
@@ -40,7 +44,9 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
   try {
     if (m.type === "load") {
       await load(m.model, m.allowRemote);
-      post({ type: "ready", id: m.id });
+      // geladene Laufzeit-Dateien melden, damit das Hauptfenster sie für offline ablegen kann
+      const wasm = performance.getEntriesByType("resource").map((e) => e.name).filter((n) => /ort-wasm[^/]*\.wasm/.test(n));
+      post({ type: "ready", id: m.id, wasm });
     } else if (m.type === "transcribe") {
       const p = await load(m.model, m.allowRemote);
       const long = m.audio.length > 16000 * 28;
