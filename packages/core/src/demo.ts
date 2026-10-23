@@ -3,6 +3,10 @@
  * Die Meldungen sind so gewählt, dass die meisten Hinweise zu Rot (`hints.ts`) einmal auslösen:
  * Normallage/Ruhe/Abweichung in NAI 2, Checkpoint mit ausweichendem Fz, Pendel eines weissen Lieferwagens,
  * Drohne über dem Stao H05, Reaktion nach Patrouille, Übergabe, Rot-Stao neben H02, stummer Trupp in NAI 1 u. a.
+ * Zur Demo-Endzeit (T2 07:25) zeigt «Lage Rot»: wahrscheinlichste Möglichkeit Überfall auf Stao H05 (Drohne über H05,
+ * Schwergewicht in AP10 an der Seftigenstrasse, Formation Linie), gefährlichste Hinterhalt am Engnis NAI 3 (Sperre,
+ * Drohne 2× über NAI 3), weitere Versorgung/Übergabe (Pendel schwarzer Pw AK9 ↔ AN6); Kräfte Rot gegenüber der
+ * Feindannahme mit unerwarteten Kpz und den länger nicht mehr gemeldeten Det 1 und Det 2.
  */
 import { areaFromRing, newExercise } from "./exercise";
 import { eventFromDraft, lastPosition, parseMeldung } from "./journal";
@@ -44,20 +48,26 @@ const LINES = [
   "T2 0450 H02: Zivilperson meldet angeblich 3 Fz AT3 Rtg N",
   "T2 0515 H04: Det 2 1 Fz in NAI 3 Rtg O",
   "T2 0530 H02: Det 2 bezieht Stellung AM9",
+  "T2 0535 H05: Drohne über NAI 3",
   "T2 0540 H02 Ablösung, Beo Stao AL9 A",
+  "T2 0542 H02: 1 ziv Fz (schwarzer Pw) AK9 Rtg O",
   "T2 0545 H03: 3 Fz in NAI 2 Rtg O",
   "T2 0600 H03: 3 Fz in NAI 2 Rtg O",
   "T2 0605 Det 1 2 Fz AO7 Rtg W",
+  "T2 0610 H05: Drohne über NAI 3 Rtg W",
+  "T2 0610 H03: 1 ziv Fz (schwarzer Pw) AN6 Rtg N",
   "T2 0620 H05: Sperre aus Baumstämmen in NAI 3, Strasse blockiert",
   "T2 0630 H01 4 Pers AD7 unklar",
-  "T2 0640 H04: 3 Fz AH11, stehen mit laufendem Motor",
+  "T2 0640 H05: 6 Pers AP10 am Waldrand",
+  "T2 0640 H02: 1 ziv Fz (schwarzer Pw) AK9 Rtg W",
+  "T2 0645 H05: 2 Fz AP10 an der Seftigenstrasse, stehen mit laufendem Motor",
   "T2 0650 H03: Sperre AM5",
-  "T2 0655 H04: 1 gn Hz Inf AH12 Rtg N",
+  "T2 0655 H04: 1 gn Trp Inf AH12 Rtg N",
   "T2 0700 H05: mögliche IED in AF13",
   "T2 0705 H04: gn Sperre in AG13",
   "T2 0710 H02: 2 Kpz AK9 Rtg W",
+  "T2 0710 H03: 1 ziv Fz (schwarzer Pw) AN6",
   "T2 0712 H05: 2 Kpz AJ9 Rtg W",
-  "T2 0715 H05: 3 Fz in Kolonne AP10 Rtg W",
   "T2 0720 H03: 1 Fz in NAI 2 Rtg N",
   "T2 0725 H02: 4 Pers in Linie AK10 Rtg N",
 ];
@@ -83,6 +93,8 @@ export function demoExercise(): Exercise {
   nai("NAI 2", "H03", "strasse");
   nai("NAI 3", "H05", "engnis");
   ex.units = { blau: ["H01", "H02", "H03", "H04", "H05"], rot: ["Det 1", "Det 2"], ul: [] };
+  // Feindannahme (erwartete Stärke Rot) in Kurzschrift – Vergleich mit den erkannten Kräften im Reiter Hinweise
+  ex.feindannahme = "2 Det, 14 Pers, 5 Fz, 1 Drohne";
   const events: LageEvent[] = [];
   const now = new Date(2030, 4, 15, 8, 0);
   for (const line of LINES) {

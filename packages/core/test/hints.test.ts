@@ -473,7 +473,8 @@ describe("Lagezeit, Revisionen, Stabilität", () => {
   });
   it("Beispielübung: Pendel des weissen Lieferwagens mit Prognose, Drohne über Stao H05", () => {
     const hs = hints(ex);
-    const c2 = of(hs, "C2")[0]!;
+    // die Beispielübung hat zwei Pendel (weisser Lieferwagen, später schwarzer Pw): hier der Lieferwagen
+    const c2 = of(hs, "C2").find((h) => h.id.includes("weiss-lieferwagen"))!;
     expect(c2.next).toBe(T2("03:25"));
     expect(textOf(ex, c2).every((t) => /weisser Lieferwagen/.test(t))).toBe(true);
     expect(of(hs, "D1")[0]!.unit).toBe("H05");

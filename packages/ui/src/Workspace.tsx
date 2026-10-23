@@ -66,7 +66,11 @@ import { HintsPanel } from "./HintsPanel";
 import { hintExtent, hintLayer } from "./hintLayer";
 import { hasOpenHoch, newCount, useHints } from "./hintsData";
 import { hintsToCsv } from "./hintsExport";
-import type { Hint } from "@lage/core";
+import type { Hint, RedCoa } from "@lage/core";
+import { LageRotPanel } from "./LageRotPanel";
+import { coaEventIds, useLageRot } from "./lageRot";
+import { coaExtent, coaLayer } from "./coaLayer";
+import { lageRotCsv } from "./lageRotExport";
 
 function deviceId(): string {
   try {
@@ -219,7 +223,15 @@ export function Workspace({ product, tagline }: Props) {
   const hintSel = hints.find((h) => h.id === selHint) ?? null;
   /** gewählter Hinweis hebt seine Auslöser hervor – nur solange die Hinweise sichtbar sind */
   const hintFocus = !!hintSel && (present ? presentHints : tab === "hinweise");
+  // ---------- Lage Rot: mögliche Aktionen und Kräfte (folgen Lagezeit und Zeitfenster)
+  const lageRot = useLageRot(ex, tNow, hints, winFrom);
+  const [selCoa, setSelCoa] = useState<string | null>(null);
+  const coaSel = lageRot.coas.find((c) => c.id === selCoa) ?? null;
+  const coaFocus = !!coaSel && (present ? presentHints : tab === "hinweise");
+  // Hinweis gewählt (Liste, Karte, Indikator) → Möglichkeit abwählen
+  useEffect(() => { if (selHint) setSelCoa(null); }, [selHint]);
   const hintHl = (() => {
+    if (coaFocus && coaSel) return coaEventIds(coaSel, hints);
     if (!hintFocus || !hintSel) return null;
     const ids = new Set(hintSel.events);
     if (hintSel.unit) for (const e of ex?.events ?? []) if (e.side === "blau" && e.unit === hintSel.unit) ids.add(e.id);
@@ -344,6 +356,32 @@ export function Workspace({ product, tagline }: Props) {
     hintRef.current = g;
   }, [hints, selHint, hintFocus, flags.hinweise, tab, present, presentHints, ex?.hintDecisions, ex?.events, ex?.sheets, ex?.areas, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Mögliche Aktionen Rot auf der Karte (Ebene «Aktionen Rot»; gewählte immer)
+  const coaRef = useRef<L.LayerGroup | null>(null);
+  useEffect(() => {
+    const s = sm.current;
+    coaRef.current?.remove();
+    coaRef.current = null;
+    if (!s || !ex || !lageRot.coas.length || !(flags.aktionen || coaFocus)) return;
+    const g = coaLayer(s.map, {
+      coas: flags.aktionen ? lageRot.coas : lageRot.coas.filter((c) => c === coaSel), ex, t: tNow, selectedId: selCoa, focus: coaFocus,
+      onClick: (c) => { if (present) setPresentHints(true); else setTab("hinweise"); setSelHint(null); setSelCoa(c.id); },
+    });
+    g.addTo(s.map);
+    coaRef.current = g;
+  }, [lageRot.coas, selCoa, coaFocus, flags.aktionen, present, mapReady, hints]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selectCoa = (id: string | null) => { setSelCoa(id); if (id) setSelHint(null); };
+  /** Karte auf eine Möglichkeit: Ziel und Annäherung mit Rand */
+  const focusCoa = (c: RedCoa) => {
+    const map = sm.current?.map;
+    selectCoa(c.id);
+    const box = coaExtent(c);
+    if (!map || !box) return;
+    if (window.innerWidth <= 560) window.scrollTo({ top: 0, behavior: "smooth" });
+    const pad = Math.max(250, Math.max(box.maxE - box.minE, box.maxN - box.minN) * 0.5);
+    flyToBoundsSharp(map, { minE: box.minE - pad, minN: box.minN - pad, maxE: box.maxE + pad, maxN: box.maxN + pad }, { maxZoom: 21 });
+  };
+
   /** Karte auf einen Hinweis: Planquadrate/NAI bzw. Auslöser mit Rand */
   const focusHint = (h: Hint) => {
     const map = sm.current?.map;
@@ -387,7 +425,7 @@ export function Workspace({ product, tagline }: Props) {
     if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days), "text/csv;charset=utf-8"); return; }
     const { journalPdf } = await import("./journalpdf");
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN", hints));
+    a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN", hints, { lage: lageRot, t: tNow }));
     a.download = `Lagejournal_${safeFileName(ex.name)}.pdf`;
     a.click();
   };
@@ -602,7 +640,9 @@ export function Workspace({ product, tagline }: Props) {
           ) : tab === "hinweise" ? (
             <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint}
               onMap={focusHint} onEvent={selectEvent} update={update} winFrom={winFrom} onWinClear={() => setWin({ mode: "alles" })}
-              onCsv={() => downloadText(`Hinweise_${safeFileName(ex.name)}.csv`, hintsToCsv(ex, hints), "text/csv;charset=utf-8")} />
+              onCsv={() => downloadText(`Hinweise_${safeFileName(ex.name)}.csv`, hintsToCsv(ex, hints) + lageRotCsv(ex, lageRot, tNow), "text/csv;charset=utf-8")}
+              lead={<LageRotPanel ex={ex} lage={lageRot} t={tNow} selected={selCoa} onSelect={selectCoa} onMap={focusCoa}
+                onHint={(id) => { const h = hints.find((x) => x.id === id); if (h) focusHint(h); }} onEvent={selectEvent} update={update} />} />
           ) : tab === "raster" ? (
             <div className="panel">
               {ex.sheets.length === 0 && (
@@ -651,7 +691,10 @@ export function Workspace({ product, tagline }: Props) {
           {present && presentHints && (
             <aside className="hp-present" aria-label="Hinweise zu Rot">
               <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint} compact
-                onMap={focusHint} onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update} />
+                onMap={focusHint} onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update}
+                lead={<LageRotPanel ex={ex} lage={lageRot} t={tNow} selected={selCoa} onSelect={selectCoa} onMap={focusCoa} compact
+                  onHint={(id) => { const h = hints.find((x) => x.id === id); if (h) focusHint(h); }}
+                  onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update} />} />
             </aside>
           )}
           {mapReady && sm.current && (
