@@ -268,6 +268,38 @@ describe("Sichtungen ohne Katalogbegriff sind nie eigene Lage", () => {
   ] as const)("eigene Anlage: %s → %s", (text, kind) => {
     expect(parseMeldung(text, ctx()).kind).toBe(kind);
   });
+  // Blockade/Hindernis gemeldet = Sichtung einer Sperre, nicht eigene Lage/Präsenz des Melders
+  it.each([
+    ["H05: Strasse blockiert mit Baumstämmen in NAI 3", "feind", "sperre", "nai"],
+    ["H03: Strasse gesperrt durch Baumstämme", "feind", "sperre", "melder"],
+    ["H02 Hindernis auf Strasse AK9", "feind", "sperre", "raster"],
+    ["H05 Strasse blockiert", "feind", "sperre", "melder"],
+    ["H04: Weg versperrt AG13", "feind", "sperre", "raster"],
+    ["H01: Baumstamm auf der Strasse AD7", "feind", "sperre", "raster"],
+    ["H05: Strasse blockiert AR12, unklar ob absichtlich", "unklar", "sperre", "raster"],
+    ["H05: Sperre aus Baumstämmen in NAI 3, Strasse blockiert", "feind", "sperre", "nai"],
+  ] as const)("Blockade = Sichtung: %s", (text, kind, sym, wo) => {
+    const d = parseMeldung(text, ctx());
+    expect(d.kind, "Einordnung").toBe(kind);
+    expect(d.side).toBe("rot");
+    expect(d.sym, "Zeichen").toBe(sym);
+    expect(d.unit, "kein Element (Melder verschiebt sich nicht)").toBe("");
+    expect(d.where?.kind ?? null, "Ort").toBe(wo);
+  });
+  it.each([
+    ["H05 eig Sperre AQ12", "eigen"],
+    ["H05 Stellung bezogen AQ11", "eigen"],
+    ["H03 Strasse frei AP4", "eigen"],
+  ] as const)("eigene Lage nur mit Stellungsbegriff bzw. «eig»: %s → %s", (text, kind) => {
+    expect(parseMeldung(text, ctx()).kind).toBe(kind);
+  });
+  it("Lage: «H05: Strasse blockiert …» verschiebt H05 nicht", () => {
+    const events = ex.events!.filter((e) => e.t <= "2030-05-15T05:00");
+    const c = { ...ctx(), lastPos: (u: string, sd: Draft["side"]) => lastPosition(events, sd, u) };
+    const before = situationAt(events, "2030-05-15T05:00").units.find((u) => u.unit === "H05")!;
+    events.push(eventFromDraft(parseMeldung("T2 0510 H05: Strasse blockiert mit Baumstämmen in NAI 3", c), "dev"));
+    expect(situationAt(events, "2030-05-15T05:15").units.find((u) => u.unit === "H05")!.pos).toEqual(before.pos);
+  });
   it("Lage: «H03: 1 weisser Lieferwagen AO2» verschiebt H03 nicht", () => {
     const events = ex.events!.filter((e) => e.t <= "2030-05-14T19:00");
     const c = { ...ctx(), lastPos: (u: string, sd: Draft["side"]) => lastPosition(events, sd, u) };

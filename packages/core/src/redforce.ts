@@ -25,7 +25,7 @@
 import { CATALOG } from "./catalog";
 import { sameOrNeighbor } from "./hintgeo";
 import type { Exercise } from "./model";
-import { GENERIC_FZ, MIN_MS, isoOfMs, lageMs, prepareRed, reachable, type PEv } from "./redprep";
+import { ECHELON_PERS_RANGE, GENERIC_FZ, MIN_MS, isoOfMs, lageMs, prepareRed, reachable, type PEv } from "./redprep";
 
 /** Schwellen der Schätzung (Zeiten in Minuten, Tempo in km/h) */
 export const STRENGTH_THRESHOLDS = {
@@ -58,7 +58,9 @@ export interface StrengthRow {
 }
 
 /** Personen je Stufe für die Feindannahme ohne Personenangabe (Schätzung als Spanne, vorsichtig–höchstens) */
-export const STUFE_PERS: Record<string, [number, number]> = { trp: [3, 4], gr: [6, 10], hz: [12, 18], zug: [25, 35] };
+export const STUFE_PERS: Record<string, [number, number]> = {
+  trp: ECHELON_PERS_RANGE.trp, gr: ECHELON_PERS_RANGE.gr, hz: ECHELON_PERS_RANGE.hz, zug: ECHELON_PERS_RANGE.zug,
+};
 
 /** Feindannahme, aus Kurzschrift gelesen */
 export interface StrengthSpec {
@@ -110,6 +112,8 @@ const ELEMENT_TYPES: Array<{ type: string; abbr: string; words: string[] }> = [
   { type: "kp", abbr: "Kp", words: ["kp", "kompanie", "kompanien"] },
   { type: "element", abbr: "Elemente", words: ["element", "elemente", "einheit", "einheiten"] },
 ];
+/** Anzeigename der Elemente-Zeile je Stufe */
+const ELEMENT_NAMES: Record<string, string> = { det: "Elemente", element: "Elemente", zug: "Züge", hz: "Halbzüge", gr: "Gruppen", trp: "Trupps", pat: "Patrouillen", kp: "Kompanien" };
 const PERS_WORDS = ["pers", "person", "personen", "mann", "sdt", "soldat", "soldaten", "bewaffnete", "angehörige", "ag"];
 const FZ_WORDS = ["fz", "fzg", "fahrzeug", "fahrzeuge", "pw", "personenwagen", "auto", "autos", "wagen", "lieferwagen", "kastenwagen", "transporter", "van"];
 /** Zusätze ohne eigene Zählung (Gattung, Ausrüstung, Verstärkung, Rolle) */
@@ -167,7 +171,9 @@ function lookup(s: string): Term | undefined {
 export function strengthRow(key: string): StrengthRow {
   if (key.startsWith("elemente:")) {
     const et = ELEMENT_TYPES.find((x) => x.type === key.slice(9));
-    return { key, name: "Elemente", abbr: et?.abbr ?? "Elemente" };
+    // Det bzw. allgemein: «Elemente»; sonst nach Stufe, damit mehrere Zeilen unterscheidbar sind
+    const name = ELEMENT_NAMES[et?.type ?? ""] ?? "Elemente";
+    return { key, name, abbr: et?.abbr ?? "Elemente" };
   }
   if (key === "pers") return { key, name: "Personen", abbr: "Pers" };
   if (key === "fz") return { key, name: "Fahrzeuge", abbr: "Fz" };
@@ -522,6 +528,9 @@ function estimateRow(key: string, feind: PEv[], q: Qty, unitName: Map<string, st
 /** Meldungen als «aufgerieben/zerstört/gefangen» – Element gilt nicht als «nicht mehr gesehen» */
 const DESTROYED_RE = /(?<!\p{L})(?:aufgerieben|vernichtet|zerstört|zerschlagen|ausgeschaltet|neutralisiert|kampfunfähig|gefangen|gefangengenommen|festgenommen|ergeben|ergibt sich)(?!\p{L})/iu;
 
+/** Stufen, die als Elemente-Zeile gezählt werden (unbenannte Sichtung mit Stufe, z. B. «1 gn Zug Inf») */
+const ECHELON_EL = new Set(["trp", "gr", "hz", "zug", "kp"]);
+
 /** Zeilen (Elemente, Personen, Fahrzeuge, Typen, unklar) aus den Meldungen */
 function rowsOf(evs: PEv[], unitName: Map<string, string>): StrengthEstimate[] {
   const feind = evs.filter((v) => v.feind);
@@ -529,17 +538,16 @@ function rowsOf(evs: PEv[], unitName: Map<string, string>): StrengthEstimate[] {
   // Spur je benanntem Element (alle Meldungen Art feind mit Ort)
   const tracks = new Map<string, PEv[]>();
   for (const v of feind) if (v.unitKey && v.pos) { const l = tracks.get(v.unitKey); if (l) l.push(v); else tracks.set(v.unitKey, [v]); }
-  // Elemente: benannte Rot-Elemente (Art feind), je Typ
-  const elByType = new Map<string, { names: Set<string>; events: string[] }>();
-  for (const v of feind) {
-    if (!v.unitKey) continue;
-    const key = `elemente:${elementType(v.e.unit)}`;
-    const g = elByType.get(key) ?? { names: new Set<string>(), events: [] };
-    g.names.add(unitName.get(v.unitKey) ?? v.e.unit);
-    g.events.push(v.id);
-    elByType.set(key, g);
+  // Elemente je Typ: benannte Rot-Elemente (Art feind, z. B. «Det 1») einzeln; unbenannte mit Stufe («1 gn Zug Inf»,
+  // «2 gn Gr») wie Sichtungen: min = grösste gleichzeitig unterscheidbare Anzahl, max = Summe ohne Doppelmeldungen
+  const elType = (v: PEv) => (v.unitKey ? elementType(v.e.unit) : v.e.echelon && ECHELON_EL.has(v.e.echelon) ? v.e.echelon : "");
+  const elKeys = new Set<string>();
+  for (const v of feind) { const t = elType(v); if (t) elKeys.add(t); }
+  for (const t of elKeys) {
+    const n = (v: PEv) => (elType(v) !== t ? 0 : v.unitKey ? 1 : v.e.count ?? 1);
+    const r = estimateRow(`elemente:${t}`, feind, { lo: n, hi: n, kmh: (a, b) => (a.isFz || b.isFz || a.isDrone || b.isDrone ? S.FZ_KMH : S.FOOT_KMH), compat: () => true }, unitName, tracks);
+    if (r) rows.push(r);
   }
-  for (const [key, g] of elByType) rows.push({ ...strengthRow(key), min: g.names.size, max: g.names.size, names: [...g.names].sort(natural), events: g.events });
 
   const foot = (a: PEv, b: PEv) => (a.foot && b.foot ? S.FOOT_KMH : S.FZ_KMH);
   const pers = estimateRow("pers", feind, { lo: (v) => v.persLo, hi: (v) => v.persHi, kmh: () => S.FOOT_KMH, compat: () => true }, unitName, tracks);

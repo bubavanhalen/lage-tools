@@ -92,3 +92,9 @@ Das Lagejournal gibt **Hinweise, keine Fakten**: Jeder Hinweis nennt Auslöser (
 - **Funksprache offline übersetzt:** Buchstabieralphabet, gesprochene Zahlen und Zeiten (auch Schweizerdeutsch), Elemente, Planquadrate, NAI, Koordinaten, Richtungen; Funkfloskeln entfernt.
 - **Mehrere Meldungen:** Foto/Memo → Übersicht mit Vorschau je Meldung, einzeln oder alle übernehmen (gleich wie Enter im Meldungsfeld). Nichts vermischt sich mit getipptem Text.
 - **Anhänge:** an Meldung oder Planquadrat (Kamera-Symbol auf der Karte), Bildbetrachter, Memo-Player; «Übung speichern» mit Anhängen als `.lage.zip`.
+
+## Lagejournal – Lage Rot (Etappe 4a+)
+Oben im Reiter «Hinweise», darunter die Hinweise.
+- **Mögliche Aktionen Rot:** Katalog (Überfall auf eigenen Stao, Hinterhalt an Engnis/Strasse, Sperren/Kanalisieren, Versorgung/Übergabe, Aufklärung zur Vorbereitung, Infiltration durch unbewachten NAI, Absetzen) mit gewichteten Indikatoren und Gegenindikatoren aus Hinweisen und Meldungen. Angezeigt höchstens: wahrscheinlichste, gefährlichste, eine weitere – erst ab zwei Rot-Indikatoren aus verschiedenen Meldungen. Je Möglichkeit Indikatoren (✓ erfüllt, ○ offen, ✗ dagegen), Annäherung, Zeitraum (fest, «überfällig», «jetzt»), «Prüfen». Indikatoren altern (90 Min), Rangfolge mit Hysterese, verworfene Hinweise zählen nicht.
+- **Kräfte Rot:** erkannt (benannte Elemente einmal, unbenannte Sichtungen über Erreichbarkeit abgeglichen: «mind.» vorsichtig, «bis» alle verschieden) gegenüber der Feindannahme (eine Kurzschrift-Zeile pro Übung, z. B. «2 Det, 14 Pers, 5 Fz, 1 Drohne»), «nicht mehr gesehen seit», mit Zeitfenster Zusatzspalte «im Fenster».
+- Karte: Ebene «Aktionen Rot» (Annäherungspfeil, Ziel mit Zeitraum, Engnis-Warnung). Export im Journal-PDF und CSV.

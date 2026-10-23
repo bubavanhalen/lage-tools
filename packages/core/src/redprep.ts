@@ -15,7 +15,7 @@ export const MIN_MS = 60000;
 
 /** Personen je Stufe als Spanne (Schätzung für «1 Trp Inf», «1 Gr Inf» …): [vorsichtig, höchstens] */
 export const ECHELON_PERS_RANGE: Record<Echelon, [number, number]> = {
-  trp: [3, 5], gr: [6, 10], hz: [12, 18], zug: [25, 35], kp: [80, 120], bat: [400, 600], rgt: [1200, 1800], br: [3000, 5000], div: [8000, 12000],
+  trp: [3, 4], gr: [6, 10], hz: [12, 18], zug: [25, 35], kp: [80, 120], bat: [400, 600], rgt: [1200, 1800], br: [3000, 5000], div: [8000, 12000],
 };
 
 /** Fahrzeug-Zeichen ohne bestimmten Typ (passen zu jedem Fz-Typ) */
@@ -126,7 +126,7 @@ function toPEv(e: LageEvent, sheets: Exercise["sheets"], nais: Area[]): PEv | nu
   const isFz = !isAir && cat?.category === "Fahrzeuge";
   const civil = CIVIL_PERS_RE.test(text);
   const isPers = !isFz && !isAir && !civil &&
-    (e.sym === "patrouille" || (cat?.kind === "einheit" && (PERS_CATS.has(cat.category) || (e.sym === "einheit" && PERS_WORD_RE.test(text)))));
+    (e.sym === "patrouille" || (cat?.kind === "einheit" && (PERS_CATS.has(cat.category) || (e.sym === "einheit" && (PERS_WORD_RE.test(text) || !!e.echelon)))));
   let persLo = 0, persHi = 0;
   if (isPers) {
     const n = e.count ?? (e.sym === "patrouille" ? 2 : 1);

@@ -93,6 +93,11 @@ const UNCLEAR_RE = new RegExp(`(?<!${W})(unklar\\w*|unbekannt\\w*|nicht erkennba
 const STRONG_ENEMY_RE = new RegExp(`(?<!${W})(gn|gegn|gegner\\w*|gegnerisch\\w*|feindl\\w*)(?!${W})`, "i");
 /** vermutet / möglich → gestrichelt; Feind bei inhärent feindlichen Zeichen (IED, Minen, Sperre …), sonst unklar */
 const MAYBE_RE = new RegExp(`(?<!${W})(zivil\\??|evtl|eventuell|vermutlich|vmtl|vermutl|verm|vermutet\\w*|möglicherweise|mögl|möglich\\w*|mutmasslich\\w*|wahrscheinlich|allenfalls)(?!${W})`, "i");
+/**
+ * Blockade/Hindernis ohne Katalogbegriff («Strasse blockiert», «Weg versperrt», «Baumstämme auf der Strasse»): Sichtung
+ * einer Sperre, nicht eigene Lage des Melders (eigene Lage nur mit Stellungsbegriffen oder «eig»).
+ */
+const BLOCKADE_RE = new RegExp(`(?<!${W})(blockiert\\w*|blockier\\w*|blockade\\w*|versperrt\\w*|verbarrikadiert\\w*|baumstämme\\w*|baumstamm\\w*)(?!${W})`, "i");
 const ENEMY_RE = new RegExp(`(?<!${W})(gegner|feind|fe|rot|bewaffnet\\w*|fremde?)(?!${W})`, "i");
 const sideOf = (k: Kind): Side => (k === "eigen" ? "blau" : "rot");
 
@@ -227,7 +232,7 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   }
 
   // ---- Anzahl, Zeichen, Einordnung
-  const sym = reading?.key ?? sight?.sym ?? "einheit";
+  const sym = reading?.key ?? sight?.sym ?? (BLOCKADE_RE.test(text) ? "sperre" : "einheit");
   const entry = catalogEntry(sym) ?? catalogEntry("einheit")!;
   const isElement = entry.kind === "einheit" || entry.kind === "geraet";
   // Anzahl aus der Erkennung; sonst (nur bei Elementen) «3 Pers», «2 Fz» irgendwo im Text (nicht in Elementnamen)
