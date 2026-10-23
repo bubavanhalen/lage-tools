@@ -128,42 +128,76 @@ function escapeHtml(s: string) {
 /**
  * Bild, das per affiner Transformation (Bildpixel → LV95) auf der Karte liegt.
  * Wird mit CSS-Matrix exakt positioniert (auch gedreht/verzerrt).
+ * Das Bild liegt in einem Rahmen, der beim Zoomen wie Leaflets Ebenen mitskaliert (`zoomanim` per CSS-Transition,
+ * `zoom` in jedem Bild einer Kamerafahrt bzw. eines Pinch-Zooms) – erst danach wird die Matrix neu berechnet.
  */
 export class AffineImageLayer extends L.Layer {
+  private box: HTMLDivElement | null = null;
   private img: HTMLImageElement | null = null;
+  /** Bezugspunkt (Layer-Pixel 0/0) und Zoomstufe beim letzten Berechnen der Matrix */
+  private ref: L.LatLng | null = null;
+  private z = 0;
   constructor(private url: string, private w: number, private h: number, private affine: Affine, private opacity = 0.7) {
     super();
   }
   override onAdd(map: L.Map): this {
-    const img = (this.img = L.DomUtil.create("img", "lt-affine-img leaflet-zoom-hide") as HTMLImageElement);
+    const anim = !!map.options.zoomAnimation && L.Browser.any3d;
+    const box = (this.box = L.DomUtil.create("div", `lt-affine ${anim ? "leaflet-zoom-animated" : "leaflet-zoom-hide"}`) as HTMLDivElement);
+    box.style.position = "absolute";
+    box.style.left = "0";
+    box.style.top = "0";
+    box.style.transformOrigin = "0 0";
+    box.style.pointerEvents = "none";
+    const img = (this.img = L.DomUtil.create("img", "lt-affine-img", box) as HTMLImageElement);
     img.src = this.url;
     img.style.position = "absolute";
     img.style.left = "0";
     img.style.top = "0";
     img.style.width = this.w + "px";
     img.style.height = this.h + "px";
+    img.style.maxWidth = "none";
     img.style.transformOrigin = "0 0";
     img.style.opacity = String(this.opacity);
     img.style.pointerEvents = "none";
-    map.getPanes().overlayPane.appendChild(img);
-    map.on("zoomend viewreset moveend", this.update, this);
+    map.getPanes().overlayPane.appendChild(box);
     this.update();
     return this;
   }
-  override onRemove(map: L.Map): this {
-    map.off("zoomend viewreset moveend", this.update, this);
-    this.img?.remove();
+  override onRemove(): this {
+    this.box?.remove();
+    this.box = null;
     this.img = null;
     return this;
+  }
+  override getEvents(): { [name: string]: L.LeafletEventHandlerFn } {
+    return { viewreset: this.update, moveend: this.update, zoom: this.onZoom, zoomanim: this.animateZoom as L.LeafletEventHandlerFn };
   }
   setOpacity(o: number) {
     this.opacity = o;
     if (this.img) this.img.style.opacity = String(o);
   }
+  private animateZoom(e: L.ZoomAnimEvent) {
+    this.follow(e.center, e.zoom);
+  }
+  private onZoom() {
+    const map = (this as unknown as { _map?: L.Map })._map;
+    if (!map) return;
+    if (!L.Browser.any3d) { this.update(); return; }
+    this.follow(map.getCenter(), map.getZoom());
+  }
+  /** Rahmen so verschieben/skalieren, wie er bei Mitte `center` und Stufe `zoom` liegen muss */
+  private follow(center: L.LatLng, zoom: number) {
+    const map = (this as unknown as { _map?: L.Map & { _latLngToNewLayerPoint(ll: L.LatLng, z: number, c: L.LatLng): L.Point } })._map;
+    if (!map || !this.box || !this.ref) return;
+    L.DomUtil.setTransform(this.box, map._latLngToNewLayerPoint(this.ref, zoom, center), map.getZoomScale(zoom, this.z));
+  }
   private update() {
     const map = (this as unknown as { _map: L.Map })._map;
-    if (!map || !this.img) return;
-    // drei Bildecken → Layer-Pixel
+    if (!map || !this.img || !this.box) return;
+    // Rahmen bei Layer-Pixel 0/0 (ohne Skalierung); Bild darin per Matrix aus drei Bildecken
+    this.ref = map.layerPointToLatLng(L.point(0, 0));
+    this.z = map.getZoom();
+    L.DomUtil.setPosition(this.box, L.point(0, 0));
     // ungerundete Layer-Pixel (latLngToLayerPoint rundet auf ganze Pixel)
     const origin = map.getPixelOrigin();
     const p = (x: number, y: number) => {
