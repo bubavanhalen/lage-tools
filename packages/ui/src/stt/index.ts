@@ -116,7 +116,7 @@ export function downloadEta(mb: number): { text: string; mobile: boolean } {
     mobile = c?.type === "cellular";
   } catch { /* egal */ }
   const s = (mb * 8) / mbit;
-  return { text: s < 90 ? `ca. ${Math.max(10, Math.round(s / 10) * 10)} s` : `ca. ${Math.round(s / 60)} min`, mobile };
+  return { text: s < 90 ? `ca.\u00a0${Math.max(10, Math.round(s / 10) * 10)}\u00a0s` : `ca.\u00a0${Math.round(s / 60)}\u00a0min`, mobile };
 }
 
 /** «225 MB, ca. 3 min» – vor jedem Download anzeigen */

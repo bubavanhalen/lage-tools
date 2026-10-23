@@ -543,7 +543,7 @@ function useTick(on: boolean) {
   const [, setN] = useState(0);
   useEffect(() => { if (!on) return; const i = window.setInterval(() => setN((n) => n + 1), 1000); return () => window.clearInterval(i); }, [on]);
 }
-const secsLabel = (s: number) => (s >= 90 ? `${Math.round(s / 60)} min` : `${Math.max(1, Math.round(s))} s`);
+const secsLabel = (s: number) => (s >= 90 ? `${Math.round(s / 60)}\u00a0min` : `${Math.max(1, Math.round(s))}\u00a0s`);
 
 function Bars({ level }: { level: number }) {
   const n = 14;
@@ -643,9 +643,8 @@ function JobLine({ v, j }: { v: Voice; j: Job }) {
     return (
       <div className={"vc-status vc-job" + (j.status === "wartet" ? " wait" : "")} role="status">
         {j.status === "wartet" ? <span className="vc-wait" aria-hidden="true" /> : <span className="vc-spin" aria-hidden="true" />}
-        {head}
-        <span className="vc-job-t">{label}</span>
-        {extra && <span className="tnum vc-pct">{extra}</span>}
+        <MemoPlayer att={j.att} />
+        <span className="vc-job-t">{label}{extra && <small>{extra}</small>}{j.warn && <small className="vc-warn">{j.warn}</small>}</span>
         {stop}
       </div>
     );
@@ -657,7 +656,7 @@ function JobLine({ v, j }: { v: Voice; j: Job }) {
     return (
       <div className="vc-status saved" role="status">
         {head}
-        <span><b>Memo gespeichert.</b> {online ? "Erkennung offline ist noch nicht geladen." : "Ohne Netz und ohne Modell – später «Erkennen»."}{j.msg ? ` (${j.msg})` : ""}</span>
+        <span>{!j.warn && <><b>Memo gespeichert.</b> </>}{online ? "Erkennung offline ist noch nicht geladen." : "Ohne Netz und ohne Modell – später «Erkennen»."}{j.msg ? ` (${j.msg})` : ""}</span>
         {online && <button className="chipbtn primary" onClick={v.loadAndRecognize}>Laden ({downloadLabel(mb)}) und erkennen</button>}
         {close}
       </div>
@@ -667,7 +666,7 @@ function JobLine({ v, j }: { v: Voice; j: Job }) {
     <div className={"vc-status " + (j.status === "fehler" ? "err" : "saved")} role="status">
       {head}
       <span>
-        <b>Memo gespeichert.</b>{" "}
+        {!j.warn && <><b>Memo gespeichert.</b>{" "}</>}
         {j.status === "leer" ? "Kein Text erkannt – deutlicher und näher am Mikrofon sprechen." : `Erkennung fehlgeschlagen${j.msg ? `: ${j.msg}` : ""}.`}
       </span>
       {j.status === "fehler" && <button className="chipbtn" onClick={() => v.recognize(j.att)}>Nochmals</button>}

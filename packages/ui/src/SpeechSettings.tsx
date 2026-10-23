@@ -107,7 +107,7 @@ export function SpeechSettings({ onClose }: { onClose?: () => void }) {
         </div>
         {dev.small && (
           <p className="help sp-dev">
-            {dev.touch ? "Handy/Tablet" : "Gerät mit wenig Arbeitsspeicher"}{dev.mem ? ` (${dev.mem} GB)` : ""}: «Genau» braucht beim Erkennen ca. 1 GB Arbeitsspeicher
+            {dev.touch ? "Handy/Tablet" : "Gerät mit wenig Arbeitsspeicher"}{dev.mem ? ` (${dev.mem} GB)` : ""}: «Genau» braucht beim Erkennen ca. 1,3 GB Arbeitsspeicher
             und ist langsamer – bei Abstürzen oder langen Wartezeiten «Klein» wählen (ungenauer bei Buchstabieralphabet und Zahlen). Laden im WLAN.
           </p>
         )}

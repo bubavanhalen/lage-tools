@@ -51,7 +51,9 @@ function load(m: Extract<WorkerIn, { type: "load" | "transcribe" }>): Promise<Au
   // anderes Modell gewählt: altes freigeben (Speicher)
   asr?.then((p) => p.dispose()).catch(() => { /* egal */ });
   currentKey = key;
-  env.allowRemoteModels = m.allowRemote;
+  // immer erlaubt: zuerst wird der Browser-Zwischenspeicher gefragt; ohne Netz und ohne Datei kommt ein Netzfehler.
+  // (false würde transformers.js mit «local and remote models are disabled» ganz verweigern – auch aus dem Zwischenspeicher)
+  env.allowRemoteModels = true;
   // (Typen von `pipeline` sind für tsc zu komplex – Aufgabe hier fest)
   const make = pipeline as unknown as Make;
   const progress_callback = (p: { status: string; file?: string; loaded?: number; total?: number }) => {

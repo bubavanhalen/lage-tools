@@ -97,6 +97,7 @@ describe("Hörfehler der Spracherkennung (Funk)", () => {
     ["Hotel 0, 4, 2 Fahrzeuge", "H04 2 Fz"],
     ["Hotel 05 Beobachtungsposten bezogen, Alpha Fox Trot 12 Delta. Keine Feinsicht.", "H05 Beo Posten bezogen AF12 D Keine Feindsicht"],
     ["Hier Hote 02, drei Personen, dignerisch bei Alpha Shalifenf", "H02 3 Pers gn bei AC5"],
+    ['"Hotel 03" ein Lastwagen, „Alpha Hotel 1 4“ Richtung Ost.', "H03 1 Lw AH14 Rtg O"],
     ["Hotel 01 E 2 Fahrzeuge Korrektur 3 Fahrzeuge Alpha Papa 1 0 Richtung West", "H01 3 Fz AP10 Rtg W"],
   ])("%s → %s", (inp, out) => expect(normalizeSpoken(fixHearing(inp)).text).toBe(out));
 
@@ -113,9 +114,9 @@ describe("Hörfehler der Spracherkennung (Funk)", () => {
 import { downloadEta, estimateSecs, recordRate } from "../src/stt";
 describe("Dauer vorher nennen", () => {
   it("Download-Dauer ohne Angabe des Browsers mit 10 Mbit/s", () => {
-    expect(downloadEta(225).text).toBe("ca. 3 min");
-    expect(downloadEta(77).text).toBe("ca. 60 s");
-    expect(downloadEta(5).text).toBe("ca. 10 s");
+    expect(downloadEta(250).text).toBe("ca.\u00a03\u00a0min");
+    expect(downloadEta(77).text).toBe("ca.\u00a060\u00a0s");
+    expect(downloadEta(5).text).toBe("ca.\u00a010\u00a0s");
   });
   it("Restzeit der Erkennung lernt die Rechenzeit des Geräts", () => {
     const a = estimateSecs(6);

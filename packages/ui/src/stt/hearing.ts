@@ -13,6 +13,8 @@ const QTY = "(?:fahrzeug|fz\\b|person|pers\\b|mann\\b|soldat|lastw|lkw|pw\\b|pan
 const NORD = "(?:nord|nort|noat|naht|nat|nad|nacht|north)";
 
 const RULES: Array<[RegExp, string | ((...m: string[]) => string)]> = [
+  // Anführungszeichen (Whisper setzt sie manchmal um Rufnamen/Planquadrate)
+  [/["„“”«»]/g, ""],
   // «Richtunatost», «Richt zu Nothost», «Richtung Nachtost», «Richtung Nordhorst / North-Host» → Richtung Nordost
   [/\bricht(?:ung|un|u)?\s*(?:zu\s+)?(?:n?at|n?ot|n?a|n?o|nord|nort|nacht|north)[\s-]*h?or?st\b/gi, "Richtung Nordost"],
   [/\bricht(?:ung|un|u)?\s*(?:zu\s+)?(?:süd|sued|züd)[\s-]*h?or?st\b/gi, "Richtung Südost"],
