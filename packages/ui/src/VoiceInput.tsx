@@ -6,12 +6,13 @@
  *
  * Einbau im Meldungsfeld: `const voice = useVoice({...})`, dann `<VoiceButton v={voice} />` und `<VoiceStatus v={voice} />`.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { normalizeSpoken, splitMeldungen, type Attachment, type Exercise } from "@lage/core";
 import { MicError, Recorder, canRecord, fmtDuration, hasMicrophone, patchAttachment, saveMemo, type Recording } from "./audio";
 import { WHISPER_MODELS, ensureModel, startLive, transcribeOffline, useBrowserNow, useModelState, useSpeechPrefs, type LiveSession } from "./stt";
 import { SpeechSettings } from "./SpeechSettings";
+import { fixHearing } from "./stt/hearing";
 import { BatchReview, type BatchItem } from "./BatchReview";
 import { deleteBlob, getBlob } from "./store";
 import "./voice.css";
@@ -104,10 +105,23 @@ export function useVoice(o: VoiceOptions): Voice {
   useEffect(() => { if (canRecord()) hasMicrophone().then(setAvailable); }, []);
   // Ergebnis-Hinweis verschwindet, sobald die Meldung eingetragen (Feld leer) ist
   useEffect(() => { if (!o.text && stRef.current.s === "ergebnis") setSt({ s: "idle" }); }, [o.text]);
+  // nach dem Einsetzen: Feldhöhe nachführen (sonst nur beim Tippen) und Fokus zurück ins Feld
+  const fit = useRef(false);
+  useEffect(() => {
+    const el = o.input?.current;
+    if (!fit.current || !el) return;
+    fit.current = false;
+    el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight + 2, 96) + "px";
+    // Handy/Tablet: Tastatur nicht aufklappen (Eintragen per Knopf)
+    if (window.matchMedia?.("(pointer: coarse)").matches) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [o.text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Text verteilen: eine Meldung ins Feld, mehrere in die Übersicht */
   const route = (raw: string, att: Attachment) => {
-    const n = normalizeSpoken(raw);
+    // erst typische Hörfehler («Hote 04», «Alpha Tilo»), dann Funksprache → Kurzschreibweise
+    const n = normalizeSpoken(fixHearing(raw));
     const parts = splitMeldungen(n.text).map((t) => t.trim()).filter(Boolean);
     if (!parts.length) { setSt({ s: "gespeichert", att, why: "leer" }); return; }
     if (parts.length === 1) {
@@ -115,13 +129,7 @@ export function useVoice(o: VoiceOptions): Voice {
       opts.current.setText(cur ? `${cur} ${parts[0]}` : parts[0]!);
       opts.current.onAttach(att);
       setSt({ s: "ergebnis", att, raw, changes: n.changes.filter((c) => c.to !== c.from), n: 1 });
-      // Feldhöhe nachführen (sonst nur beim Tippen) und Fokus zurück
-      requestAnimationFrame(() => {
-        const el = opts.current.input?.current;
-        if (!el) return;
-        el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight + 2, 96) + "px";
-        el.focus();
-      });
+      fit.current = true;
     } else {
       const t = hhmm(att.createdAt);
       setBatch({ items: parts.map((text, i) => ({ text, origin: `Memo ${t}, Teil ${i + 1}` })), att: { ...att, text: raw } });
@@ -311,7 +319,7 @@ export function VoiceButton({ v }: { v: Voice }) {
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           e.preventDefault();
-          (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+          try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch { /* egal */ }
           start.current = { x: e.clientX, y: e.clientY };
           v.press();
         }}
@@ -353,9 +361,13 @@ function SettingsPop({ anchor, onClose }: { anchor: HTMLElement | null; onClose:
   }, [anchor, onClose]);
   const r = anchor?.getBoundingClientRect();
   const w = Math.min(380, window.innerWidth - 24);
-  const style = r && window.innerWidth > 560
-    ? { left: Math.max(12, Math.min(r.left - w / 2, window.innerWidth - w - 12)), top: Math.min(r.bottom + 8, window.innerHeight - 200), width: w }
-    : undefined;
+  const H = window.innerHeight;
+  const left = r ? Math.max(12, Math.min(r.left - w / 2, window.innerWidth - w - 12)) : 0;
+  // unter dem Knopf, sonst darüber; zu wenig Platz (Handy): unten als Blatt
+  const style: CSSProperties | undefined = !r || window.innerWidth <= 560 ? undefined
+    : H - r.bottom >= 420 ? { left, width: w, top: r.bottom + 8, maxHeight: H - r.bottom - 20 }
+      : r.top >= 320 ? { left, width: w, bottom: H - r.top + 8, maxHeight: r.top - 20 }
+        : undefined;
   return createPortal(<div ref={ref} className={"vc-pop" + (style ? "" : " sheet")} style={style}><SpeechSettings onClose={onClose} /></div>, document.body);
 }
 
@@ -500,8 +512,15 @@ function OrphanTray({ list, v, ready }: { list: Attachment[]; v: Voice; ready: b
 
 let playing: HTMLAudioElement | null = null;
 
+/** Sprachmemos einer Meldung (Journalzeile, Banner): je ein kleiner Player, Transkript im Tooltip */
+export function RowMemos({ list }: { list: Attachment[] }) {
+  const memos = list.filter((a) => a.kind === "audio");
+  if (!memos.length) return null;
+  return <>{memos.map((a) => <MemoPlayer key={a.id} att={a} compact />)}</>;
+}
+
 /** Kleiner Player für ein Sprachmemo (Abspielen/Pause, Fortschritt, Dauer) */
-export function MemoPlayer({ att }: { att: Attachment }) {
+export function MemoPlayer({ att, compact }: { att: Attachment; compact?: boolean }) {
   const [url, setUrl] = useState<string | null | undefined>(undefined);
   const [on, setOn] = useState(false);
   const [pos, setPos] = useState(0);
@@ -513,7 +532,8 @@ export function MemoPlayer({ att }: { att: Attachment }) {
     return () => { gone = true; audio.current?.pause(); if (u) URL.revokeObjectURL(u); };
   }, [att.id]);
   if (!att.id || url === undefined) return <span className="vc-play ph" />;
-  if (url === null) return <span className="vc-play none" title="Ton nicht auf diesem Gerät">♪ {fmtDuration(att.duration ?? 0)}</span>;
+  const said = att.text ? ` – gesprochen: «${att.text}»` : "";
+  if (url === null) return <span className={"vc-play none" + (compact ? " sm" : "")} title={`Ton nicht auf diesem Gerät${said}`}>♪ {fmtDuration(att.duration ?? 0)}</span>;
   const dur = att.duration ?? 0;
   const toggle = () => {
     let a = audio.current;
@@ -528,7 +548,8 @@ export function MemoPlayer({ att }: { att: Attachment }) {
     if (a.paused) { if (playing && playing !== a) playing.pause(); playing = a; a.play().catch(() => setOn(false)); } else a.pause();
   };
   return (
-    <button type="button" className={"vc-play" + (on ? " on" : "")} onClick={(e) => { e.stopPropagation(); toggle(); }} aria-label={on ? "Memo anhalten" : "Memo abspielen"} title={on ? "Anhalten" : "Memo abspielen"}>
+    <button type="button" className={"vc-play" + (on ? " on" : "") + (compact ? " sm" : "")} onClick={(e) => { e.stopPropagation(); toggle(); }} onKeyDown={(e) => e.stopPropagation()}
+      aria-label={on ? "Memo anhalten" : "Memo abspielen"} title={(on ? "Anhalten" : "Memo abspielen") + said}>
       <span aria-hidden="true">{on ? "❚❚" : "▶"}</span>
       <span className="vc-prog" aria-hidden="true"><i style={{ width: `${dur ? Math.min(100, (pos / dur) * 100) : 0}%` }} /></span>
       <span className="tnum">{fmtDuration(on || pos ? pos : dur)}</span>

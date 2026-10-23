@@ -84,7 +84,7 @@ export function SpeechSettings({ onClose }: { onClose?: () => void }) {
         {onClose && <button className="sp-x" onClick={onClose} aria-label="Schliessen">✕</button>}
       </div>
       <label className={"sp-opt" + (p.mode === "offline" ? " on" : "")}>
-        <input type="radio" name="sp-mode" checked={p.mode === "offline"} onChange={() => { setAsk(false); setSpeechPrefs({ mode: "offline" }); }} />
+        <input type="radio" name="sp-mode" checked={p.mode === "offline"} onChange={() => { /* über onClick */ }} onClick={() => { setAsk(false); setSpeechPrefs({ mode: "offline" }); }} />
         <span><b>Offline</b> (empfohlen) – Whisper im Browser, ohne Netz. Ton bleibt auf dem Gerät.</span>
       </label>
       <div className="sp-indent">
@@ -100,7 +100,7 @@ export function SpeechSettings({ onClose }: { onClose?: () => void }) {
       </div>
       <label className={"sp-opt" + (p.mode === "browser" ? " on" : "") + (avail ? "" : " off")}>
         <input type="radio" name="sp-mode" disabled={!avail} checked={p.mode === "browser"}
-          onChange={() => { if (p.browserOk) setSpeechPrefs({ mode: "browser" }); else setAsk(true); }} />
+          onChange={() => { /* über onClick */ }} onClick={() => { if (p.browserOk) setSpeechPrefs({ mode: "browser" }); else setAsk(true); }} />
         <span><b>Browser</b> (schnell, nur online) – Text erscheint schon beim Sprechen.{!avail && " In diesem Browser nicht vorhanden."}</span>
       </label>
       {(ask || p.mode === "browser") && avail && (

@@ -59,3 +59,26 @@ describe("Wiederholungsschleifen entfernen", () => {
     ["a b c d a b c d.", "a b c d"],
   ])("%s", (inp, out) => expect(cleanWhisper(inp)).toBe(out));
 });
+
+import { fixHearing } from "../src/stt/hearing";
+import { normalizeSpoken } from "@lage/core";
+describe("Hörfehler der Spracherkennung (Funk)", () => {
+  it.each([
+    ["Hote 04, 2 Fahrzeuge, Alpha Golf 1/3 Richtung Nord.", "Hotel 04, 2 Fahrzeuge, Alpha Golf 1 3 Richtung Nord."],
+    ["0815 Hote 01 Checkpoint Bezogen in Alpha Tilo 7 Schalli Ende", "0815 Hotel 01 Checkpoint Bezogen in Alpha Kilo 7 Charlie Ende"],
+    ["Hodel 05, Beobachtungsposten bezogen, Alpha Fox droht 1, 2 Delta", "Hotel 05, Beobachtungsposten bezogen, Alpha Foxtrot 1, 2 Delta"],
+    ["Hote 05, Alper Fox Trot 1-2 Delta, keine Feindsicht.", "Hotel 05, Alpha Foxtrot 1 2 Delta, keine Feindsicht."],
+    ["Schützenpanzer in November Alpha Indian 3", "Schützenpanzer in November Alpha India 3"],
+    ["bei Pravoscha-Li-05", "bei Pravoscha-Li-05"],
+    ["Hotel 03 Ein Schützenpanzer", "Hotel 03 Ein Schützenpanzer"],
+    ["Wir haben 1/3 der Strecke", "Wir haben 1/3 der Strecke"],
+    ["Das Hotel ist zu", "Das Hotel ist zu"],
+    ["Planquadrat Alpha Delta 9 Richtung Nordhorst. Kommen.", "Planquadrat Alpha Delta 9 Richtung Nordost. Kommen."],
+    ["Richtung North-Host", "Richtung Nordost"],
+    ["Richtung Südhorst", "Richtung Südost"],
+  ])("%s", (inp, out) => expect(fixHearing(inp)).toBe(out));
+
+  it("Whisper-Ausgabe → Kurzmeldung", () => {
+    expect(normalizeSpoken(fixHearing("Hote 04, 2 Fahrzeuge, Alpha Golf 1/3 Richtung Nord.")).text).toMatch(/^H04 2 Fz AG13 Rtg N$/);
+  });
+});

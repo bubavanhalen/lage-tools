@@ -93,9 +93,9 @@ export function PendingAttachment({ att, onRemove }: { att: Attachment; onRemove
   const u = useBlobUrl(att.id, true);
   return (
     <span className="chip ph-pending" title="wird an die nächste eingetragene Meldung gehängt">
-      {u && <img src={u} alt="" />}
+      {u && att.kind === "foto" && <img src={u} alt="" />}
       {attLabel(att)}{att.cell ? ` · an ${att.cell}` : ""} wird angehängt
-      <button type="button" className="ph-pending-x" onClick={onRemove} aria-label="Foto nicht anhängen" title="nicht anhängen">×</button>
+      <button type="button" className="ph-pending-x" onClick={onRemove} aria-label={att.kind === "foto" ? "Foto nicht anhängen" : "Sprachmemo nicht anhängen"} title="nicht anhängen">×</button>
     </span>
   );
 }

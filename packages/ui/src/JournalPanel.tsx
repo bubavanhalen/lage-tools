@@ -41,7 +41,7 @@ import { PhotoButton, PendingAttachment } from "./PhotoInput";
 import { AttachmentChips } from "./Attachments";
 import { attachmentsOf } from "./attachmentStore";
 import type { Attachment } from "@lage/core";
-import { VoiceButton, VoiceStatus, useVoice } from "./VoiceInput";
+import { RowMemos, VoiceButton, VoiceStatus, useVoice } from "./VoiceInput";
 
 interface Props {
   ex: Exercise;
@@ -433,7 +433,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
                         {e.nai && <span className="naichip">{e.nai}</span>}
                         {!e.cells?.length && !e.nai && (e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>)}
                         {quality && <QualityMarks e={e} q={quality.get(e.id)} events={events} />}
-                        {e.attachments?.length ? <AttachmentChips list={attachmentsOf(ex, e.attachments)} /> : null}
+                        {e.attachments?.length ? <><AttachmentChips list={attachmentsOf(ex, e.attachments).filter((a) => a.kind !== "audio")} /><RowMemos list={attachmentsOf(ex, e.attachments)} /></> : null}
                         {fresh && <span className="newdot" title="in den letzten 10 Minuten erfasst">neu</span>}
                       </span>
                     </span>

@@ -146,6 +146,8 @@ const ROWS: Array<[string, Row]> = [
   ["H01 Kolonne 4 Duro", { sym: "kolonne", kind: "feind", count: 4, wo: "melder", desc: "4 gegnerische Lastwagen (Kolonne)", sidc: "SHGPEVUL-------" }],
   ["Rot Det 2 Patrouille AH10 Rtg N", { sym: "patrouille", kind: "feind", wo: "raster", desc: "Patrouille", sidc: "GHOPPT----****X" }],
   ["H03: Det 1 Checkpoint", { sym: "kontrollposten", kind: "feind", wo: "zuletzt", desc: "Checkpoint", sidc: "GHGPGPPK--****X" }],
+  ["H05 Checkpoint AK7 bezogen", { sym: "kontrollposten", kind: "eigen", wo: "raster", desc: "Checkpoint", sidc: "GFGPGPPK--****X" }],
+  ["H05 gn Checkpoint AK7 errichtet", { sym: "kontrollposten", kind: "feind", wo: "raster", desc: "gegnerischer Checkpoint", sidc: "GHGPGPPK--****X" }],
   ["H02 Det 2 2 Pers AJ8", { sym: "inf_trp", kind: "feind", count: 2, wo: "raster", desc: "2 gegnerische Personen", sidc: "SHGPUCI----A---" }],
   ["Zug 1 Rtg N AE6", { sym: "einheit", kind: "eigen", wo: "raster", desc: null, sidc: "SFGPU----------" }],
   ["Gr 3 bezieht Stellung AF7", { sym: "stellung", kind: "eigen", wo: "raster", desc: "Stellung", sidc: "GFMPSF----****X" }],

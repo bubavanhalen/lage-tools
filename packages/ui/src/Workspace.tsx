@@ -44,6 +44,7 @@ import {
 } from "@lage/map";
 import { currentExerciseId, downloadText, getBlob, listExercises, loadExercise, onDbNotice, pickFile, putBlob, safeFileName, saveExercise } from "./store";
 import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
+import { RowMemos } from "./VoiceInput";
 import { attachmentLayer, attachmentsOf, forgetBlobUrls } from "./attachmentStore";
 import { NaiPanel } from "./NaiPanel";
 import { GeorefPane } from "./GeorefPane";
@@ -659,7 +660,7 @@ export function Workspace({ product, tagline }: Props) {
                   flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} canFitAll={ex.sheets.length + ex.areas.length > 0} />
               </div>
               <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)}
-                extra={(() => { const e = (ex.events ?? []).find((x) => x.id === selEvent); return e?.attachments?.length ? <AttachmentChips list={attachmentsOf(ex, e.attachments)} size={22} /> : null; })()}
+                extra={(() => { const e = (ex.events ?? []).find((x) => x.id === selEvent); if (!e?.attachments?.length) return null; const all = attachmentsOf(ex, e.attachments); const fotos = all.filter((a) => a.kind === "foto"); const memos = all.filter((a) => a.kind === "audio"); return <>{fotos.length ? <AttachmentChips list={fotos} size={22} /> : null}{memos.length ? <RowMemos list={memos} /> : null}</>; })()}
                 onEdit={present ? undefined : (e) => { setTab("journal"); setEditReq({ id: e.id, n: Date.now() }); }} />
               {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} from={winFrom} />}
               <MapContextMenu map={sm.current.map} sheets={ex.sheets} onReportHere={(pos) => { setTab("journal"); setReportAt({ pos, n: Date.now() }); }} />

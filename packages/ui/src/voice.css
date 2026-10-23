@@ -84,15 +84,18 @@
 .sp-warn { padding: 8px 10px; border-left: 3px solid var(--warn); background: var(--paper); border-radius: 0 6px 6px 0; }
 .sp-warn p { margin: 0; }
 .sp-model { display: grid; gap: 6px; }
+.btnrow.sp-model { display: flex; }
 .sp-model .progress { height: 24px; }
 .sp-bar { background: var(--ok) !important; }
 .sp-ok { color: var(--ok); font-weight: 600; margin-right: auto; }
 .sp-size button { font-size: 13px; padding: 4px 10px; }
 .offline .sp-model { margin-top: 2px; }
 
-@media (max-width: 560px) {
-  .vc-btn .vc-label { display: none; }
+@media (max-width: 360px) {
+  .vc-btn:not(.rec) .vc-label { display: none; }
   .vc-btn { padding: 6px 10px; }
-  .vc-btn.rec .vc-label { display: inline; }
 }
 @media (prefers-reduced-motion: reduce) { .vc-dot { animation: none; } }
+.vc-status.err > span, .vc-status.saved > span { flex: 1 1 200px; min-width: 0; }
+.vc-play.sm { min-height: 22px; padding: 0 8px 0 6px; font-size: 11.5px; gap: 5px; }
+.vc-play.sm .vc-prog { width: 24px; }

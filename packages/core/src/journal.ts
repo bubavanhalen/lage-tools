@@ -366,9 +366,14 @@ function kindOf(text: string, reading: ReturnType<typeof readTactical>, entry: C
     return o.melder ? "eigen" : "unklar";
   }
   if (entry.lean === "eigen" && o.melder && !o.enemy && !ENEMY_RE.test(text)) return "eigen";
+  // eigene Anlage bezogen/eingerichtet (z. B. «H05 Checkpoint AK7 bezogen»): eigene Lage
+  if (o.melder && !o.enemy && !ENEMY_RE.test(text) && entry.kind === "anlage" && OWN_SETUP_RE.test(text)) return "eigen";
   if (o.enemy || ENEMY_RE.test(text) || entry.lean === "feind") return "feind";
   return "unklar";
 }
+
+/** Verben, mit denen ein Melder eine eigene Anlage meldet */
+const OWN_SETUP_RE = /\b(bezogen|beziehen|bezieht|eingerichtet|richten\s+\S+\s+ein|aufgebaut|errichtet|betreiben|betrieben|in\s+betrieb)\b/i;
 
 /** Lage zum Zeitpunkt: pro Element die letzte Meldung mit Standort (bis einschliesslich `t`). */
 export interface UnitState {
