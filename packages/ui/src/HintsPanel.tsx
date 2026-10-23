@@ -3,7 +3,7 @@
  * (Stufe · Regel · Titel · seit). Klick klappt einen Hinweis auf (Begründung, Prognose, Auslöser, Knöpfe, Regel und
  * Quelle) und markiert ihn auf der Karte; es ist immer nur einer offen. Der Zfhr bestätigt oder verwirft (rückgängig).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Exercise, Hint, HintGroup, HintLevel, LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { decide, decisionOf, decisionRec, GROUPS, GROUP_LABEL, groupOf, hhmm, isOpen, isOver, nextLabel, ruleOf, type DecisionState } from "./hintsData";
@@ -33,9 +33,11 @@ interface Props {
   onWinClear?: () => void;
   /** Präsentation: schmale Spalte, nur offene und bestätigte Hinweise, ohne Entscheid-Knöpfe */
   compact?: boolean;
+  /** oben im Reiter, vor den Hinweisen (Lage Rot) */
+  lead?: ReactNode;
 }
 
-export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, update, onCsv, winFrom, onWinClear, compact }: Props) {
+export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, update, onCsv, winFrom, onWinClear, compact, lead }: Props) {
   const [filter, setFilter] = useState<Filter>("neu");
   const [group, setGroup] = useState<HintGroup | null>(null);
   const [refOpen, setRefOpen] = useState(false);
@@ -95,10 +97,11 @@ export function HintsPanel({ ex, hints, t, selected, onSelect, onMap, onEvent, u
 
   return (
     <div className={"panel hints" + (compact ? " compact" : "")} ref={listRef}>
+      {lead}
       <div className="hp-head">
         <div className="hp-title">
           <h3>Hinweise zu Rot</h3>
-          <span className="hp-sub">Lage {dayLabel(t, ex.days)} {t.slice(11, 16)}</span>
+          {!lead && <span className="hp-sub">Lage {dayLabel(t, ex.days)} {t.slice(11, 16)}</span>}
         </div>
         {!compact && <p className="hp-lead">Hinweise, keine Fakten – jeder nennt Auslöser, Regel und Quelle. Du entscheidest.</p>}
         {!compact && (

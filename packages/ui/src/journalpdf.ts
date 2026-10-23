@@ -4,9 +4,11 @@
 import { jsPDF } from "jspdf";
 import { kindLabel, type Exercise, type Hint } from "@lage/core";
 import { appendHintsPdf } from "./hintsExport";
+import type { LageRotState } from "./lageRot";
+import { appendLageRotPdf } from "./lageRotExport";
 
-/** `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite) */
-export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[]): Blob {
+/** `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite); `lageRot`: Lage Rot zur Lagezeit `t` davor */
+export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[], lageRot?: { lage: LageRotState; t: string }): Blob {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210, M = 12;
   const cols = [
@@ -47,6 +49,7 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
     doc.setDrawColor(210); doc.line(M, y - 3.2 + h, W - M, y - 3.2 + h);
     y += h;
   }
+  if (lageRot) page = appendLageRotPdf(doc, ex, lageRot.lage, lageRot.t, classification, page);
   if (hints?.length) appendHintsPdf(doc, ex, hints, classification, page);
   return doc.output("blob");
 }

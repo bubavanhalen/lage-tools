@@ -55,6 +55,8 @@ export interface HintsState {
   hints: Hint[];
   /** Qualität je Meldung (E1/E2) zur Lagezeit */
   quality: Map<string, EventQuality>;
+  /** alle Hinweise zur Lagezeit (ganzes Journal, ohne Zeitfenster) – für Lage Rot */
+  all: Hint[];
 }
 
 /** Situation vorbei (z. B. Ruhe beendet, Checkpoint abgebaut) */
@@ -91,7 +93,7 @@ export function useHints(ex: Exercise | null, t: string, from: string | null): H
     // Reihenfolge des Kerns (hoch > mittel > info, dann neueste); vorbei nach hinten
     return vis.sort((a, b) => Number(isOver(a, t)) - Number(isOver(b, t)) || compareHints(a, b));
   }, [all, from, t]);
-  return { hints, quality: all.quality };
+  return { hints, quality: all.quality, all: all.list };
 }
 
 /** Zahl am Reiter: offene Hinweise (hoch/mittel, nicht beendet, nicht entschieden) */
