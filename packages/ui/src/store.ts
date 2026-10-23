@@ -95,6 +95,8 @@ export async function deleteExercise(id: string): Promise<void> {
   try {
     await (await db()).delete("exercises", id);
   } catch { /* egal */ }
+  // Fotos/Memos der Übung freigeben (sofern keine andere Übung sie braucht)
+  await collectOrphanBlobs();
 }
 
 export async function currentExerciseId(): Promise<string | null> {
@@ -133,9 +135,39 @@ export function safeFileName(s: string): string {
 
 // ---------- Anhänge (Inhalt; Metadaten stehen in Exercise.attachments)
 
+/** in dieser Sitzung gespeicherte Inhalte (noch nicht in einer gespeicherten Übung, z. B. Foto im Dialog) – nie aufräumen */
+const sessionBlobs = new Set<string>();
+const baseId = (key: string) => key.replace(/:thumb$/, "");
+
 /** Inhalt eines Anhangs speichern (Schlüssel = Attachment.id) */
 export async function putBlob(id: string, blob: Blob): Promise<void> {
+  sessionBlobs.add(baseId(id));
   await (await db()).put(BLOB_STORE, blob, id);
+}
+
+/**
+ * Verwaiste Inhalte löschen: Fotos/Memos (samt Vorschaubild), die in keiner gespeicherten Übung mehr vorkommen
+ * (Übung gelöscht, Meldung gelöscht, Foto im Dialog verworfen). Was in dieser Sitzung gespeichert wurde, bleibt.
+ * @returns Anzahl gelöschter Einträge und freigegebene Bytes
+ */
+export async function collectOrphanBlobs(): Promise<{ n: number; bytes: number }> {
+  try {
+    const d = await db();
+    const used = new Set<string>();
+    for (const e of (await d.getAll("exercises")) as Exercise[]) for (const a of e.attachments ?? []) used.add(a.id);
+    let n = 0, bytes = 0;
+    for (const key of (await d.getAllKeys(BLOB_STORE)) as string[]) {
+      const id = baseId(String(key));
+      if (used.has(id) || sessionBlobs.has(id)) continue;
+      const b = (await d.get(BLOB_STORE, key)) as Blob | undefined;
+      bytes += b?.size ?? 0;
+      await d.delete(BLOB_STORE, key);
+      n++;
+    }
+    return { n, bytes };
+  } catch {
+    return { n: 0, bytes: 0 };
+  }
 }
 
 /** Inhalt eines Anhangs lesen (null, wenn nicht auf diesem Gerät) */

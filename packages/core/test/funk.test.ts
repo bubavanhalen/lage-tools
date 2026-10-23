@@ -258,6 +258,15 @@ const O: Array<[string, string]> = [
   ["  0715 H04   ", "0715 H04"],
   ["0715 l H04 l 2 Fz AG13", "0715 | H04 | 2 Fz AG13"],
   ["0720 ] H03 [ Sperre", "0720 | H03 | Sperre"],
+  // Kreis-Zeichen statt O/C, «NA13» = NAI 3
+  ["0612 H03 2 Pw ziv AN6 Rtg ©", "0612 H03 2 Pw ziv AN6 Rtg O"],
+  ["0618 H05 Det 1 Checkpoint AK7 ©", "0618 H05 Det 1 Checkpoint AK7 C"],
+  ["0618 H05 Checkpoint AK7 €, besetzt", "0618 H05 Checkpoint AK7 C, besetzt"],
+  ["Rtg ®", "Rtg O"],
+  ["0647 H06 2 Kpz in NA13 S", "0647 H06 2 Kpz in NAI 3 S"],
+  ["0647 H06 2 Kpz in NAI3 Rtg S", "0647 H06 2 Kpz in NAI 3 Rtg S"],
+  ["NAl2", "NAI 2"],
+  ["© 2030", "© 2030"],
   // normale Wörter bleiben
   ["Oll Ost Insel Golf", "Oll Ost Insel Golf"],
   ["Hotel Bellevue", "Hotel Bellevue"],
@@ -267,6 +276,12 @@ const O: Array<[string, string]> = [
 describe("cleanOcr", () => {
   it.each(O)("%s", (input, expected) => {
     expect(cleanOcr(input)).toBe(expected);
+  });
+
+  it("«NA13» bleibt, wenn es das Planquadrat NA13 gibt und keine NAI 3", () => {
+    expect(cleanOcr("Sperre NA13", { isCell: (c) => c === "NA13", nai: ["NAI 1"] })).toBe("Sperre NA13");
+    expect(cleanOcr("Sperre NA13", { isCell: (c) => c === "NA13", nai: ["NAI 3"] })).toBe("Sperre NAI 3");
+    expect(cleanOcr("Sperre NA13", { isCell: () => false })).toBe("Sperre NAI 3");
   });
 
   it("Foto einer Journalseite: cleanOcr → splitMeldungen", () => {

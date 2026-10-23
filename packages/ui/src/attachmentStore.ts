@@ -1,15 +1,21 @@
 /**
  * Anhänge (Fotos, Sprachmemos): Inhalt im Gerätespeicher (`blobs`), Metadaten in `Exercise.attachments`.
- * Vorschaubilder (klein) liegen unter `<id>:thumb`. Kartenebene «Anhänge»: Kamera-Symbol am Planquadrat.
+ * Vorschaubilder (≈ 320 px) liegen unter `<id>:thumb` – beim Speichern/Import erzeugt, für ältere Anhänge beim ersten
+ * Anzeigen nachgeholt; Listen zeigen nur sie. Kartenebene «Anhänge»: Kamera-Symbol am Planquadrat.
+ * Speicher freigeben: `pruneAttachments` (Meldung gelöscht, Foto nirgends mehr gebraucht) und `collectOrphanBlobs`.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { cellBounds, findCells, type Attachment, type Exercise, type LV95 } from "@lage/core";
 import { toLatLng } from "@lage/map";
-import { deleteBlob, getBlob, putBlob } from "./store";
+import { collectOrphanBlobs, deleteBlob, getBlob, putBlob } from "./store";
+import { PRUNE_AFTER_MS, pruneAttachments } from "./attachmentPrune";
+
+export { PRUNE_AFTER_MS, pruneAttachments };
 
 export const thumbKey = (id: string) => `${id}:thumb`;
-const THUMB = 160;
+/** längste Seite des Vorschaubilds (scharf auch auf Retina-Bildschirmen bei 26–160 px Anzeige) */
+export const THUMB = 320;
 
 /** Anhang-Metadaten zu IDs (in der Reihenfolge der IDs; fehlende weggelassen) */
 export function attachmentsOf(ex: Pick<Exercise, "attachments">, ids?: string[]): Attachment[] {
@@ -18,20 +24,38 @@ export function attachmentsOf(ex: Pick<Exercise, "attachments">, ids?: string[])
   return ids.map((id) => all.find((a) => a.id === id)).filter((a): a is Attachment => !!a);
 }
 
+/** Vorschaubild (JPEG, längste Seite `THUMB`) aus Canvas oder Bild-Blob */
+export async function makeThumb(src: HTMLCanvasElement | Blob): Promise<Blob | null> {
+  try {
+    const img = src instanceof Blob ? await createImageBitmap(src) : src;
+    const k = Math.min(1, THUMB / Math.max(img.width, img.height));
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+    const c = cv.getContext("2d")!;
+    c.imageSmoothingQuality = "high";
+    c.drawImage(img, 0, 0, cv.width, cv.height);
+    if ("close" in img) img.close();
+    return await new Promise<Blob | null>((r) => cv.toBlob(r, "image/jpeg", 0.75));
+  } catch {
+    return null;
+  }
+}
+
 /** Inhalt (und bei Fotos ein Vorschaubild) speichern */
 export async function storeAttachmentBlob(att: Attachment, blob: Blob, src?: HTMLCanvasElement): Promise<void> {
   await putBlob(att.id, blob);
-  if (att.kind === "foto" && src) {
-    try {
-      const k = Math.min(1, THUMB / Math.max(src.width, src.height));
-      const cv = document.createElement("canvas");
-      cv.width = Math.max(1, Math.round(src.width * k)); cv.height = Math.max(1, Math.round(src.height * k));
-      const c = cv.getContext("2d")!;
-      c.imageSmoothingQuality = "high";
-      c.drawImage(src, 0, 0, cv.width, cv.height);
-      const t = await new Promise<Blob | null>((r) => cv.toBlob(r, "image/jpeg", 0.7));
-      if (t) await putBlob(thumbKey(att.id), t);
-    } catch { /* ohne Vorschaubild */ }
+  if (att.kind === "foto") {
+    const t = await makeThumb(src ?? blob);
+    if (t) await putBlob(thumbKey(att.id), t).catch(() => { /* ohne Vorschaubild */ });
+  }
+}
+
+/** Import (ZIP): Inhalt speichern, bei Bildern gleich das Vorschaubild */
+export async function putAttachmentBlob(id: string, blob: Blob): Promise<void> {
+  await putBlob(id, blob);
+  if (blob.type.startsWith("image/")) {
+    const t = await makeThumb(blob);
+    if (t) await putBlob(thumbKey(id), t).catch(() => { /* ohne Vorschaubild */ });
   }
 }
 
@@ -48,7 +72,16 @@ export function blobUrl(id: string, thumb = false): Promise<string | null> {
   let p = urls.get(key);
   if (!p) {
     p = (async () => {
-      const b = (await getBlob(key)) ?? (thumb ? await getBlob(id) : null);
+      let b = await getBlob(key);
+      if (!b && thumb) {
+        // älterer Anhang ohne Vorschaubild: jetzt erzeugen (Listen laden sonst das ganze Foto)
+        const orig = await getBlob(id);
+        if (orig?.type.startsWith("image/")) {
+          b = await makeThumb(orig);
+          if (b) await putBlob(key, b).catch(() => { /* egal */ });
+        }
+        b ??= orig;
+      }
       return b ? URL.createObjectURL(b) : null;
     })();
     urls.set(key, p);
@@ -72,6 +105,41 @@ export function useBlobUrl(id: string | undefined, thumb = false): string | null
     return () => { on = false; };
   }, [id, thumb]);
   return u;
+}
+
+/** Inhalt und Vorschaubild löschen, zwischengespeicherte URL vergessen */
+export async function dropAttachmentBlobs(ids: string[]): Promise<void> {
+  for (const id of ids) {
+    for (const key of [id, thumbKey(id)]) { const p = urls.get(key); urls.delete(key); p?.then((u) => u && URL.revokeObjectURL(u)); }
+    await deleteAttachmentBlob(id);
+  }
+}
+
+/**
+ * Speicher freigeben (im Arbeitsbereich eingebunden): beim Start still verwaiste Inhalte aufräumen; danach Anhänge
+ * gelöschter Meldungen nach `PRUNE_AFTER_MS` aus der Übung und dem Gerätespeicher entfernen.
+ */
+export function useAttachmentGc(ex: Exercise | null, update: (f: (x: Exercise) => Exercise) => void): void {
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    const t = window.setTimeout(() => { void collectOrphanBlobs(); }, 8000);
+    return () => window.clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    if (!ex?.attachments?.length) return;
+    const check = () => {
+      const drop = pruneAttachments(ex);
+      if (!drop.length) return;
+      const gone = new Set(drop);
+      update((x) => { x.attachments = (x.attachments ?? []).filter((a) => !gone.has(a.id)); return x; });
+      void dropAttachmentBlobs(drop);
+    };
+    const t = window.setTimeout(check, 1500);
+    const iv = window.setInterval(check, PRUNE_AFTER_MS / 2);
+    return () => { window.clearTimeout(t); window.clearInterval(iv); };
+  }, [ex]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Anhang im Gerätespeicher? (Übung von einem anderen Gerät geöffnet: nur Metadaten) */

@@ -252,6 +252,22 @@ describe("Sichtungen ohne Katalogbegriff sind nie eigene Lage", () => {
   ])("eigene Lage bleibt eigen: %s", (text) => {
     expect(parseMeldung(text, ctx()).kind).toBe("eigen");
   });
+  // eigene Anlage nur mit eindeutigem Verb; «errichtet», «aufgebaut», «eingerichtet» ohne «wir» = Sichtung
+  it.each([
+    ["H05 Checkpoint AK7 bezogen", "eigen"],
+    ["H05 Checkpoint AK7 beziehen", "eigen"],
+    ["H05 Checkpoint AK7 in Betrieb", "eigen"],
+    ["H05 Checkpoint AK7 in Betrieb genommen", "eigen"],
+    ["H05 wir haben Checkpoint AK7 eingerichtet", "eigen"],
+    ["H05 Checkpoint AK7 eingerichtet, wir kontrollieren", "eigen"],
+    ["H05 wir richten Checkpoint AK7 ein", "eigen"],
+    ["H05 Checkpoint AK7 errichtet", "feind"],
+    ["H05 Checkpoint AK7 aufgebaut", "feind"],
+    ["H05 Checkpoint AK7 eingerichtet", "feind"],
+    ["H05 Sperre AK7 errichtet", "feind"],
+  ] as const)("eigene Anlage: %s → %s", (text, kind) => {
+    expect(parseMeldung(text, ctx()).kind).toBe(kind);
+  });
   it("Lage: «H03: 1 weisser Lieferwagen AO2» verschiebt H03 nicht", () => {
     const events = ex.events!.filter((e) => e.t <= "2030-05-14T19:00");
     const c = { ...ctx(), lastPos: (u: string, sd: Draft["side"]) => lastPosition(events, sd, u) };

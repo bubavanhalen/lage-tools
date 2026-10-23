@@ -29,8 +29,11 @@ const ON_DEMAND = {
   },
 };
 
-/** Wie ON_DEMAND, aber von Vite gebaut (Name mit Hash): Dateinamen-Anfang. Spracherkennung: ONNX-Laufzeit (WASM, 21 MB). */
-const ON_DEMAND_ASSETS = { lagejournal: ["assets/ort-wasm-"] };
+/**
+ * Wie ON_DEMAND, aber von Vite gebaut (Name mit Hash): Dateinamen-Anfang. Spracherkennung: ONNX-Laufzeit (WASM, 21 MB).
+ * Gilt für beide Apps (die Übungsauswertung enthält dieselbe Oberfläche), sonst lädt die Installation 21 MB unnötig.
+ */
+const ON_DEMAND_ASSETS = { lagejournal: ["assets/ort-wasm-"], uebungsauswertung: ["assets/ort-wasm-"] };
 
 const walk = (dir) => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : [join(dir, f)]));
 

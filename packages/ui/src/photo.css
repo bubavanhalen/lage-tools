@@ -41,6 +41,7 @@
 .ph-ki { display: inline; }
 .ph-ki .chipbtn { margin-left: 4px; vertical-align: middle; }
 .ph-conf { color: var(--muted); }
+.ph-bad b { color: var(--rot); }
 
 @media (max-width: 640px) {
   .ph-back { padding: 0; align-items: stretch; }

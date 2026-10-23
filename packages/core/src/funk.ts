@@ -165,6 +165,8 @@ interface Tok {
   end?: boolean;
   /** neue Meldung beginnt vor diesem Token */
   brk?: boolean;
+  /** davor wurde ein Zögerlaut entfernt («Alpha, äh, Golf») */
+  hz?: boolean;
 }
 
 const TOK_RE = /[\p{L}\d][\p{L}\d'’\-]*[\p{L}\d]|[\p{L}\d]|\S/gu;
@@ -178,7 +180,9 @@ function tokenize(line: string): Tok[] {
     // «Alpha-Golf-13», «Null-Vier»: Teile einzeln lesen (nicht «X-Ray», «Süd-West»)
     const parts = s.split("-");
     const spoken = (w: string) => !!PHONETIC[w.toLowerCase()] || spokenNumber(w) !== undefined;
-    if (parts.length > 1 && !PHONETIC[s.toLowerCase()] && parts.every((w) => w && spoken(w))) {
+    // «Zwo-Fahrzeuge», «drei-Personen»: Zahl und zählbares Wort
+    const numNoun = parts.length === 2 && spokenNumber(parts[0]!) !== undefined && (COUNT_NOUN_RE.test(parts[1]!) || !!VOCAB[parts[1]!.toLowerCase()]);
+    if (parts.length > 1 && !PHONETIC[s.toLowerCase()] && (numNoun || parts.every((w) => w && spoken(w)))) {
       let off = a;
       parts.forEach((w, k) => {
         out.push({ s: w, a: off, b: off + w.length, sp: k === 0 ? sp : true, n: /^\d+$/.test(w) });
@@ -199,7 +203,7 @@ const live = (toks: Tok[]) => toks.filter((t) => !t.del);
 function merge(toks: Tok[], i: number, j: number, s: string, extra: Partial<Tok> = {}): Tok {
   const first = toks[i]!;
   const last = toks[j]!;
-  const t: Tok = { s, a: first.a, b: last.b, sp: first.sp, ...extra };
+  const t: Tok = { s, a: first.a, b: last.b, sp: first.sp, ...(first.hz ? { hz: true } : {}), ...extra };
   toks.splice(i, j - i + 1, t);
   return t;
 }
@@ -300,6 +304,8 @@ function stepTimes(toks: Tok[]) {
       else merge(toks, i, i + 1, hhmm(+t.s, 0), { n: true, time: true });
       continue;
     }
+    // «null acht fünfzehn» → 0815, «sechzehn dreissig» → 1630, «zwanzig zwei zwei» → 2022
+    if (spokenClock(toks, i)) continue;
     // «halb acht» → 0730
     if (w === "halb" && isNum(n1) && +n1.s >= 1 && +n1.s <= 24) {
       merge(toks, i, i + 1, hhmm((+n1.s + 23) % 24, 30), { n: true, time: true });
@@ -322,6 +328,41 @@ function stepTimes(toks: Tok[]) {
 }
 
 const validTime = (s: string) => /^(?:[01]\d|2[0-3])[0-5]\d$/.test(s);
+
+/** Wörter vor einer Zeit am Meldungsanfang («Grüessech, LVZ, Zeit acht fünfzehn …») */
+const LEAD_WORD_RE = /^(?:zeit|uhrzeit|um|lvz|tag|tango|t\d)$/;
+/** Wörter direkt vor einer Zeit mitten im Satz («um acht fünfzehn») */
+const TIME_PREP_RE = /^(?:um|zeit|uhrzeit|ab|seit|bis)$/;
+/** Elemente, vor denen eine Zeit steht («acht fünfzehn Hotel null vier») */
+const MELDER_WORD_RE = /^(?:hotel|detachement|detachment|detaschement|det|zug|gruppe|gr|trupp|trp|patrouille|pat)$/;
+
+/**
+ * Uhrzeit aus zwei gesprochenen Zahlen: Ziffernfolge mit führender Null + Zahl 10–59 («null acht fünfzehn» → 0815) überall,
+ * sonst Zahl 0–23 + Zahl 0–59 («sechzehn dreissig», «zwanzig zwei zwei», «acht fünfzehn») nur am Meldungsanfang,
+ * nach «um»/«Zeit» oder vor einem Melder/Element – nie mitten in Mengen («zwölf zwanzig Personen»).
+ */
+function spokenClock(toks: Tok[], i: number): boolean {
+  const h = toks[i]!;
+  const m = toks[i + 1];
+  if (!isNum(h) || !isNum(m) || !m.sp || h.s.length > 2 || m.s.length > 2 || +h.s > 23 || +m.s > 59) return false;
+  const prev = toks[i - 1];
+  // «Hotel null acht fünfzehn Personen», «Detachement zwo zwanzig …», «Alpha Golf eins drei zwanzig»: gehört zum Element
+  if (prev && !prev.p && (MELDER_WORD_RE.test(low(prev)) || ELEMENT[low(prev)] || PHONETIC[low(prev)])) return false;
+  const after = toks[i + 2];
+  if (after && (low(after) === "uhr" || low(after) === "nach" || low(after) === "vor")) return false;
+  if (!isNum(after) && countNounAhead(toks, i + 2, 2)) return false;
+  const lead0 = !!h.seq && h.s.length === 2 && h.s[0] === "0" && +m.s >= 10 && !m.seq;
+  const words = toks.slice(0, i).filter((t) => !t.p && !t.del);
+  const atStart = words.every((t, k) => FILLER.has(low(t)) || LEAD_WORD_RE.test(low(t)) || (isNum(t) && /^(?:tag|tango)$/.test(low(words[k - 1]))));
+  const afterPrep = TIME_PREP_RE.test(low(words[words.length - 1]));
+  let k = i + 2;
+  while (toks[k] && (toks[k]!.p || /^(?:hier|von|lvz|meldung)$/.test(low(toks[k])))) k++;
+  const nx = toks[k];
+  const beforeMelder = !!nx && (/^H\d{1,2}$/.test(nx.s) || (MELDER_WORD_RE.test(low(nx)) && isNum(toks[k + 1])));
+  if (!lead0 && !atStart && !afterPrep && !beforeMelder) return false;
+  merge(toks, i, i + 1, hhmm(+h.s, +m.s), { n: true, time: true });
+  return true;
+}
 
 /** «ich buchstabiere Whiskey Alpha Bravo …» → Wort (bzw. weg, wenn das Wort schon davor steht) */
 function stepSpelling(toks: Tok[]) {
@@ -353,33 +394,62 @@ function stepSpelling(toks: Tok[]) {
 }
 
 /** Buchstabieralphabet: «Hotel null vier» → H04, «Alpha Golf eins drei Charlie» → AG13 C, «November Alpha India drei» → NAI 3 */
+/** nächstes Token nach `k`; Kommas überspringen, wenn dazwischen ein Zögerlaut entfernt wurde («Alpha, äh, Golf 13») */
+function nextHz(toks: Tok[], k: number): number {
+  let m = k + 1;
+  while (toks[m]?.p && toks[m]!.s === ",") m++;
+  return m > k + 1 && toks[m]?.hz ? m : k + 1;
+}
+
+/** Quadrant A–D nach einem Planquadrat («… eins drei Charlie», «AK7, Charlie»): Index des Buchstabens oder -1 */
+function quadrantAt(toks: Tok[], end: number): number {
+  let k = end + 1;
+  // «AK7, Charlie»: ein Komma dazwischen
+  if (toks[k]?.p && toks[k]!.s === ",") k++;
+  const q = toks[k];
+  if (!q || q.p || q.done || (k === end + 1 && !q.sp) || !/^[ABCD]$/.test(PHONETIC[low(q)] ?? "")) return -1;
+  // nicht Beginn einer neuen Buchstabenfolge («…, Charlie Delta 5»)
+  const afterQ = toks[k + 1];
+  const alone = !afterQ || !(afterQ.sp && (PHONETIC[low(afterQ)] || isNum(afterQ)));
+  return alone ? k : -1;
+}
+
 function stepPhonetic(toks: Tok[]) {
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i]!;
-    if (t.p || t.del || t.done || !PHONETIC[low(t)]) continue;
+    if (t.p || t.del) continue;
+    // getipptes Planquadrat mit gesprochenem Quadranten: «AK7, Charlie» → AK7 C
+    if (/^[A-Z]{2}\d{1,2}$/.test(t.s) && !PHONETIC[low(t)]) {
+      const qk = quadrantAt(toks, i);
+      if (qk >= 0) merge(toks, i, qk, `${t.s} ${PHONETIC[low(toks[qk])]}`, { done: true });
+      continue;
+    }
+    if (t.done || !PHONETIC[low(t)]) continue;
     let j = i;
     let letters = PHONETIC[low(t)]!;
-    while (toks[j + 1] && toks[j + 1]!.sp && !toks[j + 1]!.done && PHONETIC[low(toks[j + 1])]) {
+    for (;;) {
       // Quadrant nach Planquadrat («… eins drei Charlie») gehört nicht zur Buchstabenfolge – hier kommen keine Ziffern vor
-      j++;
-      letters += PHONETIC[low(toks[j])]!;
+      // «Alpha, äh, Golf»: Zögern zwischen den Buchstaben (nur ab einem Buchstaben, nicht nach «Hotel»)
+      const nx = letters.length === 1 && letters !== "H" ? nextHz(toks, j) : j + 1;
+      const n = toks[nx];
+      if (!n || !n.sp || n.done || !PHONETIC[low(n)]) break;
+      j = nx;
+      letters += PHONETIC[low(n)]!;
     }
-    const num = toks[j + 1];
+    const numIdx = nextHz(toks, j);
+    const num = toks[numIdx];
     const plan = /^(?:planquadrat|pq)$/i.test(toks[i - 1]?.s ?? "") || (toks[i - 1]?.del && /^(?:planquadrat|pq)$/i.test(toks[i - 1]!.s));
     if (isNum(num) && num.sp && num.s.length <= 3) {
       let s: string;
       if (letters === "NAI") s = `NAI ${+num.s}`;
       else s = letters + num.s;
-      let end = j + 1;
+      let end = numIdx;
       // Quadrant: einzelner Buchstabe A–D direkt danach (nicht Beginn einer neuen Buchstabenfolge)
-      const q = toks[end + 1];
-      const qL = q && q.sp && !q.done ? PHONETIC[low(q)] : undefined;
-      const afterQ = toks[end + 2];
-      const qAlone = !afterQ || !(afterQ.sp && (PHONETIC[low(afterQ)] || isNum(afterQ)));
       const cellLike = (letters.length >= 2 || letters !== "H" || plan) && letters !== "NAI";
-      if (qL && /^[ABCD]$/.test(qL) && qAlone && cellLike) {
-        s += ` ${qL}`;
-        end++;
+      const qk = cellLike ? quadrantAt(toks, end) : -1;
+      if (qk >= 0) {
+        s += ` ${PHONETIC[low(toks[qk])]}`;
+        end = qk;
       } else if (cellLike && toks[end + 1]?.s === "(" && toks[end + 3]?.s === ")" && /^[ABCD]$/.test(PHONETIC[low(toks[end + 2])] ?? "")) {
         // «Alpha Golf eins drei (Charlie)» → AG13 C
         s += ` ${PHONETIC[low(toks[end + 2])]}`;
@@ -443,7 +513,10 @@ function stepDirections(toks: Tok[]) {
       const from = /^(?:aus|von)$/i.test(toks[i - 1]?.s ?? "") ? i - 1 : low(toks[i - 1]) === "in" ? i - 1 : i;
       const prefix = from < i && low(toks[from]) !== "in" ? "aus " : "";
       const d = dirOf(toks[i + 1]);
-      if (d) merge(toks, from, i + 1, `${prefix}Rtg ${d}`, { done: true });
+      // «Richtung Nord Ost» (zwei Wörter) → Rtg NO
+      const d2 = (d === "N" || d === "S") && toks[i + 2]?.sp ? dirOf(toks[i + 2]) : undefined;
+      if (d2 === "O" || d2 === "W") merge(toks, from, i + 2, `${prefix}Rtg ${d}${d2}`, { done: true });
+      else if (d) merge(toks, from, i + 1, `${prefix}Rtg ${d}`, { done: true });
       else if (w !== "richtig") merge(toks, from, i, `${prefix}Rtg`, { done: true });
       continue;
     }
@@ -491,11 +564,19 @@ function stepFiller(toks: Tok[]) {
       const first = !live(toks.slice(0, i)).some((x) => !x.p);
       const nextLive = toks.slice(i + 1).find((x) => !x.del && !x.p);
       if (first && nextLive && /^(?:H\d|Det |Zug |Gr |Trp |Pat )/.test(nextLive.s)) { t.del = true; continue; }
-      if (nx === "hier" || nx === "von" || nx === "," || pv === "an" || pv === "für") {
+      if (nx === "hier" || nx === "von" || nx === "," || pv === "an" || pv === "für" || pv === "von") {
         t.del = true;
         if (nx === "von" || nx === ",") toks[i + 1]!.del = true;
-        if (pv === "an" || pv === "für") toks[i - 1]!.del = true;
+        if (pv === "an" || pv === "für" || pv === "von") toks[i - 1]!.del = true;
       }
+      continue;
+    }
+    // «Erste Meldung …», «Zweite Meldung …»: neue Meldung
+    if (w === "meldung" && ORDINAL_RE.test(low(toks[i - 1])) && !toks[i - 1]!.done) {
+      toks[i - 1]!.del = true;
+      t.del = true;
+      const nx = toks.slice(i + 1).find((x) => !x.del && !x.p);
+      if (nx) nx.brk = true;
       continue;
     }
     if (w === "meldung" && low(toks[i + 1]) === "von") toks[i + 1]!.del = true;
@@ -507,6 +588,9 @@ function stepFiller(toks: Tok[]) {
     }
   }
 }
+
+/** «erste Meldung», «zweite Meldung», «nächste Meldung» */
+const ORDINAL_RE = /^(?:erste|zweite|dritte|vierte|fünfte|sechste|siebte|achte|neunte|zehnte|nächste|weitere|neue|letzte|andere|1\.|2\.|3\.|4\.|5\.)$/;
 
 /** «zwo Fahrzeuge, ich wiederhole, zwo Fahrzeuge» → 2 Fz */
 function stepRepeat(toks: Tok[]) {
@@ -586,6 +670,37 @@ function stepTimePlacement(toks: Tok[]) {
   }
 }
 
+/** Melder am Meldungsanfang («H04», «Det 2», nach Zeit/Tag) */
+const MELDER_TOK_RE = /^(?:H\d{1,2}|(?:Det|Zug|Gr|Trp|Pat) \d{1,2})$/;
+const LEAD_TOK_RE = /^(?:H\d{1,2}|T\d|\d{4}|\d{1,2}[:.]\d{2}|(?:Det|Zug|Gr|Trp|Pat) \d{1,2})$/;
+/** vor einem Melder mitten im Satz: kein neuer Absender («Kontakt mit H05», «übergibt an H05», «Rtg H05») */
+const MELDER_REF_RE = /^(?:bei|beim|von|vom|mit|zu|zum|zur|an|am|für|nach|über|und|oder|durch|ab|auf|aus|vor|hinter|neben|gegen|rtg|richtung|bis|ohne|sowie|als|wie|meldet|sieht|sehen|beobachtet|unterstützt|ablösung|löst|ersetzt|zwischen|via|ca)$/i;
+
+/**
+ * Neue Meldung ohne «Ende»: Satzende + neuer Melder/Element («… AG13. Hotel 05, Sperre …») bzw. ein zweites «Hxx»
+ * nach einer Meldung mit Melder und Inhalt («H04 2 Fz AG13 Rtg N H05 Sperre AK7»). Wiederholter Melder («H04, H04») fällt weg.
+ */
+function stepMelderBreak(toks: Tok[]) {
+  let seg: Tok[] = [];
+  let sentenceEnd = false;
+  for (const t of toks) {
+    if (t.del) { if (t.end) { seg = []; sentenceEnd = false; } continue; }
+    if (t.p) { if (/^[.!?;]$/.test(t.s)) sentenceEnd = true; continue; }
+    if (t.brk) seg = [];
+    const prev = seg[seg.length - 1];
+    if (prev && MELDER_TOK_RE.test(t.s)) {
+      const lead = seg.findIndex((x) => !LEAD_TOK_RE.test(x.s));
+      const content = lead >= 0;
+      if (/^H\d/.test(t.s) && t.s === prev.s) { t.del = true; continue; }
+      const melderFirst = seg.some((x, k) => /^H\d/.test(x.s) && (lead < 0 || k < lead));
+      const noPunct = /^H\d{2}$/.test(t.s) && melderFirst && !MELDER_REF_RE.test(prev.s) && t !== toks.filter((x) => !x.del && !x.p).pop();
+      if (content && (sentenceEnd || noPunct)) { t.brk = true; seg = []; }
+    }
+    seg.push(t);
+    sentenceEnd = false;
+  }
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 
 /** Gesprochenen bzw. diktierten Text in Kurzschreibweise umwandeln */
@@ -593,10 +708,15 @@ export function normalizeSpoken(text: string): SpokenResult {
   const changes: SpokenResult["changes"] = [];
   const lines: string[] = [];
   for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
-    // Zögern («null äh vier») trennt nichts: vorab entfernen
+    // Zögern («null äh vier») trennt nichts: vorab entfernen; das nächste Wort merkt sich das («Alpha, äh, Golf»)
+    let hz = false;
     const toks = tokenize(line).filter((t) => {
-      if (!HESITATION.has(low(t))) return true;
+      if (!HESITATION.has(low(t))) {
+        if (hz && !t.p) { t.hz = true; hz = false; }
+        return true;
+      }
       changes.push({ from: t.s, to: "" });
+      hz = true;
       return false;
     });
     stepSpelling(toks);
@@ -613,6 +733,7 @@ export function normalizeSpoken(text: string): SpokenResult {
     stepRepeat(toks);
     stepCorrection(toks);
     stepTimePlacement(toks);
+    stepMelderBreak(toks);
     lines.push(...render(line, toks, changes));
   }
   const seen = new Set<string>();
@@ -794,7 +915,14 @@ const fixDigits = (s: string) => s.replace(/[OoIl|]/g, (c) => OCR_DIGIT[c] ?? c)
  * Typische Fehler der Texterkennung glätten: O/0 und l/1 in Zeiten und Planquadraten («O7I5» → 0715, «AGl3» → AG13,
  * «HO4» → H04), Trennungen am Zeilenende («Liefer-\nwagen» → Lieferwagen), doppelte Leerzeichen, typografische Zeichen.
  */
-export function cleanOcr(text: string): string {
+export interface CleanOcrOptions {
+  /** gibt es das Planquadrat im Raster? («NA13» ist dann kein «NAI 3») */
+  isCell?: (c: string) => boolean;
+  /** Namen der NAI der Übung («NAI 3») */
+  nai?: string[];
+}
+
+export function cleanOcr(text: string, opts: CleanOcrOptions = {}): string {
   let t = text
     .replace(/\r\n?/g, "\n")
     .replace(/[\u200b-\u200d\ufeff]/g, "")
@@ -814,8 +942,11 @@ export function cleanOcr(text: string): string {
         // Tabellenstrich als «l», «I», «[», «]» gelesen («0715 l H04 l 2 Fz»)
         .replace(/(?<=\S\s)[lI[\]](?=\s\S)/g, "|")
         .split(/(\s+)/)
-        .map(fixToken)
+        .map((tok) => fixToken(tok, opts))
         .join("")
+        // «Rtg ©» → Rtg O, «AK7 ©/€» → AK7 C (Kreis-Zeichen statt Buchstabe)
+        .replace(/\b(Rtg|nach|aus) ?[©®@](?=$|[\s,.;])/g, "$1 O")
+        .replace(/\b([A-Z]{2}\d{1,2}) ?[©€¢](?=$|[\s,.;])/g, "$1 C")
         .replace(/[ ]+$/g, "")
         .replace(/^[ ]+/g, ""),
     )
@@ -823,17 +954,23 @@ export function cleanOcr(text: string): string {
   return t.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function fixToken(tok: string): string {
+function fixToken(tok: string, opts: CleanOcrOptions): string {
   if (!tok || /^\s+$/.test(tok)) return tok;
   // Satzzeichen am Rand abtrennen
   const m = /^([("'«]*)(.*?)([)"'»,;:.!?]*)$/.exec(tok);
   if (!m) return tok;
   const [, pre, core, post] = m as unknown as [string, string, string, string];
-  return pre + fixCore(core) + post;
+  return pre + fixCore(core, opts) + post;
 }
 
-function fixCore(c: string): string {
+function fixCore(c: string, opts: CleanOcrOptions = {}): string {
   if (!c) return c;
+  // «NA13», «NAl3», «NAI3» → NAI 3 (I als 1 gelesen, Leerschlag verschluckt) – ausser es gibt das Planquadrat «NA13»
+  const na = /^NA[1Il|](\d{1,2})$/.exec(c);
+  if (na) {
+    const name = `NAI ${+na[1]!}`;
+    if (c.startsWith("NAI") || opts.nai?.includes(name) || !opts.isCell?.(c)) return name;
+  }
   // Zeit «O7I5», «O7:I5», «07.l5»
   if (/^[\dOoIl|]{4}$/.test(c) && /\d/.test(c) && /[OoIl|]/.test(c)) {
     const d = fixDigits(c);

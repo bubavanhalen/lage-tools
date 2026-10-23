@@ -42,10 +42,10 @@ import {
   type Basemap,
   type SwissMap,
 } from "@lage/map";
-import { currentExerciseId, downloadText, getBlob, listExercises, loadExercise, onDbNotice, pickFile, putBlob, safeFileName, saveExercise } from "./store";
+import { currentExerciseId, downloadText, getBlob, listExercises, loadExercise, onDbNotice, pickFile, safeFileName, saveExercise } from "./store";
 import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
 import { RowMemos } from "./VoiceInput";
-import { attachmentLayer, attachmentsOf, forgetBlobUrls } from "./attachmentStore";
+import { attachmentLayer, attachmentsOf, forgetBlobUrls, putAttachmentBlob, useAttachmentGc } from "./attachmentStore";
 import { NaiPanel } from "./NaiPanel";
 import { GeorefPane } from "./GeorefPane";
 import type { Candidate } from "./imageimport";
@@ -415,6 +415,8 @@ export function Workspace({ product, tagline }: Props) {
   const exRef = useRef<Exercise | null>(null);
   exRef.current = ex;
   const update = (f: (x: Exercise) => Exercise) => setEx((x) => (x ? f(structuredClone(x)) : x));
+  // Speicher freigeben: Anhänge gelöschter Meldungen, verwaiste Fotos/Memos (still)
+  useAttachmentGc(ex, update);
   // Zeichen auf der Karte verschoben → Ort der Meldung korrigieren (mit Rückgängig)
   const mover = useMoveEvent(update, device, ex);
 
@@ -493,7 +495,7 @@ export function Workspace({ product, tagline }: Props) {
     if (!f) return;
     try {
       const { exerciseFromAny } = await import("./exportZip");
-      const { ex: x, files } = await exerciseFromAny(f, putBlob);
+      const { ex: x, files } = await exerciseFromAny(f, putAttachmentBlob);
       forgetBlobUrls();
       setEx(x);
       setSelSheet(null);

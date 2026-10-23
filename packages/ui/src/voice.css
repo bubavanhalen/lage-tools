@@ -99,3 +99,20 @@
 .vc-status.err > span, .vc-status.saved > span { flex: 1 1 200px; min-width: 0; }
 .vc-play.sm { min-height: 22px; padding: 0 8px 0 6px; font-size: 11.5px; gap: 5px; }
 .vc-play.sm .vc-prog { width: 24px; }
+
+/* Warteschlange: eine Zeile je Memo (wartet / erkenne … / Vorschlag) */
+.vc-queue { display: grid; gap: 4px; }
+.vc-job { padding: 5px 10px; }
+.vc-job.wait { border-style: dashed; color: var(--muted); }
+.vc-job .chipbtn { margin-left: auto; }
+.vc-job-t { font-weight: 600; }
+.vc-job.wait .vc-job-t { font-weight: 500; }
+.vc-wait { width: 12px; height: 12px; border-radius: 50%; border: 2px dotted var(--muted); flex: none; }
+.vc-warn { color: var(--warn); font-weight: 600; flex-basis: 100%; }
+.vc-sug { border-left: 4px solid var(--warn); background: var(--hi); }
+.vc-sug-t { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.vc-sug .br-preview { flex-basis: 100%; margin: 0; }
+.vc-sug-b { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.sp-load { display: flex; align-items: center; gap: 8px; }
+.sp-load .progress { flex: 1; }
+.sp-dev { border-left: 3px solid var(--warn); padding-left: 8px; }

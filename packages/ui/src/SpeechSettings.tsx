@@ -7,11 +7,16 @@ import {
   WHISPER_MODELS,
   browserSttAvailable,
   browserSttVendor,
+  cancelModelLoad,
+  downloadLabel,
   ensureModel,
+  modelMb,
   removeModel,
   setSpeechPrefs,
+  smallDevice,
   useModelState,
   useSpeechPrefs,
+  whisperInfo,
 } from "./stt";
 import "./voice.css";
 
@@ -31,7 +36,7 @@ function useOnline(): boolean {
 export function SpeechModelRow({ compact }: { compact?: boolean }) {
   const s = useModelState();
   const size = useSpeechPrefs().model;
-  const MB = WHISPER_MODELS[size].mb;
+  const MB = modelMb(size);
   const online = useOnline();
   const [confirmDel, setConfirmDel] = useState(false);
   const load = () => { ensureModel().catch(() => { /* Fehler steht im Zustand */ }); };
@@ -39,8 +44,11 @@ export function SpeechModelRow({ compact }: { compact?: boolean }) {
     const pct = Math.min(100, Math.round((s.loaded / Math.max(1, s.total)) * 100));
     return (
       <div className="sp-model">
-        <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Spracherkennung laden">
-          <div className="sp-bar" style={{ width: `${pct}%` }} /><span>Spracherkennung {mb(s.loaded)} / {mb(s.total)} MB</span>
+        <div className="btnrow sp-load">
+          <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Spracherkennung laden">
+            <div className="sp-bar" style={{ width: `${pct}%` }} /><span>Spracherkennung {mb(s.loaded)} / {mb(s.total)} MB</span>
+          </div>
+          <button onClick={cancelModelLoad} title="Download abbrechen – Sprachmemos werden weiter gespeichert">Abbrechen</button>
         </div>
         <p className="help">Einmalig – danach funktioniert die Erkennung ohne Netz. Seite offen lassen.</p>
       </div>
@@ -49,7 +57,7 @@ export function SpeechModelRow({ compact }: { compact?: boolean }) {
   if (s.status === "bereit") {
     return (
       <div className="btnrow sp-model">
-        <span className="help sp-ok">✓ Spracherkennung (Sprachmemos) offline verfügbar</span>
+        <span className="help sp-ok" title={whisperInfo.device ? `Zuletzt: ${whisperInfo.device === "webgpu" ? "Grafikkarte (WebGPU) + " : ""}${whisperInfo.threads ?? 1} Thread${(whisperInfo.threads ?? 1) > 1 ? "s" : ""}` : undefined}>✓ Spracherkennung (Sprachmemos) offline verfügbar</span>
         {confirmDel
           ? <><button className="danger" onClick={() => { setConfirmDel(false); removeModel(); }}>Ja, löschen</button><button onClick={() => setConfirmDel(false)}>Nein</button></>
           : <button onClick={() => setConfirmDel(true)} title={`Modell löschen (gibt ca. ${MB} MB frei)`}>Löschen</button>}
@@ -60,7 +68,7 @@ export function SpeechModelRow({ compact }: { compact?: boolean }) {
     <div className="sp-model">
       <div className="btnrow">
         <button className={compact ? "" : "primary"} disabled={!online || s.status === "pruefen"} onClick={load}>
-          {compact ? <>Spracherkennung offline verfügbar machen (≈ {MB} MB) – laden</> : <>Spracherkennung offline laden (ca. {MB} MB)</>}
+          {compact ? <>Spracherkennung offline verfügbar machen ({downloadLabel(MB)}) – laden</> : <>Spracherkennung offline laden ({downloadLabel(MB)})</>}
         </button>
       </div>
       {s.status === "fehler" && <p className="help warn">{s.error ?? "Laden fehlgeschlagen."}</p>}
@@ -73,6 +81,7 @@ export function SpeechModelRow({ compact }: { compact?: boolean }) {
 /** Ganze Einstellung (im Mikrofon-Menü) */
 export function SpeechSettings({ onClose }: { onClose?: () => void }) {
   const p = useSpeechPrefs();
+  const dev = smallDevice();
   const avail = browserSttAvailable();
   const vendor = browserSttVendor();
   const [ask, setAsk] = useState(false);
@@ -92,10 +101,16 @@ export function SpeechSettings({ onClose }: { onClose?: () => void }) {
           {(["small", "base"] as const).map((k) => (
             <button key={k} aria-pressed={p.model === k} onClick={() => setSpeechPrefs({ model: k })}
               title={k === "small" ? "versteht Funksprache deutlich besser – empfohlen" : "kleiner und schneller, aber viele Fehler bei Buchstabieralphabet und Zahlen"}>
-              {WHISPER_MODELS[k].name} · {WHISPER_MODELS[k].mb} MB
+              {WHISPER_MODELS[k].name} · {modelMb(k)} MB
             </button>
           ))}
         </div>
+        {dev.small && (
+          <p className="help sp-dev">
+            {dev.touch ? "Handy/Tablet" : "Gerät mit wenig Arbeitsspeicher"}{dev.mem ? ` (${dev.mem} GB)` : ""}: «Genau» braucht beim Erkennen ca. 1 GB Arbeitsspeicher
+            und ist langsamer – bei Abstürzen oder langen Wartezeiten «Klein» wählen (ungenauer bei Buchstabieralphabet und Zahlen). Laden im WLAN.
+          </p>
+        )}
         <SpeechModelRow />
       </div>
       <label className={"sp-opt" + (p.mode === "browser" ? " on" : "") + (avail ? "" : " off")}>

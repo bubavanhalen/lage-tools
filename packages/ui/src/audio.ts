@@ -65,7 +65,7 @@ export interface Recording {
 
 /** Fehler beim Start der Aufnahme – `reason` für die Anzeige */
 export class MicError extends Error {
-  constructor(public reason: "verweigert" | "kein-mikrofon" | "belegt" | "unbekannt", msg: string) { super(msg); }
+  constructor(public reason: "verweigert" | "kein-mikrofon" | "belegt" | "abgebrochen" | "unbekannt", msg: string) { super(msg); }
 }
 
 /**
@@ -85,8 +85,9 @@ export class Recorder {
   constructor(private onLevel?: (level: number) => void) {}
 
   async start(): Promise<void> {
+    let stream: MediaStream;
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     } catch (e) {
       const n = (e as DOMException)?.name;
       if (n === "NotAllowedError" || n === "SecurityError") throw new MicError("verweigert", micHelp());
@@ -94,8 +95,15 @@ export class Recorder {
       if (n === "NotReadableError" || n === "AbortError") throw new MicError("belegt", "Mikrofon wird von einer anderen App benutzt.");
       throw new MicError("unbekannt", "Mikrofon nicht verfügbar.");
     }
+    this.stream = stream;
+    // während des Starts abgebrochen (Esc, Freigabe-Dialog): Mikrofon sofort wieder frei geben
+    if (this.cancelled) { this.release(); throw new MicError("abgebrochen", "Aufnahme abgebrochen."); }
     const mime = pickMime();
-    this.rec = new MediaRecorder(this.stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined);
+    try {
+      this.rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined);
+    } catch {
+      try { this.rec = new MediaRecorder(stream); } catch { this.release(); throw new MicError("unbekannt", "Aufnahme in diesem Browser nicht möglich."); }
+    }
     this.mime = this.rec.mimeType || mime || "audio/webm";
     this.chunks = [];
     this.rec.ondataavailable = (ev) => { if (ev.data.size) this.chunks.push(ev.data); };
@@ -105,7 +113,12 @@ export class Recorder {
         resolve({ blob: new Blob(this.chunks, { type: this.mime.split(";")[0] }), mime: this.mime.split(";")[0]!, duration });
       };
     });
-    this.rec.start(250);
+    try {
+      this.rec.start(250);
+    } catch {
+      this.release();
+      throw new MicError("unbekannt", "Aufnahme konnte nicht starten.");
+    }
     this.t0 = performance.now();
     this.meter();
   }
@@ -202,13 +215,22 @@ export function memoAttachment(r: Recording): Attachment {
 
 /**
  * Memo speichern: Inhalt auf dem Gerät (IndexedDB), Metadaten in der Übung.
- * Gibt die Metadaten zurück (auch wenn der Gerätespeicher nicht verfügbar ist – dann nur ohne Ton).
+ * `stored: false` = Ton konnte nicht abgelegt werden (Speicher voll, privates Fenster) – die Metadaten
+ * (und später das Transkript) bleiben trotzdem, die Erkennung läuft mit dem Ton im Arbeitsspeicher.
  */
-export async function saveMemo(r: Recording, update: (f: (x: Exercise) => Exercise) => void): Promise<Attachment> {
+export async function saveMemo(r: Recording, update: (f: (x: Exercise) => Exercise) => void): Promise<{ att: Attachment; stored: boolean; error?: string }> {
   const att = memoAttachment(r);
-  try { await putBlob(att.id, r.blob); } catch { /* privates Fenster: Metadaten trotzdem */ }
+  let stored = true;
+  let error: string | undefined;
+  try {
+    await putBlob(att.id, r.blob);
+  } catch (e) {
+    stored = false;
+    const n = (e as DOMException)?.name;
+    error = n === "QuotaExceededError" || /quota/i.test(String((e as Error)?.message)) ? "Gerätespeicher voll" : "Gerätespeicher nicht verfügbar";
+  }
   update((x) => { x.attachments = [...(x.attachments ?? []), att]; return x; });
-  return att;
+  return { att, stored, error };
 }
 
 /** Transkript/Erkennung am Memo nachtragen */

@@ -372,8 +372,11 @@ function kindOf(text: string, reading: ReturnType<typeof readTactical>, entry: C
   return "unklar";
 }
 
-/** Verben, mit denen ein Melder eine eigene Anlage meldet */
-const OWN_SETUP_RE = /\b(bezogen|beziehen|bezieht|eingerichtet|richten\s+\S+\s+ein|aufgebaut|errichtet|betreiben|betrieben|in\s+betrieb)\b/i;
+/**
+ * Verben, mit denen ein Melder eine eigene Anlage meldet. «errichtet», «aufgebaut» sind mehrdeutig (meist Sichtung:
+ * «Checkpoint errichtet») und zählen nicht; «eingerichtet» nur mit «wir» («wir haben Checkpoint eingerichtet»).
+ */
+const OWN_SETUP_RE = /\b(?:bezogen|beziehen|bezieht|in\s+betrieb(?:\s+genommen)?|wir\b.*\b(?:eingerichtet|richten\s+\S+(?:\s+\S+)?\s+ein)\b|eingerichtet\b.*\bwir)\b/i;
 
 /** Lage zum Zeitpunkt: pro Element die letzte Meldung mit Standort (bis einschliesslich `t`). */
 export interface UnitState {

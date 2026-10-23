@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { demoExercise, findCells, type Attachment, type Exercise } from "@lage/core";
-import { binarize, boxBlur, clampRect, findPaper, flattenBackground, homography, otsu, quadSize, removeLines, stretch, toGray, warpQuad, type Gray, type Quad } from "../src/photo";
-import { cleanOcrText, filterLine, fixOcrTokens, formToMeldung, ocrToMeldungen } from "../src/ocr";
+import { binarize, boxBlur, clampRect, findPaper, flattenBackground, homography, otsu, photoQuality, quadSize, removeLines, rotateGray, stretch, textAxis, toGray, warpQuad, type Gray, type Quad } from "../src/photo";
+import { OcrAbort, abortable, cleanOcrText, dropVisum, filterLine, fixOcrTokens, formToMeldung, linesFromBlocks, ocrToMeldungen, recognizeOriented, type OcrResult } from "../src/ocr";
+import { PRUNE_AFTER_MS, pruneAttachments } from "../src/attachmentPrune";
 import { addEvents, commitTexts } from "../src/commit";
 import { exerciseFile, exerciseFromAny, isZip } from "../src/exportZip";
 
@@ -209,5 +210,120 @@ describe("Übung mit Anhängen speichern/öffnen", () => {
     expect(back.ex.attachments).toHaveLength(3);
     expect([...got["att-a"]!]).toEqual([0xff, 0xd8, 1, 2, 3]);
     expect([...got["att-b"]!]).toEqual([9, 8, 7]);
+  });
+});
+
+// ---------------------------------------------------------------- Etappe 4b (Nachbesserung)
+
+/** fiktive «Schrift»: Blöcke in Zeilen (Buchstabe 10×14 px, Abstand 6 px, Zeilenabstand 34 px) */
+const textPage = (w = 600, h = 400) => gray(w, h, (x, y) => {
+  const inLine = y % 34 >= 8 && y % 34 < 22;
+  const inChar = x % 16 < 10 && x > 30 && x < w - 30 && y > 20 && y < h - 20;
+  return inLine && inChar ? 30 : 235;
+});
+
+describe("Bildqualität und Ausrichtung", () => {
+  it("scharf ↔ unscharf ↔ dunkel", () => {
+    const sharp = textPage();
+    const blurred = boxBlur(boxBlur(sharp, 3), 3);
+    const dark = gray(sharp.w, sharp.h, (x, y) => sharp.d[y * sharp.w + x]! * 0.55);
+    expect(photoQuality(sharp).verdict).toBe("gut");
+    expect(photoQuality(blurred).verdict).toBe("unscharf");
+    expect(photoQuality(dark).verdict).toBe("dunkel");
+    expect(photoQuality(sharp).sharp).toBeGreaterThan(photoQuality(blurred).sharp);
+  });
+  it("vergrösserter Ausschnitt gilt nicht als unscharf (Massstab)", () => {
+    const soft = boxBlur(textPage(), 1);
+    expect(photoQuality(soft, 2).sharp).toBeGreaterThan(photoQuality(soft, 1).sharp);
+  });
+  it("drehen: 4 × 90° = unverändert, 90° tauscht Breite/Höhe", () => {
+    const g = gray(7, 3, (x, y) => x * 10 + y);
+    const r = rotateGray(g, 1);
+    expect([r.w, r.h]).toEqual([3, 7]);
+    expect(r.d[0 * 3 + 2]).toBe(g.d[0]); // oben links → oben rechts
+    expect([...rotateGray(rotateGray(r, 1), 2).d]).toEqual([...g.d]);
+  });
+  it("Zeilen waagrecht bzw. senkrecht (Foto quer)", () => {
+    const g = textPage();
+    expect(textAxis(g)).toBeGreaterThan(0.6);
+    expect(textAxis(rotateGray(g, 1))).toBeLessThan(0.4);
+    expect(Number.isNaN(textAxis(gray(200, 200, () => 255)))).toBe(true);
+  });
+  it("quer fotografiert: dreht zuerst, nimmt das bessere Ergebnis", async () => {
+    const paper = rotateGray(textPage(), 1);
+    const tried: number[] = [];
+    const rec = async (g: Gray, i: number): Promise<OcrResult> => {
+      tried.push(i);
+      const ok = textAxis(g) > 0.6;
+      return { text: ok ? "0715 H04 2 Fz AG13" : "xx", confidence: ok ? 85 : 20, lines: [], ms: 1 };
+    };
+    const r = await recognizeOriented({ g: paper, paper, quality: photoQuality(paper) }, rec);
+    expect(r.rotation === 1 || r.rotation === 3).toBe(true);
+    expect(r.confidence).toBe(85);
+    expect(tried).toEqual([0]);
+  });
+  it("Abbrechen beendet das Warten sofort", async () => {
+    const ac = new AbortController();
+    const never = new Promise<number>(() => { /* hängt */ });
+    const p = abortable(never, ac.signal);
+    ac.abort();
+    await expect(p).rejects.toBeInstanceOf(OcrAbort);
+  });
+});
+
+const W = (text: string, x0: number, x1: number, confidence = 90, y0 = 100, y1 = 125) => ({ text, confidence, bbox: { x0, y0, x1, y1 } });
+
+describe("Visum und Zeilenende", () => {
+  it("Visum weit rechts weg, auch hinter Tabellenstrich", () => {
+    expect(dropVisum([W("0618", 59, 121), W("H05", 206, 257), W("Det", 411, 458), W("C", 742, 764), W("ab", 1590, 1637), W("|", 1863, 1866)]).map((w) => w.text))
+      .toEqual(["0618", "H05", "Det", "C"]);
+  });
+  it("Einheit direkt dahinter bleibt, Formularfeld bleibt", () => {
+    expect(dropVisum([W("Höhe", 706, 787), W("ca", 798, 835), W("100", 848, 905), W("m", 917, 945)]).length).toBe(4);
+    expect(dropVisum([W("Absender", 200, 425), W("HO5", 674, 768)]).length).toBe(2);
+    expect(dropVisum([W("0715", 50, 110), W("H04", 200, 250), W("AK7", 700, 760)]).length).toBe(3);
+  });
+  it("Zeile nur mit Visum (eigene Zeile) fällt weg; unsichere Richtung nach «Rtg» bleibt", () => {
+    const r = linesFromBlocks({ confidence: 80, blocks: [{ paragraphs: [{ lines: [
+      { words: [W("0647", 59, 121), W("H06", 207, 259), W("2", 413, 428), W("Kpz", 440, 492), W("Rtg", 631, 681, 52), W("S", 693, 714, 40), W("cd", 1602, 1647)], bbox: { x0: 59, y0: 100, x1: 1647, y1: 125 } },
+      { words: [W("ef", 1591, 1645)], bbox: { x0: 1591, y0: 140, x1: 1645, y1: 165 } },
+    ] }] }] });
+    expect(r.text).toBe("0647 H06 2 Kpz Rtg S");
+  });
+  it("Einheiten am Ende werden nicht abgeschnitten", () => {
+    const isCell = (c: string) => findCells(c, demoExercise().sheets).length > 0;
+    expect(ocrToMeldungen("0640 H04 Drohne über AG13, Höhe ca 100 m\n0641 H05 Rtg S, 2 km\n0642 H02 wartet 5 min", isCell)).toEqual([
+      "0640 H04 Drohne über AG13, Höhe ca 100 m", "0641 H05 Rtg S, 2 km", "0642 H02 wartet 5 min",
+    ]);
+  });
+  it("Lesefehler aus Prüfer-Fotos: «Rtg ©», «NA13», «3RtgS», «!'H05», «Pwziv»", () => {
+    const ex = demoExercise();
+    const isCell = (c: string) => findCells(c, ex.sheets).length > 0;
+    const nai = ex.areas.filter((a) => a.kind === "nai").map((a) => a.name);
+    expect(ocrToMeldungen("0612 H03 2 Pwziv AN6 Rtg ©\n0618 !'H05 Det 1 Checkpoint AK7 ©\n0625 ) H01 verschiebt\n0647 H06 2 Kpz in NA13 S\n0648 H06 2 Kpz in NAI 3RtgS", isCell, ex.days, nai)).toEqual([
+      "0612 H03 2 Pw ziv AN6 Rtg O", "0618 H05 Det 1 Checkpoint AK7 C", "0625 H01 verschiebt", "0647 H06 2 Kpz in NAI 3 S", "0648 H06 2 Kpz in NAI 3 Rtg S",
+    ]);
+  });
+});
+
+describe("Speicher freigeben (Anhänge)", () => {
+  const now = Date.parse("2030-05-15T08:00:00Z");
+  const att = (id: string, kind: Attachment["kind"] = "foto", cell?: string): Attachment => ({ id, kind, mime: kind === "foto" ? "image/jpeg" : "audio/webm", createdAt: "2030-05-15T07:00:00Z", ...(cell ? { cell } : {}) });
+  const ev = (id: string, atts: string[], deleted = false, updatedAt = "2030-05-15T07:00:00Z") => ({ id, attachments: atts, deleted, updatedAt }) as unknown as NonNullable<Exercise["events"]>[number];
+  it("Foto nur an gelöschter Meldung → nach Wartezeit frei; vorher nicht (Rückgängig)", () => {
+    const ex = { attachments: [att("a")], events: [ev("e1", ["a"], true, new Date(now - PRUNE_AFTER_MS - 1).toISOString())] };
+    expect(pruneAttachments(ex, now)).toEqual(["a"]);
+    const fresh = { attachments: [att("a")], events: [ev("e1", ["a"], true, new Date(now - 1000).toISOString())] };
+    expect(pruneAttachments(fresh, now)).toEqual([]);
+  });
+  it("noch von einer anderen Meldung gebraucht, an Planquadrat, Memo im Memo-Fach → bleibt", () => {
+    const ex = {
+      attachments: [att("a"), att("b", "foto", "AG13"), att("m", "audio"), att("x")],
+      events: [ev("e1", ["a"], true), ev("e2", ["a"]), ev("e3", ["b"], true)],
+    };
+    expect(pruneAttachments(ex, now)).toEqual(["x"]);
+  });
+  it("Memo an gelöschter Meldung → frei", () => {
+    expect(pruneAttachments({ attachments: [att("m", "audio")], events: [ev("e1", ["m"], true)] }, now)).toEqual(["m"]);
   });
 });

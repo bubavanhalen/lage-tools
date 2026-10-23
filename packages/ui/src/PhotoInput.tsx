@@ -9,8 +9,8 @@ import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent as RPo
 import { findCells, type Attachment, type Exercise } from "@lage/core";
 import { BatchReview, type BatchItem } from "./BatchReview";
 import { attLabel, deleteAttachmentBlob, storeAttachmentBlob, useBlobUrl } from "./attachmentStore";
-import { clampRect, fmtSize, imageFromTransfer, ocrCanvas, preparePhoto, type PreparedPhoto, type Rect } from "./photo";
-import { HANDWRITING_KI, LOW_CONFIDENCE, OCR_MB, downloadOcr, ocrState, ocrToMeldungen, originOf, recognize, type OcrState } from "./ocr";
+import { clampRect, fmtSize, grayCanvas, imageFromTransfer, ocrPrepare, preparePhoto, type PhotoQuality, type PreparedPhoto, type Rect } from "./photo";
+import { HANDWRITING_KI, LOW_CONFIDENCE, OCR_MB, OcrAbort, abortable, downloadOcr, ocrState, ocrToMeldungen, originOf, recognize, recognizeOriented, type OcrState } from "./ocr";
 import "./photo.css";
 
 const coarse = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
@@ -67,6 +67,8 @@ export function PhotoButton(p: PhotoProps) {
   }, [menu]);
 
   const chosen = (ev: ChangeEvent<HTMLInputElement>) => { const f = ev.target.files?.[0]; ev.target.value = ""; setMenu(false); if (f) setFile(f); };
+  /** «Neu aufnehmen»: Dialog zu, gleich wieder Kamera bzw. Dateiauswahl (im Klick, damit der Browser es erlaubt) */
+  const retake = () => { setFile(null); (coarse() ? cam : pick).current?.click(); };
 
   return (
     <span className="ph-wrap">
@@ -83,7 +85,7 @@ export function PhotoButton(p: PhotoProps) {
       )}
       <input ref={cam} type="file" accept="image/*" capture="environment" hidden onChange={chosen} />
       <input ref={pick} type="file" accept="image/*" hidden onChange={chosen} />
-      {file && <PhotoDialog {...p} file={file} onClose={() => setFile(null)} />}
+      {file && <PhotoDialog {...p} file={file} onClose={() => setFile(null)} onRetake={retake} />}
     </span>
   );
 }
@@ -104,10 +106,18 @@ type Step =
   | { s: "laden" }
   | { s: "bereit" }
   | { s: "ocr"; label: string; p: number }
-  | { s: "leer"; conf: number }
+  | { s: "leer"; conf: number; q: PhotoQuality }
   | { s: "fehler"; msg: string };
 
-function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose }: PhotoProps & { file: File; onClose: () => void }) {
+/** unter dieser Sicherheit wird bei dunklem/unscharfem Foto auf die Bildqualität hingewiesen */
+const QUALITY_HINT = 75;
+
+/** Hinweis bei schlechter Bildqualität (statt «Handschrift?») */
+function qualityText(q: PhotoQuality): string {
+  return q.verdict === "dunkel" ? "Foto zu dunkel" : q.verdict === "unscharf" ? "Foto unscharf" : "";
+}
+
+function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, onRetake }: PhotoProps & { file: File; onClose: () => void; onRetake: () => void }) {
   const [ph, setPh] = useState<PreparedPhoto | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [rot, setRot] = useState(0);
@@ -115,7 +125,7 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose }
   const [rect, setRect] = useState<Rect | null>(null);
   const [cell, setCell] = useState("");
   const [ocr, setOcr] = useState<OcrState>("unbekannt");
-  const [review, setReview] = useState<{ items: BatchItem[]; att: Attachment; conf: number } | null>(null);
+  const [review, setReview] = useState<{ items: BatchItem[]; att: Attachment; conf: number; q: PhotoQuality; rot: number } | null>(null);
   const used = useRef(false);
   const saved = useRef<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -165,28 +175,39 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose }
 
   const run = async () => {
     if (!ph) return;
-    abort.current = new AbortController();
+    const ac = new AbortController();
+    abort.current = ac;
     try {
       if (ocr !== "bereit") {
         setStep({ s: "ocr", label: `Texterkennung wird geladen (einmalig, ≈ ${OCR_MB} MB)`, p: 0 });
-        await downloadOcr((d, t) => setStep({ s: "ocr", label: `Texterkennung wird geladen – ${fmtSize(d)} von ${fmtSize(t)}`, p: (d / t) * 0.5 }), abort.current.signal);
+        await abortable(downloadOcr((d, t) => { if (!ac.signal.aborted) setStep({ s: "ocr", label: `Texterkennung wird geladen – ${fmtSize(d)} von ${fmtSize(t)}`, p: (d / t) * 0.5 }); }, ac.signal), ac.signal);
         setOcr("bereit");
       }
       setStep({ s: "ocr", label: "Bild wird aufbereitet", p: 0.5 });
       await new Promise((r) => window.setTimeout(r, 20));
-      const cv = ocrCanvas(ph.canvas, rect);
-      const r = await recognize(cv, (q) => setStep({ s: "ocr", label: q.label, p: q.phase === "erkennen" ? 0.6 + 0.4 * q.p : 0.5 + 0.1 * q.p }));
-      if (abort.current.signal.aborted) return;
-      const texts = ocrToMeldungen(r.text, (c) => findCells(c, ex.sheets).length > 0, ex.days);
+      if (ac.signal.aborted) return;
+      const prep = ocrPrepare(ph.canvas, rect);
+      const r = await recognizeOriented(prep, (g, attempt) => {
+        const again = attempt ? (prep.quality.verdict === "gut" ? "anders gedreht" : "geglättet") : "";
+        return recognize(grayCanvas(g), (q) => {
+          if (ac.signal.aborted) return;
+          const label = again && q.phase === "erkennen" ? `Schlecht lesbar – neuer Versuch (${again})` : q.label;
+          setStep({ s: "ocr", label, p: q.phase === "erkennen" ? (attempt ? 0.8 + 0.2 * q.p : 0.6 + 0.4 * q.p * (again ? 0.5 : 1)) : 0.5 + 0.1 * q.p });
+        }, ac.signal);
+      }, ac.signal);
+      if (ac.signal.aborted) return;
+      const texts = ocrToMeldungen(r.text, (c) => findCells(c, ex.sheets).length > 0, ex.days, ex.areas.filter((x) => x.kind === "nai").map((x) => x.name));
       const a: Attachment = { ...att(), text: r.text.trim(), engine: "ocr-offline" };
-      if (!texts.length) { setStep({ s: "leer", conf: r.confidence }); return; }
+      if (!texts.length) { setStep({ s: "leer", conf: r.confidence, q: r.quality }); return; }
       const stamp = attLabel(a);
-      setReview({ items: texts.map((t, i) => ({ text: t, origin: originOf(stamp, i, texts.length) })), att: a, conf: r.confidence });
+      setReview({ items: texts.map((t, i) => ({ text: t, origin: originOf(stamp, i, texts.length) })), att: a, conf: r.confidence, q: r.quality, rot: r.rotation });
     } catch (e) {
-      if (abort.current?.signal.aborted) { setStep({ s: "bereit" }); return; }
+      if (ac.signal.aborted || e instanceof OcrAbort) { if (abort.current === ac) setStep({ s: "bereit" }); return; }
       setStep({ s: "fehler", msg: navigator.onLine || ocr === "bereit" ? `Texterkennung fehlgeschlagen: ${(e as Error).message ?? e}` : "Texterkennung noch nicht geladen – braucht einmal Netz. Das Foto kann trotzdem angehängt werden." });
     }
   };
+  /** Abbrechen: sofort zurück (Erkennung bzw. Laden wird im Hintergrund beendet) */
+  const cancel = () => { abort.current?.abort(); setStep({ s: "bereit" }); };
 
   // Ausschnitt ziehen (Bildkoordinaten = Pixel des vorbereiteten Fotos)
   const toImg = (ev: RPointerEvent) => {
@@ -199,16 +220,25 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose }
   const shown = rect && ph ? clampRect(rect, ph.canvas.width, ph.canvas.height) ?? null : null;
 
   const lowConf = (conf: number) => conf < LOW_CONFIDENCE;
-  const kiHint = (conf: number) => (
+  /** schlechte Bildqualität und unsichere Erkennung → «neu aufnehmen» statt «Handschrift?» */
+  const badPhoto = (conf: number, q: PhotoQuality) => q.verdict !== "gut" && conf < QUALITY_HINT;
+  /** schlecht lesbar: bei schlechter Bildqualität «neu aufnehmen», sonst «Handschrift?» (KI ab Etappe 4c) */
+  const kiHint = (conf: number, q: PhotoQuality) => badPhoto(conf, q) ? (
+    <span className="ph-ki ph-bad">
+      <b>{qualityText(q)} – {lowConf(conf) ? "neu aufnehmen" : "bitte genau prüfen oder neu aufnehmen"}.</b> Erkannt mit Sicherheit {Math.round(conf)} %{q.verdict === "dunkel" ? " – mehr Licht, Schatten vermeiden" : " – Gerät ruhig halten, scharf stellen"}.
+      {" "}<button className="chipbtn" onClick={() => { abort.current?.abort(); onRetake(); }}>Neu aufnehmen</button>
+    </span>
+  ) : (
     <span className="ph-ki">
       {lowConf(conf) ? <>Schlecht lesbar (Sicherheit {Math.round(conf)} %) – <b>Handschrift?</b> Gedruckter Text wird offline erkannt, Handschrift kaum.</> : <>Handschrift wird offline kaum erkannt.</>}
       {" "}<button className="chipbtn" disabled={!HANDWRITING_KI} title="Etappe 4c: Handschrift mit KI erkennen – nur nach ausdrücklichem Einschalten, Foto verlässt dann das Gerät">Mit KI erkennen (Etappe 4c)</button>
     </span>
   );
+  const rotNote = (rot: number) => (rot ? <> · Foto lag {rot === 2 ? "verkehrt" : "quer"} – automatisch gedreht</> : null);
 
   if (review) return (
     <BatchReview ex={ex} day={day} items={review.items} attachment={review.att}
-      notice={lowConf(review.conf) ? kiHint(review.conf) : <span className="ph-conf">Gedruckter Text offline erkannt · Sicherheit {Math.round(review.conf)} % · bitte prüfen</span>}
+      notice={lowConf(review.conf) || badPhoto(review.conf, review.q) ? <>{kiHint(review.conf, review.q)}{rotNote(review.rot)}</> : <span className="ph-conf">Gedruckter Text offline erkannt · Sicherheit {Math.round(review.conf)} %{rotNote(review.rot)} · bitte prüfen</span>}
       onCommit={(texts) => { used.current = true; onCommit(texts, review.att); }}
       onClose={() => { if (!used.current) { setReview(null); setStep({ s: "bereit" }); return; } onClose(); }} />
   );
@@ -240,7 +270,7 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose }
           {step.s === "ocr" && (
             <div className="progress ph-prog"><div style={{ width: `${Math.round(step.p * 100)}%` }} /><span>{step.label} …</span></div>
           )}
-          {step.s === "leer" && <p className="help warn">Kein Text erkannt. {kiHint(step.conf)}</p>}
+          {step.s === "leer" && <p className="help warn">Kein Text erkannt. {kiHint(step.conf, step.q)}</p>}
           {step.s === "fehler" && <p className="help warn">{step.msg}</p>}
           {ocr !== "bereit" && step.s === "bereit" && (
             <p className="help">{online ? `Texterkennung läuft auf dem Gerät – beim ersten Mal werden ≈ ${OCR_MB} MB geladen, danach offline.` : "Offline: Texterkennung ist noch nicht geladen (braucht einmal Netz). Das Foto lässt sich trotzdem anhängen."}</p>
@@ -252,7 +282,7 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose }
         </div>
         <footer className="ph-foot">
           {step.s === "ocr"
-            ? <button onClick={() => abort.current?.abort()}>Abbrechen</button>
+            ? <button onClick={cancel}>Abbrechen</button>
             : <>
               <button onClick={() => { if (!ph) return; used.current = true; onAttach(att()); onClose(); }} disabled={!ph || !cellOk} title="Foto an die Meldung hängen, die im Feld getippt wird">An Meldung im Feld</button>
               {cell.trim() && <button onClick={() => { if (!ph) return; used.current = true; onCell(att()); say(`Foto an ${att().cell} gehängt`); onClose(); }} disabled={!ph || !cellOk}>Nur an {cell.trim().toUpperCase()}</button>}

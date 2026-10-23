@@ -39,7 +39,7 @@ import { ShapeButton, shapePatch, takeDrawing } from "./ShapeDraw";
 import { addEvents, buildEvent, commitTexts } from "./commit";
 import { PhotoButton, PendingAttachment } from "./PhotoInput";
 import { AttachmentChips } from "./Attachments";
-import { attachmentsOf } from "./attachmentStore";
+import { attachmentsOf, deleteAttachmentBlob } from "./attachmentStore";
 import type { Attachment } from "@lage/core";
 import { RowMemos, VoiceButton, VoiceStatus, useVoice } from "./VoiceInput";
 
@@ -157,6 +157,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const [pendingAtt, setPendingAtt] = useState<Attachment | null>(null);
   /** Sprechen: Memo → Meldungsfeld (eine Meldung) bzw. Übersicht (mehrere) */
   const voice = useVoice({ ex, update, say, text, setText, day, input: inputRef, onAttach: setPendingAtt, pendingId: pendingAtt?.id,
+    onDetach: (id) => setPendingAtt((p) => (p?.id === id ? null : p)),
     onCommit: (texts, a) => { const evs = commitTexts(texts, { ex, device, update, day, attachment: a }); const last = evs[evs.length - 1]; if (last) onSelect(last.id); } });
 
   // Taste «N» (ausserhalb von Eingabefeldern): zurück in die Meldungszeile
@@ -389,7 +390,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             onCell={(a) => update((x) => addEvents(x, [], { attachments: [a] }))}
             onCommit={(texts, a) => { const evs = commitTexts(texts, { ex, device, update, day, attachment: a }); const last = evs[evs.length - 1]; if (last) onSelect(last.id); }} />
           <VoiceButton v={voice} />
-          {pendingAtt && <PendingAttachment att={pendingAtt} onRemove={() => setPendingAtt(null)} />}
+          {pendingAtt && <PendingAttachment att={pendingAtt} onRemove={() => { if (pendingAtt.kind === "foto") void deleteAttachmentBlob(pendingAtt.id); setPendingAtt(null); }} />}
           {manualPos && <span className="help mono">{formatLv95(manualPos)}</span>}
         </div>
       </div>

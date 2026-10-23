@@ -3,7 +3,8 @@
  * langen Sprachmemo). Je Zeile: Text bearbeiten, Vorschau wie im Meldungsfeld, übernehmen oder verwerfen.
  * Eingetragen wird über den gleichen Weg wie Enter im Meldungsfeld (`onCommit` → `commitTexts` in commit.ts).
  *
- * Tastatur: ↑/↓ = Zeile wechseln · Enter = Zeile übernehmen · Esc = schliessen.
+ * Tastatur: ↑/↓ = Zeile wechseln · Enter = Zeile übernehmen · Esc = schliessen (mit offenen Vorschlägen: Rückfrage,
+ * nochmals Esc = verwerfen).
  */
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -63,6 +64,9 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
   const [cur, setCur] = useState(0);
   const [raw, setRaw] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1100 && !!attachment);
   const [url, setUrl] = useState<string | null>(null);
+  /** Rückfrage «n Vorschläge verwerfen?» beim Schliessen */
+  const [ask, setAsk] = useState(false);
+  const askRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const d = day ?? defaultDay(ex);
   const ctx = useMemo(() => journalCtx(ex, d), [ex, d]);
@@ -112,18 +116,28 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
     onClose();
   };
 
+  /** offene Vorschläge mit Text (würden beim Schliessen verworfen) */
+  const pending = open.filter((r) => r.text.trim()).length;
+  /** Schliessen: mit offenen Vorschlägen erst nachfragen */
+  const requestClose = () => { if (pending > 0 && !ask) { setAsk(true); return; } onClose(); };
+  useEffect(() => { if (ask) askRef.current?.focus(); }, [ask]);
   useEffect(() => {
-    const key = (ev: KeyboardEvent) => { if (ev.key === "Escape" && !ev.defaultPrevented) { ev.preventDefault(); onClose(); } };
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape" || ev.defaultPrevented) return;
+      ev.preventDefault();
+      // nochmals Esc während der Rückfrage = verwerfen
+      if (ask || pending === 0) onClose(); else setAsk(true);
+    };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [onClose]);
+  }, [onClose, ask, pending]);
 
   const done = rows.filter((r) => r.state === "eingetragen").length;
   const head = title ?? (items.length === 1 ? "1 Meldung erkannt" : `${items.length} Meldungen erkannt`);
   const isAudio = attachment?.kind === "audio";
 
   return createPortal(
-    <div className="br-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="br-back" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
       <div className={"br" + (raw ? " withraw" : "")} role="dialog" aria-modal="true" aria-label="Meldungen prüfen und übernehmen">
         <header className="br-head">
           <b className="br-title">{head}</b>
@@ -134,7 +148,7 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
               {raw ? "Ausblenden" : isAudio ? "Memo / Rohtext" : "Bild / Rohtext"}
             </button>
           )}
-          <button className="br-x" onClick={onClose} aria-label="Schliessen" title="Schliessen (Esc)">×</button>
+          <button className="br-x" onClick={requestClose} aria-label="Schliessen" title="Schliessen (Esc)">×</button>
         </header>
         {notice && <div className="br-notice">{notice}</div>}
         <div className="br-body">
@@ -185,11 +199,20 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
             })}
           </ol>
         </div>
-        <footer className="br-foot">
-          <span className="help br-keys"><b>↑/↓</b> Zeile · <b>Enter</b> Zeile übernehmen · <b>Esc</b> schliessen</span>
-          <button onClick={onClose}>{open.length ? "Schliessen" : "Fertig"}</button>
-          <button className="primary" disabled={!chosen.length} onClick={takeAll}>{chosen.length === open.length ? "Alle übernehmen" : "Gewählte übernehmen"} ({chosen.length})</button>
-        </footer>
+        {ask ? (
+          <footer className="br-foot br-ask" role="alertdialog" aria-label="Vorschläge verwerfen?">
+            <b className="br-askq">{pending === 1 ? "1 Vorschlag" : `${pending} Vorschläge`} nicht übernommen – verwerfen?</b>
+            <span className="help br-keys"><b>Esc</b> nochmals = verwerfen</span>
+            <button ref={askRef} onClick={() => setAsk(false)}>Zurück</button>
+            <button className="danger" onClick={onClose}>Verwerfen</button>
+          </footer>
+        ) : (
+          <footer className="br-foot">
+            <span className="help br-keys"><b>↑/↓</b> Zeile · <b>Enter</b> Zeile übernehmen · <b>Esc</b> schliessen</span>
+            <button onClick={requestClose}>{open.length ? "Schliessen" : "Fertig"}</button>
+            <button className="primary" disabled={!chosen.length} onClick={takeAll}>{chosen.length === open.length ? "Alle übernehmen" : "Gewählte übernehmen"} ({chosen.length})</button>
+          </footer>
+        )}
       </div>
     </div>,
     document.body,

@@ -66,7 +66,7 @@ describe("Hörfehler der Spracherkennung (Funk)", () => {
   it.each([
     ["Hote 04, 2 Fahrzeuge, Alpha Golf 1/3 Richtung Nord.", "Hotel 04, 2 Fahrzeuge, Alpha Golf 1 3 Richtung Nord."],
     ["0815 Hote 01 Checkpoint Bezogen in Alpha Tilo 7 Schalli Ende", "0815 Hotel 01 Checkpoint Bezogen in Alpha Kilo 7 Charlie Ende"],
-    ["Hodel 05, Beobachtungsposten bezogen, Alpha Fox droht 1, 2 Delta", "Hotel 05, Beobachtungsposten bezogen, Alpha Foxtrot 1, 2 Delta"],
+    ["Hodel 05, Beobachtungsposten bezogen, Alpha Fox droht 1, 2 Delta", "Hotel 05, Beobachtungsposten bezogen, Alpha Foxtrot 1 2 Delta"],
     ["Hote 05, Alper Fox Trot 1-2 Delta, keine Feindsicht.", "Hotel 05, Alpha Foxtrot 1 2 Delta, keine Feindsicht."],
     ["Schützenpanzer in November Alpha Indian 3", "Schützenpanzer in November Alpha India 3"],
     ["bei Pravoscha-Li-05", "bei Pravoscha-Li-05"],
@@ -80,5 +80,52 @@ describe("Hörfehler der Spracherkennung (Funk)", () => {
 
   it("Whisper-Ausgabe → Kurzmeldung", () => {
     expect(normalizeSpoken(fixHearing("Hote 04, 2 Fahrzeuge, Alpha Golf 1/3 Richtung Nord.")).text).toMatch(/^H04 2 Fz AG13 Rtg N$/);
+  });
+
+  // beobachtet mit Whisper small/base (Sprachausgabe Prüfer-Sätze, Etappe 4b)
+  it.each([
+    ["Hotel 04, 2 Fahrzeuge, Alpha Golf 1, 3, Richtung Nord.", "H04 2 Fz AG13 Rtg N"],
+    ["Hotel 04 Richtung Naht", "H04 Rtg N"],
+    ["Rtg Naht", "Rtg N"],
+    ["Hier Hote 02, drei Personen, dignerisch bei Alpha-Charlie-Phenf, verschieben nach Resten.", "H02 3 Pers gn bei AC5 verschieben Rtg W"],
+    ["Hotel 06 Detachement 2, 4 Fahrzeuge, Planquadrat Alpha Delta 9, Richtunatost, ich wiederhole Richtunatost.", "H06 Det 2 4 Fz AD9 Rtg NO"],
+    ["Hote 06, Detachement 2, Vierfahrzeuge, Planquartrat Alpha Delta 9, Richt zu Nothost, ich wiederhole Richtung Nachtost.", "H06 Det 2 4 Fz AD9 Rtg NO"],
+    ["Hotel 06 Detachement 2, 4 Fahrzeuge, Planquadrat Alpha Delta 9, Richtung Northost", "H06 Det 2 4 Fz AD9 Rtg NO"],
+    ["Hodel 03 Einlastwagen, Alpha Hodel 1.4 Richtung Ost.", "H03 1 Lw AH14 Rtg O"],
+    ["Hodl 03 ein Lastwagen, Alfa Hodl 1.4 Richtung Ost.", "H03 1 Lw AH14 Rtg O"],
+    ["Hier hote 0.2. 3 Personen", "H02 3 Pers"],
+    ["Hotel 0, 4, 2 Fahrzeuge", "H04 2 Fz"],
+    ["Hotel 05 Beobachtungsposten bezogen, Alpha Fox Trot 12 Delta. Keine Feinsicht.", "H05 Beo Posten bezogen AF12 D Keine Feindsicht"],
+    ["Hier Hote 02, drei Personen, dignerisch bei Alpha Shalifenf", "H02 3 Pers gn bei AC5"],
+    ["Hotel 01 E 2 Fahrzeuge Korrektur 3 Fahrzeuge Alpha Papa 1 0 Richtung West", "H01 3 Fz AP10 Rtg W"],
+  ])("%s → %s", (inp, out) => expect(normalizeSpoken(fixHearing(inp)).text).toBe(out));
+
+  it.each([
+    // Mengen bleiben Mengen, normale Wörter bleiben
+    ["Alpha Golf 1, 3 Fahrzeuge", "Alpha Golf 1, 3 Fahrzeuge"],
+    ["Richtung Ost", "Richtung Ost"],
+    ["Richtung Nordost", "Richtung Nordost"],
+    ["nach Resten suchen", "nach Westen suchen"],
+    ["Die Naht ist offen", "Die Naht ist offen"],
+  ])("unverändert/gezielt: %s", (inp, out) => expect(fixHearing(inp)).toBe(out));
+});
+
+import { downloadEta, estimateSecs, recordRate } from "../src/stt";
+describe("Dauer vorher nennen", () => {
+  it("Download-Dauer ohne Angabe des Browsers mit 10 Mbit/s", () => {
+    expect(downloadEta(225).text).toBe("ca. 3 min");
+    expect(downloadEta(77).text).toBe("ca. 60 s");
+    expect(downloadEta(5).text).toBe("ca. 10 s");
+  });
+  it("Restzeit der Erkennung lernt die Rechenzeit des Geräts", () => {
+    const a = estimateSecs(6);
+    expect(a).toBeGreaterThan(1);
+    // Gerät ist viel schneller als angenommen → Schätzung sinkt
+    for (let i = 0; i < 6; i++) recordRate(6, 1600);
+    expect(estimateSecs(6)).toBeLessThan(a);
+    expect(estimateSecs(6)).toBeCloseTo(1.6, 0);
+    // längeres Memo dauert länger, aber nicht proportional (Whisper rechnet immer 30 s)
+    expect(estimateSecs(20)).toBeGreaterThan(estimateSecs(6));
+    expect(estimateSecs(20) / estimateSecs(6)).toBeLessThan(20 / 6);
   });
 });

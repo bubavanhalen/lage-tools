@@ -437,34 +437,181 @@ export async function preparePhoto(file: Blob, rot = 0): Promise<PreparedPhoto> 
  * (bis 2400 px Breite), grosse bleiben. Ergebnis: Graustufen-Canvas.
  */
 export function ocrCanvas(src: HTMLCanvasElement, rect?: Rect | null): HTMLCanvasElement {
+  return grayCanvas(ocrPrepare(src, rect).g);
+}
+
+/** wie `ocrCanvas`, mit Bildqualität (für den Hinweis «zu dunkel/unscharf») */
+export function ocrPrepare(src: HTMLCanvasElement, rect?: Rect | null): OcrPrep {
   const sel = rect ? clampRect(rect, src.width, src.height) : null;
   const r = sel ?? { x: 0, y: 0, w: src.width, h: src.height };
   const k = Math.min(3, Math.max(1, 1800 / Math.max(r.w, r.h * 0.75)));
-  let w = Math.round(r.w * k), h = Math.round(r.h * k);
+  const w = Math.round(r.w * k), h = Math.round(r.h * k);
   const tmp = document.createElement("canvas");
   tmp.width = w; tmp.height = h;
   const c0 = tmp.getContext("2d", { willReadFrequently: true })!;
   c0.imageSmoothingQuality = "high";
   c0.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, w, h);
-  let g = toGray(c0.getImageData(0, 0, w, h).data, w, h);
-  // ganzes Foto: Papier suchen und gerade ziehen (Perspektive, Schräglage, Tisch weg)
-  if (!sel) {
+  return ocrGray(toGray(c0.getImageData(0, 0, w, h).data, w, h), !sel, k);
+}
+
+/** Graustufen → Canvas */
+export function grayCanvas(g: Gray): HTMLCanvasElement {
+  const cv = document.createElement("canvas");
+  cv.width = g.w; cv.height = g.h;
+  const c = cv.getContext("2d")!;
+  const id = c.createImageData(g.w, g.h);
+  for (let i = 0, j = 0; i < g.d.length; i++, j += 4) { id.data[j] = id.data[j + 1] = id.data[j + 2] = g.d[i]!; id.data[j + 3] = 255; }
+  c.putImageData(id, 0, 0);
+  return cv;
+}
+
+export interface OcrPrep {
+  /** aufbereitet fürs Erkennen */
+  g: Gray;
+  /** gerade gezogenes Papier (vor der Aufbereitung) – zum Drehen und neu Aufbereiten */
+  paper: Gray;
+  quality: PhotoQuality;
+}
+
+/**
+ * Aufbereitung fürs Erkennen (reine Funktion): ganzes Foto → Papier suchen und gerade ziehen (Perspektive, Schräglage,
+ * Tisch weg); dann Licht, Kontrast, Linien weg (`prepareForOcr`). Dazu die Bildqualität des Papiers.
+ * `scale` = Vergrösserung gegenüber dem Foto (Ausschnitt), für die Schärfe-Messung.
+ */
+export function ocrGray(g0: Gray, whole: boolean, scale = 1): OcrPrep {
+  let g = g0;
+  let k = scale;
+  if (whole) {
     const q = findPaper(g);
     if (q) {
       const s = quadSize(q);
       const kk = Math.min(1.6, 2200 / Math.max(s.w, s.h));
       g = warpQuad(g, q, Math.round(s.w * kk), Math.round(s.h * kk));
-      w = g.w; h = g.h;
+      k *= kk;
     }
   }
-  const out = prepareForOcr(g);
-  const cv = document.createElement("canvas");
-  cv.width = w; cv.height = h;
-  const c = cv.getContext("2d")!;
-  const id = c.createImageData(w, h);
-  for (let i = 0, j = 0; i < out.d.length; i++, j += 4) { id.data[j] = id.data[j + 1] = id.data[j + 2] = out.d[i]!; id.data[j + 3] = 255; }
-  c.putImageData(id, 0, 0);
-  return cv;
+  return { g: prepareForOcr(g), paper: g, quality: photoQuality(g, k) };
+}
+
+export interface PhotoQuality {
+  /** Helligkeit des Papiers (90. Perzentil, 0–255) */
+  bright: number;
+  /** Kontrast Schrift ↔ Papier nach Lichtausgleich (0–255) */
+  contrast: number;
+  /** Kantenschärfe: steilste Kanten im Verhältnis zum Kontrast (scharf ≈ 1,2–1,5; unscharf < 0,8) */
+  sharp: number;
+  /** Urteil: «gut», «dunkel» oder «unscharf» */
+  verdict: "gut" | "dunkel" | "unscharf";
+}
+/** Papier dunkler als das (ohne Blitz, Abend, Schatten über dem ganzen Blatt) */
+export const QUALITY_DARK = 185;
+/** Kanten flacher als das: verwackelt/unscharf */
+export const QUALITY_BLUR = 0.8;
+
+const pct = (h: Uint32Array, n: number, q: number) => { let c = 0; for (let v = 0; v < 256; v++) { c += h[v]!; if (c >= n * q) return v; } return 255; };
+
+/**
+ * Bildqualität des (gerade gezogenen) Papiers: Helligkeit, Kontrast, Schärfe. Gemessen im inneren Bereich (Ränder weg).
+ * Die Schärfe wird auf die Fotoauflösung bezogen (vergrösserte Ausschnitte sind nicht «unschärfer»).
+ */
+export function photoQuality(g: Gray, scale = 1): PhotoQuality {
+  const x0 = Math.round(g.w * 0.08), y0 = Math.round(g.h * 0.08);
+  const W = Math.max(3, g.w - 2 * x0), H = Math.max(3, g.h - 2 * y0);
+  const c: Gray = { w: W, h: H, d: new Uint8ClampedArray(W * H) };
+  for (let y = 0; y < H; y++) c.d.set(g.d.subarray((y + y0) * g.w + x0, (y + y0) * g.w + x0 + W), y * W);
+  const n = W * H;
+  const h0 = new Uint32Array(256);
+  for (const v of c.d) h0[v]!++;
+  const bright = pct(h0, n, 0.9);
+  const flat = flattenBackground(c);
+  const h1 = new Uint32Array(256);
+  for (const v of flat.d) h1[v]!++;
+  const contrast = pct(h1, n, 0.9) - pct(h1, n, 0.01);
+  // steilste Kanten (99,5. Perzentil des Gradienten über 2 px), bei Vergrösserung auf Fotopixel umgerechnet
+  const gh = new Uint32Array(256);
+  let m = 0;
+  for (let y = 1; y < H - 1; y++) for (let x = 1 + ((x0 + y) % 3); x < W - 1; x += 3) {
+    const i = y * W + x;
+    gh[Math.max(Math.abs(flat.d[i + 1]! - flat.d[i - 1]!), Math.abs(flat.d[i + W]! - flat.d[i - W]!)) >> 1]!++;
+    m++;
+  }
+  const sharp = contrast > 8 ? (pct(gh, m, 0.995) * 2 * Math.max(1, scale)) / contrast : 0;
+  const verdict = bright < QUALITY_DARK || contrast < 50 ? "dunkel" : sharp < QUALITY_BLUR ? "unscharf" : "gut";
+  return { bright, contrast, sharp: Math.round(sharp * 100) / 100, verdict };
+}
+
+/** um `q` × 90° im Uhrzeigersinn drehen */
+export function rotateGray(g: Gray, q: number): Gray {
+  const r = ((q % 4) + 4) % 4;
+  if (!r) return g;
+  const { w, h } = g;
+  const W = r % 2 ? h : w, H = r % 2 ? w : h;
+  const d = new Uint8ClampedArray(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = g.d[y * w + x]!;
+    const [nx, ny] = r === 1 ? [h - 1 - y, x] : r === 2 ? [w - 1 - x, h - 1 - y] : [y, w - 1 - x];
+    d[ny * W + nx] = v;
+  }
+  return { w: W, h: H, d };
+}
+
+/**
+ * Laufen die Textzeilen waagrecht? Für jedes Schriftzeichen (zusammenhängender dunkler Fleck in Buchstabengrösse) den
+ * nächsten Nachbarn suchen: in Zeilen liegt er meist daneben, nicht darüber. Ergebnis: Anteil waagrechter Nachbarn
+ * (0–1; > 0,6 = Zeilen waagrecht, < 0,4 = senkrecht, d. h. Foto um 90° gedreht). `NaN` = zu wenig Schrift.
+ */
+export function textAxis(g: Gray): number {
+  const f = Math.max(1, Math.round(Math.max(g.w, g.h) / 1000));
+  const s = downsample(g, f);
+  const { w, h } = s;
+  const lab = new Int32Array(w * h).fill(-1);
+  const cx: number[] = [], cy: number[] = [];
+  const stack: number[] = [];
+  const maxH = Math.max(12, Math.round(Math.max(w, h) / 25));
+  for (let i = 0; i < w * h; i++) {
+    if (lab[i] !== -1 || s.d[i]! >= 128) continue;
+    let n = 0, sx = 0, sy = 0, x0 = w, x1 = 0, y0 = h, y1 = 0;
+    lab[i] = 0; stack.push(i);
+    while (stack.length) {
+      const j = stack.pop()!;
+      const x = j % w, y = (j / w) | 0;
+      n++; sx += x; sy += y;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (const k of [j - 1, j + 1, j - w, j + w]) {
+        if (k < 0 || k >= w * h || lab[k] !== -1 || s.d[k]! >= 128) continue;
+        if ((k === j - 1 && x === 0) || (k === j + 1 && x === w - 1)) continue;
+        lab[k] = 0; stack.push(k);
+      }
+    }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    // Buchstabengrösse: nicht Punkt/Rauschen, nicht Linie/Fleck
+    if (n < 6 || bw > maxH || bh > maxH || Math.max(bw, bh) < 4) continue;
+    cx.push(sx / n); cy.push(sy / n);
+  }
+  const N = cx.length;
+  if (N < 12) return NaN;
+  // Raster für die Nachbarsuche
+  const cell = maxH;
+  const gw = Math.ceil(w / cell) + 1;
+  const grid = new Map<number, number[]>();
+  for (let i = 0; i < N; i++) { const key = Math.floor(cy[i]! / cell) * gw + Math.floor(cx[i]! / cell); (grid.get(key) ?? grid.set(key, []).get(key)!).push(i); }
+  let hor = 0, all = 0;
+  for (let i = 0; i < N; i++) {
+    const gx = Math.floor(cx[i]! / cell), gy = Math.floor(cy[i]! / cell);
+    let best = Infinity, bdx = 0, bdy = 0;
+    for (let yy = gy - 1; yy <= gy + 1; yy++) for (let xx = gx - 1; xx <= gx + 1; xx++) {
+      for (const j of grid.get(yy * gw + xx) ?? []) {
+        if (j === i) continue;
+        const dx = cx[j]! - cx[i]!, dy = cy[j]! - cy[i]!;
+        const d = dx * dx + dy * dy;
+        if (d < best) { best = d; bdx = dx; bdy = dy; }
+      }
+    }
+    if (best === Infinity) continue;
+    all++;
+    if (Math.abs(bdx) > Math.abs(bdy)) hor++;
+  }
+  return all ? hor / all : NaN;
 }
 
 /** Bild aus der Zwischenablage bzw. vom Ziehen (erste Bilddatei) */

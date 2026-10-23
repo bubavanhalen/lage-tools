@@ -7,7 +7,7 @@
  * Handschrift erkennt tesseract kaum – dafür ist eine KI-Erkennung vorgesehen (Etappe 4c, siehe `HANDWRITING_KI`).
  */
 import * as core from "@lage/core";
-import type { Rect } from "./photo";
+import { boxBlur, prepareForOcr, rotateGray, textAxis, type Gray, type OcrPrep, type PhotoQuality, type Rect } from "./photo";
 
 /** Ordner der Erkennungsdateien (scripts/assemble-site.mjs kopiert sie aus npm) */
 export const OCR_DIR = "ocr/";
@@ -97,7 +97,9 @@ const KEY_WORD = /^[^\p{L}\d]*(?:[0-2Oo]?[0-9OoIl][0-5Oo][0-9OoIlSB]|[Hh][O0o\d]
  * @returns Text und mittlere Sicherheit, oder null
  */
 export function filterLine(words: Array<{ text: string; confidence: number }>): { text: string; confidence: number } | null {
-  const kept = words.filter((w) => w.text.trim() && (w.confidence >= WORD_MIN || (w.confidence >= 15 && /^[\p{L}\d]{2,}$/u.test(w.text)) || KEY_WORD.test(w.text)
+  const kept = words.filter((w, i) => w.text.trim() && (w.confidence >= WORD_MIN
+    // Richtung nach «Rtg» («Rtg S» – einzelner Buchstabe, oft unsicher gelesen)
+    || (w.confidence >= 10 && /^(?:N|NO|NW|O|S|SO|SW|W)$/.test(w.text) && /^R[t1lI]g$/i.test(words[i - 1]?.text ?? "")) || (w.confidence >= 15 && /^[\p{L}\d]{2,}$/u.test(w.text)) || KEY_WORD.test(w.text)
     // zusammengeklebte Kurzmeldung («2FzAG13RIgN») – unsicher, wird danach aufgetrennt
     || (w.confidence >= 3 && /^[\p{L}\d]{6,}$/u.test(w.text) && /\d/.test(w.text) && /\p{L}/u.test(w.text))));
   const text = kept.map((w) => w.text).join(" ").trim();
@@ -167,48 +169,148 @@ export async function warmOcr(onProgress?: (p: OcrProgress) => void): Promise<vo
   try { await getWorker(); } finally { progressCb = null; scheduleIdle(); }
 }
 
-/** Text auf dem (aufbereiteten) Bild erkennen */
-export async function recognize(img: HTMLCanvasElement | Blob, onProgress?: (p: OcrProgress) => void): Promise<OcrResult> {
+/** Erkennung sofort beenden (Abbrechen): Worker beenden, beim nächsten Mal neu starten (Dateien sind im Speicher) */
+export function cancelOcr(): void {
+  window.clearTimeout(idle);
+  const p = workerP;
+  workerP = null;
+  progressCb = null;
+  p?.then((w) => w.terminate()).catch(() => { /* egal */ });
+}
+
+/** Abbruch durch den Benutzer */
+export class OcrAbort extends Error {
+  constructor() { super("Texterkennung abgebrochen"); this.name = "AbortError"; }
+}
+/** Versprechen, das beim Abbrechen sofort mit `OcrAbort` endet */
+export function abortable<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return p;
+  return new Promise<T>((res, rej) => {
+    if (signal.aborted) { rej(new OcrAbort()); return; }
+    const on = () => rej(new OcrAbort());
+    signal.addEventListener("abort", on, { once: true });
+    p.then((v) => { signal.removeEventListener("abort", on); res(v); }, (e) => { signal.removeEventListener("abort", on); rej(e); });
+  });
+}
+
+/** Text auf dem (aufbereiteten) Bild erkennen; `signal` bricht sofort ab (Worker wird beendet) */
+export async function recognize(img: HTMLCanvasElement | Blob, onProgress?: (p: OcrProgress) => void, signal?: AbortSignal): Promise<OcrResult> {
   const t0 = performance.now();
   progressCb = onProgress ?? null;
+  const stop = () => cancelOcr();
+  signal?.addEventListener("abort", stop, { once: true });
   try {
-    const w = await getWorker();
-    const r = await w.recognize(img, {}, { text: true, blocks: true });
+    const w = await abortable(getWorker(), signal);
+    const r = await abortable(w.recognize(img, {}, { text: true, blocks: true }), signal);
     // Prüfhilfe (nur Tests): aufbereitetes Bild ablesen
     const dbg = window as unknown as { __ltOcrDebug?: string | boolean };
     if (dbg.__ltOcrDebug && img instanceof HTMLCanvasElement) {
       dbg.__ltOcrDebug = img.toDataURL("image/png");
       (window as unknown as { __ltOcrWords?: string }).__ltOcrWords = (r.data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines.map((l) => l.words.map((w) => `${w.text}(${Math.round(w.confidence)})`).join(" ")))).join("\n");
     }
-    const lines: OcrLine[] = [];
-    for (const b of r.data.blocks ?? []) for (const p of b.paragraphs) for (const l of p.lines) {
-      const f = filterLine(l.words);
-      if (f) lines.push({ ...f, bbox: l.bbox });
-    }
-    // mittlere Sicherheit, gewichtet mit der Textlänge (kurze Störzeilen zählen wenig)
-    const n = lines.reduce((a, l) => a + l.text.length, 0);
-    const kept = n ? lines.reduce((a, l) => a + l.confidence * l.text.length, 0) / n : 0;
-    // viel weggelassen (Handschrift, Fleck) → gesamthafte Sicherheit von tesseract zählt mit
-    const confidence = Math.min(kept, Math.max(r.data.confidence, kept - 15));
-    return { text: lines.map((l) => l.text).join("\n"), confidence, lines, ms: performance.now() - t0 };
+    return { ...linesFromBlocks(r.data), ms: performance.now() - t0 };
   } finally {
+    signal?.removeEventListener("abort", stop);
     progressCb = null;
-    scheduleIdle();
+    if (workerP) scheduleIdle();
   }
+}
+
+export interface OrientedResult extends OcrResult {
+  /** Drehung in Vierteln im Uhrzeigersinn, mit der erkannt wurde (0 = wie fotografiert) */
+  rotation: number;
+  quality: PhotoQuality;
+}
+
+/**
+ * Erkennen mit automatischer Ausrichtung: Laufen die Zeilen senkrecht (Foto quer), wird das Papier um 90° gedreht
+ * (beide Richtungen probiert); ist die Sicherheit tief und das Bild gut, wird auch 180° probiert. Bestes Ergebnis zählt.
+ * `rec` erkennt ein aufbereitetes Graustufenbild (Browser: tesseract-Worker; Tests: Ersatz).
+ */
+export async function recognizeOriented(prep: OcrPrep, rec: (g: Gray, attempt: number) => Promise<OcrResult>, signal?: AbortSignal): Promise<OrientedResult> {
+  const axis = textAxis(prep.g);
+  const vertical = axis < 0.4;
+  const order = vertical ? [3, 1] : [0];
+  const t0 = performance.now();
+  let best: OrientedResult | null = null;
+  const score = (r: OcrResult) => (r.text.replace(/\s/g, "").length < 6 ? 0 : r.confidence);
+  const tryRot = async (q: number, attempt: number, soft = false) => {
+    if (signal?.aborted) throw new OcrAbort();
+    const paper = q ? rotateGray(prep.paper, q) : prep.paper;
+    const g = soft ? prepareForOcr(boxBlur(paper, 1)) : q ? prepareForOcr(paper) : prep.g;
+    const r = await rec(g, attempt);
+    if (!best || score(r) > score(best)) best = { ...r, rotation: q, quality: prep.quality };
+  };
+  await tryRot(order[0]!, 0);
+  if (score(best!) < LOW_CONFIDENCE) {
+    if (vertical) await tryRot(order[1]!, 1);
+    else if (prep.quality.verdict === "gut") await tryRot(2, 1);
+    // verrauscht/unscharf: noch einmal leicht geglättet (Rauschen weg, Schrift bleibt)
+    else await tryRot(0, 1, true);
+  }
+  return { ...best!, ms: performance.now() - t0 };
+}
+
+interface TWord { text: string; confidence: number; bbox: { x0: number; y0: number; x1: number; y1: number } }
+interface TData { confidence: number; blocks?: Array<{ bbox?: TWord["bbox"]; paragraphs: Array<{ lines: Array<{ words: TWord[]; bbox: TWord["bbox"] }> }> }> | null }
+
+/** Einheiten am Zeilenende gehören zur Meldung («Höhe ca 100 m») */
+const UNIT_RE = /^(?:m|km|cm|mm|min|h|s|kg|t|l|°)$/i;
+
+/**
+ * Visum-Spalte weglassen: kurzes Kürzel (1–4 Zeichen) am Zeilenende, weit vom Text abgesetzt (Lücke > 3 Zeilenhöhen) –
+ * z. B. «… Rtg O                ab». Einheiten nur, wenn sie ebenso weit weg stehen.
+ */
+export function dropVisum(words: TWord[]): TWord[] {
+  let ws = words;
+  // Tabellenstrich/Störzeichen ganz rechts («ab |») zuerst weg
+  while (ws.length && !/[\p{L}\d]/u.test(ws[ws.length - 1]!.text)) ws = ws.slice(0, -1);
+  // Formularfeld «Absender     H05» ist kein Visum: erst ab drei Wörtern (Zeit, Melder, Text …)
+  if (ws.length < 3) return ws;
+  const last = ws[ws.length - 1]!;
+  const prev = ws[ws.length - 2]!;
+  const hs = ws.map((w) => w.bbox.y1 - w.bbox.y0).sort((a, b) => a - b);
+  const lh = Math.max(8, hs[Math.floor(hs.length / 2)]!);
+  const gap = last.bbox.x0 - prev.bbox.x1;
+  // Kürzel aus Buchstaben (nicht «H05», «AK7», Zahl)
+  if (/^[^\d\s]{1,4}$/u.test(last.text.trim()) && gap > 3 * lh) return ws.slice(0, -1);
+  return ws;
+}
+
+/**
+ * Zeilen aus dem Ergebnis von tesseract: Visum weg, unsichere Störwörter weg, Zeile allein mit einem Kürzel ganz rechts
+ * (Visum, das tesseract als eigene Zeile liest) weg. Sicherheit gewichtet mit der Textlänge.
+ */
+export function linesFromBlocks(data: TData): { text: string; confidence: number; lines: OcrLine[] } {
+  const lines: OcrLine[] = [];
+  const all = (data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines));
+  const right = Math.max(1, ...all.map((l) => l.bbox.x1));
+  for (const l of all) {
+    const words = dropVisum(l.words.filter((w) => w.text.trim()));
+    if (words.length === 1 && /^\p{L}{1,3}$/u.test(words[0]!.text.trim()) && words[0]!.bbox.x0 > right * 0.7) continue;
+    const f = filterLine(words);
+    if (f) lines.push({ ...f, bbox: l.bbox });
+  }
+  // mittlere Sicherheit, gewichtet mit der Textlänge (kurze Störzeilen zählen wenig)
+  const n = lines.reduce((a, l) => a + l.text.length, 0);
+  const kept = n ? lines.reduce((a, l) => a + l.confidence * l.text.length, 0) / n : 0;
+  // viel weggelassen (Handschrift, Fleck) → gesamthafte Sicherheit von tesseract zählt mit
+  const confidence = Math.min(kept, Math.max(data.confidence, kept - 15));
+  return { text: lines.map((l) => l.text).join("\n"), confidence, lines };
 }
 
 // ---------------------------------------------------------------- Text → Meldungen
 
-type Fn = (t: string) => string;
+type Fn = (t: string, o?: core.CleanOcrOptions) => string;
 const kern = core as unknown as { cleanOcr?: Fn; splitMeldungen: (t: string) => string[] };
 
 /** OCR-Fehler glätten: Kern (`cleanOcr`) und Grundregeln (Trennstriche, Leerzeichen, Störzeichen) */
-export function cleanOcrText(t: string): string {
+export function cleanOcrText(t: string, opts?: core.CleanOcrOptions): string {
   let s = t.replace(/\r/g, "").replace(/[|¦]\s*$/gm, "").replace(/^[\s|¦_—–-]+$/gm, "")
     // Störzeichen am Zeilenanfang («[0755», «| H04»)
     .replace(/^[^\p{L}\d(«"]+/gmu, "");
   s = s.replace(/[ \t]+\|[ \t]+/g, " | ");
-  s = kern.cleanOcr ? kern.cleanOcr(s) : s.replace(/(\p{L})-\n(\p{Ll})/gu, "$1$2");
+  s = kern.cleanOcr ? kern.cleanOcr(s, opts) : s.replace(/(\p{L})-\n(\p{Ll})/gu, "$1$2");
   return s.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").trim();
 }
 
@@ -252,8 +354,12 @@ function segment(tok: string): string | null {
 export function fixOcrTokens(line: string, isCell?: (c: string) => boolean): string {
   return line.split(/(\s+)/).map((t) => {
     if (/^\s*$/.test(t)) return t;
+    // einzelnes Störzeichen (Tabellenstrich, Fleck) zwischen Zeit und Melder: weg
+    if (/^[\\|)(\][{}!'‚„`´^~]$/.test(t)) return "";
     const m = /^([^\p{L}\d]*)(.*?)([^\p{L}\d]*)$/u.exec(t)!;
-    const [, pre, core, post] = m as unknown as [string, string, string, string];
+    let [, pre, core, post] = m as unknown as [string, string, string, string];
+    // Störzeichen vor Melder/Planquadrat («!'H05», «)H01»)
+    if (/^[\\|)(\][{}!'‚„`´]+$/.test(pre) && /^(?:[Hh][O0o\d]|A[A-Z]\d)/.test(core)) pre = "";
     let c = core;
     if (/^[Hh][OoDQ0-9IlL|SsZzB]{2,3}$/.test(c)) c = "H" + toDigits(c.slice(1).replace(/[Oo]{2}/, "O")).slice(0, 2);
     else if (/^[0-2Oo][0-9OoIlSB][0-5Oo][0-9OoIlSB]$/.test(c) && /\d/.test(c)) c = toDigits(c);
@@ -261,6 +367,10 @@ export function fixOcrTokens(line: string, isCell?: (c: string) => boolean): str
     else if (/^R[Iıil1tT][gqGQ](N|NO|O|SO|S|SW|W|NW)$/.test(c)) c = "Rtg " + c.slice(3);
     else if (/^R[Iıil1tT][GQ]$/.test(c)) c = "Rtg";
     else if (/^[2z]iv$/.test(c)) c = "ziv";
+    // «3RtgS», «3RtgSW» (Leerschläge verschluckt)
+    else if (/^\d{1,2}R[tTIl1ı][gq](?:N|NO|O|SO|S|SW|W|NW)?$/.test(c)) c = c.replace(/^(\d{1,2})R..(\w*)$/, (_m, n: string, d: string) => `${n} Rtg${d ? " " + d : ""}`);
+    // «Pwziv», «Fzgn»
+    else if (/^(?:Pw|Lw|Fz|Spz|Kpz|Pers)(?:ziv|gn)$/i.test(c)) c = c.replace(/(ziv|gn)$/i, " $1");
     else if (/^[9g][nm]$/.test(c)) c = "gn";
     else if (/^A[A-Z]\d{1,2}[A-D]$/.test(c) && isCell?.(c.slice(0, -1))) c = c.slice(0, -1) + " " + c.slice(-1);
     else if (/^\d\.(?:gn|ziv|Fz|Pers)$/i.test(c)) c = c.replace(".", " ");
@@ -320,8 +430,8 @@ const HEADER = /^\s*(?:datum|zeit|meldung|lagejournal|journal|melder|nr\.?|seite
  * Erkannten Text in einzelne Meldungen trennen: `splitMeldungen` aus dem Kern; trennt der (noch) nicht,
  * hier nach Zeilen mit Zeitangabe am Anfang (Folgezeilen hängen an der vorherigen).
  */
-export function ocrToMeldungen(text: string, isCell?: (c: string) => boolean, days?: string[]): string[] {
-  const clean = cleanOcrText(text).split("\n").map((l) => stripTail(fixOcrTokens(l, isCell))).join("\n");
+export function ocrToMeldungen(text: string, isCell?: (c: string) => boolean, days?: string[], nai?: string[]): string[] {
+  const clean = cleanOcrText(text, { isCell, nai }).split("\n").map((l) => stripTail(fixCircle(fixOcrTokens(l, isCell)))).join("\n");
   const form = formToMeldung(clean, days);
   if (form) return [form];
   const k = kern.splitMeldungen(clean).map((x) => x.trim()).filter(Boolean);
@@ -341,13 +451,23 @@ export function ocrToMeldungen(text: string, isCell?: (c: string) => boolean, da
   return out.map(tidy).filter(Boolean);
 }
 
+/** Kreis-Zeichen nach (erst jetzt korrigiertem) Planquadrat bzw. «Rtg»: «AK7 ©» → AK7 C, «Rtg ©» → Rtg O */
+const fixCircle = (l: string) => l.replace(/\b(A[A-Z]\d{1,2}) ?[©€¢](?=$|[\s,.;])/g, "$1 C").replace(/\b(Rtg) ?[©®@](?=$|[\s,.;])/g, "$1 O");
+
 /** Tabellenstriche zu Leerzeichen; Visum-Kürzel/Störzeichen am Ende («… Rtg N mb», «\\s») weg */
 const tidy = (s: string) => stripTail(s.replace(/\s*[|¦]\s*/g, " ").replace(/\s{2,}/g, " ").trim());
+/** kurze Wörter am Zeilenende, die zur Meldung gehören (Einheiten, «zieht ab», «fährt vor») */
+const TAIL_KEEP = /\s(?:\d+\s?(?:m|km|cm|mm|h|s|t|l|kg)|ab|an|in|um|zu|da|ob|vor|aus|ca|km|min)$/i;
 function stripTail(s: string): string {
   let t = s.trim();
-  for (let k = 0; k < 3; k++) if (!/\s(?:ab|an|in|um|zu|da|ob|vor|aus)$/i.test(t)) t = t.replace(/\s+(?:[\\/|}{\]\[()~_.,;:'"‚„“”-]*[a-zäöü]{0,2}[\\/|}{\]\[~_.,;:'"‚„“”-]*)$/u, "").trim();
+  for (let k = 0; k < 3; k++) {
+    // Störzeichen mit Klammer/Strich am Ende («… bezogen EN]», «… W |l»)
+    t = t.replace(/\s+\S{0,3}[\][{}|\\]\S{0,2}$/u, "").trim();
+    if (TAIL_KEEP.test(t)) break;
+    t = t.replace(/\s+(?:[\\/|}{\]\[()~_.,;:'"‚„“”-]*[a-zäöü]{0,2}[\\/|}{\]\[~_.,;:'"‚„“”-]*)$/u, "").trim();
+  }
   return t;
-};
+}
 
 /** Zeilen mit Bildlage → Herkunft für die Anzeige («Zeile 3») */
 export function originOf(stamp: string, i: number, n: number): string {
