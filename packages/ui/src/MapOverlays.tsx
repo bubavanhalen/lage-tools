@@ -26,9 +26,11 @@ export interface EventBannerProps {
   onClose: () => void;
   /** optional: Knopf «Bearbeiten» */
   onEdit?: (e: LageEvent) => void;
+  /** optional: Anhänge (Miniatur/Büroklammer) nach dem Meldungstext */
+  extra?: ReactNode;
 }
 
-export function EventBanner({ event, days, onClose, onEdit }: EventBannerProps) {
+export function EventBanner({ event, days, onClose, onEdit, extra }: EventBannerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ maxW?: number; top?: number; maxH?: number }>({});
 
@@ -95,6 +97,7 @@ export function EventBanner({ event, days, onClose, onEdit }: EventBannerProps) 
       {event.road && <span className="mo-road">auf {event.road}</span>}
       {event.desc && <span className="mo-desc">{event.desc}</span>}
       <span className="mo-msg">{event.text}</span>
+      {extra}
       {onEdit && <button className="mo-btn" onClick={() => onEdit(event)} title="Meldung bearbeiten">✎ Bearbeiten</button>}
       <button className="mo-x" onClick={onClose} aria-label="Auswahl aufheben" title="Schliessen (Esc)">×</button>
     </div>

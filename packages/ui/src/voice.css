@@ -1,0 +1,120 @@
+/* Sprechen (Mikrofon-Knopf, Status unter dem Meldungsfeld, Memo-Player, Einstellungen) – nur Tokens aus theme.css */
+
+.vc-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.vc-btn {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 10px;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  border-radius: 999px; font-weight: 600;
+}
+.vc-btn svg { position: relative; z-index: 1; }
+.vc-btn .vc-label { position: relative; z-index: 1; }
+.vc-btn .vc-ring {
+  position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 calc(var(--lvl, 0) * 7px) color-mix(in srgb, var(--rot) 28%, transparent);
+  transition: box-shadow .08s linear;
+}
+.vc-btn.rec { background: var(--rot); border-color: var(--rot); color: #fff; }
+.vc-btn.rec.armed { background: var(--muted); border-color: var(--muted); }
+.vc-btn.busy { opacity: .7; }
+.vc-gear { min-height: 34px; padding: 0 7px; border-color: transparent; background: transparent; color: var(--muted); display: inline-flex; align-items: center; }
+.vc-gear:hover, .vc-gear[aria-expanded="true"] { color: var(--ink); border-color: var(--line); }
+
+/* Status unter dem Feld */
+.vc-status {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; font-size: 13px; line-height: 1.35;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
+}
+.vc-status.rec { border-color: var(--rot); background: var(--rot-soft); }
+.vc-status.rec.armed { border-color: var(--muted); background: var(--grid); }
+.vc-status.ok { border-color: var(--ok); }
+.vc-status.saved { border-color: var(--warn); }
+.vc-status.err { border-color: var(--rot); color: var(--rot); }
+.vc-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--rot); animation: vc-blink 1s steps(2, start) infinite; flex: none; }
+@keyframes vc-blink { to { opacity: .25; } }
+.vc-time { font-weight: 600; min-width: 34px; }
+.vc-hint { color: var(--muted); }
+.vc-status.rec .vc-hint { color: var(--ink); }
+.vc-bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 16px; }
+.vc-bars i { width: 3px; height: 100%; border-radius: 1px; background: color-mix(in srgb, var(--rot) 22%, transparent); }
+.vc-bars i:nth-child(odd) { height: 70%; }
+.vc-bars i.on { background: var(--rot); }
+.vc-live { flex-basis: 100%; font-size: 13.5px; color: var(--ink); }
+.vc-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--ink); animation: vc-rot .8s linear infinite; flex: none; }
+@keyframes vc-rot { to { transform: rotate(360deg); } }
+.vc-pct { color: var(--muted); }
+.vc-ok { color: var(--ok); font-weight: 600; }
+.vc-changes { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; flex-basis: 100%; color: var(--muted); }
+.vc-ch s { text-decoration: none; font-style: italic; }
+.vc-ch b { color: var(--ink); font-weight: 600; }
+.vc-raw { color: var(--muted); }
+.vc-raw summary { cursor: pointer; display: inline; }
+.vc-raw[open] { flex-basis: 100%; }
+.vc-raw span { display: block; font-style: italic; overflow-wrap: anywhere; }
+.vc-x { min-height: 24px; padding: 0 6px; margin-left: auto; border-color: transparent; background: transparent; color: var(--muted); font-size: 13px; }
+.vc-x:hover { color: var(--ink); }
+.chipbtn.primary { padding: 2px 12px; }
+
+/* Memo-Player */
+.vc-play { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 1px 10px 1px 8px; border-radius: 999px; font-size: 12.5px; }
+.vc-play > span:first-child { font-size: 10px; width: 10px; text-align: center; }
+.vc-play.on { border-color: var(--ink); }
+.vc-play.ph { width: 92px; height: 26px; border-radius: 999px; background: var(--grid); }
+.vc-play.none { border: 1px dashed var(--line); color: var(--muted); background: transparent; cursor: default; }
+.vc-prog { position: relative; width: 38px; height: 4px; border-radius: 2px; background: var(--grid); overflow: hidden; }
+.vc-prog i { position: absolute; inset: 0 auto 0 0; background: var(--ink); }
+
+/* Memos ohne Meldung */
+.vc-tray { display: grid; gap: 4px; }
+.vc-tray-head { display: inline-flex; align-items: center; gap: 4px; justify-self: start; font-size: 13px; color: var(--warn); }
+.vc-tray-head svg { width: 14px; height: 14px; }
+.vc-memo { display: flex; align-items: center; gap: 8px; padding: 3px 0 3px 4px; border-top: 1px solid var(--grid); font-size: 13px; }
+.vc-memo-t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+
+/* Einstellungen */
+.vc-pop { position: fixed; z-index: 2000; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 32px -8px rgba(0,0,0,.35); padding: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+.vc-pop.sheet { left: 8px; right: 8px; bottom: 8px; }
+.sp-settings { display: grid; gap: 8px; font-size: 14px; }
+.sp-head b { font-family: var(--f-display); font-weight: 600; font-size: 19px; margin-right: auto; line-height: 1; }
+.sp-x { min-height: 28px; padding: 0 8px; border-color: transparent; background: transparent; }
+.sp-opt { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; line-height: 1.35; }
+.sp-opt.on { border-color: var(--ink); }
+.sp-opt.off { opacity: .55; cursor: default; }
+.sp-opt input { margin-top: 3px; }
+.sp-indent { display: grid; gap: 6px; margin-left: 26px; }
+.sp-warn { padding: 8px 10px; border-left: 3px solid var(--warn); background: var(--paper); border-radius: 0 6px 6px 0; }
+.sp-warn p { margin: 0; }
+.sp-model { display: grid; gap: 6px; }
+.btnrow.sp-model { display: flex; }
+.sp-model .progress { height: 24px; }
+.sp-bar { background: var(--ok) !important; }
+.sp-ok { color: var(--ok); font-weight: 600; margin-right: auto; }
+.sp-size button { font-size: 13px; padding: 4px 10px; }
+.offline .sp-model { margin-top: 2px; }
+
+@media (max-width: 360px) {
+  .vc-btn:not(.rec) .vc-label { display: none; }
+  .vc-btn { padding: 6px 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .vc-dot { animation: none; } }
+.vc-status.err > span, .vc-status.saved > span { flex: 1 1 200px; min-width: 0; }
+.vc-play.sm { min-height: 22px; padding: 0 8px 0 6px; font-size: 11.5px; gap: 5px; }
+.vc-play.sm .vc-prog { width: 24px; }
+
+/* Warteschlange: eine Zeile je Memo (wartet / erkenne … / Vorschlag) */
+.vc-queue { display: grid; gap: 4px; }
+.vc-job { padding: 5px 8px; flex-wrap: nowrap; gap: 8px; }
+.vc-job.wait { border-style: dashed; color: var(--muted); }
+.vc-job .chipbtn { margin-left: auto; flex: none; }
+.vc-job .vc-play { flex: none; }
+.vc-job-t { flex: 1; min-width: 0; font-weight: 600; line-height: 1.25; }
+.vc-job-t small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.vc-job.wait .vc-job-t { font-weight: 500; }
+.vc-wait { width: 12px; height: 12px; border-radius: 50%; border: 2px dotted var(--muted); flex: none; }
+.vc-warn { color: var(--warn); font-weight: 600; flex-basis: 100%; }
+.vc-sug { border-left: 4px solid var(--warn); background: var(--hi); }
+.vc-sug-t { flex: 1 1 150px; min-width: 0; overflow-wrap: anywhere; }
+.vc-sug .br-preview { flex-basis: 100%; margin: 0; }
+.vc-sug-b { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.sp-load { display: flex; align-items: center; gap: 8px; }
+.sp-load .progress { flex: 1; }
+.sp-dev { border-left: 3px solid var(--warn); padding-left: 8px; }

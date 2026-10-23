@@ -27,6 +27,28 @@ export interface SourceRef {
   ref?: string;
 }
 
+/** Anhang (Foto, Sprachmemo) – Metadaten im Ereignis bzw. in der Übung, Inhalt (Blob) im Gerätespeicher */
+export interface Attachment {
+  id: string;
+  kind: "foto" | "audio";
+  /** MIME-Typ, z. B. «image/jpeg», «audio/webm» */
+  mime: string;
+  /** ISO-Zeit der Aufnahme */
+  createdAt: string;
+  /** Grösse in Bytes */
+  size?: number;
+  /** Bild: Breite/Höhe in px; Audio: Dauer in s */
+  width?: number;
+  height?: number;
+  duration?: number;
+  /** erkannter Text (Foto: Texterkennung, Audio: Transkript, roh) */
+  text?: string;
+  /** womit erkannt, z. B. «ocr-offline», «whisper-offline», «browser», «ki» */
+  engine?: string;
+  /** auch an ein Planquadrat gehängt, z. B. «AG13» */
+  cell?: string;
+}
+
 export interface LageEvent {
   id: string;
   /** Revision: steigt bei jeder Änderung */
@@ -34,6 +56,8 @@ export interface LageEvent {
   /** Gerät, das die letzte Änderung gemacht hat */
   device: string;
   updatedAt: string;
+  /** Anhänge (IDs in `Exercise.attachments`), z. B. Foto des Meldezettels, Sprachmemo */
+  attachments?: string[];
   deleted?: boolean;
 
   /** Zeitpunkt der Beobachtung / Handlung (ISO, lokale Zeit) */
@@ -142,6 +166,8 @@ export interface Exercise {
   /** Lagejournal */
   events?: LageEvent[];
   places?: Place[];
+  /** Anhänge (nur Metadaten; Inhalt im Gerätespeicher, beim Export als Datei mitgegeben) */
+  attachments?: Attachment[];
   /** Entscheide zu Hinweisen (Hinweis-ID → bestätigt/verworfen) */
   hintDecisions?: Record<string, HintDecision>;
 }

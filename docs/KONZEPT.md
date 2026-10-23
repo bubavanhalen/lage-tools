@@ -28,7 +28,7 @@
 1. Projektgerüst, Kern, Karten-Shell, GitHub Pages ✅
 2. Führungsraster-Editor (beide Varianten, PDF-Export) und NAI-Import ✅
 3. Lagejournal: Texteingabe, Karte, Zeitstrahl, offline (Kartenpakete) ✅
-4. Lagejournal: Hinweise zu Rot (4a ✅), Foto- und Spracheingabe (4b), KI optional (4c)
+4. Lagejournal: Hinweise zu Rot (4a ✅), Foto- und Spracheingabe (4b ✅), KI optional (4c)
 5. Übungsauswertung: Import, Auswertung, AAR-Regie
 6. vNext: Abgleich Gerät ↔ Gerät
 
@@ -85,3 +85,10 @@ Das Lagejournal gibt **Hinweise, keine Fakten**: Jeder Hinweis nennt Auslöser (
 - NAI mit zugeteiltem Trupp und Geländetyp («NAI 2 · H03»).
 - Bedienung: Reiter «Hinweise» mit Zahl der offenen, kompakte Liste, Klick zeigt Begründung, Auslöser, Karte; Entscheide haften auch bei Nachträgen; Hinweise folgen Lagezeit und Zeitfenster; CSV und Anhang im Journal-PDF.
 - Leitlinie gegen Alarm-Müdigkeit: «hoch» nur, wenn etwas zu prüfen oder zu tun ist. Messung: 25 ruhige 6-h-Lagen ohne einen «hoch»-Hinweis.
+
+## Lagejournal – Foto und Sprache (Etappe 4b)
+- **Foto:** Meldezettel oder Journalseite fotografieren/hochladen/einfügen. Gedruckter Text offline erkannt (tesseract.js, ca. 5 MB, erst bei Gebrauch geladen), Papier gerade ziehen, automatisch drehen, Hinweis bei dunklem/unscharfem Foto. Handschrift: KI (Etappe 4c).
+- **Sprache:** Mikrofon halten/antippen/Leertaste; Memo wird immer gespeichert. Erkennung offline mit Whisper (small, ca. 250 MB, einmal laden; mehrere Threads, WebGPU falls vorhanden) oder wahlweise Browser-Erkennung (online, nur nach Einwilligung). Warteschlange: Sprechen blockiert nie, Restzeit je Memo, Abbrechen.
+- **Funksprache offline übersetzt:** Buchstabieralphabet, gesprochene Zahlen und Zeiten (auch Schweizerdeutsch), Elemente, Planquadrate, NAI, Koordinaten, Richtungen; Funkfloskeln entfernt.
+- **Mehrere Meldungen:** Foto/Memo → Übersicht mit Vorschau je Meldung, einzeln oder alle übernehmen (gleich wie Enter im Meldungsfeld). Nichts vermischt sich mit getipptem Text.
+- **Anhänge:** an Meldung oder Planquadrat (Kamera-Symbol auf der Karte), Bildbetrachter, Memo-Player; «Übung speichern» mit Anhängen als `.lage.zip`.

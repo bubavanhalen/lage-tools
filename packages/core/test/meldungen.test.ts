@@ -146,6 +146,8 @@ const ROWS: Array<[string, Row]> = [
   ["H01 Kolonne 4 Duro", { sym: "kolonne", kind: "feind", count: 4, wo: "melder", desc: "4 gegnerische Lastwagen (Kolonne)", sidc: "SHGPEVUL-------" }],
   ["Rot Det 2 Patrouille AH10 Rtg N", { sym: "patrouille", kind: "feind", wo: "raster", desc: "Patrouille", sidc: "GHOPPT----****X" }],
   ["H03: Det 1 Checkpoint", { sym: "kontrollposten", kind: "feind", wo: "zuletzt", desc: "Checkpoint", sidc: "GHGPGPPK--****X" }],
+  ["H05 Checkpoint AK7 bezogen", { sym: "kontrollposten", kind: "eigen", wo: "raster", desc: "Checkpoint", sidc: "GFGPGPPK--****X" }],
+  ["H05 gn Checkpoint AK7 errichtet", { sym: "kontrollposten", kind: "feind", wo: "raster", desc: "gegnerischer Checkpoint", sidc: "GHGPGPPK--****X" }],
   ["H02 Det 2 2 Pers AJ8", { sym: "inf_trp", kind: "feind", count: 2, wo: "raster", desc: "2 gegnerische Personen", sidc: "SHGPUCI----A---" }],
   ["Zug 1 Rtg N AE6", { sym: "einheit", kind: "eigen", wo: "raster", desc: null, sidc: "SFGPU----------" }],
   ["Gr 3 bezieht Stellung AF7", { sym: "stellung", kind: "eigen", wo: "raster", desc: "Stellung", sidc: "GFMPSF----****X" }],
@@ -249,6 +251,22 @@ describe("Sichtungen ohne Katalogbegriff sind nie eigene Lage", () => {
     "H04 eig Patr AG10",
   ])("eigene Lage bleibt eigen: %s", (text) => {
     expect(parseMeldung(text, ctx()).kind).toBe("eigen");
+  });
+  // eigene Anlage nur mit eindeutigem Verb; «errichtet», «aufgebaut», «eingerichtet» ohne «wir» = Sichtung
+  it.each([
+    ["H05 Checkpoint AK7 bezogen", "eigen"],
+    ["H05 Checkpoint AK7 beziehen", "eigen"],
+    ["H05 Checkpoint AK7 in Betrieb", "eigen"],
+    ["H05 Checkpoint AK7 in Betrieb genommen", "eigen"],
+    ["H05 wir haben Checkpoint AK7 eingerichtet", "eigen"],
+    ["H05 Checkpoint AK7 eingerichtet, wir kontrollieren", "eigen"],
+    ["H05 wir richten Checkpoint AK7 ein", "eigen"],
+    ["H05 Checkpoint AK7 errichtet", "feind"],
+    ["H05 Checkpoint AK7 aufgebaut", "feind"],
+    ["H05 Checkpoint AK7 eingerichtet", "feind"],
+    ["H05 Sperre AK7 errichtet", "feind"],
+  ] as const)("eigene Anlage: %s → %s", (text, kind) => {
+    expect(parseMeldung(text, ctx()).kind).toBe(kind);
   });
   it("Lage: «H03: 1 weisser Lieferwagen AO2» verschiebt H03 nicht", () => {
     const events = ex.events!.filter((e) => e.t <= "2030-05-14T19:00");

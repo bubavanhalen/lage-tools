@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import L from "leaflet";
 import {
-  eventFromDraft,
   formatLv95,
   isoOf,
   lastPosition,
@@ -36,7 +35,13 @@ import { RoadChoice, RoadEdit, roadOutside, useRoadChoice, type RoadPatch, type 
 import { kindText } from "./journalLayer";
 import { WindowHint } from "./mapedit";
 import { inWindow } from "@lage/core";
-import { ShapeButton, shapeFits, shapePatch, takeDrawing } from "./ShapeDraw";
+import { ShapeButton, shapePatch, takeDrawing } from "./ShapeDraw";
+import { addEvents, buildEvent, commitTexts } from "./commit";
+import { PhotoButton, PendingAttachment } from "./PhotoInput";
+import { AttachmentChips } from "./Attachments";
+import { attachmentsOf, deleteAttachmentBlob } from "./attachmentStore";
+import type { Attachment } from "@lage/core";
+import { RowMemos, VoiceButton, VoiceStatus, useVoice } from "./VoiceInput";
 
 interface Props {
   ex: Exercise;
@@ -148,6 +153,12 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   };
   /** Strassenwahl von Hand (Kreuzung), bleibt wie die Zeichenwahl bis zum Eintragen */
   const [roadPick, setRoadPick] = useState<RoadPick | null>(null);
+  /** Anhang (Foto), der an die nächste eingetragene Meldung gehängt wird */
+  const [pendingAtt, setPendingAtt] = useState<Attachment | null>(null);
+  /** Sprechen: Memo → Meldungsfeld (eine Meldung) bzw. Übersicht (mehrere) */
+  const voice = useVoice({ ex, update, say, text, setText, day, input: inputRef, onAttach: setPendingAtt, pendingId: pendingAtt?.id,
+    onDetach: (id) => setPendingAtt((p) => (p?.id === id ? null : p)),
+    onCommit: (texts, a) => { const evs = commitTexts(texts, { ex, device, update, day, attachment: a }); const last = evs[evs.length - 1]; if (last) onSelect(last.id); } });
 
   // Taste «N» (ausserhalb von Eingabefeldern): zurück in die Meldungszeile
   useEffect(() => {
@@ -241,32 +252,20 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     const sd = drawn ?? shapeDraft;
     if (!draft.melder && !confirmNoMelder) { setConfirmNoMelder(true); return; }
     setConfirmNoMelder(false);
-    const ev = eventFromDraft({ ...draft, pos: effPos, where: effWhere ? { kind: manualPos ? "karte" : "ort", label: effWhere } : undefined }, device);
-    if (symOverride) {
-      ev.sym = symOverride.key; ev.aff = symOverride.aff; ev.sidc = symOverride.sidc; ev.echelon = symOverride.echelon; ev.status = symOverride.status; ev.desc = choiceDesc;
-      // neutral = Zugehörigkeit N, Seite rot (Art «unklar»), nie «ul»
-      ev.side = sideOfAff(symOverride.aff);
-      if (ev.side === "blau") ev.unit = ev.unit || ev.melder || "";
-      else if (ev.unit && ev.unit === ev.melder) ev.unit = "";
-    }
-    if (draft.from !== undefined && ev.from === undefined) ev.from = draft.from;
-    if (draft.fromLabel && !ev.fromLabel) ev.fromLabel = draft.fromLabel;
-    if (draft.roadHint && !ev.roadHint) ev.roadHint = draft.roadHint;
-    if (road) { ev.angle = road.angle; if (road.road) ev.road = road.road; }
-    // genannte Strasse liegt ausserhalb des gemeldeten Feldes: Feld nachführen
-    const out = roadOutside(road, effWhere0 ?? "", ex.sheets);
-    if (out?.cell) ev.cells = [out.cell];
-    if (roadTarget && roadPick?.none) ev.roadNone = true;
-    if (sd && shapeFits(sd, ev.sym)) Object.assign(ev, shapePatch(sd, ex.sheets));
-    update((x) => {
-      x.events = [...(x.events ?? []), ev];
-      if (!x.days.includes(ev.t.slice(0, 10))) x.days = [...x.days, ev.t.slice(0, 10)].sort();
-      const remember = (side: Side, u?: string) => { if (u && !x.units[side].some((v) => v.toLowerCase() === u.toLowerCase())) x.units[side] = [...x.units[side], u]; };
-      remember("blau", ev.melder);
-      remember(ev.side, ev.unit);
-      if (found && effPos0 === found.pos && !(x.places ?? []).some((p) => p.name === found.name)) x.places = [...(x.places ?? []), { name: found.name, pos: found.pos }];
-      return x;
+    // Eintrage-Weg in commit.ts (gleich für mehrere Meldungen aus Foto/Sprachmemo)
+    const ev = buildEvent(draft, device, ex, {
+      pos: effPos, where: effWhere, whereKind: manualPos ? "karte" : "ort",
+      sym: symOverride ? { ...symOverride, desc: choiceDesc } : undefined,
+      road,
+      // genannte Strasse liegt ausserhalb des gemeldeten Feldes: Feld nachführen
+      roadCell: roadOutside(road, effWhere0 ?? "", ex.sheets)?.cell,
+      roadNone: !!(roadTarget && roadPick?.none),
+      shape: sd,
+      attachments: pendingAtt ? [pendingAtt.id] : undefined,
+      source: pendingAtt ? { kind: pendingAtt.kind === "audio" ? "audio" : "image", ref: pendingAtt.id } : undefined,
     });
+    update((x) => addEvents(x, [ev], { place: found && effPos0 === found.pos ? found : undefined, attachments: pendingAtt ? [pendingAtt] : undefined }));
+    setPendingAtt(null);
     setText(""); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setPickOpen(false); setRoadPick(null); setShapeDraft(undefined);
     onSelect(ev.id);
     if (ev.pos && !map.getBounds().contains(toLatLng(ev.pos))) map.panTo(toLatLng(ev.pos));
@@ -345,6 +344,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             // Alt+1/2/3: Einordnung festlegen
             if (e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setKind(KINDS[+e.key - 1]![0]); }
           }} />
+        <VoiceStatus v={voice} />
         {draft ? (
           <div className="preview">
             <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}>{dayLabel(draft.t, ex.days)} {draft.t.slice(11, 16)}</span>
@@ -386,6 +386,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         )}
         <div className="btnrow">
           <button className="primary" disabled={!draft} onClick={add}>Eintragen</button>
+          <PhotoButton ex={ex} day={day} say={say} onAttach={(a) => { setPendingAtt(a); inputRef.current?.focus(); }}
+            onCell={(a) => update((x) => addEvents(x, [], { attachments: [a] }))}
+            onCommit={(texts, a) => { const evs = commitTexts(texts, { ex, device, update, day, attachment: a }); const last = evs[evs.length - 1]; if (last) onSelect(last.id); }} />
+          <VoiceButton v={voice} />
+          {pendingAtt && <PendingAttachment att={pendingAtt} onRemove={() => { if (pendingAtt.kind === "foto") void deleteAttachmentBlob(pendingAtt.id); setPendingAtt(null); }} />}
           {manualPos && <span className="help mono">{formatLv95(manualPos)}</span>}
         </div>
       </div>
@@ -429,6 +434,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
                         {e.nai && <span className="naichip">{e.nai}</span>}
                         {!e.cells?.length && !e.nai && (e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>)}
                         {quality && <QualityMarks e={e} q={quality.get(e.id)} events={events} />}
+                        {e.attachments?.length ? <><AttachmentChips list={attachmentsOf(ex, e.attachments).filter((a) => a.kind !== "audio")} /><RowMemos list={attachmentsOf(ex, e.attachments)} /></> : null}
                         {fresh && <span className="newdot" title="in den letzten 10 Minuten erfasst">neu</span>}
                       </span>
                     </span>
