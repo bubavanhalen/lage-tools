@@ -4,7 +4,9 @@
  * - Randbeschriftung auf allen vier Seiten (Plex Mono 600 13px, weisser Halo), bei kleinen Feldern ausgedünnt.
  * - Grosse Feldbeschriftung in jedem Feld, skaliert mit dem Zoom (≈ 14,5 % der Feldhöhe), halbtransparent.
  * - Bei grossem Zoom zusätzlich Unterquadranten A B / D C (feines Kreuz + kleine Buchstaben).
- * Beschriftungen werden nur für den sichtbaren Ausschnitt gezeichnet (eine SVG, neu bei Verschieben/Zoom).
+ * Beschriftungen werden nur für den sichtbaren Ausschnitt gezeichnet (eine SVG, neu nach Verschieben/Zoom).
+ * Während einer Zoom-Bewegung folgt die SVG der Karte per CSS-Transform wie Leaflets Vektor-Renderer:
+ * `zoomanim` (Mausrad, +/−, Doppelklick) und `zoom` in jedem Bild (Kamerafahrt `flyTo`, Pinch-Zoom).
  */
 import L from "leaflet";
 import { sheetBounds, type RasterSheet } from "@lage/core";
@@ -54,7 +56,9 @@ const niceStep = (need: number) => [1, 2, 5, 10, 20, 50].find((s) => s >= need) 
 
 class RasterLabels extends L.Layer {
   private svg: SVGSVGElement | null = null;
+  /** linke obere Ecke der SVG und Zoomstufe beim letzten Zeichnen (Bezug für den Transform während des Zooms) */
   private tl: L.LatLng | null = null;
+  private z = 0;
 
   constructor(private sheet: RasterSheet, private o: RasterLayerOptions) {
     super();
@@ -82,14 +86,34 @@ class RasterLabels extends L.Layer {
   }
 
   override getEvents(): { [name: string]: L.LeafletEventHandlerFn } {
-    return { moveend: this.draw, resize: this.draw, viewreset: this.draw, zoomanim: this.animateZoom as L.LeafletEventHandlerFn };
+    return {
+      moveend: this.draw, resize: this.draw, viewreset: this.draw,
+      zoom: this.onZoom, zoomanim: this.animateZoom as L.LeafletEventHandlerFn,
+    };
   }
 
+  /** CSS-animierter Zoom: Ziel-Transform setzen, die Transition läuft synchron mit den Kacheln */
   private animateZoom(e: L.ZoomAnimEvent) {
+    this.follow(e.center, e.zoom);
+  }
+
+  /**
+   * Zoom ohne CSS-Animation (jedes Bild einer Kamerafahrt, Pinch-Zoom, Ende einer Zoom-Animation):
+   * sonst bliebe die Beschriftung bis `moveend` stehen und spränge erst dann an den richtigen Ort.
+   */
+  private onZoom() {
+    const map = this._map;
+    if (!map) return;
+    if (!L.Browser.any3d) { this.draw(); return; }
+    this.follow(map.getCenter(), map.getZoom());
+  }
+
+  /** SVG so verschieben/skalieren, wie sie bei Mitte `center` und Stufe `zoom` liegen muss (wie L.Renderer). */
+  private follow(center: L.LatLng, zoom: number) {
     const map = this._map as L.Map & { _latLngToNewLayerPoint(ll: L.LatLng, z: number, c: L.LatLng): L.Point };
     if (!this.svg || !this.tl || !map) return;
-    const scale = map.getZoomScale(e.zoom, map.getZoom());
-    L.DomUtil.setTransform(this.svg as unknown as HTMLElement, map._latLngToNewLayerPoint(this.tl, e.zoom, e.center), scale);
+    const scale = map.getZoomScale(zoom, this.z);
+    L.DomUtil.setTransform(this.svg as unknown as HTMLElement, map._latLngToNewLayerPoint(this.tl, zoom, center), scale);
   }
 
   private draw() {
@@ -104,6 +128,7 @@ class RasterLabels extends L.Layer {
     const tl = map.containerPointToLayerPoint([-padX, -padY]).round();
     const W = size.x + 2 * padX, H = size.y + 2 * padY;
     this.tl = map.layerPointToLatLng(tl);
+    this.z = map.getZoom();
     L.DomUtil.setPosition(svg as unknown as HTMLElement, tl);
     svg.setAttribute("width", String(W));
     svg.setAttribute("height", String(H));
