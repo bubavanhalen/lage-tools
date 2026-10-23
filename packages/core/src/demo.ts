@@ -69,7 +69,7 @@ const LINES = [
   "T2 0710 H03: 1 ziv Fz (schwarzer Pw) AN6",
   "T2 0712 H05: 2 Kpz AJ9 Rtg W",
   "T2 0720 H03: 1 Fz in NAI 2 Rtg N",
-  "T2 0725 H02: 4 Pers in Linie AK10 Rtg N",
+  "T2 0725 H05: 4 Pers in Linie AP11",
 ];
 
 export function demoExercise(): Exercise {

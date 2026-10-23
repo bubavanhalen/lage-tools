@@ -5,10 +5,12 @@
  * Einklappbar (gemerkt pro Gerät), folgt Lagezeit und Zeitfenster.
  */
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { parseStrength, type CoaIndicator, type Exercise, type RedCoa, type StrengthCompare } from "@lage/core";
 import { hhmm } from "./hintsData";
 import {
-  COA_LABEL, durLabel, expectedLabel, foundLabel, metCount, rowName, STATE_LABEL, windowLabel, type LageRotState,
+  COA_LABEL, countLabel, durLabel, expectedLabel, foundLabel, indCounts, indSign, inWindowLabel, isAgainst, MIND_BIS_TITLE,
+  rowName, shownIndicators, specChip, STATE_LABEL, windowLabel, type LageRotState,
 } from "./lageRot";
 import { dayLabel } from "./Timeline";
 import "./lagerot.css";
@@ -26,7 +28,7 @@ interface Props {
   onSelect: (id: string | null) => void;
   /** Möglichkeit auf der Karte zeigen */
   onMap: (c: RedCoa) => void;
-  /** Indikator-Hinweis wählen */
+  /** Indikator-Hinweis wählen (die Liste springt zum Hinweis – «← zurück zu Lage Rot» bringt zurück) */
   onHint: (id: string) => void;
   /** Meldung wählen (Karte springt) */
   onEvent: (id: string) => void;
@@ -57,6 +59,38 @@ export function LageRotPanel({ ex, lage, t, selected, onSelect, onMap, onHint, o
     return () => window.clearTimeout(id);
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Klick auf einen Indikator-Hinweis: die Liste springt zum Hinweis. Scrollposition merken und – solange die Karte
+  // der Möglichkeit nicht sichtbar ist – unten «← zurück zu Lage Rot» anbieten.
+  const [back, setBack] = useState<Back | null>(null);
+  const hint = (c: RedCoa, id: string) => {
+    const host = ref.current?.closest<HTMLElement>(".panel") ?? null;
+    const sc = scroller(ref.current);
+    if (host) setBack({ host, sc, top: sc ? sc.scrollTop : window.scrollY, coa: c.id });
+    setExp(c, true); // Karte bleibt offen, auch wenn die Möglichkeit abgewählt wird
+    onHint(id);
+  };
+  useEffect(() => {
+    if (!back) return;
+    const card = ref.current?.querySelector<HTMLElement>(`[data-coa="${CSS.escape(back.coa)}"]`);
+    if (!card || typeof IntersectionObserver === "undefined") return;
+    let left = false;
+    const io = new IntersectionObserver(([e]) => {
+      if (!e) return;
+      if (!e.isIntersecting) left = true;
+      else if (left) setBack(null); // wieder zurückgescrollt
+    }, { threshold: 0.3 });
+    io.observe(card);
+    // Karte blieb sichtbar (Hinweis in der Nähe): kein Zurück nötig
+    const tm = window.setTimeout(() => { if (!left) setBack(null); }, 1800);
+    return () => { io.disconnect(); window.clearTimeout(tm); };
+  }, [back]);
+  const goBack = () => {
+    if (!back) return;
+    if (back.sc) back.sc.scrollTo({ top: back.top, behavior: "smooth" }); else window.scrollTo({ top: back.top, behavior: "smooth" });
+    if (coas.some((c) => c.id === back.coa)) { setExp(coas.find((c) => c.id === back.coa)!, true); onSelect(back.coa); }
+    setBack(null);
+  };
+
   const head = (c: RedCoa) => {
     // zu → auf und wählen; auf, nicht gewählt → wählen; gewählt → zu
     if (!isExpanded(c)) { setExp(c, true); onSelect(c.id); }
@@ -83,7 +117,7 @@ export function LageRotPanel({ ex, lage, t, selected, onSelect, onMap, onHint, o
               <ol className="lr-coas">
                 {coas.map((c) => (
                   <CoaCard key={c.id} c={c} ex={ex} t={t} open={isExpanded(c)} sel={c.id === selected}
-                    onHead={() => head(c)} onMap={() => onMap(c)} onHint={onHint} onEvent={onEvent} />
+                    onHead={() => head(c)} onMap={() => onMap(c)} onHint={(id) => hint(c, id)} onEvent={onEvent} />
                 ))}
               </ol>
             ) : (
@@ -94,18 +128,33 @@ export function LageRotPanel({ ex, lage, t, selected, onSelect, onMap, onHint, o
             {lage.more.length > 0 && <MoreCoas more={lage.more} />}
           </div>
           <div className="lr-sec">
-            <h4 className="lr-h">Kräfte Rot{lage.from && <span className="lr-hnote"> · im Zeitfenster ab {hhmm(lage.from, ex.days, t)}</span>}</h4>
+            <h4 className="lr-h">Kräfte Rot{lage.from && <span className="lr-hnote" title="Kräfte und «nicht mehr gesehen» über das ganze Journal bis zur Lagezeit; Spalte «im Fenster» nur Meldungen im Zeitfenster"> · ganzes Journal, «im Fenster» ab {hhmm(lage.from, ex.days, t)}</span>}</h4>
             <ForceTable lage={lage} ex={ex} t={t} onEvent={onEvent} />
             <Feindannahme ex={ex} update={update} compact={compact} />
           </div>
         </div>
       )}
+      {back && createPortal(
+        <button className="lr-back" onClick={goBack} title="Zurück zur möglichen Aktion in Lage Rot">
+          <span aria-hidden="true">←</span> zurück zu Lage Rot
+        </button>, back.host)}
     </section>
   );
 }
 
+interface Back { host: HTMLElement; sc: HTMLElement | null; top: number; coa: string }
+
+/** nächster scrollender Vorfahre (Seitenleiste, Präsentationsspalte); null = Fenster (Handy) */
+function scroller(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
+}
+
 /** übrige Möglichkeiten (genügend Indikatoren, aber nicht ausgewählt): eingeklappt, nur Titel und Indikatoren */
-function MoreCoas({ more }: { more: LageRotState["more"] }) {
+function MoreCoas({ more }: { more: RedCoa[] }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="lr-more">
@@ -115,11 +164,11 @@ function MoreCoas({ more }: { more: LageRotState["more"] }) {
       {open && (
         <ul className="lr-morelist">
           {more.map((c) => {
-            const n = c.indicators.filter((i) => i.met).length;
+            const n = indCounts(c);
             return (
-              <li key={c.id} title={c.indicators.map((i) => `${i.met ? "✓" : "○"} ${i.text}`).join("\n")}>
+              <li key={c.id} title={shownIndicators(c).map((i) => `${indSign(i)} ${i.text}`).join("\n")}>
                 <span className="lr-mt">{c.title}</span>
-                <span className="lr-mn tnum">{n}/{c.indicators.length}</span>
+                <span className="lr-mn tnum">{n.met}/{n.of}{n.against > 0 && <span className="lr-mx"> · {n.against} ✗</span>}</span>
               </li>
             );
           })}
@@ -146,11 +195,13 @@ export function CoaIcon({ label, size = 16 }: { label: RedCoa["label"]; size?: n
   );
 }
 
-/** Indikatoren als Punkte: erfüllt gefüllt, offen leer */
+/** Indikatoren als Punkte (Zähler): erfüllt zuerst, gefüllt (grün), offen leer, Gegenindikatoren rot dahinter */
 function Pips({ c }: { c: RedCoa }) {
+  const list = shownIndicators(c);
   return (
     <span className="lr-pips" aria-hidden="true">
-      {c.indicators.map((i, k) => <i key={k} className={i.met ? "met" : ""} />)}
+      {list.filter((i) => !isAgainst(i)).sort((a, b) => Number(b.met) - Number(a.met)).map((i, k) => <i key={k} className={i.met ? "met" : ""} />)}
+      {list.filter(isAgainst).map((_, k) => <i key={"x" + k} className="against" />)}
     </span>
   );
 }
@@ -160,7 +211,8 @@ function CoaCard({ c, ex, t, open, sel, onHead, onMap, onHint, onEvent }: {
   onHead: () => void; onMap: () => void; onHint: (id: string) => void; onEvent: (id: string) => void;
 }) {
   const w = windowLabel(c, ex.days, t);
-  const n = metCount(c);
+  const n = indCounts(c);
+  const cnt = countLabel(c);
   const pick = (i: CoaIndicator) => { if (i.hintId) onHint(i.hintId); else if (i.events?.length) onEvent(i.events.at(-1)!); };
   const canMap = !!(c.target || c.approach?.length);
   return (
@@ -170,29 +222,30 @@ function CoaCard({ c, ex, t, open, sel, onHead, onMap, onHint, onEvent }: {
         <CoaIcon label={c.label} />
         <span className="lr-kick">{COA_LABEL[c.label]}</span>
         {w ? (
-          <span className={"lr-win tnum" + (w.now ? " now" : "") + (w.past ? " past" : "")} title={w.now ? "Zeitraum hat begonnen" : w.past ? "Zeitraum vorbei" : "erwarteter Zeitraum"}>
-            {w.now ? "jetzt" : "ca."} {w.text}
-          </span>
-        ) : !open ? <span className="lr-cnt tnum" title={`${n} von ${c.indicators.length} Indikatoren erfüllt`}><Pips c={c} /></span> : null}
+          <span className={"lr-win tnum w-" + w.state} title={w.title}>{w.text}</span>
+        ) : !open ? <span className="lr-cnt tnum" title={`${cnt} Indikatoren`}><Pips c={c} /></span> : null}
         <span className="lr-title">{c.title}</span>
       </button>
       {open && (
         <div className="lr-coa-body">
           <div className="lr-row">
             <span className="lr-dt">Indikatoren</span>
-            <span className="lr-dd lr-meter"><b className="tnum">{n} von {c.indicators.length}</b> <Pips c={c} /></span>
+            <span className="lr-dd lr-meter" title={`${n.met} von ${n.of} Indikatoren erfüllt${n.against ? `, ${n.against} ${n.against === 1 ? "spricht" : "sprechen"} dagegen` : ""}`}>
+              <b className="tnum">{n.met} von {n.of} <span className="lr-ok">✓</span>{n.against > 0 && <> · {n.against} <span className="lr-x">✗</span></>}</b> <Pips c={c} />
+            </span>
           </div>
           <ul className="lr-inds">
-            {c.indicators.map((i, k) => {
+            {shownIndicators(c).map((i, k) => {
               const act = i.met && !!(i.hintId || i.events?.length);
+              const x = isAgainst(i);
+              const aria = x ? "spricht dagegen" : i.met ? "erfüllt" : "offen";
+              const body = <><span className="lr-tick" aria-label={aria}>{indSign(i)}</span><span>{i.text}{ruleTag(i) && <span className="lr-rule"> {ruleTag(i)}</span>}</span></>;
               return (
-                <li key={k} className={i.met ? "met" : "off"}>
+                <li key={k} className={x ? "against" : i.met ? "met" : "off"}>
                   {act ? (
-                    <button className="lr-ind" onClick={() => pick(i)} title={indTitle(i, i.hintId ? "Hinweis zeigen" : "Meldung zeigen")}>
-                      <span className="lr-tick" aria-label="erfüllt">✓</span><span>{i.text}{ruleTag(i) && <span className="lr-rule"> {ruleTag(i)}</span>}</span>
-                    </button>
+                    <button className="lr-ind" onClick={() => pick(i)} title={indTitle(i, (x ? "Gegenindikator – " : "") + (i.hintId ? "Hinweis zeigen" : "Meldung zeigen"))}>{body}</button>
                   ) : (
-                    <span className="lr-ind" title={indTitle(i, i.met ? "erfüllt" : "offen – noch nicht beobachtet")}><span className="lr-tick" aria-label={i.met ? "erfüllt" : "offen"}>{i.met ? "✓" : "○"}</span><span>{i.text}{ruleTag(i) && <span className="lr-rule"> {ruleTag(i)}</span>}</span></span>
+                    <span className="lr-ind" title={indTitle(i, x ? "Gegenindikator – spricht dagegen" : i.met ? "erfüllt" : "offen – noch nicht beobachtet")}>{body}</span>
                   )}
                 </li>
               );
@@ -212,7 +265,7 @@ function CoaCard({ c, ex, t, open, sel, onHead, onMap, onHint, onEvent }: {
           )}
           {canMap && (
             <div className="hc-foot">
-              <button className="hc-btn ghost" onClick={onMap} title="Ziel und Annäherung auf der Karte zeigen">
+              <button className="hc-btn ghost" onClick={onMap} title="Ziel, Annäherung und Orte der Indikatoren auf der Karte zeigen">
                 <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><circle cx="8" cy="8" r="1.6" fill="currentColor" /></svg>
                 Auf Karte
               </button>
@@ -228,21 +281,25 @@ function CoaCard({ c, ex, t, open, sel, onHead, onMap, onHint, onEvent }: {
 function ForceTable({ lage, ex, t, onEvent }: { lage: LageRotState; ex: Exercise; t: string; onEvent: (id: string) => void }) {
   const rows = lage.compare.filter((c) => c.found || c.expected !== undefined);
   const withSpec = !!lage.spec;
+  const withWin = !!lage.from;
   const { notSeen } = lage.force;
   if (!rows.length && !notSeen.length) return <p className="lr-empty">Noch nichts erkannt.</p>;
   return (
-    <div className={"lr-tab" + (withSpec ? " spec" : "")} role="table" aria-label="Kräfte Rot">
+    <div className={"lr-tab" + (withSpec ? " spec" : "") + (withWin ? " win" : "")} role="table" aria-label="Kräfte Rot">
       <div className="lr-tr lr-th" role="row">
         <span role="columnheader"><span className="sr">Art</span></span>
-        <span role="columnheader">erkannt</span>
+        <span role="columnheader" title={`ganzes Journal bis zur Lagezeit – ${MIND_BIS_TITLE}`}>erkannt</span>
+        {withWin && <span role="columnheader" title={`nur Meldungen im Zeitfenster ab ${hhmm(lage.from!, ex.days, t)}`}><span className="lr-l">im Fenster</span><span className="lr-s">Fenster</span></span>}
         {withSpec && <><span role="columnheader" title="erwartet (Feindannahme)"><span className="lr-l">erwartet</span><span className="lr-s">erw.</span></span><span role="columnheader">Stand</span></>}
       </div>
       {rows.map((c) => {
         const f = foundLabel(c.found);
+        const w = withWin ? inWindowLabel(c.found) : null;
         return (
           <div key={c.row.key} className={"lr-tr s-" + c.state + (c.row.parent ? " sub" : "") + (c.row.key === "unklar" ? " unk" : "")} role="row">
             <span className="lr-name" role="rowheader">{rowName(c)}</span>
-            <span className="lr-found" role="cell">{f.main}{f.sub && <small>{f.sub}</small>}</span>
+            <span className={"lr-found" + (f.range ? " rng" : "")} role="cell" title={f.range ? MIND_BIS_TITLE : undefined}>{f.main}{f.sub && <small>{f.sub}</small>}</span>
+            {w && <span className={"lr-found lr-inwin" + (w.range ? " rng" : "")} role="cell" title={w.range ? MIND_BIS_TITLE : "im Zeitfenster gemeldet"}>{w.main}{w.sub && <small>{w.sub}</small>}</span>}
             {withSpec && <><span className="lr-exp tnum" role="cell">{expectedLabel(c)}</span><span role="cell"><Stand c={c} /></span></>}
           </div>
         );
@@ -297,7 +354,7 @@ function Feindannahme({ ex, update, compact }: { ex: Exercise; update: (f: (x: E
           onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { e.stopPropagation(); setEdit(null); } }} />
         {(p.rows.length > 0 || p.unknown.length > 0) && (
           <ul className="lr-fa-prev" aria-label="Gelesen">
-            {p.rows.map((r) => <li key={r.key} className={r.parent ? "sub" : ""}><b className="tnum">{r.count}</b> {r.parent && !/^davon /i.test(r.name) ? `davon ${r.name}` : r.name}</li>)}
+            {p.rows.map((r) => <li key={r.key} className={r.parent ? "sub" : ""} title={r.name}>{specChip(r)}</li>)}
             {p.unknown.map((u, k) => <li key={"u" + k} className="unk" title="nicht verstanden – wird nicht gezählt">? {u}</li>)}
           </ul>
         )}

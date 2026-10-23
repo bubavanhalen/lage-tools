@@ -4,9 +4,12 @@
  */
 import { catalogEntry, type CatalogEntry, type Echelon } from "./catalog";
 import { pointInRing } from "./geo";
-import { baseCellAt, dist, type BaseCell } from "./hintgeo";
+import { baseCellAt, type BaseCell } from "./hintgeo";
 import type { LV95 } from "./lv95";
 import type { Area, Exercise, LageEvent } from "./model";
+
+/** Distanz in m (LV95) – schnell (ohne Math.hypot), wird sehr oft gerechnet */
+const dist = (a: LV95, b: LV95): number => { const x = b.e - a.e, y = b.n - a.n; return Math.sqrt(x * x + y * y); };
 
 export const MIN_MS = 60000;
 
@@ -136,6 +139,7 @@ function toPEv(e: LageEvent, sheets: Exercise["sheets"], nais: Area[]): PEv | nu
   if (isFz && !GENERIC_FZ.has(e.sym) && e.sym !== "ziv_fz") types.push([e.sym, fz]);
   if (isAir) types.push([isDrone ? "drohne" : e.sym === "heli_einheit" ? "heli" : e.sym, e.count ?? 1]);
   if (cat?.category === "Waffen") types.push([e.sym, e.count ?? 1]);
+  if (e.sym === "scharfschuetze") types.push(["scharfschuetze", e.count ?? 1]);
   const rot = e.side === "rot";
   const road = e.road || ROAD_NAME_RE.exec(text)?.[1];
   return {
@@ -148,16 +152,39 @@ function toPEv(e: LageEvent, sheets: Exercise["sheets"], nais: Area[]): PEv | nu
   };
 }
 
+/** Aufbereitete Meldung je Meldungs-Objekt (gültig, solange Raster und Flächen dieselben Objekte sind) */
+const PEV_CACHE = new WeakMap<LageEvent, { sheets: unknown; areas: unknown; rev: number; upd: string; v: PEv | null }>();
+/** Meldungen in Zeitfolge je Journal-Objekt (Abspielen: gleiche Meldungen, andere Lagezeit); `snap` erkennt Änderungen im Array */
+const LIST_CACHE = new WeakMap<LageEvent[], { sheets: unknown; areas: unknown; snap: LageEvent[]; revs: string; list: PEv[] }>();
+const revsOf = (events: LageEvent[]) => { let h = ""; for (const e of events) h += `${e.rev}${e.updatedAt}|`; return h; };
+
 /** Meldungen bis `tMs` (aktuelle Revision, ohne gelöschte), älteste zuerst */
 export function prepareRed(ex: Pick<Exercise, "events" | "sheets" | "areas">, tMs: number): PEv[] {
-  const nais = (ex.areas ?? []).filter((a) => a.kind === "nai");
-  const out: PEv[] = [];
-  for (const e of currentEvents(ex.events ?? [])) {
-    if (e.deleted) continue;
-    const v = toPEv(e, ex.sheets ?? [], nais);
-    if (v && v.ms <= tMs) out.push(v);
+  const events = ex.events ?? [];
+  let all = LIST_CACHE.get(events);
+  const same = !!all && all.sheets === ex.sheets && all.areas === ex.areas && all.snap.length === events.length &&
+    all.snap.every((e, i) => e === events[i]) && all.revs === revsOf(events);
+  if (!all || !same) {
+    const nais = (ex.areas ?? []).filter((a) => a.kind === "nai");
+    const list: PEv[] = [];
+    for (const e of currentEvents(events)) {
+      if (e.deleted) continue;
+      let c = PEV_CACHE.get(e);
+      if (!c || c.sheets !== ex.sheets || c.areas !== ex.areas || c.rev !== e.rev || c.upd !== e.updatedAt) {
+        c = { sheets: ex.sheets, areas: ex.areas, rev: e.rev, upd: e.updatedAt, v: toPEv(e, ex.sheets ?? [], nais) };
+        PEV_CACHE.set(e, c);
+      }
+      if (c.v) list.push(c.v);
+    }
+    list.sort((a, b) => a.ms - b.ms || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    all = { sheets: ex.sheets, areas: ex.areas, snap: events.slice(), revs: revsOf(events), list };
+    LIST_CACHE.set(events, all);
   }
-  return out.sort((a, b) => a.ms - b.ms || a.id.localeCompare(b.id));
+  // bis zur Lagezeit (binäre Suche; Liste nach Zeit sortiert)
+  const l = all.list;
+  let lo = 0, hi = l.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (l[m]!.ms <= tMs) lo = m + 1; else hi = m; }
+  return l.slice(0, lo);
 }
 
 /** Lagezeit in ms; ungültig → letzte Meldung */

@@ -44,11 +44,11 @@ describe("parseStrength – Feindannahme in Kurzschrift", () => {
     ["2 Det à 6 Pers", { "elemente:det": 2, pers: 12 }],
     ["3 Zug à 30", { "elemente:zug": 3, pers: 90 }],
     ["Det 1, Det 2", { "elemente:det": 2 }],
-    ["ca. 12–15 Pers", { pers: 15 }],
+    ["ca. 12–15 Pers", { pers: 14 }], // Spanne: Mitte, dazu min/max
     ["zwei Drohnen", { drohne: 2 }],
     ["3 Mg + 1 Pzaw", { mg: 3, pzaw: 1 }],
     ["2 Kpz, 3 Lastw", { fz: 5, kpz: 2, lw: 3 }],
-    ["1 Gr; 4 Trp\n2 Spz", { "elemente:gr": 1, "elemente:trp": 4, fz: 2, spz: 2 }],
+    ["1 Gr; 4 Trp\n2 Spz", { "elemente:gr": 1, "elemente:trp": 4, fz: 2, spz: 2, pers: 22 }], // Pers aus Stufe 18–26
     ["14 Personen und 2 Fahrzeuge", { pers: 14, fz: 2 }],
     ["2 Det (14 Pers, 5 Fz)", { "elemente:det": 2, pers: 14, fz: 5 }],
     ["1 Heli, 2 Pw", { heli: 1, fz: 2 }],
@@ -57,7 +57,7 @@ describe("parseStrength – Feindannahme in Kurzschrift", () => {
     ["Drohne", { drohne: 1 }],
     ["3 x Kpz", { fz: 3, kpz: 3 }],
     ["eine Gruppe, 8 Mann", { "elemente:gr": 1, pers: 8 }],
-    ["1 Hz und 2 Trp", { "elemente:hz": 1, "elemente:trp": 2 }],
+    ["1 Hz und 2 Trp", { "elemente:hz": 1, "elemente:trp": 2, pers: 22 }],
   ];
   for (const [text, want] of cases) it(`«${text.replace(/\n/g, " / ")}»`, () => {
     expect(cnt(text)).toEqual(want);
@@ -112,7 +112,8 @@ describe("estimateRedForce – erkannte Kräfte", () => {
     const f = estimateRedForce(build(["T2 0100 H02: Det 1 2 Fz AK9", "T2 0300 H02: Det 1 3 Fz AK10", "T2 0320 H03: 2 Fz AM10", "T2 0200 H04: Det 2 4 Pers AF12"]), T2("08:00"));
     expect(row(f, "elemente:det")).toMatchObject({ min: 2, max: 2, names: ["Det 1", "Det 2"] });
     expect(row(f, "fz")!.min).toBe(3);
-    expect(row(f, "fz")!.max).toBe(5);
+    // 2 Fz AM10 20 Min nach Det 1 (3 Fz) AK10: erreichbar, nicht mehr – auch in der Obergrenze dasselbe Element
+    expect(row(f, "fz")!.max).toBe(3);
     expect(mm(row(f, "pers"))).toEqual([4, 4]);
   });
   it("Stufe als Spanne (Gr Inf 6–10 Pers); Art unklar nur als eigene Zeile", () => {
@@ -145,7 +146,8 @@ describe("compareStrength – erkannt ↔ erwartet", () => {
     const c = compareStrength(f, parseStrength("2 Det, 6 Pers, 3 Fz, 1 Mg"));
     const st = Object.fromEntries(c.map((x) => [x.row.key, [x.state, x.ratio === undefined ? undefined : Math.round(x.ratio * 100)]]));
     expect(st).toEqual({
-      "elemente:det": ["vollstaendig", 100], pers: ["teilweise", 50], fz: ["mehr", 133], kpz: ["unerwartet", undefined],
+      // 2 Kpz können die 2 Fz von Det 1 sein (erreichbar, nicht mehr): mind. 2 Fz
+      "elemente:det": ["vollstaendig", 100], pers: ["teilweise", 50], fz: ["teilweise", 67], kpz: ["unerwartet", undefined],
       drohne: ["unerwartet", undefined], mg: ["fehlt", 0], unklar: ["offen", undefined],
     });
     expect(c.find((x) => x.row.key === "mg")!.expected).toBe(1);
@@ -171,7 +173,9 @@ describe("computeRedCoas – mögliche Aktionen Rot", () => {
     expect(c.indicators.filter((i) => i.met).map((i) => i.rule)).toEqual(["D1", "C4", "still"]);
     expect(c.approachText).toBe("aus AP10 über Seftigenstrasse");
     expect(c.approach).toHaveLength(2);
-    expect(c.window!.from >= T2("07:00") && c.window!.to > c.window!.from).toBe(true);
+    // Zeitraum ab dem letzten starken Indikator (C4 06:45), nicht ab der Lagezeit
+    expect(c.window!.from >= T2("06:45") && c.window!.to > c.window!.from).toBe(true);
+    expect(c.windowState).toBe("erwartet");
     expect(c.check[0]).toBe("Stellungswechsel H05");
     expect(c.events.length).toBeGreaterThan(2);
   });
@@ -210,16 +214,21 @@ describe("computeRedCoas – mögliche Aktionen Rot", () => {
   });
   it("Aufklärung zur Vorbereitung: Drohne 2× beim eigenen Stao", () => {
     const c = coas(build([...H05, "T2 0430 H05 Drohne über AR10", "T2 0450 H05: Drohne über AQ11"]), T2("05:00")).all;
-    expect(c.find((x) => x.id === "aufklaerung:H05")!.indicators.filter((i) => i.met).map((i) => i.rule)).toEqual(["C3", "D1", "drohne"]);
+    // zwei Drohnen-Meldungen = höchstens zwei zählende Indikatoren; «Drohne 2×» ist schon gezählt
+    const a = c.find((x) => x.id === "aufklaerung:H05")!;
+    expect(a.indicators.filter((i) => i.met).map((i) => i.rule)).toEqual(["C3", "D1"]);
+    expect(a.indicators.find((i) => i.rule === "drohne")!.text).toMatch(/schon gezählt$/);
     expect(kinds(build([...H05, "T2 0430 H01: Drohne über AB3"]), T2("05:00")).some((k) => k.startsWith("aufklaerung"))).toBe(false);
   });
-  it("Infiltration: NAI mit stummem Trupp, Rot in der Nähe", () => {
-    const L = ["T2 0100 H01 Beo Stao AE5 C", "T2 0220 H01: 2 Pers AC7", "T2 0320 H02: 2 Pers AB7 Rtg O"];
+  it("Infiltration: NAI mit stummem Trupp und Checkpoint Rot im NAI", () => {
+    const L = ["T2 0100 H01 Beo Stao AE5 C", "T2 0150 H02: Det 1 Checkpoint AC8", "T2 0320 H02: 2 Pers AB7 Rtg O"];
     const c = coas(build(L), T2("03:30")).all.find((x) => x.kind === "infiltration")!;
     expect(c.id).toBe("infiltration:NAI 1");
-    expect(c.indicators.filter((i) => i.met).map((i) => i.rule)).toEqual(["D3", "nahe"]);
+    expect(c.indicators.filter((i) => i.met).map((i) => i.rule)).toEqual(["D3", "B2"]);
     // Trupp meldet sich regelmässig: keine Lücke, keine Infiltration
     expect(kinds(build([...L, "T2 0325 H01 Beo Stao AE5 C, keine Bewegung"]), T2("03:30")).some((k) => k.startsWith("infiltration"))).toBe(false);
+    // «Rot nahe» zählt nicht zusätzlich, wenn es schon die Lücke (D3) auslöst
+    expect(kinds(build(["T2 0100 H01 Beo Stao AE5 C", "T2 0220 H01: 2 Pers AC7", "T2 0320 H02: 2 Pers AB7 Rtg O"]), T2("03:30")).some((k) => k.startsWith("infiltration"))).toBe(false);
   });
   it("Absetzen/Ausweichen: Meldungen nehmen ab, Rot entfernt sich von den eigenen Elementen", () => {
     const busy = ["T2 0500 H02: 2 Pers AJ9", "T2 0510 H02: 1 Fz AJ10", "T2 0520 H02: 2 Pers AJ8", "T2 0530 H02: 1 Fz AJ9", "T2 0540 H02: 3 Pers AJ10"];
@@ -239,11 +248,12 @@ describe("computeRedCoas – mögliche Aktionen Rot", () => {
     const [u, h, v] = sel;
     expect(u!.indicators.map((i) => i.met)).toEqual([true, true, true, true, false]);
     expect(u!.indicators.map((i) => i.text)).toEqual([
-      "Drohne über H05 02:50 (D1)", "Schwergewicht 6 Pers + 2 Fz AP10 06:40 (C4)", "Formation Linie AK10 07:25 (C6)", "H05 nicht verschoben seit 03:30",
+      "Drohne über H05 02:50 (D1)", "Schwergewicht 6 Pers + 2 Fz AP10 06:40 (C4)", "Formation Linie AP11 07:25 (C6)", "H05 nicht verschoben seit 03:30",
       "Annäherung auf Achse AP10 → AQ11 noch nicht gemeldet",
     ]);
     expect(u!.approachText).toBe("aus AP10 über Seftigenstrasse");
     expect(u!.window).toEqual({ from: T2("07:45"), to: T2("08:35") });
+    expect(u!.windowState).toBe("erwartet");
     expect(h!.indicators.filter((i) => i.met).map((i) => i.text)).toEqual(["Sperre NAI 3 06:20 (C5)", "Aufklärung NAI 3 2× (C3)"]);
     expect(v!.title).toBe("Versorgung/Übergabe Pendel AK9 ↔ AN6 (nächste ca. 07:40)");
     expect(u!.score).toBeGreaterThan(h!.score);
@@ -261,7 +271,8 @@ describe("computeRedCoas – mögliche Aktionen Rot", () => {
     expect(st).toMatchObject({ "elemente:det": "vollstaendig", pers: "teilweise", fz: "teilweise", kpz: "unerwartet", drohne: "vollstaendig", unklar: "offen" });
     expect(row(f, "elemente:det")!.names).toEqual(["Det 1", "Det 2"]);
     const p = row(f, "pers")!;
-    expect(p.min).toBeGreaterThanOrEqual(10);
+    // «mind.» ehrlich: Sichtungen, die Det 1/Det 2 sein können, zählen nicht dazu
+    expect(p.min).toBeGreaterThanOrEqual(8);
     expect(p.max).toBeGreaterThan(p.min);
     expect(f.notSeen.map((n) => n.unit)).toEqual(["Det 2", "Det 1"]);
   });

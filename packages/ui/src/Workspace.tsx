@@ -217,21 +217,21 @@ export function Workspace({ product, tagline }: Props) {
   const winFrom = windowStart(win, tNow);
 
   // ---------- Hinweise zu Rot (folgen Lagezeit und Zeitfenster)
-  const { hints, quality } = useHints(ex, tNow, winFrom);
+  const { hints, quality, all: allHints } = useHints(ex, tNow, winFrom);
   const [selHint, setSelHint] = useState<string | null>(null);
   const [presentHints, setPresentHints] = useState(false);
   const hintSel = hints.find((h) => h.id === selHint) ?? null;
   /** gewählter Hinweis hebt seine Auslöser hervor – nur solange die Hinweise sichtbar sind */
   const hintFocus = !!hintSel && (present ? presentHints : tab === "hinweise");
-  // ---------- Lage Rot: mögliche Aktionen und Kräfte (folgen Lagezeit und Zeitfenster)
-  const lageRot = useLageRot(ex, tNow, hints, winFrom);
+  // ---------- Lage Rot: mögliche Aktionen und Kräfte (ganzes Journal bis zur Lagezeit; Zeitfenster nur Spalte «im Fenster»)
+  const lageRot = useLageRot(ex, tNow, allHints, winFrom);
   const [selCoa, setSelCoa] = useState<string | null>(null);
   const coaSel = lageRot.coas.find((c) => c.id === selCoa) ?? null;
   const coaFocus = !!coaSel && (present ? presentHints : tab === "hinweise");
   // Hinweis gewählt (Liste, Karte, Indikator) → Möglichkeit abwählen
   useEffect(() => { if (selHint) setSelCoa(null); }, [selHint]);
   const hintHl = (() => {
-    if (coaFocus && coaSel) return coaEventIds(coaSel, hints);
+    if (coaFocus && coaSel) return coaEventIds(coaSel, lageRot.hints);
     if (!hintFocus || !hintSel) return null;
     const ids = new Set(hintSel.events);
     if (hintSel.unit) for (const e of ex?.events ?? []) if (e.side === "blau" && e.unit === hintSel.unit) ids.add(e.id);
@@ -369,13 +369,20 @@ export function Workspace({ product, tagline }: Props) {
     });
     g.addTo(s.map);
     coaRef.current = g;
-  }, [lageRot.coas, selCoa, coaFocus, flags.aktionen, present, mapReady, hints]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lageRot.coas, selCoa, coaFocus, flags.aktionen, flags.hinweise, flags.nai, present, mapReady, hints]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectCoa = (id: string | null) => { setSelCoa(id); if (id) setSelHint(null); };
-  /** Karte auf eine Möglichkeit: Ziel und Annäherung mit Rand */
+  /** Indikator-Hinweis einer Möglichkeit: Hinweis zeigen; liegt er ausserhalb des Zeitfensters, seine letzte Meldung */
+  const coaHint = (id: string) => {
+    const h = hints.find((x) => x.id === id);
+    if (h) { focusHint(h); return; }
+    const last = lageRot.hints.find((x) => x.id === id)?.events.at(-1);
+    if (last) selectEvent(last);
+  };
+  /** Karte auf eine Möglichkeit: Ziel, Annäherung und Indikator-Orte mit Rand */
   const focusCoa = (c: RedCoa) => {
     const map = sm.current?.map;
     selectCoa(c.id);
-    const box = coaExtent(c);
+    const box = ex ? coaExtent(c, ex, lageRot.hints) : null;
     if (!map || !box) return;
     if (window.innerWidth <= 560) window.scrollTo({ top: 0, behavior: "smooth" });
     const pad = Math.max(250, Math.max(box.maxE - box.minE, box.maxN - box.minN) * 0.5);
@@ -642,7 +649,7 @@ export function Workspace({ product, tagline }: Props) {
               onMap={focusHint} onEvent={selectEvent} update={update} winFrom={winFrom} onWinClear={() => setWin({ mode: "alles" })}
               onCsv={() => downloadText(`Hinweise_${safeFileName(ex.name)}.csv`, hintsToCsv(ex, hints) + lageRotCsv(ex, lageRot, tNow), "text/csv;charset=utf-8")}
               lead={<LageRotPanel ex={ex} lage={lageRot} t={tNow} selected={selCoa} onSelect={selectCoa} onMap={focusCoa}
-                onHint={(id) => { const h = hints.find((x) => x.id === id); if (h) focusHint(h); }} onEvent={selectEvent} update={update} />} />
+                onHint={coaHint} onEvent={selectEvent} update={update} />} />
           ) : tab === "raster" ? (
             <div className="panel">
               {ex.sheets.length === 0 && (
@@ -693,7 +700,7 @@ export function Workspace({ product, tagline }: Props) {
               <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint} compact
                 onMap={focusHint} onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update}
                 lead={<LageRotPanel ex={ex} lage={lageRot} t={tNow} selected={selCoa} onSelect={selectCoa} onMap={focusCoa} compact
-                  onHint={(id) => { const h = hints.find((x) => x.id === id); if (h) focusHint(h); }}
+                  onHint={coaHint}
                   onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update} />} />
             </aside>
           )}
