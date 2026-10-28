@@ -64,6 +64,19 @@ export function onDbNotice(cb: (n: DbNotice) => void): () => void {
 }
 const notify = (n: DbNotice) => { blockedNow = n === "blocked"; listeners.forEach((cb) => { try { cb(n); } catch { /* egal */ } }); };
 
+/** Datenbank in diesem Fenster von einer älteren Version aktualisiert (0 = nein) – für die Update-Notiz */
+let upgradedFrom = 0;
+const upgradeListeners = new Set<(from: number) => void>();
+/**
+ * Update-Notiz: meldet, wenn dieses Fenster die Datenbank einer älteren Version aktualisiert hat. Ältere Fenster
+ * (bis MVP 0) geben die Datenbank dabei frei, können danach aber nicht mehr speichern – sie müssen geschlossen werden.
+ */
+export function onDbUpgraded(cb: (from: number) => void): () => void {
+  upgradeListeners.add(cb);
+  if (upgradedFrom) cb(upgradedFrom);
+  return () => { upgradeListeners.delete(cb); };
+}
+
 let dbp: Promise<IDBPDatabase> | null = null;
 let opened = false;
 /**
@@ -76,7 +89,8 @@ export function db(): Promise<IDBPDatabase> {
   if (!dbp) {
     opened = false;
     const p = openDB(DB_NAME, DB_VERSION, {
-      upgrade(d) {
+      upgrade(d, oldVersion) {
+        if (oldVersion > 0 && oldVersion < DB_VERSION) { upgradedFrom = oldVersion; queueMicrotask(() => upgradeListeners.forEach((cb) => { try { cb(oldVersion); } catch { /* egal */ } })); }
         if (!d.objectStoreNames.contains("exercises")) d.createObjectStore("exercises", { keyPath: "id" });
         if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
         if (!d.objectStoreNames.contains(ROADS_STORE)) d.createObjectStore(ROADS_STORE, { keyPath: "key" });
@@ -243,16 +257,57 @@ export function safeFileName(s: string): string {
 const sessionBlobs = new Set<string>();
 const baseId = (key: string) => key.replace(/:thumb$/, "");
 
-/** Inhalt eines Anhangs speichern (Schlüssel = Attachment.id) */
+/**
+ * Inhalte, die nicht in den Gerätespeicher passten (Speicher voll, blockiert): bleiben im Arbeitsspeicher dieses
+ * Fensters – für Anzeige, Erkennung und «Datei sichern» (`getBlob` liest hier nach). Nach dem nächsten gelungenen
+ * Speichern wird erneut versucht, sie abzulegen (`retryMemBlobs`).
+ */
+const memBlobs = new Map<string, Blob>();
+/** Anzahl Anhänge (ohne Vorschaubilder), die nur im Arbeitsspeicher liegen */
+export function memBlobCount(): number { return memBlobIds().length; }
+/** IDs der Anhänge (ohne Vorschaubilder), die nur im Arbeitsspeicher liegen */
+export function memBlobIds(): string[] { return [...memBlobs.keys()].filter((k) => !k.endsWith(":thumb")); }
+const memListeners = new Set<() => void>();
+/** Änderungen an den Anhängen im Arbeitsspeicher abonnieren (Speicherband: was «Datei sichern» mitnimmt) */
+export function onMemBlobs(cb: () => void): () => void { memListeners.add(cb); return () => { memListeners.delete(cb); }; }
+const memChanged = () => {
+  memListeners.forEach((cb) => { try { cb(); } catch { /* egal */ } });
+  // nichts mehr nur im Arbeitsspeicher (abgelegt oder verworfen): Band «Anhang nicht gespeichert» zurücksetzen
+  if (!memBlobCount()) reportStore("anhang", null);
+};
+
+/**
+ * Inhalt eines Anhangs speichern (Schlüssel = Attachment.id). Gelingt das nicht, bleibt er im Arbeitsspeicher
+ * (`getBlob` findet ihn weiter, «Datei sichern» nimmt ihn mit) und der Fehler wird gemeldet und weitergegeben.
+ */
 export async function putBlob(id: string, blob: Blob): Promise<void> {
   sessionBlobs.add(baseId(id));
   try {
     await (await db()).put(BLOB_STORE, blob, id);
+    if (memBlobs.delete(id)) memChanged();
   } catch (e) {
+    memBlobs.set(id, blob);
+    memListeners.forEach((cb) => { try { cb(); } catch { /* egal */ } });
     // Vorschaubilder sind ersetzbar – nur Originale melden
     if (!id.endsWith(":thumb")) reportStore("anhang", e);
     throw e;
   }
+}
+
+let retrying = false;
+/** Inhalte aus dem Arbeitsspeicher erneut im Gerätespeicher ablegen (z. B. nachdem wieder Platz ist). Anzahl abgelegt. */
+export async function retryMemBlobs(): Promise<number> {
+  if (retrying || !memBlobs.size) return 0;
+  retrying = true;
+  let n = 0;
+  try {
+    const d = await db();
+    for (const [id, b] of [...memBlobs]) {
+      try { await d.put(BLOB_STORE, b, id); memBlobs.delete(id); n++; } catch { break; /* noch voll */ }
+    }
+  } catch { /* Speicher nicht verfügbar */ } finally { retrying = false; }
+  if (n) memChanged();
+  return n;
 }
 
 /**
@@ -280,8 +335,10 @@ export async function collectOrphanBlobs(): Promise<{ n: number; bytes: number }
   }
 }
 
-/** Inhalt eines Anhangs lesen (null, wenn nicht auf diesem Gerät) */
+/** Inhalt eines Anhangs lesen (null, wenn nicht auf diesem Gerät) – auch, was nur im Arbeitsspeicher liegt */
 export async function getBlob(id: string): Promise<Blob | null> {
+  const mem = memBlobs.get(id);
+  if (mem) return mem;
   try {
     return ((await (await db()).get(BLOB_STORE, id)) as Blob | undefined) ?? null;
   } catch {
@@ -290,5 +347,6 @@ export async function getBlob(id: string): Promise<Blob | null> {
 }
 
 export async function deleteBlob(id: string): Promise<void> {
+  if (memBlobs.delete(id)) memChanged();
   try { await (await db()).delete(BLOB_STORE, id); } catch { /* egal */ }
 }

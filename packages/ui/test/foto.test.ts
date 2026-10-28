@@ -166,8 +166,17 @@ describe("Eintrage-Weg (commit.ts)", () => {
     expect(new Set(evs.map((e) => e.id)).size).toBe(3);
   });
   it("neue Elemente werden gemerkt, spätere Meldung sieht frühere", () => {
-    const { ex } = run(["0700 H09 Beo Stao AE5 C", "0710 H09 2 Fz AG13"]);
+    const { ex, evs } = run(["0700 H09 Beo Stao AE5 C", "0710 H09 2 Fz AG13"]);
+    expect(evs).toHaveLength(2);
     expect(ex.units.blau).toContain("H09");
+  });
+  it("Trupp, der nach zusammengezogenen Ziffern aussieht («H13» bei H01–H05): nicht still als neuer Trupp eintragen", () => {
+    let skipped: string[] = [];
+    let ex: Exercise = demoExercise();
+    const evs = commitTexts(["0700 H13 Beo Stao AE5 C"], { ex, device: "d", update: (f) => { ex = f(structuredClone(ex)); }, day: ex.days[1], onSkipped: (t) => { skipped = t; } });
+    expect(evs).toHaveLength(0);
+    expect(skipped).toEqual(["0700 H13 Beo Stao AE5 C"]);
+    expect(ex.units.blau).not.toContain("H13");
   });
   it("leere Texte werden übersprungen, Anhang mehrfach → einmal", () => {
     let ex = demoExercise();

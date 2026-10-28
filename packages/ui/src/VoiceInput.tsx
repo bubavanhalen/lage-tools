@@ -289,7 +289,7 @@ export function useVoice(o: VoiceOptions): Voice {
     if (r.duration < MIN_S && !liveText) { setSt({ s: "idle" }); opts.current.say("Zu kurz – Knopf gedrückt halten und sprechen (oder antippen = Start, nochmals = Stopp)."); return; }
     const { att, stored, error } = await saveMemo(r, opts.current.update);
     setSt({ s: "idle" });
-    const warn = stored ? undefined : `Ton nicht gespeichert (${error ?? "Gerätespeicher"}) – nur der erkannte Text bleibt.`;
+    const warn = stored ? undefined : `Ton nicht gespeichert (${error ?? "Gerätespeicher"}) – liegt nur in diesem Fenster: «Datei sichern», sonst geht er beim Schliessen verloren.`;
     if (!stored) opts.current.say(warn!);
     if (liveText) {
       const a2 = { ...att, text: liveText, engine: "browser" };

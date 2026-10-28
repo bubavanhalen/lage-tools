@@ -3,6 +3,7 @@
  * Koordinate (LV95/LV03/WGS84/Link), bekannter Ort und Rasterblatt.
  * Rein und ohne Abhängigkeiten – offline nutzbar. Die Online-Ortssuche (swisstopo) ergänzt die Oberfläche.
  */
+import { compareEvents } from "./clock";
 import { findCoordinates, formatLv95, isInSwitzerland, type LV95 } from "./lv95";
 import type { Area, LageEvent, Place, Side } from "./model";
 import { cellAtAny, cellBounds, findCells, sheetBounds, type Bounds, type RasterSheet } from "./raster";
@@ -180,7 +181,7 @@ function unitIndex(ctx: SearchContext): Map<string, UnitInfo> {
   u.blau.forEach((n) => add("blau", n));
   u.rot.forEach((n) => add("rot", n));
   u.ul.forEach((n) => add("ul", n));
-  const evs = (ctx.events ?? []).filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t) || a.id.localeCompare(b.id));
+  const evs = (ctx.events ?? []).filter((e) => !e.deleted).sort(compareEvents);
   for (const e of evs) {
     if (e.melder) add("blau", e.melder);
     if (!e.unit) continue;

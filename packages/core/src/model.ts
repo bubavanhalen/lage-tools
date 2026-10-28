@@ -4,6 +4,7 @@
  * Alle Änderungen sind Einträge mit eindeutiger ID, Revision und Gerätekennung.
  * So lassen sich Journale später konfliktfrei von Gerät zu Gerät zusammenführen (vNext).
  */
+import { compareEvents } from "./clock";
 import type { LV95 } from "./lv95";
 import type { RasterSheet } from "./raster";
 import type { Affiliation } from "./symbols";
@@ -62,6 +63,11 @@ export interface LageEvent {
 
   /** Zeitpunkt der Beobachtung / Handlung (ISO, lokale Zeit der Übung `Exercise.tz`, ohne Offset) */
   t: string;
+  /**
+   * UTC-Offset zur Ereigniszeit `t` («+02:00» Sommerzeit, «+01:00» Winterzeit) – damit die Reihenfolge bei der
+   * Rückstellung (doppelte Stunde 02:00–02:59) stimmt; fehlt bei älteren Meldungen. Reihenfolge: `compareEvents` (clock.ts).
+   */
+  tOffset?: string;
   /** Eingang der Meldung im Journal (ISO lokal, Minute, wie `t`) – beim Eintragen gesetzt, ändert bei Korrekturen nicht */
   tReported?: string;
   /** genauer Zeitpunkt der Erfassung (ISO UTC mit «Z»), unabhängig von Zeitzone und Sommerzeit; ändert nie */
@@ -187,6 +193,12 @@ export interface Exercise {
    * Kartensuche); `strassen`: Strassennetz (TLM) für Hindernisse & Co. laden. Aus = kein Request (siehe `onlineAllowed`).
    */
   onlineDienste?: { ortssuche?: boolean; strassen?: boolean };
+  /**
+   * Löschmarken für Raster, Flächen (NAI/AO …) und Bilder: ID → Zeitpunkt (ISO) des Löschens; `undone` = mit
+   * Rückgängig wiederhergestellt. Die spätere Marke gilt. So taucht ein gelöschtes Element beim Zusammenführen
+   * (zweites Fenster, ältere Datei) nicht wieder auf (`mergeHull`, `markRemovals` in sync.ts).
+   */
+  removed?: Record<string, { at: string; undone?: boolean }>;
 }
 
 /** Entscheid des Benutzers zu einem Hinweis */
@@ -223,7 +235,7 @@ export function mergeEvents(a: LageEvent[], b: LageEvent[]): LageEvent[] {
     const cur = map.get(e.id);
     if (!cur || wins(e, cur)) map.set(e.id, e);
   }
-  return [...map.values()].sort((x, y) => x.t.localeCompare(y.t) || x.id.localeCompare(y.id));
+  return [...map.values()].sort(compareEvents);
 }
 
 function wins(x: LageEvent, y: LageEvent): boolean {

@@ -2,6 +2,7 @@
  * Zeitstrahl mit Schwimmbahnen: Spuren, Zeitachse, Stapelung gleichzeitiger Meldungen.
  * Reine Funktionen ohne Laufzeit-Abhängigkeiten (Zeiten in ms, lokale Zeit).
  */
+import { compareEvents } from "./clock";
 import type { Exercise, LageEvent } from "./model";
 
 export type LaneGroup = "feind" | "ul" | "eigen";
@@ -46,7 +47,7 @@ export function dotKind(e: Pick<LageEvent, "side" | "aff">): DotKind {
  * weitere Elemente und Melder in Reihenfolge des ersten Auftretens).
  */
 export function buildLanes(events: LageEvent[], units: Exercise["units"]): { lanes: Lane[]; items: LaneItem[] } {
-  const live = events.filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t) || a.id.localeCompare(b.id));
+  const live = events.filter((e) => !e.deleted).sort(compareEvents);
   const groups: Record<LaneGroup, Lane[]> = { feind: [], ul: [], eigen: [] };
   const byKey = new Map<string, Lane>();
   const lane = (group: LaneGroup, name: string): Lane => {

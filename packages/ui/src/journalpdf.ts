@@ -2,7 +2,7 @@
  * Lagejournal als PDF (A4 hoch): Zeit, Seite, Element, Meldung, Ort – chronologisch.
  */
 import { jsPDF } from "jspdf";
-import { kindLabel, type Exercise, type Hint } from "@lage/core";
+import { compareEvents, kindLabel, type Exercise, type Hint } from "@lage/core";
 import { appendHintsPdf } from "./hintsExport";
 import type { LageRotState } from "./lageRot";
 import { appendLageRotPdf } from "./lageRotExport";
@@ -18,7 +18,7 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
   const cols = [
     { h: "Tag", w: 10 }, { h: "Zeit", w: 12 }, { h: "Art", w: 14 }, { h: "Melder", w: 18 }, { h: "Element", w: 18 }, { h: "Meldung", w: 80 }, { h: "Ort", w: 34 },
   ];
-  const events = (ex.events ?? []).filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t));
+  const events = (ex.events ?? []).filter((e) => !e.deleted).sort(compareEvents);
   let page = 1;
   let y = 0;
   const header = () => {

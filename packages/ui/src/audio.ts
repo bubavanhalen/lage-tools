@@ -216,7 +216,8 @@ export function memoAttachment(r: Recording): Attachment {
 /**
  * Memo speichern: Inhalt auf dem Gerät (IndexedDB), Metadaten in der Übung.
  * `stored: false` = Ton konnte nicht abgelegt werden (Speicher voll, privates Fenster) – die Metadaten
- * (und später das Transkript) bleiben trotzdem, die Erkennung läuft mit dem Ton im Arbeitsspeicher.
+ * (und später das Transkript) bleiben trotzdem; der Ton bleibt im Arbeitsspeicher dieses Fensters (`putBlob`),
+ * die Erkennung läuft damit und «Datei sichern» nimmt ihn mit.
  */
 export async function saveMemo(r: Recording, update: (f: (x: Exercise) => Exercise) => void): Promise<{ att: Attachment; stored: boolean; error?: string }> {
   const att = memoAttachment(r);

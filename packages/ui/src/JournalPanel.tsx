@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import L from "leaflet";
 import {
+  clockField,
+  compareEvents,
   formatLv95,
   isoOf,
   lastPosition,
@@ -31,7 +33,7 @@ import {
 } from "@lage/core";
 import { QualityMarks, useDraftMissing } from "./QualityMarks";
 import { useNow } from "./useNow";
-import { localDay, withDay } from "@lage/core";
+import { clockDay, localDay, withDay } from "@lage/core";
 import { iconSvg, pickPoint, toLatLng, toLv95 } from "@lage/map";
 import { dayLabel } from "./Timeline";
 import { SymbolPicker, choiceSvg, makeChoice, pickerEntry, rebaseSidc, type SymbolChoice } from "./SymbolPicker";
@@ -51,6 +53,8 @@ import { KiMark } from "./ki/context";
 import { BlockNote, ProblemChips, blockText, openProblems } from "./DraftProblems";
 import { useDraftPersist } from "./draftPersist";
 import { EditPreview, placeFromText, reparseEdit, reparseExtras, revealEditRow } from "./editReparse";
+import { EditConflict } from "./EditConflict";
+import { editConflict } from "./persist";
 
 interface Props {
   ex: Exercise;
@@ -138,7 +142,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const now = useNow();
   /** von Hand gewählter Übungstag; null = Tag folgt der Uhr (nach Mitternacht automatisch der nächste, wird beim Eintragen angelegt) */
   const [dayPick, setDay] = useState<string | null>(null);
-  const day = dayPick ?? localDay(now);
+  // Tag folgt der Uhr nur, wenn die Übung heute läuft (kein heutiges T1 vor dem Beispiel 2030 / Vorbereitungstagen)
+  const clk = clockDay(ex.days, now);
+  const day = dayPick ?? clk.day;
   const [text, setText] = useState("");
   const [manualPos, setManualPos] = useState<LV95 | null>(null);
   /** von Hand gezeichnete Fläche/Linie für die neue Meldung */
@@ -196,12 +202,13 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
-  useEffect(() => { if (editRequest) { setFilter("alle"); setSearch(""); setEditing(editRequest.id); } }, [editRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  // gelöschte Meldungen sind nicht bearbeitbar (nur «Rückgängig» bzw. «Trotzdem speichern» im Konflikt)
+  useEffect(() => { if (editRequest && !events.find((x) => x.id === editRequest.id)?.deleted) { setFilter("alle"); setSearch(""); setEditing(editRequest.id); } }, [editRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (reportAt) { setManualPos(reportAt.pos); inputRef.current?.focus(); } }, [reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setDay(null); }, [ex.id]);
 
   const ctx = useMemo(() => ({
-    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now, dayFromClock: dayPick === null,
+    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now, dayFromClock: dayPick === null && clk.follow,
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
   }), [ex, kindOverride, day, events, now, dayPick]);
   const draft: Draft | null = useMemo(() => (text.trim() ? parseMeldung(text, ctx) : null), [text, ctx]);
@@ -287,7 +294,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     // Eintrage-Weg in commit.ts (gleich für mehrere Meldungen aus Foto/Sprachmemo)
     // Zeit «jetzt» erst jetzt (Enter) festlegen, nicht beim Tippen; eine getippte Zeit hat Vorrang
     const at = new Date();
-    const fresh = parseMeldung(text, { ...ctx, now: at, day: dayPick ?? localDay(at) });
+    const clkAt = clockDay(ex.days, at);
+    const fresh = parseMeldung(text, { ...ctx, now: at, day: dayPick ?? clkAt.day, dayFromClock: dayPick === null && clkAt.follow });
     const dNow: Draft = { ...draft, minutes: fresh.minutes, day: fresh.day, t: fresh.t };
     const ev = buildEvent(dNow, device, ex, {
       pos: effPos, where: effWhere, whereKind: manualPos ? "karte" : "ort",
@@ -337,10 +345,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     return events
-      .filter((e) => !e.deleted && (filter === "alle" || (filter === "unbest" ? quality?.get(e.id)?.status === "unbestaetigt" : kindOf(e) === filter)) && (!q || `${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")}`.toLowerCase().includes(q)))
+      .filter((e) => (!e.deleted || e.id === editing) && (filter === "alle" || (filter === "unbest" ? quality?.get(e.id)?.status === "unbestaetigt" : kindOf(e) === filter)) && (!q || `${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")}`.toLowerCase().includes(q)))
       .filter((e) => !win || inWindow(e.t, win.from, win.to))
-      .sort((a, b) => b.t.localeCompare(a.t) || b.id.localeCompare(a.id));
-  }, [events, filter, search, win?.from, win?.to, filter === "unbest" && quality]); // eslint-disable-line react-hooks/exhaustive-deps
+      .sort((a, b) => compareEvents(b, a));
+    // `editing` gehört dazu: eine während der Bearbeitung gelöschte Meldung verschwindet nach «Verwerfen» (keine Geisterzeile)
+  }, [events, editing, filter, search, win?.from, win?.to, filter === "unbest" && quality]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addDay = () => {
     const last = ex.days[ex.days.length - 1] ?? todayIso();
@@ -366,11 +375,15 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       <div className="entry" style={{ borderColor: effKind ? (symOverride?.aff === "N" ? "#2d7a4b" : KIND_COLOR[effKind]) : undefined }}>
         <div className="btnrow">
           <b className="entry-title">Meldung</b>
-          <select value={day} onChange={(e) => (e.target.value === "__add" ? addDay() : setDay(e.target.value === localDay(now) ? null : e.target.value))} aria-label="Übungstag"
-            title={dayPick ? "Tag von Hand gewählt" : "Tag folgt der Uhr (nach Mitternacht automatisch der nächste)"}>
+          <select value={day} onChange={(e) => (e.target.value === "__add" ? addDay() : setDay(e.target.value === clk.day ? null : e.target.value))} aria-label="Übungstag"
+            title={dayPick ? "Tag von Hand gewählt" : clk.follow ? "Tag folgt der Uhr (nach Mitternacht automatisch der nächste)" : "Übung läuft nicht heute – Tag folgt nicht der Uhr"}>
             {withDay(ex.days, day).map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.{ex.days.includes(d) ? "" : " (neu)"}</option>)}
             <option value="__add">+ Tag</option>
           </select>
+          {!clk.follow && dayPick === null && localDay(now) > clk.day && (
+            <button className="chipbtn" title="Übung läuft heute weiter: heutigen Tag anlegen (sonst gelten Meldungen ohne Tag für den letzten Übungstag)"
+              onClick={() => { const t = localDay(new Date()); update((x) => { x.days = withDay(x.days, t); return x; }); }}>+ heute {localDay(now).slice(8, 10)}.{localDay(now).slice(5, 7)}.</button>
+          )}
         </div>
         <textarea ref={inputRef} className="msg" value={text} autoFocus={wideScreen} rows={1} placeholder={wideScreen ? "z. B. 1015 H04 2 Fz in NAI 3 Rtg N" : "1015 H04 2 Fz NAI 3"} aria-label="Meldung"
           onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; }}
@@ -418,7 +431,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
               return m.length > 0 && <span className="chip aeiou" title={`Unvollständig: ${m.join(", ")} – Rückfrage nach AEIOU (Wann · Wer tut was · Wie · Wo · Umwelt)`}>unvollständig: {m.join(", ")}</span>;
             })()}
             {draft.roadHint && <span className="chip soft" title="wird auf die passende Strasse gelegt">{draft.roadHint === "autobahn" ? "auf Autobahn" : "auf Hauptstrasse"}</span>}
-            <ProblemChips problems={problems} />
+            <ProblemChips problems={problems} onAddUnit={(u) => { update((x) => { if (!x.units.blau.includes(u)) x.units = { ...x.units, blau: [...x.units.blau, u] }; return x; }); say(`«${u}» als neuer Trupp aufgenommen.`); inputRef.current?.focus(); }} />
             {ortProblem ? null : effPos ? (roadTarget ? <RoadChoice where={effWhere0 ?? ""} res={roadRes} pick={roadPick} onPick={setRoadPick} onMap={pickOnMap} map={map} sheets={ex.sheets} /> : <span className="chip where">📍 {effWhere}</span>) : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
             <ShapeButton map={map} sym={choice?.key ?? draft.sym} value={shapeDraft} onChange={setShapeDraft} color={effKind ? KIND_COLOR[effKind] : undefined} owner="neu"
@@ -465,8 +478,13 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
               <Fragment key={e.id}>
                 {head && <li className="hourhead" aria-hidden="true">{dayLabel(e.t, ex.days)} {e.t.slice(11, 13)}:00</li>}
                 {editing === e.id ? (
-                  <EditRow e={e} ex={ex} map={map} onCancel={() => { setEditing(null); if (wideScreen) inputRef.current?.focus(); }} onSave={(p) => { patch(e.id, p); setEditing(null); if (wideScreen) inputRef.current?.focus(); }} />
-                ) : (
+                  <EditRow e={e} ex={ex} map={map} onCancel={() => { setEditing(null); if (wideScreen) inputRef.current?.focus(); }} onSave={(p) => {
+                    patch(e.id, p); setEditing(null);
+                    // «Trotzdem speichern» auf eine anderswo gelöschte Meldung: bewusst wiederhergestellt – sichtbar melden
+                    if (e.deleted && p.deleted === false) { say("Meldung wiederhergestellt (war in einem anderen Fenster gelöscht) – mit dieser Korrektur gespeichert."); onSelect(e.id); }
+                    if (wideScreen) inputRef.current?.focus();
+                  }} />
+                ) : e.deleted ? null : (
                   <li data-id={e.id} className={"jrow " + k + (e.id === selected ? " sel" : "") + (e.id === flashId ? " flash" : "")} tabIndex={0}
                     onClick={() => onSelect(e.id)} onKeyDown={(ev) => { if (ev.key === "Enter") onSelect(e.id); }}>
                     <span className="sbar" style={{ background: kindColor(e) }} />
@@ -523,7 +541,12 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   );
 }
 
-function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise; map: L.Map; onCancel: () => void; onSave: (p: Partial<LageEvent>) => void }) {
+function EditRow({ e: cur, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise; map: L.Map; onCancel: () => void; onSave: (p: Partial<LageEvent>) => void }) {
+  // Fassung beim Öffnen der Bearbeitung; ändert/löscht ein anderes Fenster die Meldung, bleibt die Bearbeitung offen (EditConflict)
+  const e = useRef(cur).current;
+  // gelöschte Meldung in Bearbeitung (auch ohne bekannte fremde Revision): nie still als gelöscht speichern
+  const conflict = editConflict(ex.id, e, cur) ?? (cur.deleted ? "geloescht" : null);
+  const [nudge, setNudge] = useState(0);
   const [time, setTime] = useState(e.t.slice(11, 16));
   const [day, setDay] = useState(e.t.slice(0, 10));
   const [unit, setUnit] = useState(e.unit);
@@ -552,7 +575,10 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
   const [re, setRe] = useState<Draft | null>(null);
   /** nach dem Neulesen von Hand auf der Karte gesetzt (löst ein Ort-Problem) */
   const [rePicked, setRePicked] = useState(false);
-  const reProblems = re ? openProblems(re, { manualPos: rePicked }) : [];
+  // Zeitfeld «25:70»: nie still kappen – Problem anzeigen, Speichern gesperrt
+  const timeField = clockField(time);
+  const timeProblem = typeof timeField === "object" && timeField ? [timeField] : [];
+  const reProblems = [...(re ? openProblems(re, { manualPos: rePicked }) : []), ...timeProblem];
   const liRef = useRef<HTMLLIElement>(null);
   // Fokus in den Text (Laptop) ohne Browser-Sprung, dann unter dem klebenden Meldungsfeld sichtbar machen
   useEffect(() => {
@@ -580,15 +606,16 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
     setCount(d.count ?? 0);
     if (placeFromText(d)) { setPos(d.pos); setWhere(d.where!.label); setCells(d.cells); setRoadPatch(null); setShape(undefined); }
   };
-  const save = () => {
+  const save = (force = false) => {
+    // anderes Fenster hat geändert/gelöscht: nur mit «Trotzdem speichern»
+    if (conflict && !force) { setNudge((n) => n + 1); return; }
     // neu gelesener Text mit unbekanntem Ort / ungültiger Zeit: nicht speichern (Hinweis steht unter dem Feld)
     if (reProblems.length) return;
     // Fläche/Linie wird noch gezeichnet: zuerst abschliessen und übernehmen
     const drawn = takeDrawing(`edit:${e.id}`);
     if (drawn === "unfertig") return;
     const dp = drawn ? shapePatch(drawn, ex.sheets) : null;
-    const m = /^(\d{1,2})[:.]?(\d{2})$/.exec(time.trim());
-    const minutes = m ? Math.min(23, +m[1]!) * 60 + Math.min(59, +m[2]!) : minutesOf(e.t);
+    const minutes = typeof timeField === "number" ? timeField : minutesOf(e.t);
     const entry = pickerEntry(choice.key) ?? pickerEntry("einheit")!;
     // SIDC immer neu aus Zeichen + Zugehörigkeit + Stufe + Status (nie einen alten SIDC mit alter Zugehörigkeit behalten)
     const c0 = makeChoice(entry, choice.aff, choice.echelon, choice.status);
@@ -600,6 +627,7 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
     const u = unit.trim() || (side === "blau" ? melder.trim() : "");
     const moved = (dp?.pos ?? pos)?.e !== e.pos?.e || (dp?.pos ?? pos)?.n !== e.pos?.n;
     onSave({
+      ...(conflict ? { deleted: false } : {}),
       t: isoOf(day, minutes), side, unit: u, melder: melder.trim() || undefined, text, count: n, label: n && n > 1 ? String(n) : undefined,
       sym: c.key, sidc: c.sidc, echelon: c.echelon, status: c.status, aff: c.aff,
       // ausgeschriebenen Sinn nur neu bilden, wenn sich am Zeichen etwas geändert hat (sonst bleibt «mögliche IED» usw.)
@@ -624,8 +652,9 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
       if (k.key === "Escape") { k.preventDefault(); onCancel(); }
     }}>
       <div className="form">
+        <EditConflict kind={conflict} nudge={nudge} onForce={() => save(true)} onDiscard={onCancel} />
         <div className="two">
-          <label>Zeit<input value={time} onChange={(x) => setTime(x.target.value)} className="mono" /></label>
+          <label>Zeit<input value={time} onChange={(x) => setTime(x.target.value)} className="mono" aria-invalid={timeProblem.length > 0} title={timeProblem[0]?.text} /></label>
           <label>Tag<select value={day} onChange={(x) => setDay(x.target.value)}>{days.map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.</option>)}</select></label>
         </div>
         <div className="two">
@@ -656,7 +685,7 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
             }} />
         </div>
         <div className="btnrow">
-          <button className="primary" onClick={save} disabled={reProblems.length > 0}>Speichern</button>
+          <button className="primary" onClick={() => save()} disabled={reProblems.length > 0}>Speichern</button>
           <button onClick={onCancel}>Abbrechen</button>
           <span className="edithint">Enter = speichern · Esc = abbrechen</span>
         </div>

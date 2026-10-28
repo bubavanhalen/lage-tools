@@ -8,9 +8,9 @@
  */
 import type { Area } from "./model";
 import { catalogEntry, isTacticalWord, readTactical, type CatalogEntry, type TacticalReading } from "./catalog";
-import { looksSpoken, normalizeSpoken } from "./funk";
+import { isCountNoun, looksSpoken, normalizeSpoken, spokenNumber } from "./funk";
 import type { FoundCell, RasterSheet } from "./raster";
-import { findTimes } from "./time";
+import { findTimes, type FoundTime } from "./time";
 import type { DraftProblem } from "./journal";
 
 const L = "\\p{L}";
@@ -34,7 +34,7 @@ export interface TypedNorm {
 export function normalizeTyped(input: string, o: { blau?: string[]; now?: Date } = {}): TypedNorm {
   let text = input;
   if (looksSpoken(text)) {
-    const n = normalizeSpoken(text);
+    const n = normalizeSpoken(text, { typed: true });
     let t = n.text.replace(/\s*\n\s*/g, " ").trim();
     // Uhrzeit aus Worten («viertel nach zehn» → 1015): 12-h-Mehrdeutigkeit mit der Uhr auflösen
     if (o.now) {
@@ -42,7 +42,9 @@ export function normalizeTyped(input: string, o: { blau?: string[]; now?: Date }
       for (const c of n.changes) {
         if (!/^\d{4}$/.test(c.to) || !/\p{L}/u.test(c.from) || /\b(?:uhr|null)\b/i.test(c.from) && /^\d/.test(c.from)) continue;
         const h = +c.to.slice(0, 2), m = +c.to.slice(2);
-        if (h < 1 || h > 12 || /(?:zwölf|dreizehn|vierzehn|fünfzehn|sechzehn|siebzehn|achtzehn|neunzehn|zwanzig|null)/i.test(c.from)) continue;
+        // Stundenwort: «zwanzig nach acht» → «acht», «halb zehn» → «zehn», «neun Uhr» → «neun»
+        const hourWord = /(?:nach|vor)\s+(?:halb\s+)?(\S+)\s*$/i.exec(c.from)?.[1] ?? /^halb\s+(\S+)/i.exec(c.from)?.[1] ?? c.from.split(/\s+/)[0]!;
+        if (h < 1 || h > 12 || /(?:zwölf|dreizehn|vierzehn|fünfzehn|sechzehn|siebzehn|achtzehn|neunzehn|zwanzig|null|^\d)/i.test(hourWord)) continue;
         const a = h * 60 + m, b = ((h + 12) % 24) * 60 + m;
         const dist = (x: number) => Math.min(Math.abs(x - nowMin), 1440 - Math.abs(x - nowMin));
         if (dist(b) < dist(a)) t = t.replace(c.to, `${String((h + 12) % 24).padStart(2, "0")}${c.to.slice(2)}`);
@@ -50,6 +52,11 @@ export function normalizeTyped(input: string, o: { blau?: string[]; now?: Date }
     }
     if (t) text = t;
   }
+  // «NAI drei», «NAI-zwo», «BNB eins» → «NAI 3» (Funksprache, auch ohne Buchstabieralphabet)
+  text = text.replace(/(?<![\p{L}\d])(NAI|BNB)\s*-?\s*([\p{L}]+)(?![\p{L}\d])/giu, (m, a: string, w: string) => {
+    const n = spokenNumber(w);
+    return n !== undefined && n >= 1 && n <= 99 && w.toLowerCase() !== "ein" ? `${a.toUpperCase()} ${n}` : m;
+  });
   // «AK7 Unterquadrant C», «AK7, Quadrant C», «AK7 UQ C» → «AK7 C»
   text = text.replace(new RegExp(`(?<![${L}\\d])([A-Za-z]{1,2}\\s?\\d{1,2})\\s*,?\\s*(?:unterquadrant|unter-quadrant|quadrant|uq)\\s*:?\\s*([ABCDabcd])(?![${L}\\d])`, "giu"), (_, c: string, q: string) => `${c} ${q.toUpperCase()}`);
   // «Trupp 4 meldet …» → eindeutiges eigenes Element mit Nummer 4 («H04»)
@@ -81,6 +88,58 @@ export function isLeadTimeAfterElement(rest: string, index: number): boolean {
   return new RegExp(`^\\s*[${L}]{1,6}\\.?\\s?\\d{0,3}\\s*[:,]?\\s+$`, "u").test(rest.slice(0, index)) && index <= 12;
 }
 
+const UNIT_AFTER_RE = /^\s*(?:m|km|meter\w*|mann|pers\w*|leute|sdt|soldat\w*|fz|fahrzeug\w*|stk|stück|liter|l|kg|t|franken|chf|fr|x|%|mal)(?![\p{L}])/iu;
+/** davor: keine Meldezeit, sondern Zusammenhang («bis 1100», «vor 0900», «für 1h30») bzw. Zahl («Distanz 1500», «Nr 1234») */
+const CONTEXT_BEFORE_RE = /(?<![\p{L}])(?:vor|nach|bis|für|während|innert|von|distanz|entfernung|abstand|höhe|kote|nr|nummer|kennzeichen|kontrollschild|schild|tel|natel|telefon)\.?\s*:?\s*$/iu;
+/** Kontrollschild («BE 1234»), nicht nach «Rtg» («Rtg SO 1015») */
+const PLATE_BEFORE_RE = /(?<![\p{L}])(?<!(?:[Rr]tg|[Rr]ichtung)\.?\s)(?:AG|AI|AR|BE|BL|BS|FR|GE|GL|GR|JU|LU|NE|NW|OW|SG|SH|SO|SZ|TG|TI|UR|VD|VS|ZG|ZH|FL)\s?$/u;
+/** davor: ausdrücklich Meldezeit («um 1015», «Zeit 1015», «ab 1015», «punkt 0900») */
+const TIME_PREP_BEFORE_RE = /(?<![\p{L}])(?:um|zeit|uhrzeit|wann|gegen|ca|circa|punkt|genau|ab|seit)\.?\s*:?\s*$/iu;
+
+/** Ist die gefundene Uhrzeit eine mögliche Meldezeit (nicht Distanz, Menge, Dauer, Datum, Kontrollschild)? */
+function clockCandidate(rest: string, t: FoundTime): boolean {
+  if (t.relative) return false;
+  const before = rest.slice(0, t.index);
+  const after = rest.slice(t.index + t.raw.length);
+  // «1h30» ist meist eine Dauer («seit 1h30»); «10h15» bzw. «um 1h30» gelten als Zeit
+  if (/^\d[h]/i.test(t.raw) && !/(?<![\p{L}])um\s*$/iu.test(before)) return false;
+  if (/^[.:]\d/.test(after) || UNIT_AFTER_RE.test(after)) return false;
+  if (CONTEXT_BEFORE_RE.test(before) || PLATE_BEFORE_RE.test(before)) return false;
+  return true;
+}
+
+export interface TimePick {
+  /** verwendete Zeitangabe (Ereigniszeit) */
+  used?: FoundTime;
+  /** am Anfang bzw. direkt nach dem Melder (wird aus dem Meldungstext genommen) */
+  lead: boolean;
+  /** Textstelle der verwendeten Zeit inkl. «um»/«Zeit» davor (für die Erkennung ausblenden) */
+  span?: [number, number];
+  /** gefunden, aber nicht verwendet (zweite, andere Zeitangabe) */
+  problems: DraftProblem[];
+}
+
+/**
+ * Ereigniszeit irgendwo im Satz: am Anfang, nach dem Melder, nach «um/Zeit/ab/punkt», am Ende («H04 2 Fz AK7 1015»).
+ * Zusammenhang («bis 1100», «seit 1h30», «Distanz 1500», «1250 m») ist keine Meldezeit. Eine weitere, andere
+ * Zeitangabe wird nicht still übergangen: Problem «zeit».
+ */
+export function pickTime(rest: string, times: FoundTime[]): TimePick {
+  const cands = times.filter((t) => clockCandidate(rest, t));
+  const lead = (x: FoundTime) => x.index <= 2 || isLeadTimeAfterElement(rest, x.index);
+  const prep = (x: FoundTime) => TIME_PREP_BEFORE_RE.test(rest.slice(0, x.index));
+  const used = cands.find(lead) ?? cands.find(prep) ?? cands[0];
+  if (!used) return { lead: false, problems: [] };
+  const pm = TIME_PREP_BEFORE_RE.exec(rest.slice(0, used.index));
+  const from = pm && !/^(?:ab|seit)/i.test(pm[0]) ? pm.index : used.index;
+  const problems: DraftProblem[] = [];
+  for (const c of cands) {
+    if (c === used || c.minutes === used.minutes) continue;
+    problems.push({ kind: "zeit", text: `«${c.raw.trim()}»: zweite Zeitangabe`, token: c.raw.trim() });
+  }
+  return { used, lead: lead(used), span: [from, used.index + used.raw.length], problems };
+}
+
 /** Ungültige Uhrzeiten («13:70», «25:10», am Anfang auch «1370 H04 …») → Problem statt still «jetzt» */
 export function timeProblems(rest: string): DraftProblem[] {
   const out: DraftProblem[] = [];
@@ -97,7 +156,112 @@ export function timeProblems(rest: string): DraftProblem[] {
       out.push({ kind: "zeit", text: `«${tok}» ist keine gültige Uhrzeit`, token: tok });
     }
   }
+  // vierstellig am Ende («H04 2 Fz AK7 2510»), nicht Kontrollschild/Menge
+  const em = /(?<![\d'’.:/])(\d{2})(\d{2})\s*[.!]?\s*$/.exec(rest);
+  if (em && bad(+em[1]!, +em[2]!) && !out.length) {
+    const before = rest.slice(0, em.index);
+    if (!CONTEXT_BEFORE_RE.test(before) && !PLATE_BEFORE_RE.test(before)) out.push({ kind: "zeit", text: `«${em[1]}${em[2]}» ist keine gültige Uhrzeit`, token: em[1]! + em[2]! });
+  }
   return out;
+}
+
+/** folgt eine Anzahl/Einheit («4 Pers», «Fz», «m»)? Dann ist die Zahl davor keine Minute bzw. Stunde */
+function countAfter(after: string): boolean {
+  return UNIT_AFTER_RE.test(after) || isCountNoun(/^\s*([\p{L}][\p{L}\-]*)/u.exec(after)?.[1]);
+}
+
+/**
+ * Uhrzeiten mit Ziffern-Stunde, die `findTimes` nicht liest: «7 Uhr», «um 19 Uhr», «19 Uhr 30», «um 715», «um 7».
+ * Ziffern gelten wie geschrieben (24-Stunden-Uhr, «7 Uhr» = 07:00). Was sich mit `have` überschneidet, fällt weg.
+ * «9 Uhr 4 Pers»: die Zahl nach «Uhr» ist die Anzahl, nicht die Minute.
+ */
+export function hourTimes(rest: string, have: FoundTime[] = []): FoundTime[] {
+  const out: FoundTime[] = [];
+  const free = (a: number, b: number) => ![...have, ...out].some((t) => a < t.index + t.raw.length && b > t.index);
+  const push = (minutes: number, raw: string, index: number) => { if (free(index, index + raw.length)) out.push({ minutes, raw, index }); };
+  // «7 Uhr», «07 Uhr», «19 Uhr 30»
+  for (const m of rest.matchAll(/(?<![\d'’.:/\p{L}])([01]?\d|2[0-4])\s*uhr(?![\p{L}])/giu)) {
+    let raw = m[0];
+    let minutes = (+m[1]! % 24) * 60;
+    const after = rest.slice(m.index! + raw.length);
+    const mm = /^\s+([0-5]?\d)(?![\d'’.:])/.exec(after);
+    if (mm && !countAfter(after.slice(mm[0].length))) { raw += mm[0]; minutes += +mm[1]!; }
+    push(minutes, raw, m.index!);
+  }
+  // «um 715», «Zeit 715», «ab 930»: dreistellig nur nach einem Zeitwort
+  for (const m of rest.matchAll(/(?<![\p{L}])(?:um|gegen|ca\.?|circa|zeit|uhrzeit|punkt|genau|ab)\s*:?\s+(\d)([0-5]\d)(?![\d'’.:])/giu)) {
+    const raw = m[1]! + m[2]!;
+    const index = m.index! + m[0].length - raw.length;
+    if (countAfter(rest.slice(index + raw.length))) continue;
+    push(+m[1]! * 60 + +m[2]!, raw, index);
+  }
+  // «um 7», «um 19»: Stunde ohne «Uhr» nur nach «um» und ohne Anzahl/Einheit danach
+  for (const m of rest.matchAll(/(?<![\p{L}])um\s+([01]?\d|2[0-3])(?![\d'’.:\p{L}])/giu)) {
+    const raw = m[1]!;
+    const index = m.index! + m[0].length - raw.length;
+    if (countAfter(rest.slice(index + raw.length))) continue;
+    push(+raw * 60, raw, index);
+  }
+  return out.sort((a, b) => a.index - b.index);
+}
+
+/** Stunde aus Ziffer oder Zahlwort («9», «neun», «zwölf»), 0–24; sonst undefined */
+function hourOf(w: string): number | undefined {
+  const n = /^\d{1,2}$/.test(w) ? +w : spokenNumber(w);
+  return n !== undefined && n >= 0 && n <= 24 ? n : undefined;
+}
+
+export interface LooseTime {
+  /** verwendete Zeit (relativ zu `now` bzw. ungefähr) */
+  used?: FoundTime;
+  /** Textstelle (für die Erkennung ausblenden) */
+  span?: [number, number];
+  /** liegt vor Mitternacht des Meldetags («vor 20 min» um 00:10) */
+  dayBefore?: boolean;
+  /** ungefähre Zeit ohne genaue Uhrzeit («kurz nach acht») → Problem «zeit» */
+  problems: DraftProblem[];
+}
+
+const REL_RE = /(?<![\p{L}])vor\s+(?:(\d{1,3}|[\p{L}]+)\s*(min(?:uten?|ute|\.)?|'|std\.?|stunden?|h)|(?:einer|1)\s+(halben\s+stunde|viertelstunde|viertel\s+stunde|stunde|minute))(?![\p{L}])/iu;
+const APPROX_RE = /(?<![\p{L}])(?:gegen|ca\.?|circa|etwa|ungefähr)\s+(?:um\s+)?(\d{1,2}|[\p{L}]+)(?=\s*$|\s*[,.;!)–-]|\s+(?:H\d|Det\b|Zug\b|Gr\b|Trp\b|Pat\b|in\b|bei\b|im\b|[A-Z]{2}\s?\d))/u;
+const VAGUE_TIME_RE = /(?<![\p{L}])kurz\s+(?:nach|vor)\s+(?:halb\s+)?(\d{1,2}|[\p{L}]+)(?:\s*uhr)?(?![\p{L}\d])/iu;
+
+/**
+ * Zeit ohne Uhrzeit-Form – nur wenn sonst keine Zeit gefunden wurde:
+ * - relativ: «vor 10 min», «vor zehn Minuten», «vor einer halben Stunde», «vor 2 Std» → jetzt minus Dauer;
+ * - ungefähr mit Stunde: «gegen neun», «ca. 9» → 09:00 (12-Stunden-Lesart näher bei `now`: «gegen neun» um 20:00 → 21:00);
+ * - ungenau: «kurz nach acht», «kurz vor zehn» → Problem «zeit» (nie still «jetzt»).
+ */
+export function looseTime(rest: string, nowMin: number): LooseTime {
+  const r = REL_RE.exec(rest);
+  if (r) {
+    let n: number | undefined;
+    if (r[3]) n = /halb/i.test(r[3]) ? 30 : /viertel/i.test(r[3]) ? 15 : /stunde/i.test(r[3]) ? 60 : 1;
+    else {
+      const v = /^\d+$/.test(r[1]!) ? +r[1]! : /^(?:einer|ein|eine)$/i.test(r[1]!) ? 1 : spokenNumber(r[1]!);
+      if (v !== undefined) n = /^(?:std|stunde|h)/i.test(r[2]!) ? v * 60 : v;
+    }
+    if (n !== undefined && n > 0 && n <= 24 * 60) {
+      const t = nowMin - n;
+      return { used: { minutes: (t % 1440 + 1440) % 1440, raw: r[0], index: r.index, relative: true }, span: [r.index, r.index + r[0].length], dayBefore: t < 0, problems: [] };
+    }
+  }
+  const a = APPROX_RE.exec(rest);
+  const h = a ? hourOf(a[1]!) : undefined;
+  if (a && h !== undefined && !countAfter(rest.slice(a.index + a[0].length))) {
+    let hh = h % 24;
+    if (h >= 1 && h <= 12) {
+      const dist = (x: number) => Math.min(Math.abs(x - nowMin), 1440 - Math.abs(x - nowMin));
+      if (dist(((h + 12) % 24) * 60) < dist(hh * 60)) hh = (h + 12) % 24;
+    }
+    return { used: { minutes: hh * 60, raw: a[0], index: a.index }, span: [a.index, a.index + a[0].length], problems: [] };
+  }
+  const v = VAGUE_TIME_RE.exec(rest);
+  if (v && hourOf(v[1]!) !== undefined) {
+    const tok = v[0].trim();
+    return { problems: [{ kind: "zeit", text: `«${tok}»: ungefähre Zeit – bitte Uhrzeit angeben (z. B. 0805)`, token: tok }] };
+  }
+  return { problems: [] };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -269,23 +433,32 @@ const PART_NAME: Record<string, [string, string]> = {
   lkw: ["Lastwagen", "Lastwagen"], lkws: ["Lastwagen", "Lastwagen"], fz: ["Fahrzeug", "Fahrzeuge"], fahrzeug: ["Fahrzeug", "Fahrzeuge"], fahrzeuge: ["Fahrzeug", "Fahrzeuge"],
   pers: ["Person", "Personen"], person: ["Person", "Personen"], personen: ["Person", "Personen"], mann: ["Mann", "Mann"], sdt: ["Soldat", "Soldaten"],
   soldaten: ["Soldat", "Soldaten"], männer: ["Mann", "Männer"], frauen: ["Frau", "Frauen"], leute: ["Person", "Personen"],
+  lieferwagen: ["Lieferwagen", "Lieferwagen"], motorrad: ["Motorrad", "Motorräder"], motorräder: ["Motorrad", "Motorräder"],
+  drohne: ["Drohne", "Drohnen"], drohnen: ["Drohne", "Drohnen"], panzer: ["Panzer", "Panzer"], kpz: ["Kampfpanzer", "Kampfpanzer"], spz: ["Schützenpanzer", "Schützenpanzer"],
 };
 
 /**
  * Aufzählung mit mehreren Anzahlen («1 Auto 1 Lw und 3 Pers», «2 Pw, 1 Lw»): alle Teile als Text, damit nichts verloren geht.
  * Liefert nichts bei nur einem Teil oder wenn alle Teile dasselbe sind.
  */
-export function listParts(text: string, skip: Array<[number, number]> = []): string | undefined {
-  const parts: Array<{ n: number; w: string }> = [];
+export function listParts(text: string, skip: Array<[number, number]> = [], cells?: Array<{ index: number; label: string }>): string | undefined {
+  const parts: Array<{ n: number; w: string; index: number }> = [];
   for (const m of text.matchAll(/(?<![\p{L}\d'’.:])(\d{1,3})\s+([\p{L}]+)(?:\s+([\p{L}]+))?/gu)) {
     if (skip.some(([a, b]) => m.index! < b && m.index! + m[1]!.length > a)) continue;
     // Nomen direkt nach der Zahl, sonst nach einem Beschreibungswort («2 schwarze Pw»)
     const w = [m[2], m[3]].map((x) => x?.toLowerCase()).find((x) => x && PART_NOUN.test(x));
     if (!w) continue;
-    parts.push({ n: +m[1]!, w });
+    parts.push({ n: +m[1]!, w, index: m.index! });
   }
   if (parts.length < 2 || new Set(parts.map((p) => PART_NAME[p.w]?.[0] ?? p.w)).size < 2) return undefined;
-  return parts.map((p) => { const nm = PART_NAME[p.w]; return `${p.n} ${nm ? nm[p.n === 1 ? 0 : 1] : p.w}`; }).join(", ");
+  // Ort je Teil: erstes Planquadrat nach dem Teil (vor dem nächsten Teil) – nur wenn die Teile an verschiedenen Orten sind
+  const at = parts.map((p, k) => cells?.find((c) => c.index > p.index && c.index < (parts[k + 1]?.index ?? Infinity))?.label);
+  const withPlace = new Set(at.filter(Boolean)).size > 1;
+  return parts.map((p, k) => {
+    const nm = PART_NAME[p.w];
+    const name = nm ? nm[p.n === 1 ? 0 : 1] : p.w[0]!.toUpperCase() + p.w.slice(1);
+    return `${p.n} ${name}${withPlace && at[k] ? ` in ${at[k]}` : ""}`;
+  }).join(", ");
 }
 
 /** «Fz in AK7, 2 Stück» – Anzahl mit «Stück»/«Stk» */
@@ -294,3 +467,118 @@ export function stueckCount(text: string): number | undefined {
   return m ? +m[1]! : undefined;
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------
+// Anzahl in Worten (getippt): «ein Panzer», «ein Dutzend Soldaten», «ein paar Leute»
+
+/** Artikel «ein/eine/einen» als Anzahl nur vor diesen Wörtern (Fahrzeuge, Personen, Geräte, Elemente) */
+const ART_NOUN_RE = /^(?:fahrzeug|fz|person|pers|mann|soldat|sdt|pw|personenwagen|lw|lastwagen|lieferwagen|kastenwagen|transporter|drohne|spz|schützenpanzer|kpz|kampfpanzer|panzer|motorrad|töff|velo|traktor|auto|lkw|bus|kleinbus|jeep|pick-?up|geländewagen|duro|zivilist|zivilperson|bewaffnete[rn]?|helikopter|heli|minenwerfer|mw|mg|maschinengewehr|raketenwerfer|lenkwaffe|pzaw)$/i;
+const SMALL_WORD: Record<string, number> = { ein: 1, eine: 1, einen: 1, zwei: 2, zwo: 2, drei: 3, vier: 4, fünf: 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10 };
+/** unbestimmte Mengen: keine Anzahl, bleiben im Sinn («ein paar gegnerische Soldaten») */
+const VAGUE_RE = /(?<![\p{L}])(ein\s+paar|einige|mehrere|etliche|viele|wenige|zahlreiche)(?![\p{L}])/iu;
+
+/**
+ * Anzahl in Worten für die Erkennung lesbar machen (nur intern, der Meldungstext bleibt): «ein Panzer» → «1 Panzer»,
+ * «einen weissen Lieferwagen» → «1 weissen Lieferwagen», «ein Dutzend» → «12», «zwei Dutzend» → «24», «ein halbes Dutzend» → «6».
+ * «ein paar» bleibt unbestimmt (keine Anzahl, siehe `vagueAmount`).
+ */
+export function countWords(text: string): string {
+  let out = text.replace(/(?<![\p{L}\d])(?:(ein|eine|einem|\d{1,2}|zwei|zwo|drei|vier|fünf|sechs|sieben|acht|neun|zehn)\s+)?(halbes\s+)?dutzend(?![\p{L}])/giu, (m, n: string | undefined, half: string | undefined) => {
+    const f = !n ? 1 : /^\d/.test(n) ? +n : SMALL_WORD[n.toLowerCase()] ?? 1;
+    return String(half ? f * 6 : f * 12);
+  });
+  out = out.replace(/(?<![\p{L}\d])(ein|eine|einen|einem|einer)\s+(?=([\p{L}][\p{L}\-]*)(?:\s+([\p{L}][\p{L}\-]*))?)/giu, (m, _a: string, w1: string, w2: string | undefined) => {
+    const base = (w: string) => w.toLowerCase().replace(/(?:en|e|n|s)$/, "");
+    const noun = (w: string | undefined) => !!w && (ART_NOUN_RE.test(w) || ART_NOUN_RE.test(base(w)));
+    if (/^paar$/i.test(w1)) return m;
+    // Nomen direkt danach oder nach einem kleingeschriebenen Beschreibungswort («einen weissen Lieferwagen»)
+    if (noun(w1) || (/^[\p{Ll}]/u.test(w1) && noun(w2))) return "1 ";
+    return m;
+  });
+  return out;
+}
+
+/** Unbestimmte Menge im Text («ein paar», «einige», «mehrere») – für den Sinn, keine Anzahl */
+export function vagueAmount(text: string): string | undefined {
+  const m = VAGUE_RE.exec(text);
+  return m ? m[1]!.toLowerCase().replace(/\s+/g, " ") : undefined;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Zeitfeld (Bearbeiten)
+
+/**
+ * Zeitfeld beim Bearbeiten («1015», «10:15», «10.15», «9:05»): Minuten seit Mitternacht; leer = unverändert (null);
+ * ungültig («25:70», «abc») = Problem – nie still auf 23:59 kappen.
+ */
+export function clockField(value: string): number | null | DraftProblem {
+  const v = value.trim();
+  if (!v) return null;
+  const m = /^(\d{1,2})[:.h]?(\d{2})$/.exec(v);
+  if (!m || +m[1]! > 23 || +m[2]! > 59) return { kind: "zeit", text: `«${v}» ist keine gültige Uhrzeit`, token: v };
+  return +m[1]! * 60 + +m[2]!;
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// Melder
+
+/** «H04» → ["H", 4]; «Zug 1» → ["ZUG", 1]; ohne Nummer undefined */
+function unitKey(u: string): [string, number] | undefined {
+  const m = /^([\p{L}]+)\.?\s?0*(\d{1,3})$/u.exec(u.trim());
+  return m ? [m[1]!.toUpperCase(), +m[2]!] : undefined;
+}
+const sameUnit = (a: string, b: string) => { const x = unitKey(a), y = unitKey(b); return x && y ? x[0] === y[0] && x[1] === y[1] : a.replace(/\s/g, "").toLowerCase() === b.replace(/\s/g, "").toLowerCase(); };
+
+/**
+ * Funksprache «Hotel eins drei Personen» wird zu «H13 Pers» – gibt es H13 in der Übung nicht, aber H01, dann ist
+ * gemeint: H01 mit 3 Pers («H01 3 Pers»). Ebenso «H21 Panzer» → «H02 1 Panzer», «H44 Fz» → «H04 4 Fz».
+ * Nur wenn direkt danach ein zählbares Wort ohne eigene Zahl steht.
+ */
+export function splitMelderCount(text: string, blau: string[]): string {
+  if (!blau.length) return text;
+  return text.replace(/(?<![\p{L}\d])H(\d)([1-9])(?=\s+([\p{L}][\p{L}\-]*))/gu, (m, a: string, b: string, w: string) => {
+    if (blau.some((u) => sameUnit(u, m)) || !isCountNoun(w)) return m;
+    const cand = blau.filter((u) => sameUnit(u, `H${a}`));
+    return cand.length === 1 ? `${cand[0]} ${b}` : m;
+  });
+}
+
+/**
+ * Eigenes Element (Melder bzw. gesehenes eigenes Element), das es in der Übung nicht gibt und das nach
+ * zusammengezogenen Ziffern aussieht: «H13», wenn die Übung H01 kennt, H13 aber nicht («Hotel eins drei …» =
+ * H01 + 3?). → Problem «melder» (Eintragen gesperrt; Ausweg: Trupp im Text korrigieren oder ausdrücklich als neues
+ * Element aufnehmen).
+ * Ein sonst neuer Trupp («H06» bei H01–H05, «H02» nach H01 in einer neuen Übung) wird weiter gelernt – die Übung
+ * kennt ihre Trupps nur aus den Meldungen, sonst wäre jede neue Übung nach der ersten Meldung gesperrt.
+ */
+export function melderProblems(names: string[], blau: string[]): DraftProblem[] {
+  const out: DraftProblem[] = [];
+  for (const n of names) {
+    const k = unitKey(n);
+    if (!k || k[1] < 10 || k[1] > 99 || blau.some((u) => sameUnit(u, n)) || out.some((p) => p.token === n)) continue;
+    const kin = blau.filter((u) => unitKey(u)?.[0] === k[0]).sort((x, y) => unitKey(x)![1] - unitKey(y)![1]);
+    const head = kin.find((u) => unitKey(u)![1] === Math.floor(k[1] / 10));
+    if (!head) continue;
+    const list = kin.length <= 6 ? kin.join(", ") : `${kin[0]}–${kin[kin.length - 1]}`;
+    out.push({ kind: "melder", text: `«${n}» gibt es in der Übung nicht (bekannt: ${list}) – gemeint «${head} ${k[1] % 10} …»?`, token: n });
+  }
+  return out;
+}
+
+/**
+ * Mehrere Anzahlen an verschiedenen Orten in einer Meldung («2 Fz AK7 und 3 Pers AL8»): Orte der Teile (≥ 2
+ * verschiedene) – die Karte zeigt nur einen Ort, also Problem «orte» (als einzelne Meldungen eintragen).
+ */
+export function partPlaces(text: string, skip: Array<[number, number]>, cells: Array<{ index: number; label: string }>): string[] {
+  if (cells.length < 2) return [];
+  const parts: number[] = [];
+  for (const m of text.matchAll(/(?<![\p{L}\d'’.:])(\d{1,3})\s+([\p{L}]+)(?:\s+([\p{L}]+))?/gu)) {
+    if (skip.some(([a, b]) => m.index! < b && m.index! + m[1]!.length > a)) continue;
+    if ([m[2], m[3]].some((x) => x && (PART_NOUN.test(x) || isCountNoun(x)))) parts.push(m.index!);
+  }
+  if (parts.length < 2) return [];
+  const at = parts.map((p, k) => cells.find((c) => c.index > p && c.index < (parts[k + 1] ?? Infinity))?.label);
+  const uniq = [...new Set(at.filter((x): x is string => !!x))];
+  return uniq.length > 1 && at.every(Boolean) ? uniq : [];
+}

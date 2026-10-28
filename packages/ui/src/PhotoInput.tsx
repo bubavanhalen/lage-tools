@@ -128,6 +128,8 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
   const [rect, setRect] = useState<Rect | null>(null);
   const [cell, setCell] = useState("");
   const [ocr, setOcr] = useState<OcrState>("unbekannt");
+  /** Foto nicht im Gerätespeicher (voll) – nur im Arbeitsspeicher dieses Fensters */
+  const [unsaved, setUnsaved] = useState(false);
   const [review, setReview] = useState<{ items: BatchItem[]; att: Attachment; conf: number; q: PhotoQuality; rot: number; ki?: { notes?: string; sent: KiRequest["disclosure"] }; n: number } | null>(null);
   const ki = useKi();
   const used = useRef(false);
@@ -147,8 +149,12 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
         const r = await preparePhoto(file, rot);
         if (gone) return;
         if (saved.current) await deleteAttachmentBlob(saved.current);
-        await storeAttachmentBlob(r.att, r.blob, r.canvas);
+        // Gerätespeicher voll/blockiert: Foto bleibt im Arbeitsspeicher (putBlob) – ehrlich melden, nicht «nicht lesbar»
+        let ok = true;
+        try { await storeAttachmentBlob(r.att, r.blob, r.canvas); } catch { ok = false; }
+        if (gone) return;
         saved.current = r.att.id;
+        setUnsaved(!ok);
         setPh(r);
         setUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(r.blob); });
         setRect(null);
@@ -290,6 +296,7 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
           )}
           {step.s === "leer" && <p className="help warn">Kein Text erkannt. {kiHint(step.conf, step.q)}</p>}
           {step.s === "fehler" && <p className="help warn">{step.msg}</p>}
+          {unsaved && <p className="help warn ph-unsaved" role="alert"><b>Foto nicht gespeichert – Datei sichern.</b> Gerätespeicher voll: Das Foto liegt nur in diesem Fenster und geht beim Schliessen verloren, ausser es wird mit «Speichern» als Datei gesichert.</p>}
           {ocr !== "bereit" && step.s === "bereit" && (
             <p className="help">{online ? `Texterkennung läuft auf dem Gerät – beim ersten Mal werden ≈ ${OCR_MB} MB geladen, danach offline.` : "Offline: Texterkennung ist noch nicht geladen (braucht einmal Netz). Das Foto lässt sich trotzdem anhängen."}</p>
           )}

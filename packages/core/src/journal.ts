@@ -11,9 +11,9 @@ import { boundsCenter, cellBounds, findCells, type RasterSheet } from "./raster"
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
-import { addDays, localDay, localIso, nearestDay } from "./clock";
+import { addDays, compareEvents, localDay, localIso, nearestDay, offsetFor } from "./clock";
 import { autoShape, shapeCenter } from "./shapes";
-import { isGenericPlace, isLeadTimeAfterElement, isNeedNote, listParts, namesPlace, normalizeTyped, observedOwn, placeProblems, placeSpans, staysOwn, stripLead, stueckCount, timeProblems } from "./erkennung";
+import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeTyped, observedOwn, partPlaces, pickTime, placeProblems, placeSpans, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, vagueAmount } from "./erkennung";
 
 export interface JournalContext {
   sheets: RasterSheet[];
@@ -94,7 +94,12 @@ export interface Draft {
   /**
    * Probleme, die das Eintragen sperren (nie still falsch). Leer/fehlend = keine.
    * - `ort`: genannter Ort existiert nicht («AK77», «ZZ3», «NAI 9») → kein Ersatzort (kein «bei Melder»), `pos` fehlt
-   * - `zeit`: ungültige Zeitangabe («13:70») → Zeit «jetzt» ist nur Platzhalter
+   * - `zeit`: ungültige Zeitangabe («13:70»), zweite andere Zeitangabe oder ungefähre Zeit («kurz nach acht») → Zeit
+   *   «jetzt» ist nur Platzhalter
+   * - `melder`: eigenes Element, das es in der Übung nicht gibt («H13», wenn H01–H05 bekannt sind; `token` = Name) →
+   *   Ausweg: Trupp im Text korrigieren oder ausdrücklich als neues Element aufnehmen (UI)
+   * - `orte`: mehrere Anzahlen an verschiedenen Orten («2 Fz AK7 und 3 Pers AL8») – die Karte zeigt nur einen Ort →
+   *   als einzelne Meldungen eintragen («Ort auf Karte» löst das nicht)
    * Die UI zeigt `text` als roten Chip und sperrt Enter/Eintragen (Ausweg: Ort auf Karte setzen, Text korrigieren).
    */
   problems?: DraftProblem[];
@@ -102,7 +107,7 @@ export interface Draft {
 
 /** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
 export interface DraftProblem {
-  kind: "ort" | "zeit";
+  kind: "ort" | "zeit" | "melder" | "orte";
   /** Klartext, z. B. «AK77» gibt es nicht */
   text: string;
   /** betroffene Textstelle, z. B. «AK77» */
@@ -147,7 +152,7 @@ const COUNT_RE = /(?<![\p{L}\d'’.:])(\d{1,3})\s*(?:x|×)?\s*(fz|fahrzeuge?|pw|
  */
 const SIGHT_RE = /(?<![\p{L}\d'’.:])(\d{1,3})\s+(?:[\p{L}\-]+\s+){0,2}?(velos?|fahrr(?:ad|äder)|velofahrer(?:in)?|radfahrer(?:in)?|traktor(?:en)?|landwirtschaftsfahrzeug(?:e)?|lieferwagen|kastenwagen|transporter|pick-?ups?|suvs?|limousinen?|kombis?|jeeps?|vans?|motorr(?:ad|äder)|töffs?|roller|quads?|lkws?|lastwagen|laster|holzlaster|kleinbus(?:se)?|wohnmobile?|autos?|pws?|personenwagen|fahrzeuge?|fz|pers(?:onen)?|leute|männer|frauen|wanderer|jogger(?:in)?|fussgänger(?:in)?|spaziergänger(?:in)?)(?![\p{L}\d])/iu;
 /** zivil geprägte Sichtungen → Zugehörigkeit unklar (Velo, Traktor, Wanderer …) */
-const SIGHT_CIVIL_RE = /^(?:velo|fahrr|velofahrer|radfahrer|traktor|landwirtschaft|wohnmobil|wanderer|jogger|fussgänger|spaziergänger)/i;
+const SIGHT_CIVIL_RE = /^(?:velo|fahrr|velofahrer|radfahrer|traktor|landwirtschaft|wohnmobil|wanderer|jogger|fussgänger|spaziergänger|leute)/i;
 const SIGHT_SYM = (noun: string): string => (/^(?:pers|leute|männer|frauen)/i.test(noun) ? "inf_trp" : SIGHT_CIVIL_RE.test(noun) ? (/^(?:traktor|landwirtschaft|wohnmobil)/i.test(noun) ? "ziv_fz" : "zivil") : "fz");
 
 /** Herkunft: «aus Rtg O», «aus Richtung Bern», «von N», «aus W» (keine Bewegungsrichtung) */
@@ -187,7 +192,10 @@ export function areaCenter(a: Area): LV95 {
 
 export function parseMeldung(input: string, ctx: JournalContext): Draft {
   // getippte Funk-/Sprechsprache wie beim Diktat lesen («Hotel 4 … zwei Fz … Alpha Kilo 7»); Kurzmeldungen unverändert
-  const typed = normalizeTyped(input.trim(), { blau: ctx.units.blau, now: ctx.now });
+  const typed0 = normalizeTyped(input.trim(), { blau: ctx.units.blau, now: ctx.now });
+  // «Hotel eins drei Personen» → «H13 Pers»: gibt es H13 nicht, aber H01 → «H01 3 Pers» (sichtbar als «gelesen als»)
+  const split = splitMelderCount(typed0.text, ctx.units.blau);
+  const typed = split === typed0.text ? typed0 : { text: split, changed: true };
   let rest = typed.text;
   /** Probleme, die das Eintragen sperren (Zeit hier, Ort weiter unten) – kommen als `problems` in den Entwurf */
   const problems: DraftProblem[] = [];
@@ -206,28 +214,49 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   }
   let minutes = ctx.now.getHours() * 60 + ctx.now.getMinutes();
   let timeFromText = false;
-  const times = findTimes(rest);
-  const lead = times.find((x) => x.index <= 2 || isLeadTimeAfterElement(rest, x.index));
-  problems.push(...timeProblems(rest));
-  if (lead) {
-    minutes = lead.minutes;
+  // Zeit irgendwo im Satz (Anfang, nach Melder, «um …», am Ende); weitere andere Zeitangabe → Problem
+  const found0 = findTimes(rest);
+  const tp = pickTime(rest, [...found0, ...hourTimes(rest, found0)].sort((a, b) => a.index - b.index));
+  problems.push(...timeProblems(rest), ...tp.problems);
+  // ohne Uhrzeit: «vor 10 min» = jetzt − 10, «gegen neun» = 09:00, «kurz nach acht» = Problem (nie still «jetzt»)
+  const loose = tp.used ? null : looseTime(rest, minutes);
+  if (loose) problems.push(...loose.problems);
+  /** Meldungstext für das Journal (eine Zeit mitten im Satz bleibt stehen); `rest` = Text für die Erkennung */
+  let shownRest = rest;
+  if (tp.used) {
+    minutes = tp.used.minutes;
     timeFromText = true;
-    rest = (rest.slice(0, lead.index) + rest.slice(lead.index + lead.raw.length)).replace(/^[\s,:\-–]+/, "");
-  } else if (times[0] && /\b(?:um|zeit|wann)\b\s*:?\s*$/i.test(rest.slice(0, times[0].index))) {
-    minutes = times[0].minutes;
+    const [a, b] = tp.span!;
+    if (tp.lead) {
+      const head = rest.slice(0, a).replace(/\s+$/, "");
+      const tail = rest.slice(b).replace(/^[\s,:\-–]+/, "");
+      shownRest = rest = head ? `${head} ${tail}` : tail;
+    }
+    else rest = blank(rest, a, b);
+  }
+  let relDay = false;
+  if (loose?.used) {
+    minutes = loose.used.minutes;
     timeFromText = true;
+    rest = blank(rest, loose.span![0], loose.span![1]);
+    if (loose.used.relative) {
+      relDay = true;
+      if (loose.dayBefore && !dm) day = addDays(day, -1);
+    }
   }
   // getippte Zeit ohne Tag kurz nach Mitternacht («2355» um 00:15) gehört zum Vortag
-  if (timeFromText && !dm && ctx.dayFromClock) day = nearestDay(day, minutes, ctx.now);
+  if (timeFromText && !dm && !relDay && ctx.dayFromClock) day = nearestDay(day, minutes, ctx.now);
 
   // ---- ausdrückliche Einordnung am Anfang («Rot …», «Feind …», «Eigen …»)
   let kind: Kind | null = null;
   for (const [re, k] of KIND_WORDS) {
     const m = re.exec(rest);
-    if (m) { kind = k; rest = rest.slice(m[0].length); break; }
+    if (m) { kind = k; rest = rest.slice(m[0].length); shownRest = shownRest.slice(m[0].length); break; }
   }
   const explicit = kind !== null;
-  const text = rest.trim();
+  const shown = shownRest.trim();
+  // Anzahl in Worten nur für die Erkennung («ein Panzer» → «1 Panzer», «ein Dutzend» → «12»)
+  const text = countWords(rest.trim());
 
   // ---- Elemente: Melder (eigen) und ggf. bekanntes Feindelement
   const known: Array<[string, Side]> = [
@@ -264,6 +293,8 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const melderHit = hits.find((h) => h.side !== "rot");
   const enemyHit = hits.find((h) => h.side === "rot");
   const melder = melderHit?.u ?? "";
+  // eigenes Element, das es in der Übung nicht gibt («H13» bei H01–H05): Problem statt still neuer Trupp
+  problems.push(...melderProblems(hits.filter((h) => h.side === null).map((h) => h.u), ctx.units.blau));
 
   // ---- Sichtung ohne Katalogbegriff («1 weisser Lieferwagen AO2»): Anzahl und allgemeines Zeichen
   let sight: { count: number; sym: string; civil: boolean } | undefined;
@@ -288,7 +319,7 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     }
   }
   // Aufzählung («1 Auto 1 Lw und 3 Pers»): alle Teile in den Sinn, keine irreführende Einzelanzahl
-  const parts = reading?.parts ? undefined : listParts(text, skip);
+  let parts = reading?.parts ? undefined : listParts(text, skip);
   const count = parts ? undefined : reading?.count ?? cmCount ?? sight?.count ?? stueckCount(text);
   let kindFrom: Draft["kindFrom"] = explicit ? "text" : "inhalt";
   if (ctx.kind) { kind = ctx.kind; kindFrom = "vorgabe"; }
@@ -337,6 +368,11 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   }
   const exclude = [...known.map(([u]) => u), ...hits.map((h) => h.u)].map((u) => u.replace(/\s/g, ""));
   const found = findCells(locText, ctx.sheets, { exclude });
+  // Aufzählung an mehreren Orten («2 Fz AK7 und 3 Pers AL8»): Ort je Teil in den Sinn (Zeichen steht am ersten Ort)
+  if (parts && found.length > 1) parts = listParts(text, skip, found.map((f) => ({ index: f.index, label: f.label }))) ?? parts;
+  // die Karte zeigt nur einen Ort: Teile an verschiedenen Orten als einzelne Meldungen eintragen
+  const multi = partPlaces(locText, skip, found.map((f) => ({ index: f.index, label: f.label })));
+  if (multi.length > 1) problems.push({ kind: "orte", text: `${multi.length === 2 ? "zwei" : multi.length} Orte (${multi.join(", ")}) – bitte als ${multi.length === 2 ? "zwei" : multi.length} Meldungen eintragen`, token: multi.join(" ") });
   if (found.length) {
     cells = found.map((c) => c.label);
     if (!pos) {
@@ -411,12 +447,15 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const adjAff: Affiliation | null = kind === "feind" && (isElement || (reading?.explicitAff && reading.aff === "H")) ? "H" : kind === "eigen" && reading?.aff === "F" ? "F" : null;
   const baseDesc = reading ? describeTactical({ ...reading, count }, adjAff) : undefined;
   // Aufzählung: nur ersetzen, wenn der Sinn nicht schon alle Anzahlen enthält
-  const desc = parts && !parts.split(", ").every((p) => new RegExp(`(?<!\\d)${p.split(" ")[0]}(?!\\d)`).test(baseDesc ?? "")) ? parts : baseDesc;
+  const desc0 = parts && !parts.split(", ").every((p) => new RegExp(`(?<!\\d)${p.split(" ")[0]}(?!\\d)`).test(baseDesc ?? "")) ? parts : baseDesc;
+  // unbestimmte Menge («ein paar Soldaten»): keine Anzahl, aber im Sinn behalten
+  const vague = count === undefined && !parts ? vagueAmount(text) : undefined;
+  const desc = vague && desc0 && !desc0.toLowerCase().includes(vague) ? `${vague} ${desc0}` : desc0;
   return {
     minutes, day, t: isoOf(day, minutes), timeFromText, kind, kindFrom, side, melder, unit, sym, aff, sidc, echelon, status, desc, count,
     dir, dirLabel, from, fromLabel, roadHint, pos, where, cells, nai, placeQuery,
     // Originaltext bleibt erhalten; die Lesart der Funk-/Sprechsprache steht in `normalized`
-    text: typed.changed ? stripLead(input) || input.trim() : text || input.trim(),
+    text: typed.changed ? stripLead(input) || input.trim() : shown || input.trim(),
     ...(typed.changed ? { normalized: typed.text } : {}),
     ...(problems.length ? { problems } : {}),
   };
@@ -474,7 +513,7 @@ export function unitKey(side: Side, unit: string): string {
  * @param maxAgeMin Meldungen ohne Element werden nur so lange gezeigt (Minuten)
  */
 export function situationAt(events: LageEvent[], t: string, maxAgeMin = Infinity): { units: UnitState[]; loose: LageEvent[] } {
-  const live = events.filter((e) => !e.deleted && e.t <= t).sort((a, b) => a.t.localeCompare(b.t) || a.id.localeCompare(b.id));
+  const live = events.filter((e) => !e.deleted && e.t <= t).sort(compareEvents);
   const byUnit = new Map<string, UnitState>();
   const loose: LageEvent[] = [];
   const tMin = Date.parse(t) - maxAgeMin * 60000;
@@ -546,7 +585,7 @@ function shapeCsv(e: LageEvent): string {
 
 export function journalToCsv(events: LageEvent[], days: string[]): string {
   const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Form"];
-  const rows = events.filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t)).map((e) => {
+  const rows = events.filter((e) => !e.deleted).sort(compareEvents).map((e) => {
     const d = e.t.slice(0, 10);
     const tag = days.indexOf(d) >= 0 ? `T${days.indexOf(d) + 1}` : d;
     return [tag, e.t.slice(11, 16), kindLabel(e), e.unit, e.melder ?? "", e.text, e.sym, e.where ?? "", (e.cells ?? []).join(" "), e.nai ?? "",
@@ -568,6 +607,7 @@ export function eventFromDraft(d: Draft, device: string, now = new Date()): Lage
     createdAt: now.toISOString(),
     tReported: localIso(now),
     t: d.t,
+    tOffset: offsetFor(d.t, now),
     side: d.side,
     unit: d.unit,
     melder: d.melder || undefined,
@@ -595,5 +635,7 @@ export function eventFromDraft(d: Draft, device: string, now = new Date()): Lage
 
 /** Änderung an einem Eintrag (Revision hochzählen, für den späteren Abgleich zwischen Geräten). */
 export function reviseEvent(e: LageEvent, patch: Partial<LageEvent>, device: string, now = new Date()): LageEvent {
-  return { ...e, ...patch, rev: e.rev + 1, device, updatedAt: now.toISOString() };
+  // neue Ereigniszeit: Offset dazu neu bestimmen (Sommerzeit), ausser er wird mitgegeben
+  const off = patch.t && patch.t !== e.t && !("tOffset" in patch) ? { tOffset: offsetFor(patch.t, now) } : {};
+  return { ...e, ...patch, ...off, rev: e.rev + 1, device, updatedAt: now.toISOString() };
 }

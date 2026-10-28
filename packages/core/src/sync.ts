@@ -2,7 +2,10 @@
  * Zusammenführen zweier Fassungen derselben Übung (Datei «Öffnen», zwei Fenster, zwei Geräte) – ohne Datenverlust:
  * - Meldungen pro ID nach Revision (`mergeEvents`); Löschen ist ein Eintrag mit `deleted` (Revision), geht also mit.
  * - Raster, Flächen, Bilder, Anhänge: Vereinigung nach ID; bei gleicher ID gilt die lokale Fassung
- *   (Anhänge: fehlende Angaben wie ein Transkript werden ergänzt).
+ *   (Anhänge: fehlende Angaben wie ein Transkript werden ergänzt). Abweichende Raster/Flächen/Bilder stehen einzeln
+ *   im Bericht (`diffs`) und lassen sich mit `takeHullItems` aus der anderen Fassung übernehmen.
+ * - Gelöschte Raster/Flächen/Bilder tragen eine Löschmarke (`Exercise.removed`, `markRemovals`) und tauchen beim
+ *   Zusammenführen nicht wieder auf.
  * - Entscheide zu Hinweisen: pro Hinweis der spätere Entscheid.
  * - Tage, Elemente, Orte: Vereinigung. Name und Einstellungen: lokal (fehlt lokal etwas, aus der anderen Fassung).
  * «Ersetzen» (andere Fassung gilt ganz) ist bewusst kein Teil davon – nur auf ausdrücklichen Wunsch.
@@ -26,23 +29,74 @@ export interface MergeReport {
   decisions: number;
   /** gleiche ID, anderer Inhalt (Raster, Fläche, Bild) – hiesige Fassung behalten */
   abweichend: number;
+  /** die abweichenden Raster/Flächen/Bilder einzeln (zum Wählen «hiesige behalten / aus Datei übernehmen») */
+  diffs: HullDiff[];
 }
+
+/** Teile der Hülle mit ID, die beim Zusammenführen einzeln gewählt werden können */
+export type HullKind = "sheets" | "areas" | "overlays";
+const HULL_KINDS: HullKind[] = ["sheets", "areas", "overlays"];
+
+/** Raster/Fläche/Bild mit gleicher ID, aber anderem Inhalt in beiden Fassungen */
+export interface HullDiff {
+  kind: HullKind;
+  id: string;
+  /** Name hier */
+  name: string;
+  /** Name in der anderen Fassung */
+  theirsName: string;
+}
+
+type Marks = NonNullable<Exercise["removed"]>;
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-/** Vereinigung nach ID; lokal gewinnt. Zählt hinzugekommene und abweichende. */
-function unionById<T extends { id: string }>(local: T[] | undefined, other: T[] | undefined, combine?: (l: T, o: T) => T): { list: T[]; added: number; differ: number } {
-  const out = [...(local ?? [])];
+/** Löschmarken vereinigen: pro ID gilt die spätere */
+export function mergeMarks(a: Marks | undefined, b: Marks | undefined): Marks | undefined {
+  if (!b || !Object.keys(b).length) return a;
+  if (!a || !Object.keys(a).length) return b;
+  const out: Marks = { ...a };
+  for (const [id, m] of Object.entries(b)) { const cur = out[id]; if (!cur || m.at > cur.at) out[id] = m; }
+  return out;
+}
+
+/** gilt die ID als gelöscht? */
+export const isRemoved = (marks: Marks | undefined, id: string) => !!marks?.[id] && !marks[id]!.undone;
+
+/**
+ * Löschmarken nachführen (nach jeder Änderung der Übung): Raster/Flächen/Bilder, die in `after` fehlen, bekommen eine
+ * Marke; wieder aufgetauchte (Rückgängig) werden als «undone» markiert. Ohne Änderung kommt `after` unverändert zurück.
+ */
+export function markRemovals(before: Exercise, after: Exercise, now = new Date()): Exercise {
+  if (before.id !== after.id) return after;
+  const at = now.toISOString();
+  let removed = after.removed;
+  const set = (id: string, v: { at: string; undone?: boolean }) => { removed = { ...(removed ?? {}), [id]: v }; };
+  for (const k of HULL_KINDS) {
+    const b = before[k] ?? [], a = after[k] ?? [];
+    if (b === a) continue;
+    const inA = new Set(a.map((x) => x.id)), inB = new Set(b.map((x) => x.id));
+    for (const x of b) if (!inA.has(x.id)) set(x.id, { at });
+    for (const x of a) if (!inB.has(x.id) && isRemoved(removed, x.id)) set(x.id, { at, undone: true });
+  }
+  return removed === after.removed ? after : { ...after, removed };
+}
+
+/** Vereinigung nach ID; lokal gewinnt; gelöschte (Marke) fallen weg. Zählt hinzugekommene und abweichende. */
+function unionById<T extends { id: string }>(local: T[] | undefined, other: T[] | undefined, marks?: Marks, combine?: (l: T, o: T) => T): { list: T[]; added: number; differ: number; diffs: Array<{ l: T; o: T }> } {
+  const out = (local ?? []).filter((x) => !isRemoved(marks, x.id));
   const idx = new Map(out.map((x, i) => [x.id, i]));
   let added = 0, differ = 0;
+  const diffs: Array<{ l: T; o: T }> = [];
   for (const o of other ?? []) {
+    if (isRemoved(marks, o.id)) continue;
     const i = idx.get(o.id);
     if (i === undefined) { idx.set(o.id, out.length); out.push(o); added++; continue; }
     const l = out[i]!;
     if (combine) out[i] = combine(l, o);
-    else if (!same(l, o)) differ++;
+    else if (!same(l, o)) { differ++; diffs.push({ l, o }); }
   }
-  return { list: out, added, differ };
+  return { list: out, added, differ, diffs };
 }
 
 function mergeDecisions(a: Record<string, HintDecision> | undefined, b: Record<string, HintDecision> | undefined): { map: Record<string, HintDecision> | undefined; added: number } {
@@ -63,14 +117,15 @@ const unionCi = (a: string[] = [], b: string[] = []) => {
 };
 
 /**
- * Hülle (alles ausser Meldungen) zusammenführen: `ours` gewinnt bei gleicher ID / bei Einstellungen.
- * Gibt die Hülle mit `ours.events` zurück.
+ * Hülle (alles ausser Meldungen) zusammenführen: `ours` gewinnt bei gleicher ID / bei Einstellungen. Was in einer
+ * der Fassungen gelöscht wurde (Löschmarke, die spätere gilt), bleibt gelöscht. Gibt die Hülle mit `ours.events` zurück.
  */
 export function mergeHull(ours: Exercise, theirs: Exercise): { ex: Exercise; report: Omit<MergeReport, "neu" | "aktualisiert" | "unveraendert" | "nurHier"> } {
-  const sheets = unionById(ours.sheets, theirs.sheets);
-  const areas = unionById(ours.areas, theirs.areas);
-  const overlays = unionById(ours.overlays, theirs.overlays);
-  const attachments = unionById(ours.attachments, theirs.attachments, (l, o) => {
+  const marks = mergeMarks(ours.removed, theirs.removed);
+  const sheets = unionById(ours.sheets, theirs.sheets, marks);
+  const areas = unionById(ours.areas, theirs.areas, marks);
+  const overlays = unionById(ours.overlays, theirs.overlays, marks);
+  const attachments = unionById(ours.attachments, theirs.attachments, undefined, (l, o) => {
     const m: Record<string, unknown> = { ...o };
     for (const [k, v] of Object.entries(l)) if (v !== undefined) m[k] = v;
     return m as unknown as typeof l;
@@ -92,13 +147,34 @@ export function mergeHull(ours: Exercise, theirs: Exercise): { ex: Exercise; rep
     places,
     events: ours.events,
   } as Exercise;
-  if (overlays.list.length) ex.overlays = overlays.list;
+  if (overlays.list.length || ex.overlays) ex.overlays = overlays.list;
   if (attachments.list.length) ex.attachments = attachments.list;
   if (dec.map) ex.hintDecisions = dec.map;
+  if (marks) ex.removed = marks;
+  const diffs: HullDiff[] = [
+    ...sheets.diffs.map(({ l, o }) => ({ kind: "sheets" as const, id: l.id, name: l.name, theirsName: o.name })),
+    ...areas.diffs.map(({ l, o }) => ({ kind: "areas" as const, id: l.id, name: l.name, theirsName: o.name })),
+    ...overlays.diffs.map(({ l, o }) => ({ kind: "overlays" as const, id: l.id, name: l.name, theirsName: o.name })),
+  ];
   return {
     ex,
-    report: { sheets: sheets.added, areas: areas.added, overlays: overlays.added, attachments: attachments.added, decisions: dec.added, abweichend: sheets.differ + areas.differ + overlays.differ },
+    report: { sheets: sheets.added, areas: areas.added, overlays: overlays.added, attachments: attachments.added, decisions: dec.added, abweichend: sheets.differ + areas.differ + overlays.differ, diffs },
   };
+}
+
+/**
+ * Einzelne Raster/Flächen/Bilder aus einer anderen Fassung übernehmen («aus Datei übernehmen») bzw. zurück auf die
+ * hiesige («hiesige behalten», `source` = hiesige Fassung vor dem Zusammenführen). Meldungen bleiben unberührt.
+ */
+export function takeHullItems(ex: Exercise, source: Exercise, picks: Array<Pick<HullDiff, "kind" | "id">>): Exercise {
+  const out: Exercise = { ...ex };
+  for (const k of HULL_KINDS) {
+    const ids = new Set(picks.filter((p) => p.kind === k).map((p) => p.id));
+    if (!ids.size) continue;
+    const src = new Map(((source[k] ?? []) as Array<{ id: string }>).map((x) => [x.id, x]));
+    (out as unknown as Record<HullKind, Array<{ id: string }>>)[k] = ((ex[k] ?? []) as Array<{ id: string }>).map((x) => (ids.has(x.id) && src.has(x.id) ? src.get(x.id)! : x));
+  }
+  return out;
 }
 
 /** Meldungen zusammenführen und zählen (andere Fassung `theirs` gegen hiesige `ours`) */

@@ -30,7 +30,8 @@ import {
   wgs84ToLv95,
   mergeExercise,
   mergeReportText,
-  zoneMismatch,
+  markRemovals,
+  takeHullItems,
 } from "@lage/core";
 import {
   AffineImageLayer,
@@ -48,7 +49,7 @@ import {
 import { currentExerciseId, downloadText, getBlob, listExercises, onDbNotice, pickFile, safeFileName } from "./store";
 import { lastCurrent, openStored, peekStored, persister, requestPersist } from "./persist";
 import { useExerciseStore } from "./useExerciseStore";
-import { MergeBar, SaveBand, type MergeInfo } from "./SaveBand";
+import { MergeBar, StatusBands, type MergeInfo } from "./SaveBand";
 import { useUndo } from "./undo";
 import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
 import { RowMemos } from "./VoiceInput";
@@ -67,7 +68,7 @@ import { MapSearch } from "./MapSearch";
 import { MapToolbar } from "./MapToolbar";
 import { MapContextMenu } from "./MapContextMenu";
 import { loadFlags, saveFlags, type LayerFlags } from "./layers";
-import { windowStart } from "@lage/core";
+import { compareEvents, windowStart } from "@lage/core";
 import { useMoveEvent, useTimeWindow } from "./mapedit";
 import { HintsPanel } from "./HintsPanel";
 import { hintExtent, hintLayer } from "./hintLayer";
@@ -170,8 +171,7 @@ export function Workspace({ product, tagline }: Props) {
       if (!r && dbBlockedRef.current) fallbackId.current = next.id;
       setEx(next);
       if (r?.recovered) say(`${r.recovered} ${r.recovered === 1 ? "Änderung" : "Änderungen"} aus dem Notfallpuffer übernommen`);
-      const zm = zoneMismatch(next.tz);
-      if (zm) say(zm);
+      // andere Zeitzone als die Übung: rotes Band (StatusBands) – beim Start, Öffnen einer Datei und aus der Liste
       setSaved(await listExercises());
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -469,7 +469,8 @@ export function Workspace({ product, tagline }: Props) {
 
   const exRef = useRef<Exercise | null>(null);
   exRef.current = ex;
-  const update = (f: (x: Exercise) => Exercise) => setEx((x) => (x ? f(structuredClone(x)) : x));
+  // gelöschte Raster/NAI/Bilder bekommen eine Löschmarke (tauchen beim Zusammenführen nicht wieder auf)
+  const update = (f: (x: Exercise) => Exercise) => setEx((x) => (x ? markRemovals(x, f(structuredClone(x))) : x));
   // Sofort speichern (jede Änderung, auch beim Verlassen der Seite) und mit anderen Fenstern abgleichen;
   // leere Ersatz-Übung bei blockierter Datenbank nicht als «aktuelle Übung» speichern
   useExerciseStore({ ex, exRef, setEx, setSaved, say,
@@ -597,6 +598,9 @@ export function Workspace({ product, tagline }: Props) {
       setMergeInfo({
         name: merged.name, text: mergeReportText(report) + att, nurHier: report.nurHier,
         replace: () => { switchTo(file, "ersetzen"); setMergeInfo(null); say(`«${file.name}» durch die Datei ersetzt`); },
+        // abweichendes Raster/NAI: pro Element hiesige behalten oder aus der Datei übernehmen (Meldungen bleiben)
+        diffs: report.diffs,
+        choose: (d, c) => update((x) => (x.id === merged.id ? takeHullItems(x, c === "datei" ? file : local, [d]) : x)),
       });
     } catch (e) {
       say((e as Error).message);
@@ -624,7 +628,7 @@ export function Workspace({ product, tagline }: Props) {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (ev.key === "Escape") { togglePresent(false); return; }
       if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
-        const list = (ex?.events ?? []).filter((e) => !e.deleted).sort((a, b) => a.t.localeCompare(b.t) || a.id.localeCompare(b.id));
+        const list = (ex?.events ?? []).filter((e) => !e.deleted).sort(compareEvents);
         if (!list.length) return;
         const i = list.findIndex((e) => e.id === selEvent);
         const j = i < 0 ? (ev.key === "ArrowRight" ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, i + (ev.key === "ArrowRight" ? 1 : -1)));
@@ -679,6 +683,7 @@ export function Workspace({ product, tagline }: Props) {
           <button className="primary" onClick={() => togglePresent(true)} title="Karte im Vollbild, Zeitstrahl oben (Esc beendet)">▶ Präsentation</button>
         </div>
       </header>
+      <StatusBands ex={ex} dbBlocked={dbBlocked} onSaveFile={saveFile} />
       <div className="work">
         <aside className="side">
           <div className="tabs" role="tablist">
@@ -803,9 +808,7 @@ export function Workspace({ product, tagline }: Props) {
       {mover.notice}
       {undo.bar}
       {mergeInfo && <MergeBar info={mergeInfo} onClose={() => setMergeInfo(null)} />}
-      <SaveBand onSaveFile={saveFile} />
       <ViewerHost />
-      {dbBlocked && <div className="toast dbblocked" role="alert">Speicher blockiert: Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</div>}
     </div>
     </KiProvider>
   );

@@ -1,26 +1,51 @@
-/* Speicherstatus (rotes Band), Ergebnis «Öffnen», Rückgängig für Raster/NAI */
+/* Speicherstatus (rote Bänder), Ergebnis «Öffnen», Rückgängig für Raster/NAI, Konflikt beim Bearbeiten */
+
+/* Bänder stehen im Fluss unter der Kopfleiste und schieben Karte/Journal nach unten – sie verdecken nichts */
+.app:has(> .bands) { grid-template-rows: auto auto 1fr; }
+.app.present:has(> .bands) { grid-template-rows: auto 1fr; }
+.bands { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .savefail {
-  position: fixed; left: 50%; top: 96px; transform: translateX(-50%); z-index: 3100;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
-  max-width: min(720px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 8px;
-  background: var(--rot); color: var(--paper); font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  padding: 7px 16px; background: var(--rot); color: var(--paper); font-size: 14px; line-height: 1.35;
 }
 .savefail b { font-weight: 700; }
-.savefail-why { flex: 1 1 260px; opacity: .95; }
+.savefail-why { flex: 1 1 260px; opacity: .95; min-width: 0; }
 .savefail button { background: var(--paper); color: var(--rot); border-color: var(--paper); font-weight: 600; }
-.savefail .savefail-x { background: transparent; color: var(--paper); border-color: transparent; font-size: 18px; padding: 0 6px; }
+.savefail .savefail-x { background: transparent; color: var(--paper); border-color: transparent; font-size: 18px; padding: 0 6px; line-height: 1; }
 
 .mergebar {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3050;
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px;
-  max-width: min(760px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 8px;
+  width: max-content; max-width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 140px); overflow: auto;
+  padding: 10px 14px; border-radius: 8px;
   background: var(--ink); color: var(--paper); font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
 }
-.mergebar-acts { display: flex; gap: 8px; }
+.mergebar-acts { display: flex; gap: 8px; margin-left: auto; }
 .mergebar button { background: transparent; color: var(--paper); border-color: color-mix(in srgb, var(--paper) 50%, transparent); }
+.mergediffs { flex: 1 1 100%; display: flex; flex-direction: column; gap: 4px; }
+.mergediffs-head { font-weight: 600; }
+.mergediffs-head button { padding: 1px 8px; font-size: 13px; }
+.mergediffs ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mergediffs li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; }
+.mergediffs-name { min-width: 0; overflow-wrap: anywhere; }
+.mergediffs .seg button { font-size: 13px; padding: 3px 10px; }
+.mergebar .seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-color: var(--paper); }
 
 .undobar.wsundo { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3040; min-width: min(320px, calc(100vw - 32px)); }
+.undomore { opacity: .75; }
 
-@media (max-width: 560px) {
-  .savefail { top: 8px; }
+/* Konflikt beim Bearbeiten (anderes Fenster hat geändert/gelöscht) */
+.editconflict {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px;
+  padding: 8px 10px; border-radius: 6px; background: var(--rot); color: var(--paper); font-size: 13.5px; line-height: 1.35;
 }
+.editconflict > span:first-child { flex: 1 1 220px; min-width: 0; }
+.editconflict-acts { display: flex; gap: 6px; }
+.editconflict button { background: var(--paper); color: var(--rot); border-color: var(--paper); font-weight: 600; }
+.editconflict button + button { background: transparent; color: var(--paper); border-color: color-mix(in srgb, var(--paper) 60%, transparent); }
+.editconflict.nudge { animation: editconflict-nudge .45s ease-in-out; }
+@keyframes editconflict-nudge { 0%, 100% { transform: none; } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+@media (prefers-reduced-motion: reduce) { .editconflict.nudge { animation: none; outline: 3px solid var(--ink); } }
+
+/* Foto nicht im Gerätespeicher */
+.ph-unsaved { margin: 6px 0; }

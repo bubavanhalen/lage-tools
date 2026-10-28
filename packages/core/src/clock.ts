@@ -41,6 +41,22 @@ export function withDay(days: string[], day: string): string[] {
   return days.includes(day) ? days : [...days, day].sort();
 }
 
+/**
+ * Tag fürs Meldungsfeld, wenn er nicht von Hand gewählt ist («Tag folgt der Uhr»): heute, wenn die Übung heute läuft
+ * (heute ist Übungstag, die Übung hat noch keinen Tag oder der letzte Übungstag war gestern – dann wird heute als
+ * nächster Tag angelegt). Sonst folgt der Tag nicht der Uhr und kein heutiger Tag wird eingeschoben (Beispiel 2030,
+ * Vorbereitung vor der Übung, Übung längst vorbei): der erste Übungstag, wenn alle Tage in der Zukunft liegen, sonst der
+ * letzte. `follow` = Tag folgt der Uhr (nach Mitternacht automatisch der nächste).
+ */
+export function clockDay(days: string[], now: Date): { day: string; follow: boolean } {
+  const today = localDay(now);
+  if (!days.length || days.includes(today)) return { day: today, follow: true };
+  const sorted = [...days].sort();
+  const last = sorted[sorted.length - 1]!;
+  if (addDays(last, 1) === today) return { day: today, follow: true };
+  return { day: sorted[0]! > today ? sorted[0]! : last, follow: false };
+}
+
 /** Zeitzone des Geräts */
 export interface ZoneInfo {
   /** IANA-Name, z. B. «Europe/Zurich» (leer, wenn der Browser ihn nicht kennt) */
@@ -85,4 +101,41 @@ export function nearestDay(today: string, minutes: number, now: Date): string {
   const t = parseLocalIso(today);
   t.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
   return t.getTime() - now.getTime() > FUTURE_LIMIT_MS ? addDays(today, -1) : today;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Reihenfolge der Meldungen (Sommerzeit)
+
+/**
+ * UTC-Offset, der zur lokalen Ereigniszeit `t` gehört («+02:00» Sommerzeit, «+01:00» Winterzeit). In der doppelten
+ * Stunde bei der Rückstellung (02:00–02:59 gibt es zweimal) gilt der Offset von `now`, wenn er zur Zeit passt –
+ * «0210» um 02:20 Winterzeit ist 02:10 Winterzeit, nicht 70 Minuten früher.
+ */
+export function offsetFor(t: string, now = new Date()): string {
+  const own = offsetText(-now.getTimezoneOffset());
+  const asNow = new Date(Date.parse(`${t.slice(0, 16)}:00${own}`));
+  if (!Number.isNaN(asNow.getTime()) && localIso(asNow) === t.slice(0, 16)) return own;
+  const d = parseLocalIso(t);
+  return Number.isNaN(d.getTime()) ? own : offsetText(-d.getTimezoneOffset());
+}
+
+/** Felder für die Reihenfolge (Teil von `LageEvent`) */
+export interface EventOrderKey {
+  id: string;
+  t: string;
+  tOffset?: string;
+  createdAt?: string;
+}
+
+/**
+ * Zentrale Reihenfolge der Meldungen (älteste zuerst): Ereigniszeit; haben beide den Offset (`tOffset`), zählt der
+ * genaue Zeitpunkt – so bleibt die Reihenfolge bei der Sommerzeit-Rückstellung richtig (02:50 Sommerzeit vor 02:10
+ * Winterzeit). Bei gleicher Zeit entscheidet der Eingang (`createdAt`), dann die ID (deterministisch).
+ */
+export function compareEvents(a: EventOrderKey, b: EventOrderKey): number {
+  if (a.tOffset && b.tOffset && a.t !== b.t) {
+    const d = Date.parse(`${a.t.slice(0, 16)}:00${a.tOffset}`) - Date.parse(`${b.t.slice(0, 16)}:00${b.tOffset}`);
+    if (d) return d;
+  }
+  return a.t.localeCompare(b.t) || (a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.id.localeCompare(b.id);
 }
