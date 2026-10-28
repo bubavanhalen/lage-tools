@@ -9,8 +9,8 @@ import "./ki.css";
 export function KiConsent({ hasKey, onAgree, onCancel }: { hasKey: boolean; onAgree: () => void; onCancel: () => void }) {
   const [ok, setOk] = useState(false);
   const first = useRef<HTMLInputElement>(null);
+  useEffect(() => { first.current?.focus(); }, []);
   useEffect(() => {
-    first.current?.focus();
     const key = (ev: KeyboardEvent) => { if (ev.key === "Escape") { ev.preventDefault(); onCancel(); } };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);

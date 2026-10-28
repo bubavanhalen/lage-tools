@@ -111,6 +111,7 @@ export function OfflineBox({ ex, map }: { ex: Exercise; map: L.Map }) {
       )}
       <OcrOffline />
       <SpeechModelRow compact />
+      {ex.ki?.enabled && <p className="help">KI (Claude) ist für diese Übung eingeschaltet und braucht Netz – ohne Netz sind nur die KI-Knöpfe gesperrt.</p>}
     </div>
   );
 }

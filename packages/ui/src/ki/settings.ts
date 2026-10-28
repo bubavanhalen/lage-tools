@@ -4,7 +4,7 @@
  * Der Schlüssel liegt nie in der Übung, im Export, im Protokoll oder in Fehlermeldungen.
  */
 import { useEffect, useState } from "react";
-import type { KiPurpose } from "@lage/core";
+import { estimateKiCost, KI_MODELS as CORE_MODELS, type KiPurpose } from "@lage/core";
 
 const KEY = "lt-ki-key";
 const MODEL = "lt-ki-model";
@@ -14,14 +14,21 @@ const LOG = "lt-ki-log:";
 
 export type KiModelChoice = "standard" | "genauer" | "schneller";
 
-/** Modelle (Anthropic, Stand Okt 2026); Preise USD pro 1 Mio. Einheiten (nur für die Schätzung im Protokoll) */
-export const KI_MODELS: Record<KiModelChoice, { id: string; label: string; text: string; usdIn: number; usdOut: number }> = {
-  standard: { id: "claude-sonnet-5-5", label: "Standard", text: "schnell und günstig – für fast alles, auch Fotos", usdIn: 3, usdOut: 15 },
-  genauer: { id: "claude-opus-5-5", label: "Genauer", text: "liest schwierige Handschrift besser, dauert länger, kostet mehr", usdIn: 5, usdOut: 25 },
-  schneller: { id: "claude-haiku-5-5", label: "Schneller", text: "am schnellsten und günstigsten – für kurze Texte", usdIn: 1, usdOut: 5 },
+const IDS: Record<KiModelChoice, string> = { standard: "claude-sonnet-5-5", genauer: "claude-opus-5-5", schneller: "claude-haiku-5-5" };
+const TEXT: Record<KiModelChoice, string> = {
+  standard: "schnell und günstig – für fast alles, auch Fotos",
+  genauer: "liest schwierige Handschrift besser, dauert länger, kostet mehr",
+  schneller: "am schnellsten und günstigsten – für kurze Texte, weniger genau",
 };
+/** Modelle (Anthropic, Stand Okt 2026) mit Klartext; Preise für die Schätzung aus dem Kern */
+export const KI_MODELS: Record<KiModelChoice, { id: string; label: string; text: string }> = Object.fromEntries(
+  (Object.keys(IDS) as KiModelChoice[]).map((k) => {
+    const m = CORE_MODELS.find((x) => x.id === IDS[k]);
+    return [k, { id: IDS[k], label: m?.label ?? k, text: TEXT[k] }];
+  }),
+) as Record<KiModelChoice, { id: string; label: string; text: string }>;
 export const KI_MODEL_ORDER: KiModelChoice[] = ["standard", "genauer", "schneller"];
-export const modelLabel = (id: string) => Object.values(KI_MODELS).find((m) => m.id === id)?.label ?? id;
+export const modelLabel = (id: string) => Object.values(KI_MODELS).find((m) => id.startsWith(m.id))?.label ?? id;
 
 /** Basis-URL der API (für Tests überschreibbar mit localStorage["lt-ki-base"]) */
 export function kiBase(): string {
@@ -110,9 +117,8 @@ export function useKiLog(exId: string): KiLogEntry[] {
 
 /** geschätzte Kosten in USD aus den Einheiten der Antwort */
 export function estimateUsd(modelId: string, inTok?: number, outTok?: number): number | undefined {
-  const m = Object.values(KI_MODELS).find((x) => x.id === modelId);
-  if (!m || inTok === undefined) return undefined;
-  return (inTok * m.usdIn + (outTok ?? 0) * m.usdOut) / 1e6;
+  if (inTok === undefined) return undefined;
+  return estimateKiCost(modelId, { input_tokens: inTok, output_tokens: outTok });
 }
 export const usdText = (v?: number) => (v === undefined ? "–" : v < 0.01 ? "< 0.01 USD" : `${v.toFixed(2)} USD`);
 

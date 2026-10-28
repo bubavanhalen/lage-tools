@@ -7,8 +7,11 @@ import { appendHintsPdf } from "./hintsExport";
 import type { LageRotState } from "./lageRot";
 import { appendLageRotPdf } from "./lageRotExport";
 
-/** `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite); `lageRot`: Lage Rot zur Lagezeit `t` davor */
-export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[], lageRot?: { lage: LageRotState; t: string }): Blob {
+/**
+ * `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite); `lageRot`: Lage Rot zur Lagezeit `t` davor;
+ * `kiUsed`: Zwecke, für die KI verwendet wurde (z. B. «Handschrift erkennen (3×)») – Vermerk unter dem Journal
+ */
+export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[], lageRot?: { lage: LageRotState; t: string }, kiUsed?: string | null): Blob {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210, M = 12;
   const cols = [
@@ -48,6 +51,14 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
     lines.forEach((l, i) => { doc.text(l, x, y); x += cols[i]!.w; });
     doc.setDrawColor(210); doc.line(M, y - 3.2 + h, W - M, y - 3.2 + h);
     y += h;
+  }
+  if (kiUsed) {
+    const l = doc.splitTextToSize(`KI (Claude, Anthropic) wurde verwendet für: ${kiUsed}. KI-Ergebnisse waren Vorschläge und wurden vor der Übernahme geprüft.`, W - 2 * M) as string[];
+    if (y + l.length * 3.6 + 4 > 285) { doc.addPage(); page++; header(); }
+    doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80);
+    doc.text(l, M, y + 4);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(0);
+    y += l.length * 3.6 + 4;
   }
   if (lageRot) page = appendLageRotPdf(doc, ex, lageRot.lage, lageRot.t, classification, page);
   if (hints?.length) appendHintsPdf(doc, ex, hints, classification, page);

@@ -25,11 +25,13 @@ export function KiSettings({ api, onClose }: { api: KiApi; onClose: () => void }
   const skips = skipPurposes(api.ex.id);
   const input = useRef<HTMLInputElement>(null);
 
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const k = (ev: KeyboardEvent) => { if (ev.key === "Escape" && !ev.defaultPrevented) { ev.preventDefault(); onClose(); } };
+    const k = (ev: KeyboardEvent) => { if (ev.key === "Escape" && !ev.defaultPrevented && !document.querySelector(".ki-consent")) { ev.preventDefault(); closeRef.current(); } };
     document.addEventListener("keydown", k);
     return () => { document.removeEventListener("keydown", k); ctl.current?.abort(); };
-  }, [onClose]);
+  }, []);
   useEffect(() => { if (edit) input.current?.focus(); }, [edit]);
 
   const runTest = async (k: string) => {

@@ -6,8 +6,8 @@ import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 import {
   buildCoaExplainRequest, buildHandwritingRequest, buildHintExplainRequest, buildLageberichtRequest, buildMeldungRequest,
-  parseHandwritingResponse, parseMeldung, parseMeldungResponse, parseTextResponse,
-  type Draft, type Exercise, type Hint, type LageEvent, type RedCoa,
+  parseExplainResponse, parseHandwritingResponse, parseLageberichtResponse, parseMeldung, parseMeldungResponse,
+  type Draft, type Exercise, type Hint, type KiRequest, type KiZeile, type LageEvent, type RedCoa,
 } from "@lage/core";
 import { DraftPreview } from "../BatchReview";
 import { journalCtx } from "../commit";
@@ -41,7 +41,7 @@ export function photoForKi(canvas: HTMLCanvasElement, rect?: Rect | null): { bas
 
 /** «Mit KI erkennen» im Foto-Dialog: Ergebnis als Zeilen für die Prüfung (BatchReview) */
 export function KiPhotoButton({ ex, canvas, rect, onLines, showOff, primary, label = "Mit KI erkennen" }: {
-  ex: Exercise; canvas: HTMLCanvasElement | null; rect?: Rect | null; onLines: (lines: string[], notes?: string) => void; showOff?: boolean; primary?: boolean; label?: string;
+  ex: Exercise; canvas: HTMLCanvasElement | null; rect?: Rect | null; onLines: (rows: KiZeile[], notes?: string) => void; showOff?: boolean; primary?: boolean; label?: string;
 }) {
   const ki = useKi();
   if (!ki) return null;
@@ -49,9 +49,9 @@ export function KiPhotoButton({ ex, canvas, rect, onLines, showOff, primary, lab
     <KiAction purpose="handschrift" label={label} showOff={showOff} subtle={!primary} primary={primary} disabled={!canvas} sentLine={false}
       build={() => buildHandwritingRequest(photoForKi(canvas!, rect), { ex, t: ki.t })}
       onResult={(r) => {
-        const out = parseHandwritingResponse(r.toolInput);
-        if (!out.lines.length) throw new Error("leer");
-        onLines(out.lines, out.notes);
+        const out = parseHandwritingResponse(r.toolInput, { ex, t: ki.t });
+        if (!out.rows.length) throw new Error("leer");
+        onLines(out.rows, out.notes);
       }} />
   );
 }
@@ -101,7 +101,7 @@ export function KiMeldungSuggest({ ex, text, day, unklar, onTake }: { ex: Exerci
       aside={<span className="ki-help ki-meld-why">Meldung unklar?</span>}
       build={() => buildMeldungRequest(text.trim(), { ex, t: ki.t })}
       onResult={(r) => {
-        const out = parseMeldungResponse(r.toolInput);
+        const out = parseMeldungResponse(r.toolInput, { ctx: { ex, t: ki.t }, text: text.trim() });
         if (!out.kurz.trim()) throw new Error("leer");
         setV({ ...out, model: r.model, for: text.trim() });
         setWhy(false);
@@ -111,7 +111,7 @@ export function KiMeldungSuggest({ ex, text, day, unklar, onTake }: { ex: Exerci
 
 // ---------- 3. Hinweis / Möglichkeit Rot ausformulieren ----------
 
-interface Formulierung { text: string; model: string; at: string }
+interface Formulierung { text: string; model: string; at: string; sent: KiRequest["disclosure"] }
 
 const evsOf = (ex: Exercise, ids: string[]) => {
   const m = new Map((ex.events ?? []).map((e) => [e.id, e]));
@@ -127,11 +127,11 @@ export function KiHintExplain({ h }: { h: Hint }) {
   return (
     <div className="ki-explain">
       {f ? (
-        <KiDraft text={f.text} meta={`${modelLabel(f.model)} · ${f.at}`} onDrop={() => ki.setMemo(key, undefined)} />
+        <KiDraft text={f.text} meta={`${modelLabel(f.model)} · ${f.at}`} sent={f.sent} onDrop={() => ki.setMemo(key, undefined)} />
       ) : (
-        <KiAction purpose="hinweis" label="Ausformulieren" subtle
+        <KiAction purpose="hinweis" sentLine={false} label="Ausformulieren" subtle
           build={() => buildHintExplainRequest(h, evsOf(ki.ex, h.events), { ex: ki.ex, t: ki.t })}
-          onResult={(r) => ki.setMemo(key, { text: parseTextResponse(r.text), model: r.model, at: clock() })} />
+          onResult={(r, req) => ki.setMemo(key, { text: explainText(r.text), model: r.model, at: clock(), sent: req.disclosure })} />
       )}
     </div>
   );
@@ -146,14 +146,21 @@ export function KiCoaExplain({ c }: { c: RedCoa }) {
   return (
     <div className="ki-explain">
       {f ? (
-        <KiDraft text={f.text} meta={`${modelLabel(f.model)} · ${f.at}`} onDrop={() => ki.setMemo(key, undefined)} />
+        <KiDraft text={f.text} meta={`${modelLabel(f.model)} · ${f.at}`} sent={f.sent} onDrop={() => ki.setMemo(key, undefined)} />
       ) : (
-        <KiAction purpose="lagerot" label="Ausformulieren" subtle
+        <KiAction purpose="lagerot" sentLine={false} label="Ausformulieren" subtle
           build={() => buildCoaExplainRequest(c, evsOf(ki.ex, c.events), { ex: ki.ex, t: ki.t })}
-          onResult={(r) => ki.setMemo(key, { text: parseTextResponse(r.text), model: r.model, at: clock() })} />
+          onResult={(r, req) => ki.setMemo(key, { text: explainText(r.text), model: r.model, at: clock(), sent: req.disclosure })} />
       )}
     </div>
   );
+}
+
+/** Einschätzung + «Was prüfen» (max. 3) als Text für den Entwurf */
+function explainText(raw: string): string {
+  const e = parseExplainResponse(raw);
+  if (!e.einschaetzung && !e.pruefen.length) throw new Error("leer");
+  return [e.einschaetzung, ...(e.pruefen.length ? ["Was prüfen:", ...e.pruefen.map((p) => `- ${p}`)] : [])].join("\n");
 }
 
 const clock = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
@@ -178,11 +185,21 @@ export function KiLageberichtButton({ hints, coas }: { hints: Hint[]; coas: RedC
   );
 }
 
+const SINCE: Array<[number, string]> = [[30, "30 Min"], [60, "1 Std"], [120, "2 Std"], [240, "4 Std"], [720, "12 Std"]];
+/** ISO lokal minus Minuten (ohne Zeitzonen-Umrechnung) */
+function isoMinus(iso: string, min: number): string {
+  const d = new Date(iso.slice(0, 16));
+  d.setMinutes(d.getMinutes() - min);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function LageberichtDialog({ hints, coas, onClose }: { hints: Hint[]; coas: RedCoa[]; onClose: () => void }) {
   const ki = useKi()!;
   const b = ki.memo<Bericht>("lagebericht");
   const [text, setText] = useState(b?.text ?? "");
   const [copied, setCopied] = useState(false);
+  const [since, setSince] = useState(60);
   useEffect(() => { setText(b?.text ?? ""); }, [b?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const k = (ev: KeyboardEvent) => { if (ev.key === "Escape" && !ev.defaultPrevented) { ev.preventDefault(); onClose(); } };
@@ -207,9 +224,11 @@ function LageberichtDialog({ hints, coas, onClose }: { hints: Hint[]; coas: RedC
         <div className="ki-body">
           <p className="ki-help">Entwurf für Rapport oder Übergabe, gegliedert in Lage Rot · Lage eigene · Absicht Rot · offene Punkte. Grundlage sind Journal, Hinweise und Lage Rot zur Lagezeit.</p>
           <KiAction purpose="lagebericht" label={b ? "Neu entwerfen" : "Entwurf erstellen"} primary={!b}
-            build={() => buildLageberichtRequest({ ex: ki.ex, t: ki.t }, { hints, coas })}
+            aside={<label className="ki-since">Neue Meldungen seit
+              <select value={since} onChange={(e) => setSince(+e.target.value)}>{SINCE.map(([m, l]) => <option key={m} value={m}>{l}</option>)}</select></label>}
+            build={() => buildLageberichtRequest({ ex: ki.ex, t: ki.t }, { hints, coas, since: isoMinus(ki.t, since) })}
             onResult={(r) => {
-              const v = parseTextResponse(r.text);
+              const v = parseLageberichtResponse(r.text);
               if (!v.trim()) throw new Error("leer");
               ki.setMemo("lagebericht", { text: v, model: r.model, at: clock(), t: ki.t });
               setText(v);

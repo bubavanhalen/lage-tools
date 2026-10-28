@@ -129,7 +129,7 @@ export function KiAction({ purpose, label, build, onResult, showOff, primary, su
           <span className="ki-pre-h">Wird an Claude (Anthropic, USA) gesendet:</span>
           <Disclosure req={st.req} />
           <button className="linkbtn ki-rawbtn" aria-expanded={raw} onClick={() => setRaw(!raw)}><span className="hp-chev" aria-hidden="true">▸</span> Genauer Inhalt</button>
-          {raw && <pre className="ki-raw">{kiBodyPreview(st.req, ki.model)}</pre>}
+          {raw && <pre className="ki-raw">{kiBodyPreview(st.req)}</pre>}
           <label className="ki-check small"><input type="checkbox" checked={skip} onChange={(e) => setSkip(e.target.checked)} /> <span>Für «{KI_PURPOSE_LABEL[purpose]}» in dieser Übung nicht mehr fragen</span></label>
           <span className="ki-pre-btns">
             <button ref={sendRef} className="primary" onClick={() => confirm(st.req)}>Senden</button>
@@ -167,20 +167,25 @@ export function Disclosure({ req }: { req: KiRequest }) {
 
 /** Offenlegung nach dem Senden (bleibt sichtbar, auch ohne Rückfrage) */
 function SentLine({ req, ms, model, onClose }: { req: KiRequest; ms: number; model: string; onClose: () => void }) {
+  return <SentInfo disclosure={req.disclosure} extra={`${model} · ${(ms / 1000).toFixed(1).replace(".", ",")} s`} onClose={onClose} />;
+}
+
+/** «Gesendet: …» aufklappbar mit der Liste, was das Gerät verlassen hat */
+export function SentInfo({ disclosure, extra, onClose }: { disclosure: KiRequest["disclosure"]; extra?: string; onClose?: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="ki-sent">
       <button className="linkbtn ki-sentbtn" aria-expanded={open} onClick={() => setOpen(!open)} title="Was gesendet wurde">
-        <span className="hp-chev" aria-hidden="true">▸</span> Gesendet: {req.disclosure.summary} · {model} · {(ms / 1000).toFixed(1).replace(".", ",")} s
+        <span className="hp-chev" aria-hidden="true">▸</span> Gesendet: {disclosure.summary}{extra ? ` · ${extra}` : ""}
       </button>
-      <button className="ki-sentx" onClick={onClose} aria-label="Zeile ausblenden" title="ausblenden">×</button>
-      {open && <Disclosure req={req} />}
+      {onClose && <button className="ki-sentx" onClick={onClose} aria-label="Zeile ausblenden" title="ausblenden">×</button>}
+      {open && <ul className="ki-disc">{(disclosure.items.length ? disclosure.items : [disclosure.summary]).map((x, i) => <li key={i}>{x}</li>)}</ul>}
     </span>
   );
 }
 
 /** KI-Text unter einer Karte: klar als Entwurf gekennzeichnet */
-export function KiDraft({ text, meta, onDrop, children }: { text: string; meta?: string; onDrop?: () => void; children?: ReactNode }) {
+export function KiDraft({ text, meta, sent, onDrop, children }: { text: string; meta?: string; sent?: KiRequest["disclosure"]; onDrop?: () => void; children?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); setCopied(true); window.setTimeout(() => setCopied(false), 1500); } catch { /* nicht erlaubt */ }
@@ -194,6 +199,7 @@ export function KiDraft({ text, meta, onDrop, children }: { text: string; meta?:
         <button className="linkbtn" onClick={copy}>{copied ? "kopiert ✓" : "Kopieren"}</button>
         {onDrop && <button className="linkbtn" onClick={onDrop}>Verwerfen</button>}
       </div>
+      {sent && <SentInfo disclosure={sent} />}
     </div>
   );
 }

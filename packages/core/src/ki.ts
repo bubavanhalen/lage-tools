@@ -133,10 +133,11 @@ export interface KiModel {
   usdPerMOut: number;
 }
 
+/** Preise je Million Einheiten: Richtwerte Stand Oktober 2026 (öffentlich publizierte Listenpreise), ohne Gewähr – massgebend ist die Abrechnung im Anthropic-Konto */
 export const KI_MODELS: KiModel[] = [
-  { id: "claude-sonnet-5-5", label: "Standard", hint: "schnell und günstig, liest auch Fotos", usdPerMIn: 3, usdPerMOut: 15 },
-  { id: "claude-opus-5-5", label: "Genauer", hint: "gründlicher, langsamer und teurer", usdPerMIn: 5, usdPerMOut: 25 },
-  { id: "claude-haiku-5-5", label: "Schneller", hint: "am schnellsten und günstigsten, weniger genau", usdPerMIn: 1, usdPerMOut: 5 },
+  { id: "claude-sonnet-5-5", label: "Standard", hint: "schnell und günstig, liest auch Fotos", usdPerMIn: 2, usdPerMOut: 10 },
+  { id: "claude-opus-5-5", label: "Genauer", hint: "gründlicher, langsamer und teurer", usdPerMIn: 4, usdPerMOut: 20 },
+  { id: "claude-haiku-5-5", label: "Schneller", hint: "am schnellsten und günstigsten, weniger genau", usdPerMIn: 0.1, usdPerMOut: 0.5 },
 ];
 export const KI_DEFAULT_MODEL = "claude-sonnet-5-5";
 
@@ -563,13 +564,19 @@ export function parseHandwritingResponse(toolInput: unknown, ctx?: KiContext): {
     }
     let melder = typeof o.melder === "string" ? swiss(oneLine(o.melder)).replace(/[:,]$/, "") : undefined;
     if (melder === "") melder = undefined;
-    if (melder && !containsName(text, melder)) text = /^\d/.test(text) ? `${melder}: ${text}` : `${melder} ${text}`;
+    // unbekannter Melder (nicht in der Liste): nicht in die Zeile schreiben – «X99» würde sonst als Anzahl 99 gelesen;
+    // die Zeile erscheint ohne Melder («Melder fehlt») und der gelesene Name steht unter «unsicher»
+    const unknownMelder = !!(melder && ctx && ctx.ex.units.blau.length && !knownUnit(ctx.ex, melder));
+    if (unknownMelder) {
+      const esc = melder!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      text = text.replace(new RegExp(`^${esc}\\s*[:,]?\\s*`, "i"), "");
+    } else if (melder && !containsName(text, melder)) text = /^\d/.test(text) ? `${melder}: ${text}` : `${melder} ${text}`;
     text = text.trim();
     if (!text || /^[?\s.…\-–]+$/.test(text)) continue;
     let line = [zeit, text].filter(Boolean).join(" ");
     if (line.length > LIM.LINE_MAX) { line = cut(line, LIM.LINE_MAX); addU(unsicher, "Zeile gekürzt"); }
     if (ctx) for (const w of checkNames(line, ctx.ex)) addU(unsicher, w);
-    if (melder && ctx && ctx.ex.units.blau.length && !knownUnit(ctx.ex, melder)) addU(unsicher, `Melder «${melder}» nicht in der Liste`);
+    if (unknownMelder) addU(unsicher, `Melder «${melder}» nicht in der Liste – bitte wählen`);
     const key = line.toLowerCase().replace(/\s+/g, " ");
     if (seen.has(key)) continue;
     seen.add(key);

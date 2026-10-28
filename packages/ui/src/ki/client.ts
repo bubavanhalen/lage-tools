@@ -3,7 +3,7 @@
  * Zeitlimit (Bild 60 s, Text 30 s), Abbrechen, eine Wiederholung bei «überlastet» (529), Fehler in Klartext.
  * POST wird vom Service Worker nicht angefasst; die API antwortet mit CORS – funktioniert auch mit COEP «credentialless».
  */
-import type { KiRequest } from "@lage/core";
+import { kiApiBody, kiPreviewText, readKiResponse, type KiRequest } from "@lage/core";
 import { kiBase, scrub } from "./settings";
 
 export type KiErrorCode =
@@ -47,22 +47,13 @@ export interface KiResult {
   truncated?: boolean;
 }
 
-/** Inhalt der Anfrage, wie er an Anthropic geht (ohne Schlüssel) – auch für «Rohinhalt» in der Vorschau */
-export function kiBody(req: KiRequest, model: string): Record<string, unknown> {
-  const body: Record<string, unknown> = { model, max_tokens: req.max_tokens, system: req.system, messages: req.messages };
-  if (req.tool) { body.tools = [req.tool]; body.tool_choice = { type: "tool", name: req.tool.name }; }
-  return body;
-}
-
-/** Rohinhalt für die Anzeige: Bilddaten gekürzt */
-export function kiBodyPreview(req: KiRequest, model: string): string {
-  return JSON.stringify(kiBody(req, model), (k, v) => (k === "data" && typeof v === "string" && v.length > 80 ? `[Bild, ${Math.round((v.length * 3) / 4 / 1024)} kB]` : v), 2);
-}
+/** Rohinhalt für die Anzeige «Genauer Inhalt» (Foto nur als Platzhalter) */
+export const kiBodyPreview = (req: KiRequest) => kiPreviewText(req);
 
 /** Zeichen der Anfrage (Text) und Bildgrösse – für Protokoll */
 export function kiSize(req: KiRequest): { chars: number; imageBytes?: number } {
-  let chars = req.system.length;
-  for (const m of req.messages) for (const c of m.content) if (c.type === "text") chars += c.text.length;
+  let chars = req.disclosure.chars ?? 0;
+  if (!chars) { chars = req.system.length; for (const m of req.messages) for (const c of m.content) if (c.type === "text") chars += c.text.length; }
   return { chars, imageBytes: req.disclosure.imageBytes };
 }
 
@@ -114,7 +105,7 @@ async function once(req: KiRequest, o: SendOpts, timeout: number): Promise<Omit<
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true",
       },
-      body: JSON.stringify(kiBody(req, o.model)),
+      body: JSON.stringify(kiApiBody(req, o.model)),
       signal: ctl.signal,
       credentials: "omit",
       cache: "no-store",
@@ -128,18 +119,17 @@ async function once(req: KiRequest, o: SendOpts, timeout: number): Promise<Omit<
     window.clearTimeout(tm);
     o.signal?.removeEventListener("abort", onAbort);
   }
-  let j: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  let j: unknown;
   try { j = await res.json(); } catch { j = null; }
   if (!res.ok) throw errorOf(res.status, j);
-  if (!j || !Array.isArray(j.content)) throw new KiError("antwort");
-  const blocks = j.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>;
-  const tool = req.tool ? blocks.find((b) => b.type === "tool_use" && b.name === req.tool!.name) : undefined;
-  const text = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n").trim();
-  if (req.tool && !tool) throw new KiError("antwort");
-  if (!req.tool && !text) throw new KiError("antwort");
+  if (!j || typeof j !== "object" || !Array.isArray((j as { content?: unknown }).content)) throw new KiError("antwort");
+  const r = readKiResponse(j, req);
+  if (req.tool && r.toolInput === undefined) throw new KiError("antwort");
+  if (!req.tool && !r.text) throw new KiError("antwort");
+  const model = (j as { model?: unknown }).model;
   return {
-    toolInput: tool?.input, text, model: typeof j.model === "string" ? j.model : o.model,
-    inTok: j.usage?.input_tokens, outTok: j.usage?.output_tokens, truncated: j.stop_reason === "max_tokens",
+    toolInput: r.toolInput, text: r.text, model: typeof model === "string" ? model : o.model,
+    inTok: r.usage?.input_tokens, outTok: r.usage?.output_tokens, truncated: r.truncated,
   };
 }
 

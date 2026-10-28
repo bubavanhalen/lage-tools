@@ -42,6 +42,7 @@ import { AttachmentChips } from "./Attachments";
 import { attachmentsOf, deleteAttachmentBlob } from "./attachmentStore";
 import type { Attachment } from "@lage/core";
 import { RowMemos, VoiceButton, VoiceStatus, useVoice } from "./VoiceInput";
+import { KiMeldungSuggest, meldungUnklar } from "./ki/KiFeatures";
 
 interface Props {
   ex: Exercise;
@@ -384,6 +385,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         ) : (
           <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen · <b>↑</b> = letzte korrigieren · <b>N</b> = zurück ins Feld.</p>
         )}
+        <KiMeldungSuggest ex={ex} text={text} day={day} unklar={meldungUnklar(draft, text, !!effPos)}
+          onTake={(kurz) => { setText(kurz); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setConfirmNoMelder(false); inputRef.current?.focus();
+            requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; } }); }} />
         <div className="btnrow">
           <button className="primary" disabled={!draft} onClick={add}>Eintragen</button>
           <PhotoButton ex={ex} day={day} say={say} onAttach={(a) => { setPendingAtt(a); inputRef.current?.focus(); }}

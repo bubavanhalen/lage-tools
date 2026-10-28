@@ -55,7 +55,7 @@ export function KiProvider({ ex, t, update, say, children }: {
   const [settings, setSettings] = useState(false);
   const [consent, setConsent] = useState(false);
   const memoRef = useRef(new Map<string, unknown>());
-  const [, setMemoTick] = useState(0);
+  const [memoTick, setMemoTick] = useState(0);
   // andere Übung: Ergebnisse vergessen
   useEffect(() => { memoRef.current.clear(); setMemoTick((n) => n + 1); }, [ex.id]);
   const enabled = !!ex.ki?.enabled;
@@ -93,7 +93,7 @@ export function KiProvider({ ex, t, update, say, children }: {
     setSkips: (p, on) => setSkip(ex.id, p, on),
     memo: <T,>(k: string) => memoRef.current.get(k) as T | undefined,
     setMemo: (k, v) => { if (v === undefined) memoRef.current.delete(k); else memoRef.current.set(k, v); setMemoTick((n) => n + 1); },
-  }), [ex, t, state, enabled, online, m.id, m.label, setEnabled, send]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [ex, t, state, enabled, online, m.id, m.label, setEnabled, send, memoTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Ctx.Provider value={api}>
