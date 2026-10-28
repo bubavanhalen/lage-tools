@@ -1,0 +1,26 @@
+/* Speicherstatus (rotes Band), Ergebnis «Öffnen», Rückgängig für Raster/NAI */
+.savefail {
+  position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 3100;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  max-width: min(720px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 8px;
+  background: var(--rot); color: #fff; font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+.savefail b { font-weight: 700; }
+.savefail-why { flex: 1 1 260px; opacity: .95; }
+.savefail button { background: #fff; color: var(--rot); border-color: #fff; font-weight: 600; }
+.savefail .savefail-x { background: transparent; color: #fff; border-color: transparent; font-size: 18px; padding: 0 6px; }
+
+.mergebar {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3050;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px;
+  max-width: min(760px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 8px;
+  background: var(--ink); color: var(--paper); font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+.mergebar-acts { display: flex; gap: 8px; }
+.mergebar button { background: transparent; color: var(--paper); border-color: color-mix(in srgb, var(--paper) 50%, transparent); }
+
+.undobar.wsundo { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3040; min-width: min(320px, calc(100vw - 32px)); }
+
+@media (max-width: 560px) {
+  .savefail { top: 8px; }
+}

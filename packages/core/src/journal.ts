@@ -11,7 +11,9 @@ import { boundsCenter, cellBounds, findCells, type RasterSheet } from "./raster"
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
+import { addDays, localDay, localIso, nearestDay } from "./clock";
 import { autoShape, shapeCenter } from "./shapes";
+import { isGenericPlace, isLeadTimeAfterElement, isNeedNote, listParts, namesPlace, normalizeTyped, observedOwn, placeProblems, placeSpans, staysOwn, stripLead, stueckCount, timeProblems } from "./erkennung";
 
 export interface JournalContext {
   sheets: RasterSheet[];
@@ -25,8 +27,13 @@ export interface JournalContext {
   days: string[];
   /** Tag, wenn keiner genannt ist */
   day: string;
-  /** jetzt (für Meldungen ohne Zeitangabe) */
+  /** jetzt (für Meldungen ohne Zeitangabe) – im Meldungsfeld beim Eintragen (Enter) neu bestimmen, nicht beim Tippen */
   now: Date;
+  /**
+   * Tag folgt der Uhr: Tag = Kalendertag von `now` (statt `day`), auch wenn er noch kein Übungstag ist (wird beim
+   * Eintragen angelegt); getippte Zeit ohne Tag mehr als 12 h in der Zukunft → Vortag. Aus, wenn der Tag von Hand gewählt ist.
+   */
+  dayFromClock?: boolean;
   /** letzte bekannte Lage eines Elements */
   lastPos?: (unit: string, side: Side) => LV95 | undefined;
 }
@@ -77,8 +84,13 @@ export interface Draft {
   nai?: string;
   /** Ortsname, der (online) noch nachgeschlagen werden kann */
   placeQuery?: string;
-  /** Meldungstext ohne führende Zeit/Seite */
+  /** Meldungstext ohne führende Zeit/Seite (bei Funk-/Sprechsprache der Originaltext, siehe `normalized`) */
   text: string;
+  /**
+   * Lesart, wenn getippte Funk-/Sprechsprache normalisiert wurde («Hotel 4 meldet zwei Fahrzeuge in Alpha Kilo 7» →
+   * «H04 meldet 2 Fz in AK7»); fehlt bei Kurzmeldungen. Für die Vorschau («verstanden als …»).
+   */
+  normalized?: string;
   /**
    * Probleme, die das Eintragen sperren (nie still falsch). Leer/fehlend = keine.
    * - `ort`: genannter Ort existiert nicht («AK77», «ZZ3», «NAI 9») → kein Ersatzort (kein «bei Melder»), `pos` fehlt
@@ -174,19 +186,29 @@ export function areaCenter(a: Area): LV95 {
 }
 
 export function parseMeldung(input: string, ctx: JournalContext): Draft {
-  let rest = input.trim();
-  // ---- Tag und Zeit am Anfang
-  let day = ctx.day;
+  // getippte Funk-/Sprechsprache wie beim Diktat lesen («Hotel 4 … zwei Fz … Alpha Kilo 7»); Kurzmeldungen unverändert
+  const typed = normalizeTyped(input.trim(), { blau: ctx.units.blau, now: ctx.now });
+  let rest = typed.text;
+  /** Probleme, die das Eintragen sperren (Zeit hier, Ort weiter unten) – kommen als `problems` in den Entwurf */
+  const problems: DraftProblem[] = [];
+  // ---- Tag und Zeit am Anfang (Tag folgt der Uhr, wenn `dayFromClock`)
+  let day = ctx.dayFromClock ? localDay(ctx.now) : ctx.day;
   const dm = /^T\s?(\d)\b[\s,:]*/i.exec(rest);
   if (dm) {
-    const d = ctx.days[+dm[1]! - 1];
+    const n = +dm[1]!;
+    const d = ctx.days[n - 1];
+    const last = ctx.days[ctx.days.length - 1];
     if (d) day = d;
+    // nächster, noch nicht angelegter Tag («T2» in der ersten Nacht) – wird beim Eintragen angelegt
+    else if (last && n === ctx.days.length + 1) day = addDays(last, 1);
+    else problems.push({ kind: "zeit", text: `«T${n}» gibt es nicht (Übung hat ${ctx.days.length} ${ctx.days.length === 1 ? "Tag" : "Tage"})`, token: dm[0].trim() });
     rest = rest.slice(dm[0].length);
   }
   let minutes = ctx.now.getHours() * 60 + ctx.now.getMinutes();
   let timeFromText = false;
   const times = findTimes(rest);
-  const lead = times.find((x) => x.index <= 2);
+  const lead = times.find((x) => x.index <= 2 || isLeadTimeAfterElement(rest, x.index));
+  problems.push(...timeProblems(rest));
   if (lead) {
     minutes = lead.minutes;
     timeFromText = true;
@@ -195,6 +217,8 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     minutes = times[0].minutes;
     timeFromText = true;
   }
+  // getippte Zeit ohne Tag kurz nach Mitternacht («2355» um 00:15) gehört zum Vortag
+  if (timeFromText && !dm && ctx.dayFromClock) day = nearestDay(day, minutes, ctx.now);
 
   // ---- ausdrückliche Einordnung am Anfang («Rot …», «Feind …», «Eigen …»)
   let kind: Kind | null = null;
@@ -227,7 +251,10 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     if (NAME_ALWAYS_RE.test(raw) || !next || !isCountableWord(next)) skip.push([a, b]);
   }
   // taktische Begriffe zuerst lesen: «Kp» in «1 Kp Pz» ist eine Stufe, kein Melder
-  const reading = readTactical(text, { skip });
+  // Ziel nach «erreicht» und Anlage nach «bei der …» sind Ort, nicht Sichtung; Bedarf («Mun Nachschub benötigt») ist kein Lager
+  const elementBefore = (i: number) => hits.some((h) => h.index < i) || UNIT_RE.test(text.slice(0, i));
+  let reading = readTactical(text, { skip: [...skip, ...placeSpans(text, elementBefore)] });
+  if (isNeedNote(text, reading)) reading = null;
   for (const m of text.matchAll(new RegExp(UNIT_RE.source, "gi"))) {
     if (reading?.spans.some(([a, b]) => m.index! >= a && m.index! < b)) continue;
     const u = m[1]!.replace(/\.\s?|\s+/g, " ").replace(/^(\D+?)\s?(\d)/, (_, a: string, d: string) => (a.length > 1 ? `${a} ${d}` : a + d)).trim();
@@ -260,12 +287,16 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
       break;
     }
   }
-  const count = reading?.count ?? cmCount ?? sight?.count;
+  // Aufzählung («1 Auto 1 Lw und 3 Pers»): alle Teile in den Sinn, keine irreführende Einzelanzahl
+  const parts = reading?.parts ? undefined : listParts(text, skip);
+  const count = parts ? undefined : reading?.count ?? cmCount ?? sight?.count ?? stueckCount(text);
   let kindFrom: Draft["kindFrom"] = explicit ? "text" : "inhalt";
   if (ctx.kind) { kind = ctx.kind; kindFrom = "vorgabe"; }
-  if (!kind) kind = kindOf(text, reading, entry, { melder, enemy: !!enemyHit, count, civil: sight?.civil });
-  const side = sideOf(kind);
-  const unit = kind === "eigen" ? melder : enemyHit?.u ?? "";
+  if (!kind) kind = kindOf(text, reading, entry, { melder, enemy: !!enemyHit, count: count ?? (parts ? 2 : undefined), civil: sight?.civil });
+  // «H02 sieht H04 in AK9»: das gesehene eigene Element ist am Ort, nicht der Melder
+  const seenOwn = observedOwn(text, hits, ctx.units.blau);
+  let side = sideOf(kind);
+  let unit = kind === "eigen" ? seenOwn ?? melder : enemyHit?.u ?? "";
 
   // ---- Herkunft und Richtung: «aus Rtg O» = Herkunft (kein Pfeil), «Rtg N» = Bewegungsrichtung
   let locText = text;
@@ -327,6 +358,20 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     const p = [...ctx.places].sort((a, b) => b.name.length - a.name.length).find((pl) => flexRe(pl.name).test(locText));
     if (p) { pos = p.pos; where = { kind: "ort", label: p.name }; }
   }
+  // Ort, den es nicht gibt («AK77», «ZZ3», «NAI 9»): Problem statt Ersatzort («bei H04»)
+  const ortProblems = placeProblems(locText, { sheets: ctx.sheets, areas: ctx.areas, found, exclude });
+  problems.push(...ortProblems);
+  // Sichtung verschiebt nie den Melder: «eigen» mit Ort, aber ohne Standortwort → Sichtung (unklar) am Ort
+  if (kind === "eigen" && kindFrom === "inhalt" && pos && !seenOwn) {
+    let own = locText;
+    for (const [a, b] of [...hits.map((h) => [h.index, h.index + h.len]), ...found.map((f) => [f.index, f.index + f.raw.length]),
+      ...areaHits.map((x) => [x.m!.index, x.m!.index + x.m![0].length]), ...coords.map((c) => [c.index, c.index + c.raw.length]),
+      ...(rm ? [[rm.index, rm.index + rm[0].length]] : []),
+      ...(where?.kind === "ort" ? [flexRe(where.label).exec(locText)].filter((m) => !!m).map((m) => [m!.index, m!.index + m![0].length]) : [])] as Array<[number, number]>) {
+      own = blank(own, a, Math.min(b, own.length));
+    }
+    if (!staysOwn(text, own, reading, entry)) { kind = "unklar"; side = sideOf(kind); unit = enemyHit?.u ?? ""; }
+  }
   if (!pos) {
     // Ortsname nach einer Präposition, z. B. «angekommen in Wabern», «bei Bümpliz», «Dorfeingang Wabern»
     const pm = /\b(?:in|bei|beim|ab|an|auf|nach|bis|vor|höhe|richtung|rtg|(?:[Oo]rts|[Dd]orf)?(?:[Ee]in|[Aa]us)gang)\.?\s+([A-ZÄÖÜ][\wäöüÄÖÜß'’\-]+)(?:\s+([A-ZÄÖÜ][\wäöüÄÖÜß'’\-]+))?/.exec(locText);
@@ -334,8 +379,13 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     if (pm && /^[A-ZÄÖÜ]/.test(pm[1]!) && !/^(NAI|PQ|Rtg|Richtung|Rot|Blau)$/i.test(pm[1]!) && !isUnit(pm[1]!) && !isTacticalWord(pm[1]!, ["e", "ech", "st", "act", "aff"])) {
       const second = pm[2] && /^[A-ZÄÖÜ]/.test(pm[2]) && !isTacticalWord(pm[2], ["e", "ech", "st", "act", "aff"]) && !isUnit(pm[2]) ? ` ${pm[2]}` : "";
       placeQuery = (pm[1]! + second).replace(/[’']$/, "");
+      // «bei Kreuzung», «beim Waldrand»: Gattungswort, kein Ortsname (nicht nachschlagen)
+      if (isGenericPlace(placeQuery)) placeQuery = undefined;
     }
-    if (kind === "eigen") {
+    // genannter, aber (noch) unbekannter Ort («in Wabern», «AK77»): kein Ersatzort – sonst Widerspruch «bei H04» ↔ Ort fehlt
+    if (ortProblems.length || namesPlace(locText, placeQuery, kind === "eigen")) {
+      // Ort bleibt offen: Ortssuche, Karte oder Korrektur
+    } else if (kind === "eigen") {
       const last = melder ? ctx.lastPos?.(melder, "blau") : undefined;
       if (last) { pos = last; where = { kind: "zuletzt", label: "letzter Standort" }; }
     } else {
@@ -359,10 +409,16 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const sidc = buildSidc(sidcEntry, aff, { echelon, status });
   // Adjektiv «gegnerisch»: bei Elementen (Einheit/Gerät) immer, sonst nur, wenn «gn» im Text steht; «eigen» nur ausdrücklich
   const adjAff: Affiliation | null = kind === "feind" && (isElement || (reading?.explicitAff && reading.aff === "H")) ? "H" : kind === "eigen" && reading?.aff === "F" ? "F" : null;
-  const desc = reading ? describeTactical({ ...reading, count }, adjAff) : undefined;
+  const baseDesc = reading ? describeTactical({ ...reading, count }, adjAff) : undefined;
+  // Aufzählung: nur ersetzen, wenn der Sinn nicht schon alle Anzahlen enthält
+  const desc = parts && !parts.split(", ").every((p) => new RegExp(`(?<!\\d)${p.split(" ")[0]}(?!\\d)`).test(baseDesc ?? "")) ? parts : baseDesc;
   return {
     minutes, day, t: isoOf(day, minutes), timeFromText, kind, kindFrom, side, melder, unit, sym, aff, sidc, echelon, status, desc, count,
-    dir, dirLabel, from, fromLabel, roadHint, pos, where, cells, nai, placeQuery, text: text || input.trim(),
+    dir, dirLabel, from, fromLabel, roadHint, pos, where, cells, nai, placeQuery,
+    // Originaltext bleibt erhalten; die Lesart der Funk-/Sprechsprache steht in `normalized`
+    text: typed.changed ? stripLead(input) || input.trim() : text || input.trim(),
+    ...(typed.changed ? { normalized: typed.text } : {}),
+    ...(problems.length ? { problems } : {}),
   };
 }
 
@@ -499,13 +555,18 @@ export function journalToCsv(events: LageEvent[], days: string[]): string {
   return "﻿" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
 }
 
-/** Neuer Journaleintrag aus einer erkannten Meldung. */
+/**
+ * Neuer Journaleintrag aus einer erkannten Meldung. `now` = Eingang: `tReported` (lokal, Minute) und `createdAt`
+ * (genauer Zeitpunkt, UTC) – getrennt von der Ereigniszeit `t` («1015 …» um 10:40 eingetragen: t 10:15, Eingang 10:40).
+ */
 export function eventFromDraft(d: Draft, device: string, now = new Date()): LageEvent {
   return {
     id: newEventId(now.getTime()),
     rev: 1,
     device,
     updatedAt: now.toISOString(),
+    createdAt: now.toISOString(),
+    tReported: localIso(now),
     t: d.t,
     side: d.side,
     unit: d.unit,

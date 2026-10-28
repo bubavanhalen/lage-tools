@@ -104,6 +104,9 @@ export function demoExercise(): Exercise {
     });
     const ev = eventFromDraft(d, "dev-beispiel", now);
     ev.updatedAt = new Date(Date.parse(ev.t)).toISOString();
+    // Eingang = Ereigniszeit (fiktive Übung, laufend mitgeschrieben)
+    ev.createdAt = ev.updatedAt;
+    ev.tReported = ev.t;
     events.push(ev);
   }
   ex.events = events;

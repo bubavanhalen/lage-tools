@@ -703,6 +703,46 @@ function stepMelderBreak(toks: Tok[]) {
 
 // ---------------------------------------------------------------------------------------------------------------
 
+/** Zahlwort (nicht Ziffer, nicht Artikel «ein/eine»), z. B. «zwei», «zwo», «drü», «vierzehn» */
+const isNumberWord = (w: string) => !/\d/.test(w) && !EIN_RE.test(w) && spokenNumber(w) !== undefined;
+const isCountNoun = (w: string | undefined) => !!w && COUNT_NOUN_RE.test(w.replace(/[.,;:!?]+$/, ""));
+
+/**
+ * Enthält ein getippter Text Funk- bzw. Sprechsprache, die `normalizeSpoken` sicher in Kurzschrift bringt?
+ * Nur dann wird getippter Text normalisiert – getippte Kurzmeldungen («H04 2 Fz AK7») bleiben unverändert.
+ * Auslöser: Buchstabierfolge mit Zahl («Alpha Kilo 7», «Hotel 4», «Hotel null vier»); Zahlwort vor einem zählbaren
+ * Wort («zwei Fz», «drei feindliche Soldaten»); Uhrzeit in Worten («viertel nach zehn», «halb elf», «zehn Uhr fünfzehn»);
+ * Aufzählung mit Artikel als Anzahl («ein Auto, einen Lastwagen und 3 Personen»).
+ */
+export function looksSpoken(text: string): boolean {
+  const words = text.toLowerCase().replace(/ß/g, "ss").split(/[\s,;:!?()]+/).map((w) => w.replace(/[.]+$/, "")).filter(Boolean);
+  const num = (w: string | undefined) => !!w && (/^\d{1,2}$/.test(w) || isNumberWord(w));
+  let einCount = 0;
+  let otherCount = 0;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i]!;
+    const n1 = words[i + 1];
+    const n2 = words[i + 2];
+    // Buchstabierfolge: «hotel 4», «hotel null vier», «alpha kilo 7», «alpha kilo sieben»
+    if (w === "hotel" && num(n1)) return true;
+    if (PHONETIC[w] && n1 && PHONETIC[n1]) {
+      let j = i + 2;
+      while (words[j] && PHONETIC[words[j]!]) j++;
+      if (num(words[j]) || (words[j] === "-" && num(words[j + 1]))) return true;
+    }
+    // Zahlwort vor zählbarem Wort (höchstens ein Beschreibungswort dazwischen)
+    if (isNumberWord(w) && (isCountNoun(n1) || (n1 && !num(n1) && isCountNoun(n2)))) return true;
+    // Uhrzeit in Worten
+    if ((w === "viertel" || w === "dreiviertel" || w === "halb") && (num(n1) || ((n1 === "nach" || n1 === "vor") && num(n2)))) return true;
+    if (isNumberWord(w) && n1 === "uhr") return true;
+    if (isNumberWord(w) && (n1 === "nach" || n1 === "vor") && (num(n2) || n2 === "halb")) return true;
+    // Anzahl in einer Aufzählung
+    if (EIN_RE.test(w) && (isCountNoun(n1) || (n1 && isCountNoun(n2)))) einCount++;
+    else if (/^\d{1,3}$/.test(w) && (isCountNoun(n1) || (n1 && isCountNoun(n2)))) otherCount++;
+  }
+  return einCount > 0 && einCount + otherCount >= 2;
+}
+
 /** Gesprochenen bzw. diktierten Text in Kurzschreibweise umwandeln */
 export function normalizeSpoken(text: string): SpokenResult {
   const changes: SpokenResult["changes"] = [];

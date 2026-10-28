@@ -70,6 +70,7 @@ import type { Hint, RedCoa } from "@lage/core";
 import { LageRotPanel } from "./LageRotPanel";
 import { coaEventIds, useLageRot } from "./lageRot";
 import { coaExtent, coaLayer } from "./coaLayer";
+import { MapTipHost, coaTip, hintTip, showMapTip, tipOnMap } from "./MapTipSheet";
 import { lageRotCsv } from "./lageRotExport";
 import { KiMenuButton, KiProvider } from "./ki/context";
 import { kiPdfNote } from "./ki/settings";
@@ -353,7 +354,11 @@ export function Workspace({ product, tagline }: Props) {
     if (!s || !ex || !(flags.hinweise || tab === "hinweise" || (present && presentHints))) return;
     const g = hintLayer(s.map, {
       hints, ex, t: tNow, selectedId: selHint, focus: hintFocus,
-      onClick: (h) => { if (present) setPresentHints(true); else setTab("hinweise"); setSelHint(h.id); },
+      onClick: (h) => {
+        // Handy: Blatt über der Karte statt Reiterwechsel und Seitensprung (MapTipSheet)
+        if (!present && tipOnMap()) { setSelHint(h.id); showMapTip(hintTip(h, () => { setTab("hinweise"); setSelHint(h.id); })); return; }
+        if (present) setPresentHints(true); else setTab("hinweise"); setSelHint(h.id);
+      },
     });
     g.addTo(s.map);
     hintRef.current = g;
@@ -368,7 +373,10 @@ export function Workspace({ product, tagline }: Props) {
     if (!s || !ex || !lageRot.coas.length || !(flags.aktionen || coaFocus)) return;
     const g = coaLayer(s.map, {
       coas: flags.aktionen ? lageRot.coas : lageRot.coas.filter((c) => c === coaSel), ex, t: tNow, selectedId: selCoa, focus: coaFocus,
-      onClick: (c) => { if (present) setPresentHints(true); else setTab("hinweise"); setSelHint(null); setSelCoa(c.id); },
+      onClick: (c) => {
+        if (!present && tipOnMap()) { setSelHint(null); setSelCoa(c.id); showMapTip(coaTip(c, ex, tNow, () => { setTab("hinweise"); setSelHint(null); setSelCoa(c.id); })); return; }
+        if (present) setPresentHints(true); else setTab("hinweise"); setSelHint(null); setSelCoa(c.id);
+      },
     });
     g.addTo(s.map);
     coaRef.current = g;
@@ -714,13 +722,15 @@ export function Workspace({ product, tagline }: Props) {
               <div className="maptools">
                 <MapSearch ex={ex} map={sm.current.map} onSelectEvent={(id) => { setTab("journal"); setSelEvent(id); const e = (ex.events ?? []).find((x) => x.id === id); if (e && tCursor && e.t > tCursor) setTCursor(e.t); }} />
                 <MapToolbar map={sm.current.map} basemap={basemap} onBasemap={(b) => { setBasemap(b); sm.current?.setBasemap(b); }}
-                  flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} canFitAll={ex.sheets.length + ex.areas.length > 0} />
+                  flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} canFitAll={ex.sheets.length + ex.areas.length > 0}
+                  online={ex.onlineDienste} onOnline={(o) => update((x) => { x.onlineDienste = o; return x; })} />
               </div>
               <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)}
                 extra={(() => { const e = (ex.events ?? []).find((x) => x.id === selEvent); if (!e?.attachments?.length) return null; const all = attachmentsOf(ex, e.attachments); const fotos = all.filter((a) => a.kind === "foto"); const memos = all.filter((a) => a.kind === "audio"); return <>{fotos.length ? <AttachmentChips list={fotos} size={22} /> : null}{memos.length ? <RowMemos list={memos} /> : null}</>; })()}
                 onEdit={present ? undefined : (e) => { setTab("journal"); setEditReq({ id: e.id, n: Date.now() }); }} />
               {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} from={winFrom} />}
               <MapContextMenu map={sm.current.map} sheets={ex.sheets} onReportHere={(pos) => { setTab("journal"); setReportAt({ pos, n: Date.now() }); }} />
+              {!present && <MapTipHost map={sm.current.map} />}
             </>
           )}
           {drawing && <div className="hint">{drawing} · Esc = Abbrechen</div>}
