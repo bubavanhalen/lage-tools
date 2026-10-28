@@ -103,6 +103,26 @@ export function newCount(ex: Exercise, hints: Hint[], t: string): number {
 /** mindestens ein offener Hinweis der Stufe hoch (Farbe der Zahl am Reiter) */
 export const hasOpenHoch = (ex: Exercise, hints: Hint[], t: string): boolean => hints.some((h) => h.level === "hoch" && isOpen(ex, h, t));
 
+/**
+ * Zahl am Umschalter «Journal | Was Rot vorhaben könnte» (Spez. MVP 1, Kap. 3.6): offene Hinweise (nicht entschieden,
+ * nicht vorbei, Stufe hoch/mittel), «⚠» davor, wenn ein «hoch» offen ist. Neutral dargestellt (Tinte), kein Ton.
+ * `text` ist leer, wenn nichts offen ist; `aria` für Bildschirmleser.
+ */
+export interface RedBadge { n: number; hoch: boolean; text: string; aria: string }
+export function redBadge(ex: Exercise | null, hints: Hint[], t: string): RedBadge {
+  if (!ex) return { n: 0, hoch: false, text: "", aria: "" };
+  const open = hints.filter((h) => isOpen(ex, h, t));
+  const n = open.length, hoch = open.some((h) => h.level === "hoch");
+  return {
+    n, hoch,
+    text: n ? `${hoch ? "⚠" : ""}${n}` : "",
+    aria: n ? `${n} ${n === 1 ? "offener Hinweis" : "offene Hinweise"}${hoch ? ", davon wichtige" : ""}` : "keine offenen Hinweise",
+  };
+}
+
+/** erledigt = entschieden oder vorbei (hoch/mittel) – «Erledigte zeigen (n)» */
+export const isDone = (ex: Exercise, h: Hint, t: string): boolean => h.level !== "info" && !isOpen(ex, h, t);
+
 /** Zeit «07:05», mit Tag «T2 07:05», wenn die Übung mehrere Tage hat und der Tag nicht der der Lagezeit ist */
 export function hhmm(t: string, days: string[], ref?: string): string {
   const hm = t.slice(11, 16);

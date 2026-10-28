@@ -1,0 +1,163 @@
+/* Live-Band, Rückblick-Leiste, Rückblick-Band und -Rahmen (Spez. MVP 1, Kap. 2.1, 2.6, 3.5, 5). Nur Tokens aus theme.css. */
+
+/* ---------- Live-Band (unter der Karte, eine Zeile, 56 px) ---------- */
+.tb-wrap { container-type: inline-size; background: var(--surface); border-top: 1px solid var(--line-soft); }
+.tb-wrap.tb-experte { border-top: 0; }
+.tb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8) var(--sp-12);
+  min-height: var(--band-h);
+  padding: var(--sp-4) var(--sp-16);
+  box-sizing: border-box;
+  color: var(--ink);
+  font-size: var(--fs-14);
+}
+.tb-live { display: inline-flex; align-items: center; gap: var(--sp-8); font: 600 var(--fs-14)/1 var(--f-body); letter-spacing: .06em; }
+.tb-live i { width: 10px; height: 10px; border-radius: var(--r-pill); background: var(--ink); animation: tb-pulse 2.4s ease-in-out infinite; }
+@keyframes tb-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .tb-live i { animation: none; } }
+.tb-time { font: 600 var(--fs-28)/1 var(--f-mono); white-space: nowrap; }
+.tb-last { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+.tb-last .tnum { font-family: var(--f-mono); color: var(--ink); }
+.tb-short { display: none; }
+
+.tb button {
+  min-height: var(--hit);
+  min-width: var(--hit);
+  padding: 0 var(--sp-12);
+  border: 1px solid var(--line);
+  border-radius: var(--r-4);
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 var(--fs-14)/1.2 var(--f-body);
+  white-space: nowrap;
+  flex: none;
+}
+.tb button:hover:not(:disabled) { border-color: var(--ink); }
+.tb button:focus-visible, .tb input:focus-visible, .rb-band button:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
+.tb button:disabled { color: var(--muted); border-style: dashed; opacity: 1; cursor: not-allowed; }
+.tb-back { display: inline-flex; align-items: center; gap: var(--sp-8); margin-left: auto; }
+.tb-back svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* «zeigt nur letzte 2 h ✕» (R8): Chip, kontextuell */
+.tb .tb-chip { border-radius: var(--r-pill); border-width: 2px; border-color: var(--ink); font-weight: 600; }
+
+/* ---------- Rückblick-Leiste (Grundansicht) ---------- */
+.tb-rb { flex-wrap: nowrap; }
+.tb-at { display: inline-flex; align-items: center; gap: var(--sp-8); font-weight: 600; white-space: nowrap; }
+.tb-in {
+  width: 5.2em;
+  min-height: var(--hit);
+  box-sizing: border-box;
+  padding: 0 var(--sp-8);
+  border: 1px solid var(--line);
+  border-radius: var(--r-4);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 var(--fs-20)/1 var(--f-mono);
+  text-align: center;
+}
+.tb-in.bad { border: 2px solid var(--stop); background: var(--stop-bg); }
+.tb-day { font: 600 var(--fs-14) var(--f-mono); color: var(--muted); }
+.tb-bad { color: var(--stop); font-size: var(--fs-12); font-weight: 600; white-space: nowrap; }
+.tb-steps { display: inline-flex; gap: var(--sp-8); flex: none; }
+.tb-range {
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: var(--hit);
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+.tb-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(to right, var(--ink) var(--p, 0%), var(--line-soft) var(--p, 0%));
+}
+.tb-range::-moz-range-track { height: 6px; border-radius: var(--r-pill); background: var(--line-soft); }
+.tb-range::-moz-range-progress { height: 6px; border-radius: var(--r-pill); background: var(--ink); }
+.tb-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -9px;
+  border-radius: var(--r-pill);
+  background: var(--rueckblick);
+  border: 2px solid var(--rueckblick-ink);
+}
+.tb-range::-moz-range-thumb { width: 22px; height: 22px; border-radius: var(--r-pill); background: var(--rueckblick); border: 2px solid var(--rueckblick-ink); }
+.tb-count { font-weight: 600; white-space: nowrap; min-width: 0; }
+.tb-count.on { padding: 2px var(--sp-8); border-radius: var(--r-4); background: var(--rueckblick); color: var(--rueckblick-ink); }
+.tb-count .tnum { font-family: var(--f-mono); }
+.tb .tb-golive { background: var(--ink); color: var(--surface); border-color: var(--ink); font-weight: 600; }
+
+@media (pointer: coarse) {
+  .tb button { font-size: var(--fs-16); }
+}
+
+/* Tablet / schmale Karte: kurze Texte; Rückblick-Leiste zweizeilig (112 px), Regler über die ganze Breite */
+@container (max-width: 760px) {
+  .tb-long { display: none; }
+  .tb-short { display: inline; }
+  .tb-rb { flex-wrap: wrap; row-gap: var(--sp-4); padding-block: var(--sp-8); min-height: 112px; }
+  .tb-rb .tb-range { order: 10; flex: 1 1 100%; }
+  .tb-rb .tb-golive { margin-left: auto; }
+}
+@container (max-width: 520px) {
+  .tb-live { font-size: var(--fs-12); }
+  .tb-time { font-size: var(--fs-20); }
+}
+
+/* ---------- Rückblick-Band oben und Rahmen um die Kartenspalte ---------- */
+.app[data-lagezeit="rueckblick"] { --rb-oben: var(--rueckblick-h); }
+/* Leaflet-Zoom und Meldungsband rücken unter das Band */
+.app[data-lagezeit="rueckblick"] .leaflet-top { top: var(--rb-oben); }
+.rb-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 1001;
+  border: 4px solid var(--rueckblick);
+  box-shadow: inset 0 0 0 1px var(--rueckblick-ink);
+  pointer-events: none;
+}
+.rb-band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1002;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  min-height: var(--rueckblick-h);
+  padding: 0 0 0 var(--sp-16);
+  box-sizing: border-box;
+  background: var(--rueckblick);
+  color: var(--rueckblick-ink);
+  border-bottom: 1px solid var(--rueckblick-ink);
+}
+.rb-text { flex: 1 1 auto; min-width: 0; font: 600 var(--fs-20)/1.1 var(--f-body); letter-spacing: .01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-play { font: 600 var(--fs-14) var(--f-body); white-space: nowrap; }
+.rb-band .rb-live {
+  flex: none;
+  min-height: var(--hit);
+  min-width: var(--hit);
+  padding: 0 var(--sp-16);
+  border: 0;
+  border-radius: 0;
+  background: var(--rueckblick-ink);
+  color: var(--rueckblick);
+  font: 600 var(--fs-16)/1 var(--f-body);
+}
+.rb-band .rb-live:hover { text-decoration: underline; }
+
+/* Streifen über Liste / «Was Rot» */
+.rb-strip {
+  padding: var(--sp-4) var(--sp-12);
+  border-radius: var(--r-4);
+  background: var(--rueckblick);
+  color: var(--rueckblick-ink);
+  font: 600 var(--fs-14)/1.4 var(--f-body);
+}

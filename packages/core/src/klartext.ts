@@ -2,13 +2,15 @@
  * Klartext für die Grundansicht (Spez. MVP 1, Kap. 4.2/4.3): Titel ohne Codes, Reglementsziffern oder Abkürzungen
  * (ausser Fz, Pers, PQ-/NAI- und Trupp-Namen). Codes stehen nur noch unter «Woher kommt das?».
  *
- * Erste Fassung (Phase 0): leitet den Klartext aus dem heutigen `title` ab. Paket D setzt `headline` direkt in
- * `coa.ts`/`hints.ts` und verfeinert hier; Signaturen sind Vertrag.
+ * `coa.ts` und `hints.ts` setzen `headline` (und bei Hinweisen `todo`) direkt; die Funktionen hier nehmen diese Felder
+ * und leiten sonst (ältere gespeicherte Daten, Tests) aus `title` ab. Signaturen sind Vertrag.
  */
 import type { CoaIndicator, RedCoa } from "./coa";
+import { hintRule, type Hint } from "./hints";
 
-/** Codes wie «(D1)», «C5», «TF 17» am Ende eines Texts */
-const TRAILING_CODE = /\s*\((?:[A-E][1-6]|[a-z]+)\)\s*$/;
+/** Regel-Codes in Klammern: «(D1)», «(C5, 2×)» (Zusatz bleibt: « (2×)»), «(still)» am Ende */
+const CODE_PAREN = /\s*\(([A-E][1-6])(?:,\s*([^)]*))?\)/g;
+const TRAILING_WORD = /\s*\([a-z]+\)\s*$/;
 
 /** Klartext-Titel einer möglichen Aktion Rot, z. B. «Rot könnte Stao H05 überfallen (AQ11)». */
 export function coaHeadline(c: RedCoa): string {
@@ -40,9 +42,23 @@ export function coaHeadline(c: RedCoa): string {
   return t;
 }
 
-/** Anzeichen-Text ohne Code am Ende («Drohne über H05 02:50 (D1)» → «Drohne über H05 02:50»). */
+/**
+ * Anzeichen-Text ohne Regel-Code («Drohne über H05 02:50 (D1)» → «Drohne über H05 02:50»,
+ * «Sperre NAI 3 07:05 (C5, 2×)» → «Sperre NAI 3 07:05 (2×)»).
+ */
 export function indicatorText(i: Pick<CoaIndicator, "text">): string {
-  return i.text.replace(TRAILING_CODE, "");
+  return i.text.replace(CODE_PAREN, (_m, _code: string, extra?: string) => (extra ? ` (${extra})` : "")).replace(TRAILING_WORD, "").trim();
+}
+
+/** Klartext-Titel eines Hinweises (Kap. 4.2); ohne `headline` (ältere Daten) der Titel mit «⚠» bei Stufe hoch. */
+export function hintHeadline(h: Pick<Hint, "headline" | "title" | "level">): string {
+  return h.headline ?? `${h.level === "hoch" ? "⚠ " : ""}${h.title}`;
+}
+
+/** «Woher kommt das?»: Code, Kurzname, Regel in eigenen Worten und Quelle (Reglement-Nr. + Ziffer) – nur dort Codes. */
+export function hintOrigin(h: Pick<Hint, "rule">): { code: string; name: string; rule: string; source?: string } {
+  const r = hintRule(h.rule);
+  return { code: h.rule, name: r?.name ?? "", rule: r?.rule ?? "", source: r?.source };
 }
 
 /** «4 Anzeichen dafür · 1 offen · 1 spricht dagegen» (Teile mit 0 entfallen, ausser «Anzeichen dafür»). */

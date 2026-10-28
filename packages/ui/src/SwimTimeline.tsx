@@ -1,20 +1,27 @@
 /**
  * Zeitstrahl mit Schwimmbahnen (eine Spur pro Element): Feind oben, Eigene unten.
  * Punkte = Meldungen (gefüllt mit Ort, hohl ohne Ort), gestrichelte Linie von jeder Sichtung zum Melder.
- * Lagezeit setzen durch Klicken/Ziehen (Maus, Stift, Touch), Abspielen, «Live», Zoom (Ctrl + Mausrad, Pinch).
+ * Lagezeit setzen durch Klicken/Ziehen (Maus, Stift, Touch), Abspielen, «LIVE», Zoom (Ctrl + Mausrad, Pinch).
+ *
+ * MVP 1: nur noch im Schalter «Experte» (Spez. Kap. 2.10). Mit `zeit` (ZeitApi aus useLageZeit) laufen Lagezeit, LIVE,
+ * Abspielen und «Zeige letzte» über den gemeinsamen Automaten (Rückblick-Band und -Rahmen gelten gleich);
+ * ohne `zeit` wie bisher über `value`/`onChange` und `win`/`onWin`.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as RKeyboardEvent, type MouseEvent as RMouseEvent, type PointerEvent as RPointerEvent, type ReactNode } from "react";
-import { axisTicks, buildLanes, clusterX, kindLabel, liveTime, stackOffsets, timeBounds, windowLabel, windowStart, WINDOW_PRESETS, type DotKind, type Exercise, type Lane, type LaneItem, type LageEvent, type TimeWindow } from "@lage/core";
+import { axisTicks, buildLanes, clusterX, kindLabel, liveTime, showLastLabel, SHOW_LAST_MIN, stackOffsets, timeBounds, windowLabel, windowStart, type DotKind, type Exercise, type Lane, type LaneItem, type LageEvent, type TimeWindow } from "@lage/core";
 import { dayLabel, isoLocal } from "./Timeline";
+import type { GoLiveGrund, ShowLast, ZeitApi } from "./shell/contracts";
 import "./swimtimeline.css";
 
 export interface SwimTimelineProps {
   events: LageEvent[];
   days: string[];
   units: Exercise["units"];
-  /** gewählter Zeitpunkt (ISO lokal «YYYY-MM-DDTHH:MM») oder null = Live */
-  value: string | null;
-  onChange: (t: string | null) => void;
+  /** gewählter Zeitpunkt (ISO lokal «YYYY-MM-DDTHH:MM») oder null = Live (ohne `zeit`) */
+  value?: string | null;
+  onChange?: (t: string | null) => void;
+  /** MVP 1: Lagezeit, LIVE, Abspielen und «Zeige letzte» über den gemeinsamen Automaten (hat Vorrang vor value/win) */
+  zeit?: ZeitApi;
   selectedId: string | null;
   /** Klick auf einen Punkt: Meldung auswählen (Workspace setzt dann auch die Zeit) */
   onSelect: (id: string) => void;
@@ -25,16 +32,18 @@ export interface SwimTimelineProps {
   /** optional: eingeklappt (sonst merkt sich der Zeitstrahl den Zustand selbst) */
   collapsed?: boolean;
   onCollapsedChange?: (c: boolean) => void;
-  /** Zeitfenster (ohne Angabe: keine Fenster-Bedienung) */
+  /** Zeitfenster (ohne Angabe und ohne `zeit`: keine Fenster-Bedienung) */
   win?: TimeWindow;
   onWin?: (w: TimeWindow) => void;
 }
 
 const MIN = 60000;
-const KIND_VAR: Record<DotKind, string> = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", ul: "var(--muted)" };
-const GROUP_VAR = { feind: "var(--rot)", ul: "var(--muted)", eigen: "var(--blau)" } as const;
+const KIND_VAR: Record<DotKind, string> = { eigen: "var(--eigen)", feind: "var(--feind)", unklar: "var(--unklar)", ul: "var(--muted)" };
+const GROUP_VAR = { feind: "var(--feind)", ul: "var(--muted)", eigen: "var(--eigen)" } as const;
 /** Abspieltempo in Übungsminuten pro Sekunde; 0 = automatisch (ganze Übung in ca. 30 s) */
 const SPEEDS = [0, 1, 5, 15, 60];
+/** Schnellwahl des alten Zeitfensters (nur ohne `zeit`) */
+const OLD_PRESETS = [0, 30, 60, 120, 360] as const;
 const FOLD_KEY = "lage-tools.zeitstrahl.zu";
 const SPEED_KEY = "lage-tools.zeitstrahl.tempo";
 
@@ -60,7 +69,24 @@ function useWindowSize() {
 interface Tip { e: LageEvent; x: number; y: number; melder?: boolean }
 
 export function SwimTimeline(p: SwimTimelineProps) {
-  const { events, days, units, value, onChange, selectedId, onSelect, compact = false, extra, win, onWin } = p;
+  const { events, days, units, selectedId, onSelect, compact = false, extra, zeit } = p;
+  // Lagezeit: aus dem gemeinsamen Automaten (MVP 1) oder wie bisher über value/onChange
+  const value = zeit ? (zeit.zeit.kind === "rueckblick" ? zeit.zeit.t : null) : p.value ?? null;
+  const onChange = (t: string | null, grund: GoLiveGrund = "knopf") => {
+    if (!zeit) { p.onChange?.(t); return; }
+    if (t === null) zeit.goLive(grund); else zeit.lookBack(t);
+  };
+  // Zeitfenster: «Zeige letzte» / fester Anfang (ab) über den Automaten, sonst win/onWin
+  const win: TimeWindow | undefined = zeit
+    ? (zeit.showLast ? { mode: "dauer", min: zeit.showLast } : zeit.ab ? { mode: "ab", t: zeit.ab } : { mode: "alles" })
+    : p.win;
+  const onWin: ((w: TimeWindow) => void) | undefined = zeit
+    ? (w) => {
+        if (w.mode === "ab") { if (zeit.setAb) zeit.setAb(w.t); return; }
+        zeit.setAb?.(null);
+        zeit.setShowLast(w.mode === "dauer" && (SHOW_LAST_MIN as readonly number[]).includes(w.min) ? (w.min as ShowLast) : null);
+      }
+    : p.onWin;
 
   // ---------- Daten ----------
   const { lanes, items } = useMemo(() => buildLanes(events, units), [events, units]);
@@ -109,7 +135,9 @@ export function SwimTimeline(p: SwimTimelineProps) {
 
   // ---------- Abspielen (rAF, sanft; Karte wird höchstens ca. 6× pro Sekunde nachgeführt) ----------
   const emitted = useRef<string | null | undefined>(undefined);
-  const emit = (t: string | null) => { emitted.current = t; st.current.onChange(t); };
+  const emit = (t: string | null, grund: GoLiveGrund = "knopf") => { emitted.current = t; st.current.onChange(t, grund); };
+  const zeitRef = useRef(zeit);
+  zeitRef.current = zeit;
   const playFrom = useRef(0);
   useEffect(() => {
     if (!playing) return;
@@ -119,7 +147,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
       const perSec = s.speed || Math.max(1, (s.liveMs - s.t0) / MIN / 30);
       ms += (Math.min(250, now - prev) / 1000) * perSec * MIN;
       prev = now;
-      if (ms >= s.liveMs) { setPlaying(false); setPlayMs(null); emit(null); return; }
+      if (ms >= s.liveMs) { setPlaying(false); setPlayMs(null); emit(null, "ende"); return; }
       setPlayMs(ms);
       const iso = isoLocal(ms);
       if (iso !== emitted.current && now - lastEmit > 160) { lastEmit = now; emit(iso); }
@@ -133,6 +161,8 @@ export function SwimTimeline(p: SwimTimelineProps) {
     if (playing && emitted.current !== undefined && value !== emitted.current) { setPlaying(false); setPlayMs(null); }
   }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Abspielen dem Automaten melden (Timer ruht, R4)
+  useEffect(() => { zeitRef.current?.setPlaying(playing); }, [playing]);
   const stop = () => {
     if (!playing) return;
     setPlaying(false);
@@ -152,7 +182,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
     const m = clamp(Math.round(ms / MIN) * MIN, t0, liveMs);
     emit(m >= liveMs - MIN / 2 ? null : isoLocal(m));
   };
-  const goLive = () => { if (playing) { setPlaying(false); setPlayMs(null); } emit(null); };
+  const goLive = (grund: GoLiveGrund = "knopf") => { if (playing) { setPlaying(false); setPlayMs(null); } emit(null, grund); };
 
   // ---------- Geometrie ----------
   const chartRef = useRef<HTMLDivElement>(null);
@@ -392,7 +422,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
     if (k === "ArrowLeft") setTime(base - step);
     else if (k === "ArrowRight") setTime(base + step);
     else if (k === "Home") setTime(t0);
-    else if (k === "End" || k === "l" || k === "L") goLive();
+    else if (k === "End" || k === "l" || k === "L") { goLive("taste"); ev.stopPropagation(); }
     else if (k === " " && !onButton) togglePlay();
     else if (k === "+" || k === "=") zoomAt(0.6, cur);
     else if (k === "-" || k === "_") zoomAt(1 / 0.6, cur);
@@ -559,25 +589,42 @@ export function SwimTimeline(p: SwimTimelineProps) {
           ? <svg viewBox="0 0 15 15" aria-hidden="true"><rect x="2.5" y="2" width="3.6" height="11" rx="1" /><rect x="8.9" y="2" width="3.6" height="11" rx="1" /></svg>
           : <svg viewBox="0 0 15 15" aria-hidden="true"><path d="M4 2.2v10.6c0 .5.5.8.9.5l8.2-5.3a.6.6 0 0 0 0-1L4.9 1.7C4.5 1.4 4 1.7 4 2.2Z" /></svg>}
       </button>
-      <output className="swt-now" aria-label="Lagezeit">
-        Lage {multiDay && <span className="swt-day">{dayLabel(curIso, days)}</span>} <span className="tnum">{hhmm(cur)}</span>
+      <output className={"swt-now" + (live ? " live" : "")} aria-label="Lagezeit">
+        {live ? <><i className="swt-livedot" aria-hidden="true" />LIVE</> : "Lage um"} <span className="swt-day">{dayLabel(curIso, days)}</span> <span className="tnum">{hhmm(cur)}</span>
       </output>
       <input className="swt-range" type="range" min={t0} max={liveMs} step={MIN} value={clamp(cur, t0, liveMs)} disabled={empty}
-        style={{ ["--p" as string]: `${pct}%` }} aria-label="Lagezeit" aria-valuetext={`${multiDay ? dayLabel(curIso, days) + " " : ""}${hhmm(cur)}${live ? " (Live)" : ""}`}
+        style={{ ["--p" as string]: `${pct}%` }} aria-label="Lagezeit" aria-valuetext={`${multiDay ? dayLabel(curIso, days) + " " : ""}${hhmm(cur)}${live ? " (LIVE)" : ""}`}
         onChange={(e) => setTime(+e.target.value)} />
-      <select className="swt-speed" value={speed} onChange={(e) => setSpeed(+e.target.value)} aria-label="Abspieltempo" title="Abspieltempo in Übungsminuten pro Sekunde (auto: ganze Übung in ca. 30 s)">
-        {SPEEDS.map((s) => <option key={s} value={s}>{s ? `${s} min/s` : "auto"}</option>)}
+      <select className="swt-speed" value={speed} onChange={(e) => setSpeed(+e.target.value)} aria-label="Abspieltempo" title="Abspieltempo in Übungsminuten pro Sekunde">
+        {SPEEDS.map((s) => <option key={s} value={s}>{s ? `Tempo: ${s} min/s` : "Tempo: ganze Übung in 30 s"}</option>)}
       </select>
-      <button className="swt-chip swt-live" aria-pressed={live} onClick={goLive} title="Immer die neuste Lage zeigen (L)"><i aria-hidden="true" />Live</button>
+      <button className="swt-chip swt-live" aria-pressed={live} onClick={() => goLive("knopf")} title="Immer die neuste Lage zeigen (L)"><i aria-hidden="true" />{live ? "LIVE" : "Zurück zu LIVE"}</button>
       {/* eingeklappt und nicht gezoomt: «Ganze Achse» bringt nichts → Platz für das Zeitfenster */}
       {!collapsed || !fit ? (
         <button className="swt-chip swt-fit" aria-pressed={fit} onClick={() => setZoom(null)} disabled={empty}
-          title="Ganze Zeitachse zeigen (Zoom zurücksetzen) – die Lagezeit bleibt. Vergrössern: Ctrl + Mausrad, zwei Finger oder + / −. Neuste Lage: «Live»">Ganze Achse</button>
+          title="Ganze Zeitachse zeigen (Zoom zurücksetzen) – die Lagezeit bleibt. Vergrössern: Ctrl + Mausrad, zwei Finger oder + / −. Neuste Lage: «LIVE»">ganze Übung</button>
       ) : null}
-      {onWin && win && (
+      {zeit && win && (
+        <label className="swt-show">
+          <span className="swt-show-l">Zeige letzte</span>
+          <select className="swt-win-sel swt-show-sel" aria-label="Zeige letzte" value={win.mode === "dauer" ? String(win.min) : win.mode === "ab" ? "ab" : "0"}
+            onChange={(e) => { const v = e.target.value; if (v !== "ab") onWin!(+v ? { mode: "dauer", min: +v } : { mode: "alles" }); }}>
+            {SHOW_LAST_MIN.map((m) => <option key={m} value={m}>{showLastLabel(m)}</option>)}
+            <option value="0">{showLastLabel(null)}</option>
+            {win.mode === "ab" && <option value="ab">{windowLabel(win)}</option>}
+          </select>
+        </label>
+      )}
+      {zeit && live && (
+        <button className="swt-chip swt-back" onClick={() => { const tl = zeit.tLive ?? zeit.tNow; const tb = Math.max(t0, Date.parse(tl) - 60 * MIN); zeit.lookBack(isoLocal(tb)); }}
+          aria-label="Zurückblicken" title="Lage vor 1 h zeigen (Rückblick)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3 3 8l5 5M13 3 8 8l5 5" /></svg>
+        </button>
+      )}
+      {!zeit && onWin && win && (
         <span className="swt-win" role="group" aria-label="Zeitfenster" title="Zeitfenster: nur Meldungen der letzten … bis zur Lagezeit zeigen (Elemente bleiben an ihrem letzten Standort)">
           <span className="swt-win-seg">
-            {WINDOW_PRESETS.map((m) => {
+            {OLD_PRESETS.map((m) => {
               const on = m === 0 ? win.mode === "alles" : win.mode === "dauer" && win.min === m;
               return <button key={m} type="button" aria-pressed={on} onClick={() => onWin(m === 0 ? { mode: "alles" } : { mode: "dauer", min: m })}>{m === 0 ? "Alles" : windowLabel({ mode: "dauer", min: m })}</button>;
             })}
@@ -586,7 +633,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
           </span>
           <select className="swt-win-sel" aria-label="Zeitfenster" value={win.mode === "dauer" ? String(win.min) : win.mode === "ab" ? "ab" : "0"}
             onChange={(e) => { const v = e.target.value; if (v !== "ab") onWin(+v ? { mode: "dauer", min: +v } : { mode: "alles" }); }}>
-            {WINDOW_PRESETS.map((m) => <option key={m} value={m}>{m === 0 ? "Fenster: alles" : `Fenster: ${windowLabel({ mode: "dauer", min: m })}`}</option>)}
+            {OLD_PRESETS.map((m) => <option key={m} value={m}>{m === 0 ? "Fenster: alles" : `Fenster: ${windowLabel({ mode: "dauer", min: m })}`}</option>)}
             {win.mode === "ab" && <option value="ab">{winLabel}</option>}
           </select>
         </span>

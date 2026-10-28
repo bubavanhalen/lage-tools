@@ -280,8 +280,8 @@ function CoaCard({ c, ex, t, open, sel, compact, onHead, onMap, onHint, onEvent 
   );
 }
 
-/** Kräfte Rot: erkannt ↔ erwartet (Feindannahme) ↔ Stand; ohne Feindannahme nur «erkannt» */
-function ForceTable({ lage, ex, t, onEvent }: { lage: LageRotState; ex: Exercise; t: string; onEvent: (id: string) => void }) {
+/** Kräfte Rot: erkannt ↔ erwartet (Feindannahme) ↔ Stand; ohne Feindannahme nur «erkannt» (auch in RedPanel, Experte) */
+export function ForceTable({ lage, ex, t, onEvent }: { lage: LageRotState; ex: Exercise; t: string; onEvent: (id: string) => void }) {
   const rows = lage.compare.filter((c) => c.found || c.expected !== undefined);
   const withSpec = !!lage.spec;
   const withWin = !!lage.from;

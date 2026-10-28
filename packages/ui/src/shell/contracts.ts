@@ -42,6 +42,11 @@ export interface ZeitApi {
   suspend(key: string, on: boolean): void;
   /** Sekunden bis zur automatischen Rückkehr nach LIVE, null = kein Timer */
   remaining: number | null;
+  /** (C, ergänzt) LIVE-Zeit (ISO lokal): jetzt bzw. letzte Meldung, wenn die Übung vorbei ist – für «vor 1 h 55 min» */
+  tLive?: string;
+  /** (C, ergänzt) nur Experte: fester Anfang «ab 05:30» (Griff im Zeitstrahl ziehen); schliesst «Zeige letzte» aus */
+  ab?: string | null;
+  setAb?(t: string | null): void;
 }
 
 // ---------- Kopf (Paket A) ----------
@@ -108,6 +113,8 @@ export interface RedPanelProps {
   onMapCoa(c: RedCoa): void;
   onEvent(id: string): void;
   update(f: (x: Exercise) => Exercise): void;
+  /** Rückblick: Lagezeit (ISO lokal) für den Streifen «Stand 05:30»; in LIVE weglassen (Paket D, additiv) */
+  stand?: string | null;
 }
 
 // ---------- Live-Band (Paket C) ----------

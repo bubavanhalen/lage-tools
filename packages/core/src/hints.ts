@@ -534,6 +534,20 @@ function stayAt(c: Ctx, k: string, ms: number): Stay | undefined {
 
 const placeOf = (v: Ev) => v.nais[0] ?? (v.precise ? v.e.cells?.[0] ?? v.cell?.label : undefined) ?? v.e.where ?? "unbekanntem Ort";
 
+/**
+ * Klartext für die Grundansicht (Spez. MVP 1, Kap. 4.2): «[⚠ bei hoch] Was ist los – was tun». `todo` ist der Teil nach
+ * «–» (im Detail «Jetzt prüfen:»); ist dieser Teil eine Deutung statt einer Tätigkeit («Entdeckung droht»), nennt `todo`
+ * stattdessen, was zu tun ist. Ohne Codes, Reglementsziffern und Abkürzungen ausser Fz, Pers, PQ-, NAI- und Trupp-Namen.
+ */
+function say(level: HintLevel, head: string, tail?: string, todo: string | undefined = tail): Pick<Hint, "headline" | "todo"> {
+  const h = `${level === "hoch" ? "⚠ " : ""}${head}`;
+  const r: Pick<Hint, "headline" | "todo"> = { headline: tail ? `${h} – ${tail}` : h };
+  if (todo) r.todo = todo;
+  return r;
+}
+/** erster Buchstabe gross («schwarzer Pw» → «Schwarzer Pw») */
+const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+
 function mk(rule: string, key: string, level: HintLevel, title: string, text: string, trig: Ev[], at: number, x: Partial<Hint> = {}): Hint {
   const evs = uniq(trig).sort((a, b) => a.ms - b.ms || a.id.localeCompare(b.id));
   const lastMs = Math.max(at, ...evs.map((v) => v.ms));
@@ -700,14 +714,22 @@ function dirText(dirs: number[]): string {
   return names.join(", ");
 }
 
+/** häufigste Richtung bzw. Achse («N↔S»), für den Klartext */
+function mainDir(dirs: number[]): string {
+  const all = dirText(dirs);
+  return all.includes("↔") ? all : all.split(", ")[0]!;
+}
+
 function ruleA1(c: Ctx): Hint[] {
   return baselines(c).map((b) => {
     const parts = [`~${num(b.fzRate)} Fz/Std`];
     if (b.persRate > 0) parts.push(`~${num(b.persRate)} Pers/Std`);
     if (b.dirs.length) parts.push(`Richtungen ${dirText(b.dirs)}`);
+    const rate = b.fzRate > 0 ? `etwa ${num(b.fzRate)} Fz pro Stunde` : `etwa ${num(b.persRate)} Pers pro Stunde`;
+    const main = b.dirs.length ? mainDir(b.dirs) : "";
     return mk("A1", b.a.name, "info", `Normallage ${b.a.name}`,
       `${parts.join(", ")} (Basis ${hm(b.start)}–${hm(b.end)}, ${b.base.length} Meldungen). Vergleichswert für Abweichung und Ruhe.`,
-      b.base, b.end, { nai: b.a.name, pos: areaCenter(b.a), unit: b.a.trupp });
+      b.base, b.end, { nai: b.a.name, pos: areaCenter(b.a), unit: b.a.trupp, ...say("info", `Normalbild ${b.a.name}: ${rate}${main ? `, meist Rtg ${main}` : ""}`) });
   });
 }
 
@@ -753,10 +775,15 @@ function ruleA2(c: Ctx): Hint[] {
       const first = ep[0]!, reasons = new Map<string, string>();
       for (const d of ep) for (const [k, r] of d.reasons) reasons.set(k, r);
       const onlyVolume = [...reasons.keys()].every((k) => k === "fz" || k === "pers");
+      const why = [...reasons.entries()].filter(([k]) => k !== "fz" && k !== "pers").map(([, r]) => r).join(", ");
       out.push(mk("A2", `${b.a.name}:${first.v.id}`, "mittel",
         onlyVolume ? `Ungewöhnlich viel Verkehr in ${b.a.name}` : `Abweichung von der Normallage in ${b.a.name}`,
         `Seit ${hm(first.v.ms)}: ${[...reasons.values()].join("; ")}. Bewegung oder Zusammenzug von Rot?`,
-        ep.flatMap((d) => d.trig), first.v.ms, { nai: b.a.name, unit: b.a.trupp }));
+        ep.flatMap((d) => d.trig), first.v.ms, {
+          nai: b.a.name, unit: b.a.trupp,
+          ...(onlyVolume ? say("mittel", `Mehr Verkehr als üblich in ${b.a.name}`, "Rot zieht vielleicht zusammen", "genauer beobachten, wohin der Verkehr geht")
+            : say("mittel", `Ungewohnte Bewegung in ${b.a.name} (${why})`, "genauer beobachten")),
+        }));
       ep = [];
     };
     for (const d of devs) {
@@ -786,7 +813,8 @@ function ruleA3(c: Ctx): Hint[] {
         ? `Ruhe ${hm(v.ms)}–${hm(next.ms)} (${dur(quiet)}) ohne Rot-Meldung aus ${b.a.name}, normal wären ~${exp}. Vorbereitung von Rot oder Sicht verloren?`
         : `Seit ${hm(v.ms)} (${dur(quiet)}) keine Rot-Meldung aus ${b.a.name}, normal wären ~${exp}. Vorbereitung von Rot oder Sicht verloren?`;
       out.push(mk("A3", `${b.a.name}:${v.id}`, "mittel", `Auffällige Ruhe in ${b.a.name}`, text, [v], at,
-        { nai: b.a.name, pos: areaCenter(b.a), unit: b.a.trupp, until: next ? iso(next.ms) : undefined, last: iso(next ? next.ms : c.tMs) }));
+        { nai: b.a.name, pos: areaCenter(b.a), unit: b.a.trupp, until: next ? iso(next.ms) : undefined, last: iso(next ? next.ms : c.tMs),
+          ...say("mittel", `${b.a.name} seit ${hm(v.ms)} ungewohnt ruhig`, "Sicht prüfen") }));
     }
   }
   return out;
@@ -827,7 +855,8 @@ function ruleB1(c: Ctx): Hint[] {
       const r0 = react[0]!;
       out.push(mk("B1", p.id, "mittel", `Rot reagiert nach Patrouille ${name} in ${placeOf(p)}`,
         `${name} hat ${placeOf(p)} um ${hm(dep.ms)} verlassen; ${Math.round((r0.ms - dep.ms) / MIN)} Min später ${hm(r0.ms)} ${quote(r0.e.text)}. Rot reagiert verzögert – Warnung, Umladen oder Wegbringen von Material?`,
-        [p, dep, ...react], r0.ms, { unit: name, pos: p.pos, cells: uniq([p, ...react].filter((v) => v.cell).map((v) => v.cell!.label)) }));
+        [p, dep, ...react], r0.ms, { unit: name, pos: p.pos, cells: uniq([p, ...react].filter((v) => v.cell).map((v) => v.cell!.label)),
+          ...say("mittel", `Bewegung in ${placeOf(p)} kurz nach Patrouille ${name}`, "Rot reagiert vermutlich", `${placeOf(p)} weiter beobachten (Umladen, Material, Warnung)`) }));
     }
   }
   return out;
@@ -869,7 +898,9 @@ function ruleB2(c: Ctx): Hint[] {
     const endTxt = p.end ? ` bis ${hm(p.end.ms)}` : "";
     out.push(mk("B2", p.first.id, "mittel", `${who[0]!.toUpperCase()}${who.slice(1)} in ${placeOf(p.first)} steht seit ${hm(p.first.ms)}`,
       `Steht seit ${hm(p.first.ms)}${endTxt} (über ${T.B2_STAND_MIN} Min) – ${advice}`,
-      p.evs, at, { until: cpEnd(p) <= c.tMs ? iso(cpEnd(p)) : undefined, pos: p.first.pos, nai: p.first.nais[0] }));
+      p.evs, at, { until: cpEnd(p) <= c.tMs ? iso(cpEnd(p)) : undefined, pos: p.first.pos, nai: p.first.nais[0],
+        ...(p.own ? say("mittel", `Checkpoint ${placeOf(p.first)} steht seit ${hm(p.first.ms)}`, "ist bekannt, Standort wechseln?")
+          : say("mittel", `Checkpoint Rot in ${placeOf(p.first)} steht seit ${hm(p.first.ms)}`, "Ausweichrouten beobachten")) }));
   }
   return out;
 }
@@ -916,7 +947,9 @@ function ruleB3(c: Ctx): Hint[] {
       hoch
         ? `${hm(v0.ms)} ${quote(v0.e.text)}${evaders.length > 1 ? ` und ${evaders.length - 1} weitere` : ""} beim ${cpWho(p)} (seit ${hm(p.first.ms)}). Ausweichende Fz sind die eigentlich Verdächtigen – verfolgen und melden.`
         : `${hm(v0.ms)} ${quote(v0.e.text)}${evaders.length > 1 ? ` und ${evaders.length - 1} weitere` : ""}: fährt vom ${cpWho(p)} weg, ohne ihn passiert zu haben? Prüfen, ob es ausweicht.`,
-      [p.first, ...evaders], v0.ms, { pos: p.first.pos, until: end <= c.tMs ? iso(end) : undefined }));
+      [p.first, ...evaders], v0.ms, { pos: p.first.pos, until: end <= c.tMs ? iso(end) : undefined,
+        ...(hoch ? say("hoch", `Fahrzeug weicht dem Checkpoint ${placeOf(p.first)} aus`, "verfolgen und melden")
+          : say("mittel", `Fahrzeug entfernt sich vom Checkpoint ${placeOf(p.first)}`, "prüfen")) }));
   }
   return out;
 }
@@ -951,7 +984,7 @@ function ruleC1(c: Ctx): Hint[] {
     const hoch = !!s0;
     return mk("C1", v0.id, hoch ? "hoch" : "mittel", hoch ? `Mögliche Übergabe in ${placeOf(v0)}` : `Fz halten zusammen in ${placeOf(v0)}`,
       `${hm(v0.ms)} ${why}${g.length > 1 ? ` (${g.length} Meldungen)` : ""}. ${hoch ? "Mögliche Übergabe oder Zusammenschluss bewaffneter Gruppen." : "Übergabe oder Zusammenschluss möglich – beobachten, ob umgeladen wird."}`,
-      g, at);
+      g, at, hoch ? say("hoch", `Mögliche Übergabe in ${placeOf(v0)}`, "beobachten") : say("mittel", `Mehrere Fahrzeuge halten zusammen in ${placeOf(v0)}`));
   });
 }
 
@@ -1013,9 +1046,13 @@ function ruleC2(c: Ctx): Hint[] {
     // Prognose nur als Feld `next` (die Anzeige rechnet «nächste ca. …» bzw. «überfällig» selbst);
     // bleibt das Pendel über mehrere Takte aus, ist die Situation vorbei
     const endMs = takt > 0 ? lastMs + T.C2_END_TAKTS * takt : undefined;
+    // Klartext: Prognose zur Lagezeit (die Anzeige rechnet bei anderer Zeit aus `next` selbst)
+    const tail = next === undefined ? "weiter beobachten" : next > c.tMs ? `nächste Fahrt ca. ${hm(next)}` : `nächste Fahrt war ca. ${hm(next)} fällig`;
+    const todo = next !== undefined && next > c.tMs ? `Durchfahrt ca. ${hm(next)} beobachten, Merkmale melden` : "weiter beobachten, Merkmale melden";
     return mk("C2", `${p.key}:${p.zones.join("~")}`, "mittel", `Pendelverkehr ${p.label} zwischen ${p.zones[0]} und ${p.zones[1]}`,
       `${p.arrivals.length} Durchfahrten seit ${hm(p.trig[0]!.ms)}, Takt ca. ${dur(takt / MIN)}.`,
-      p.trig, at, { next: next ? iso(next) : undefined, until: endMs !== undefined && endMs <= c.tMs ? iso(endMs) : undefined });
+      p.trig, at, { next: next ? iso(next) : undefined, until: endMs !== undefined && endMs <= c.tMs ? iso(endMs) : undefined,
+        ...say("mittel", `${cap(p.label)} fährt wiederholt zwischen ${p.zones[0]} und ${p.zones[1]}`, tail, todo) });
   });
 }
 
@@ -1040,7 +1077,7 @@ function ruleC3(c: Ctx): Hint[] {
       const span = (cl[cl.length - 1]!.ms - cl[0]!.ms) / MIN;
       out.push(mk("C3", `${key}:${cl[0]!.id}`, "mittel", `Raum ${places.join("/")} wird aufgeklärt`,
         `${g.label} ${cl.length}× innert ${dur(span)} (${cl.map((v) => `${hm(v.ms)} ${placeOf(v)}`).join(", ")}). Aktion dort wahrscheinlich.`,
-        cl, cl[T.C3_MIN_SIGHTINGS - 1]!.ms));
+        cl, cl[T.C3_MIN_SIGHTINGS - 1]!.ms, say("mittel", `Rot klärt ${places.join("/")} auf (${g.label} mehrmals)`, "Aktion dort möglich", `${places.join("/")} überwachen`)));
     }
   }
   return out;
@@ -1079,9 +1116,10 @@ function ruleC4(c: Ctx): Hint[] {
         const before = outside.length - now;
         const drop = before >= T.C4_DROP_MIN && now <= before / 2;
         const what = [fz ? `${fz} Fz` : "", pers ? `~${pers} Pers` : ""].filter(Boolean).join(" und ");
+        const force = [pers ? `${pers} Pers` : "", fz ? `${fz} Fz` : ""].filter(Boolean).join(", ");
         out.push(mk("C4", `${v0.cell!.label}:${v0.id}`, drop ? "hoch" : "mittel", `Schwergewicht Rot in ${v0.cell!.label}`,
           `${what} stehend in ${v0.cell!.label} seit ${hm(v0.ms)}${drop ? `; anderswo weniger Meldungen (${now} statt ${before} je Stunde)` : ""}. Bereitstellung – Aktion steht evtl. unmittelbar bevor.`,
-          ep, at));
+          ep, at, drop ? say("hoch", `Rot sammelt sich in ${v0.cell!.label} (${force})`) : say("mittel", `Viel Rot in ${v0.cell!.label} (${force})`)));
       }
       ep = []; at = 0;
     };
@@ -1120,9 +1158,12 @@ function ruleC5(c: Ctx): Hint[] {
     const nai = g.flatMap((v) => v.nais).find((n) => engnis.has(n));
     const where = nai ? `${nai} (Engnis)` : placeOf(v0);
     const hoch = g.some((v) => level.get(v) === "hoch");
+    const ort = nai ?? placeOf(v0);
+    const at = g.find((v) => level.get(v) === "hoch") ?? v0;
+    const bei = at.e.sym === "hinterhalt" ? "" : at.obstacle || BLOCK_RE.test(at.e.text) ? "bei der Sperre " : at.halt ? "beim Halt " : "beim Hindernis ";
     return mk("C5", v0.id, hoch ? "hoch" : "mittel", `${hoch ? "Hinterhalt-Gefahr" : "Blockade"} in ${nai ?? placeOf(v0)}`,
       `${hm(v0.ms)} ${quote(v0.e.text)} in ${where}. ${hoch ? "Hindernis in der Geländekammer – möglicher Hinterhalt; Umgehung prüfen." : "Kein Engnis – beobachten, ob daraus eine Sperre oder ein Hinterhalt wird."}`,
-      g, v0.ms, { nai });
+      g, v0.ms, { nai, ...(hoch ? say("hoch", `Möglicher Hinterhalt ${bei}in ${ort}`, "Umgehung prüfen") : say("mittel", `Strasse in ${ort} blockiert`, "Umgehung prüfen")) });
   });
 }
 
@@ -1134,8 +1175,12 @@ function ruleC6(c: Ctx): Hint[] {
     const unitLike = v.isPers || !!v.unitKey || v.cat?.category === "Kampftruppen" || (v.cat?.kind === "geraet" && v.cat.category === "Fahrzeuge" && !GENERIC_FZ.has(v.e.sym) && v.e.sym !== "bus" && v.e.sym !== "kolonne");
     const f = v.e.sym === "kolonne" ? FORMATIONS.find((x) => x.name === "Kolonne")! : FORMATIONS.find((x) => x.re.test(v.e.text) && (!x.persOnly || unitLike));
     if (!f) continue;
+    const ort = placeOf(v);
+    const k = f.name === "Kolonne" ? say(f.level, `Rot verschiebt in Kolonne bei ${ort}`)
+      : f.name === "Igel" ? say(f.level, `Rot hält gesichert bei ${ort}`)
+      : say(f.level, `Rot in ${f.name === "Y" ? "Y-Formation" : "Linie"} bei ${ort}`, "erwartet Kontakt", "Trupps in der Nähe warnen");
     out.push(mk("C6", v.id, f.level, `Formation ${f.name} in ${placeOf(v)}`,
-      `${hm(v.ms)} ${quote(v.e.text)}: ${f.name} – ${f.meaning}.`, [v], v.ms));
+      `${hm(v.ms)} ${quote(v.e.text)}: ${f.name} – ${f.meaning}.`, [v], v.ms, k));
   }
   return out;
 }
@@ -1145,7 +1190,7 @@ function ruleC6(c: Ctx): Hint[] {
 // ---------------------------------------------------------------------------------------------
 function ruleD1(c: Ctx): Hint[] {
   // Drohne/Beobachter ≤ 500 m = hoch; haltendes Fz ≤ 250 m = mittel (Alltagsverkehr wie Stau/Bus/Haltestelle nicht)
-  type G = { unit: string; k: string; stao: Ev; end: number; trig: Ev[]; at: number; hoch: boolean; kinds: string[] };
+  type G = { unit: string; k: string; stao: Ev; end: number; trig: Ev[]; at: number; hoch: boolean; kinds: string[]; who: string; d?: number };
   const groups = new Map<string, G>();
   for (const v of c.evs) {
     if (!v.rot || !v.pos) continue;
@@ -1159,8 +1204,12 @@ function ruleD1(c: Ctx): Hint[] {
       const d = dist(s.pos, v.pos);
       if (d > maxD) continue;
       const key = `${c.blauName.get(k) ?? k}:${s.id}`;
-      const g = groups.get(key) ?? { unit: c.blauName.get(k) ?? k, k, stao: s, end: st!.to, trig: [], at: v.ms, hoch: false, kinds: [] };
+      const g = groups.get(key) ?? { unit: c.blauName.get(k) ?? k, k, stao: s, end: st!.to, trig: [], at: v.ms, hoch: false, kinds: [], who: kind };
       g.trig.push(v);
+      // Klartext: wichtigster Auslöser (Drohne vor Beobachter vor haltendem Fz) und kleinster Abstand
+      const rank = (x: string) => (x === "Drohne" ? 0 : x === "Beobachter" ? 1 : 2);
+      if (rank(kind) < rank(g.who)) g.who = kind;
+      if (v.precise) g.d = Math.min(g.d ?? Infinity, d);
       if (kind !== "haltendes Fz") g.hoch = true;
       g.kinds.push(`${hm(v.ms)} ${kind}${v.precise ? ` ${placeOf(v)}` : ""}${v.precise ? ` (ca. ${Math.round(d / 10) * 10} m)` : ""}`);
       groups.set(key, g);
@@ -1168,9 +1217,11 @@ function ruleD1(c: Ctx): Hint[] {
   }
   return [...groups.entries()].map(([key, g]) => {
     // Stellungswechsel (neuer Stao an anderem Ort, nicht bloss Patrouille) beendet den Hinweis
+    const near = `${g.who === "haltendes Fz" ? "haltendes Fz" : g.who}${g.d !== undefined ? ` ${Math.round(g.d / 10) * 10} m` : ""}`;
     return mk("D1", key, g.hoch ? "hoch" : "mittel", `Stao ${g.unit} möglicherweise aufgeklärt`,
       `${uniq(g.kinds).join(", ")} beim Stao ${g.unit} (${placeOf(g.stao)}). ${g.hoch ? "Stellungswechsel prüfen." : "Beobachten; bleibt das Fz, Stellungswechsel prüfen."}`,
-      [g.stao, ...g.trig], g.at, { unit: g.unit, pos: g.stao.pos, radius: g.hoch ? T.D1_DIST_M : T.D1_HALT_M, cells: g.stao.cell ? [g.stao.cell.label] : undefined, until: g.end <= c.tMs ? iso(g.end) : undefined });
+      [g.stao, ...g.trig], g.at, { unit: g.unit, pos: g.stao.pos, radius: g.hoch ? T.D1_DIST_M : T.D1_HALT_M, cells: g.stao.cell ? [g.stao.cell.label] : undefined, until: g.end <= c.tMs ? iso(g.end) : undefined,
+        ...say(g.hoch ? "hoch" : "mittel", `Stao ${g.unit} vielleicht entdeckt (${near})`, g.hoch ? "Stellungswechsel prüfen" : "beobachten, bleibt das Fz: Stellungswechsel prüfen") });
   });
 }
 
@@ -1229,7 +1280,8 @@ function ruleD2(c: Ctx): Hint[] {
     const rel = sameCell(p, g.s.anchor) ? "im PQ" : "im Nachbar-PQ";
     return mk("D2", key, "hoch", `${g.unit} zu nahe am Rot-Stao`,
       `${g.unit} (${placeOf(p)}) liegt ${rel} des Rot-Stao ${g.s.label}, seit ${hm(g.s.from)}. Hohes Entdeckungsrisiko – Stellungswechsel prüfen.`,
-      [...g.own, ...g.s.evs], g.at, { unit: g.unit, pos: p.pos, until: g.end <= c.tMs ? iso(g.end) : undefined });
+      [...g.own, ...g.s.evs], g.at, { unit: g.unit, pos: p.pos, until: g.end <= c.tMs ? iso(g.end) : undefined,
+        ...say("hoch", `${g.unit} sehr nahe bei Rot (${placeOf(g.s.anchor)})`, "Entdeckung droht", "Stellungswechsel prüfen") });
   });
 }
 
@@ -1248,7 +1300,8 @@ function ruleD3(c: Ctx): Hint[] {
         const endMs = g[g.length - 1]!.ms + T.D3_RECENT_MIN * MIN;
         out.push(mk("D3", `${a.name}:ohne:${g[0]!.id}`, "hoch", `${a.name} nicht überwacht`,
           `Kein Trupp zugeteilt, Rot in der Nähe aktiv (${g.map((v) => `${hm(v.ms)} ${placeOf(v)}`).slice(0, 3).join(", ")}). Infiltration oder unbeobachtete Aktion möglich.`,
-          g, g[0]!.ms, { nai: a.name, pos: areaCenter(a), until: endMs <= c.tMs ? iso(endMs) : undefined }));
+          g, g[0]!.ms, { nai: a.name, pos: areaCenter(a), until: endMs <= c.tMs ? iso(endMs) : undefined,
+            ...say("hoch", `${a.name} wird nicht beobachtet (kein Trupp zugeteilt)`, "Trupp zuteilen") }));
       }
       continue;
     }
@@ -1273,7 +1326,9 @@ function ruleD3(c: Ctx): Hint[] {
       const since = g.next ? `${hm(g.last?.ms ?? c.start)}–${hm(g.next.ms)} ohne Meldung` : g.last ? `seit ${hm(g.last.ms)} ohne Meldung` : "noch ohne Meldung";
       out.push(mk("D3", `${a.name}:${key}`, "hoch", `${a.name} nicht überwacht`,
         `${a.trupp} ${since}, Rot in der Nähe aktiv (${g.trig.map((v) => `${hm(v.ms)} ${placeOf(v)}`).slice(0, 3).join(", ")}). ${g.next ? `Lücke in der Überwachung; ${a.trupp} hat sich ${hm(g.next.ms)} wieder gemeldet – nachfragen, was in der Zeit lief.` : `Infiltration oder unbeobachtete Aktion möglich – ${a.trupp} abfragen.`}`,
-        [...(g.last ? [g.last] : []), ...g.trig], g.at, { nai: a.name, unit: a.trupp, pos: areaCenter(a), until: g.next ? iso(g.next.ms) : undefined }));
+        [...(g.last ? [g.last] : []), ...g.trig], g.at, { nai: a.name, unit: a.trupp, pos: areaCenter(a), until: g.next ? iso(g.next.ms) : undefined,
+          ...say("hoch", `${a.name} wird nicht beobachtet (${g.next ? `${a.trupp} meldete ${hm(g.last?.ms ?? c.start)}–${hm(g.next.ms)} nicht` : g.last ? `${a.trupp} meldet seit ${hm(g.last.ms)} nicht` : `${a.trupp} hat sich noch nicht gemeldet`})`,
+            g.next ? `nachfragen, was in der Zeit lief` : `${a.trupp} anfunken`) }));
     }
   }
   return out;
@@ -1309,7 +1364,7 @@ function ruleE3(c: Ctx): Hint[] {
       const speed = Number.isFinite(kmh) ? `≈ ${Math.round(kmh)} km/h` : "gleichzeitig";
       out.push(mk("E3", `${a.id}:${b.id}`, "mittel", `${name}: Zeit oder Ort prüfen`,
         `${placeOf(a)} (${hm(a.ms)}) → ${placeOf(b)} (${hm(b.ms)}): ${num(d / 1000)} km in ${dur((b.ms - a.ms) / MIN)} ${speed} – zu schnell ${foot ? `zu Fuss (Richtwert ${T.E3_FOOT_KMH} km/h)` : `für Fz im Gelände (Richtwert ${T.E3_FZ_KMH} km/h)`}.`,
-        [a, b], b.ms, { unit: a.blau ? name : undefined }));
+        [a, b], b.ms, { unit: a.blau ? name : undefined, ...say("mittel", `${name} kann nicht so schnell in ${placeOf(b)} sein`, "Zeit oder Ort nachfragen") }));
     }
   }
   return out;
@@ -1323,7 +1378,7 @@ function ruleE4(c: Ctx): Hint[] {
     if (c.quality.get(v.id)?.status === "bestaetigt") continue;
     out.push(mk("E4", v.id, "mittel", `Plausibilität prüfen (${placeOf(v)})`,
       `${hm(v.ms)} ${quote(v.e.text)} – aus fremder Quelle, nicht überprüfbar und unbestätigt. Mögliche Täuschung; vor dem Handeln bestätigen lassen.`,
-      [v], v.ms));
+      [v], v.ms, say("mittel", `Meldung aus fremder Quelle in ${placeOf(v)} unbestätigt`, "vor dem Handeln bestätigen lassen")));
   }
   return out;
 }
