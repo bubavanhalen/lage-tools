@@ -259,7 +259,11 @@ describe("Migration v3 → v4", () => {
       q.onerror = () => rej(q.error);
     });
     const w = await openWindow();
+    const ups: number[] = [];
+    w.store.onDbUpgraded((v) => ups.push(v));
     expect(await w.store.currentExerciseId()).toBe("ex-test");
+    await until(() => ups.length > 0);
+    expect(ups).toEqual([3]); // Update-Notiz «alte Lagejournal-Fenster schliessen»
     const r = await w.persist.openStored("ex-test");
     expect(r!.ex.events!.map((e) => e.id).sort()).toEqual(evs.map((e) => e.id).sort());
     expect(r!.ex.events!.find((e) => e.deleted)?.rev).toBe(2);

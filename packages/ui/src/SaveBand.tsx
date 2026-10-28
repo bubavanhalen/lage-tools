@@ -6,13 +6,14 @@
  *     mit Knopf «Datei sichern». Verschwindet, sobald wieder gespeichert ist (Übung) bzw. nach dem Sichern/Schliessen
  *     oder wenn die Anhänge doch noch abgelegt werden konnten (Anhang).
  *   · Zeitzone des Geräts ≠ Zeitzone der Übung (beim Start, beim Öffnen einer Datei oder einer gespeicherten Übung).
- *   · Datenbank blockiert durch ein altes Lagejournal-Fenster («alte Lagejournal-Fenster schliessen»).
+ *   · Datenbank blockiert durch ein altes Lagejournal-Fenster bzw. Update-Notiz nach dem Aktualisieren der Datenbank
+ *     («alte Lagejournal-Fenster schliessen»).
  * - `MergeBar`: Ergebnis von «Öffnen» (Zusammenführen), pro abweichendem Raster/NAI die Wahl «hiesige behalten / aus
  *   Datei übernehmen», und der ausdrückliche zweite Weg «Ersetzen durch Datei».
  */
 import { useEffect, useState } from "react";
 import { zoneMismatch, type Exercise, type HullDiff } from "@lage/core";
-import { memBlobCount, onStoreStatus, type StoreProblem } from "./store";
+import { memBlobCount, onDbUpgraded, onStoreStatus, type StoreProblem } from "./store";
 import "./persist.css";
 
 export function StatusBands({ ex, dbBlocked, onSaveFile }: { ex: Pick<Exercise, "id" | "tz"> | null; dbBlocked: boolean; onSaveFile: () => Promise<boolean> | void }) {
@@ -22,11 +23,14 @@ export function StatusBands({ ex, dbBlocked, onSaveFile }: { ex: Pick<Exercise, 
     if (where === "uebung") setExP(p);
     else setAtt(p);
   }), []);
+  // Update-Notiz: Datenbank eben von einer älteren Version aktualisiert → alte Fenster schliessen
+  const [upd, setUpd] = useState(0);
+  useEffect(() => onDbUpgraded(setUpd), []);
   // Zeitzone: pro Übung einmal wegklickbar (gilt für dieses Fenster)
   const [zoneOk, setZoneOk] = useState<string | null>(null);
   const zone = ex && zoneOk !== ex.id ? zoneMismatch(ex.tz) : null;
   const p = exP ?? att;
-  if (!p && !zone && !dbBlocked) return null;
+  if (!p && !zone && !dbBlocked && !upd) return null;
   const save = async () => {
     const ok = await onSaveFile();
     if (ok !== false && !exP) setAtt(null);
@@ -46,6 +50,13 @@ export function StatusBands({ ex, dbBlocked, onSaveFile }: { ex: Pick<Exercise, 
         <div className="savefail dbband" role="alert">
           <b>Speicher blockiert</b>
           <span className="savefail-why">Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</span>
+        </div>
+      )}
+      {upd > 0 && (
+        <div className="savefail updband" role="alert">
+          <b>Lagejournal aktualisiert – alte Lagejournal-Fenster schliessen</b>
+          <span className="savefail-why">Ist noch ein Fenster/Tab mit der alten Version offen, speichert es ab jetzt nichts mehr. Dort zuerst «Speichern» (Datei), das Fenster schliessen und die Datei hier mit «Öffnen» zusammenführen.</span>
+          <button className="savefail-x" aria-label="Hinweis schliessen" title="Hinweis schliessen" onClick={() => setUpd(0)}>×</button>
         </div>
       )}
       {zone && ex && (

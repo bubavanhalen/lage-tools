@@ -10,7 +10,10 @@
  *    gleichzeitigem Schreiben zusammengeführt (`mergeHull`).
  * 4. Nach dem Speichern erfahren andere Fenster davon (`BroadcastChannel`, sonst `storage`-Ereignis) und lesen nach.
  * 5. Fehler (Speicher voll, blockiert) werden gemeldet (`onStoreStatus`) – das rote Band bietet «Datei sichern» an;
- *    die Änderungen bleiben im Puffer und werden beim nächsten Speichern erneut versucht.
+ *    die Änderungen bleiben im Puffer und werden beim nächsten Speichern erneut versucht (Anhänge im Arbeitsspeicher
+ *    ebenso, `retryMemBlobs`).
+ * 6. Meldungen aus anderen Fenstern werden gemerkt (`noteForeign`): eine offene Bearbeitung zeigt dann den Konflikt
+ *    («in einem anderen Fenster geändert/gelöscht», `editConflict`) statt still zu überschreiben oder zu verschwinden.
  */
 import { mergeEvents, mergeHull, type Exercise, type LageEvent } from "@lage/core";
 import { EVENT_STORE, db, eventRange, loadExerciseFull, reportStore, retryMemBlobs, writeExercise, type EventRec, type HullRec } from "./store";

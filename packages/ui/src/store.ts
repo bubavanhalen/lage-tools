@@ -64,6 +64,19 @@ export function onDbNotice(cb: (n: DbNotice) => void): () => void {
 }
 const notify = (n: DbNotice) => { blockedNow = n === "blocked"; listeners.forEach((cb) => { try { cb(n); } catch { /* egal */ } }); };
 
+/** Datenbank in diesem Fenster von einer älteren Version aktualisiert (0 = nein) – für die Update-Notiz */
+let upgradedFrom = 0;
+const upgradeListeners = new Set<(from: number) => void>();
+/**
+ * Update-Notiz: meldet, wenn dieses Fenster die Datenbank einer älteren Version aktualisiert hat. Ältere Fenster
+ * (bis MVP 0) geben die Datenbank dabei frei, können danach aber nicht mehr speichern – sie müssen geschlossen werden.
+ */
+export function onDbUpgraded(cb: (from: number) => void): () => void {
+  upgradeListeners.add(cb);
+  if (upgradedFrom) cb(upgradedFrom);
+  return () => { upgradeListeners.delete(cb); };
+}
+
 let dbp: Promise<IDBPDatabase> | null = null;
 let opened = false;
 /**
@@ -76,7 +89,8 @@ export function db(): Promise<IDBPDatabase> {
   if (!dbp) {
     opened = false;
     const p = openDB(DB_NAME, DB_VERSION, {
-      upgrade(d) {
+      upgrade(d, oldVersion) {
+        if (oldVersion > 0 && oldVersion < DB_VERSION) { upgradedFrom = oldVersion; queueMicrotask(() => upgradeListeners.forEach((cb) => { try { cb(oldVersion); } catch { /* egal */ } })); }
         if (!d.objectStoreNames.contains("exercises")) d.createObjectStore("exercises", { keyPath: "id" });
         if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
         if (!d.objectStoreNames.contains(ROADS_STORE)) d.createObjectStore(ROADS_STORE, { keyPath: "key" });
