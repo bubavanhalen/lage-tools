@@ -168,6 +168,8 @@ export interface Exercise {
   places?: Place[];
   /** Anhänge (nur Metadaten; Inhalt im Gerätespeicher, beim Export als Datei mitgegeben) */
   attachments?: Attachment[];
+  /** KI für diese Übung (nur nach ausdrücklichem Einschalten; Schlüssel liegt nie in der Übung, nur auf dem Gerät) */
+  ki?: { enabled: boolean; /** ISO-Zeit des Einschaltens */ since?: string };
   /** Feindannahme in Kurzschrift, z. B. «2 Det, 14 Pers, 5 Fz, 1 Drohne» (erwartete Stärke Rot) */
   feindannahme?: string;
   /** Entscheide zu Hinweisen (Hinweis-ID → bestätigt/verworfen) */
