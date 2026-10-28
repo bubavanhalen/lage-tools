@@ -8,7 +8,10 @@
  * - Zeichen verschieben: Maus nur das gewählte Zeichen ziehen (ab 4 px; Ziehen auf anderen Zeichen schiebt die Karte),
  *   Finger/Stift langes Drücken (350 ms) hebt das Zeichen an → ziehen; während des Ziehens kein Neuaufbau (`whenNotDragging`),
  * - Tastatur: Tab erreicht Stapel und Zeichen, Enter fächert auf bzw. wählt, Esc klappt zu,
- * - gewählte Meldung: grösser, hervorgehoben, Planquadrat hinterlegt, Linie Melder → Sichtung, ihr Stapel offen.
+ * - gewählte Meldung: grösser, 2 px Tinte-Ring mit weissem Halo, Planquadrat mit Tinte 8 % hinterlegt (nicht rot),
+ *   Linie Melder → Sichtung, ihr Stapel offen,
+ * - MVP 1 ruhige Karte (`quiet`, Grundansicht): Beschriftungsregel aus map/quiet.ts – ältere Feind/Unklar 40 % ohne
+ *   Fähnchen und Zusatz, eigene Trupps immer mit Namen; Stapel-Zahl bleibt kräftig.
  */
 import L from "leaflet";
 import {
@@ -20,6 +23,8 @@ import { KIND_COLOR, kindText, MAP_INK, SIDE_COLOR, situationModel, type Situati
 import { isLocked, subscribeLock, type LayerFlags } from "./layers";
 import { clickSuppressed, longPress, suppressClick, suppressContextMenu } from "./longpress";
 import { dayLabel } from "./Timeline";
+import { quietLook } from "./map/quiet";
+import { LAGE_KARTE } from "./colors";
 import "./mapoverlays.css";
 
 export interface SituationOptions {
@@ -39,6 +44,8 @@ export interface SituationOptions {
   onMove?: (e: LageEvent, pos: LV95) => void;
   /** Meldungen eines gewählten Hinweises: Zeichen erhalten die Klasse `hl` (übrige blass, siehe hints.css) */
   highlight?: ReadonlySet<string> | null;
+  /** MVP 1: ruhige Karte der Grundansicht (Beschriftungsregel Kap. 3.7); false/fehlt = Experte (wie bisher) */
+  quiet?: boolean;
 }
 
 const SIZE = 18;
@@ -262,6 +269,13 @@ class SituationLayer extends L.LayerGroup {
   private buildItems() {
     const o = this.o;
     const model = situationModel(this.events, o.t, o.flags, { recentMin: o.recentMin, selectedId: o.selectedId, from: o.from });
+    // Beschriftungs- und Deckkraftregel (Grundansicht ruhig, Experte wie bisher)
+    for (const it of model.items) {
+      const q = quietLook(it, { quiet: !!o.quiet, zeiten: o.flags.zeiten, neuMin: o.recentMin });
+      it.opacity = q.opacity;
+      it.showTime = q.showTime;
+      if (!q.showUd) it.ud = "";
+    }
     const selected = model.items.find((i) => i.selected);
 
     // Planquadrate der Sichtungen (Seitenfarbe 12 %, ältere blass), je Farbe/Deckkraft eine Fläche
@@ -286,14 +300,13 @@ class SituationLayer extends L.LayerGroup {
       if (f.rings.length) L.polygon(f.rings, { color: f.line, weight: 1.2, opacity: 0.8 * f.o, fillColor: f.fill, fillOpacity: (f.fill === f.line ? 0.12 : 0.2) * f.o, interactive: false }).addTo(this);
     }
 
-    // gewählte Meldung: Planquadrat(e) hinterlegt (inkl. Unterquadrant)
+    // gewählte Meldung: Planquadrat(e) mit Tinte 8 % hinterlegt, Rand Tinte mit weissem Saum (inkl. Unterquadrant)
     if (selected) {
-      const kc = KIND_COLOR[selected.kind];
       for (const label of selected.e.cells ?? []) {
         const ring = cellRing(label, o.sheets);
         if (ring) {
-          L.polygon(ring, { color: "#fff", weight: 5, opacity: 0.85, fill: false, interactive: false }).addTo(this);
-          L.polygon(ring, { color: kc.line, weight: 2.5, opacity: 1, dashArray: "7 4", fillColor: kc.fill, fillOpacity: kc.fill === kc.line ? 0.24 : 0.32, interactive: false, className: "lt-selcell" }).addTo(this);
+          L.polygon(ring, { color: LAGE_KARTE.halo, weight: 5, opacity: 0.85, fill: false, interactive: false }).addTo(this);
+          L.polygon(ring, { color: LAGE_KARTE.ink, weight: 2, opacity: 1, fillColor: LAGE_KARTE.ink, fillOpacity: 0.08, interactive: false, className: "lt-selcell" }).addTo(this);
         }
       }
     }
@@ -339,7 +352,7 @@ class SituationLayer extends L.LayerGroup {
       const udW = it.ud ? it.ud.length * 7 + 6 : 0;
       const core: Box = [-ax, -ay, s.w - ax, s.h - ay];
       const boxWith = (time: boolean): Box => [-ax - 2, -ay - 2 - (time ? TIME_H : 0), s.w - ax + 2 + Math.max(udW, time ? TIME_W : 0), s.h - ay + 2];
-      const cls = ["lt-ev", `k-${it.kind}`, it.selected ? "sel" : "", it.opacity < 1 ? "old" : "", o.highlight?.has(it.e.id) ? "hl" : ""].filter(Boolean).join(" ");
+      const cls = ["lt-ev", `k-${it.kind}`, it.selected ? "sel" : "", it.opacity < 1 ? "old" : "", it.opacity < 1 && o.quiet ? "q" : "", o.highlight?.has(it.e.id) ? "hl" : ""].filter(Boolean).join(" ");
       const html = `${s.svg}`
         + (it.ud ? `<span class="lt-ud" style="--x:${s.w + 2}px;top:${Math.max(0, ay - 8)}px">${escapeHtml(it.ud)}</span>` : "")
         + (showTimes ? `<span class="lt-tl${it.showTime ? "" : " opt"}" style="--x:${s.w + 2}px">${it.e.t.slice(11, 16)}</span>` : "");

@@ -114,7 +114,7 @@ export function RedPanel(p: RedPanelProps) {
   const row = (h: Hint) => <RedHintRow key={h.id} h={h} ex={ex} t={t} sel={h.id === selHint} experte={experte} onOpen={() => openHint(h)} />;
 
   return (
-    <section className={"red" + (experte ? " experte" : "")} ref={root} aria-label="Was Rot vorhaben könnte" onKeyDown={onKey}>
+    <section className={"panel red" + (experte ? " experte" : "")} ref={root} aria-label="Was Rot vorhaben könnte" onKeyDown={onKey}>
       {p.stand && <p className="red-stand" role="status">Stand {hhmm(p.stand, ex.days)}</p>}
       {showDetail && hSel ? (
         <RedHintDetail h={hSel} ex={ex} t={t} experte={experte} focus={fromList}

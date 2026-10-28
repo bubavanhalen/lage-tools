@@ -2,6 +2,14 @@
 
 /* Karte bleibt auch im Dunkelmodus hell: hier nur feste Kartenfarben (entsprechen --m-*). */
 .leaflet-container { background: #dfe3dc; font-family: var(--f-body, "IBM Plex Sans", system-ui, sans-serif); }
+/* ---------- Grundkarte «Grau» (MVP 1, Spez. 5.4): farbige Landeskarte mit Filter – offline aus demselben Kachel-Cache ---------- */
+.leaflet-container.lt-base-grau { background: #fff; }
+.lt-tiles-grau { filter: grayscale(1) contrast(.95) brightness(1.05); opacity: .7; }
+/* Nacht: dunkel und farblos auf Schwarz (ersetzt den allgemeinen Nachtfilter der Kachelebene) */
+.night .leaflet-container.lt-base-grau { background: #000; }
+.night .lt-base-grau .leaflet-tile-pane { filter: none; }
+.night .lt-tiles-grau { filter: brightness(.45) saturate(0); opacity: 1; }
+
 .lt-drawing, .lt-drawing .leaflet-interactive { cursor: crosshair !important; }
 .lt-picking, .lt-picking .leaflet-interactive { cursor: crosshair !important; }
 
@@ -18,6 +26,10 @@
 .lt-edge-t { font-size: 13px; font-weight: 600; stroke-width: 3.5px; stroke-opacity: .95; text-anchor: middle; dominant-baseline: central; }
 .lt-cell-t { font-weight: 600; opacity: .9; }
 .lt-quad-x { fill: none; stroke: #111; stroke-opacity: .4; stroke-width: 1; stroke-dasharray: 6 5; }
+/* Raster leise (rasterLayer({ quiet })): feine Linien, Beschriftung am Rand, Feldnamen erst ab 120 px */
+.lt-raster-lbl.quiet .lt-cell-t { opacity: .55; }
+.lt-raster-lbl.quiet .lt-edge-t { font-size: 12px; }
+.night .lt-raster-lbl text { fill: #fff; stroke: #000; }
 .lt-quad-t { font-size: 12px; font-weight: 600; stroke-width: 3px; text-anchor: middle; dominant-baseline: central; opacity: .7; }
 
 /* ---------- Flächen (NAI, AO, Stao) ---------- */
@@ -48,3 +60,6 @@
   text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff;
   pointer-events: none;
 }
+/* Nacht: Raster hell auf dunkler Karte */
+.night path.lt-grid { stroke: #fff; stroke-opacity: .45; }
+.night path.lt-grid-casing { stroke: #000; }

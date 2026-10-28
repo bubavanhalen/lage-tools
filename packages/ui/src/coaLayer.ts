@@ -8,11 +8,14 @@
  * Leitstrich nur, wenn das Fähnchen nicht anliegt – so bleibt die Zuordnung eindeutig.
  * Die gewählte Möglichkeit hebt ihre Indikatoren hervor: Auslöser-Zeichen kräftig, übrige blass (Klasse `lt-coasel`),
  * Hinweis-Fähnchen, die keine Indikatoren sind, ebenfalls blass.
+ * MVP 1 Grundansicht (`onlySelected`): nur die gewählte Möglichkeit (ohne Wahl nichts).
  */
 import L from "leaflet";
 import type { Exercise, Hint, RedCoa } from "@lage/core";
 import { escapeHtml, toLatLng } from "@lage/map";
 import { COA_LABEL, COA_SHORT, coaHintIds, coaPlaces, windowLabel } from "./lageRot";
+import { FARBEN, LAGE_KARTE } from "./colors";
+import { onlySelectedFilter } from "./map/quiet";
 import "./lagerot.css";
 
 export interface CoaLayerOptions {
@@ -24,12 +27,14 @@ export interface CoaLayerOptions {
   /** gewählte Möglichkeit hervorheben (übrige Zeichen blass) */
   focus: boolean;
   onClick: (c: RedCoa) => void;
+  /** MVP 1 Grundansicht: nur die gewählte Möglichkeit zeigen (ohne Wahl nichts) */
+  onlySelected?: boolean;
 }
 
-/** Kartenfarben (Karte bleibt hell) – entsprechen --m-rot, --m-ink, --m-flash */
-const ROT = "#D3262D";
-const INK = "#101414";
-const FLASH = "#F2B705";
+/** Kartenfarben (Karte bleibt hell, colors.ts): Rot = Feind, Warnzeichen hellgelb «bitte prüfen» mit Tinte */
+const ROT = LAGE_KARTE.feind;
+const INK = LAGE_KARTE.ink;
+const FLASH = FARBEN.hell["warn-bg"];
 /** Ring um den Zielort (Bildschirm-Pixel): umschliesst das Zeichen */
 const RING = 24;
 /** Warnzeichen (Engnis/NAI) oben rechts neben dem Ort, damit Sperre/Zeichen im NAI sichtbar bleiben */
@@ -56,7 +61,7 @@ export function coaLayer(map: L.Map, o: CoaLayerOptions): L.LayerGroup {
   const g = L.layerGroup();
   const sel = o.coas.find((c) => c.id === o.selectedId) ?? null;
   // auf der Karte nur wahrscheinlichste und gefährlichste (gewählte immer)
-  const shown = o.coas.filter((c) => c.label !== "weitere" || c === sel);
+  const shown = onlySelectedFilter(o.coas.filter((c) => c.label !== "weitere" || c === sel), o.selectedId, !!o.onlySelected);
   const dyn = L.layerGroup().addTo(g);
   const container = map.getContainer();
 
