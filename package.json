@@ -10,6 +10,7 @@
     "dev:auswertung": "npm run dev -w @lage/uebungsauswertung",
     "test": "vitest run",
     "typecheck": "tsc -b",
+    "e2e": "node apps/lagejournal/e2e/run.mjs",
     "build": "npm run build -w @lage/lagejournal && npm run build -w @lage/uebungsauswertung && node scripts/assemble-site.mjs"
   },
   "devDependencies": {

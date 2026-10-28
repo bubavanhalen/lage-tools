@@ -15,16 +15,16 @@
 
 /* ---------- Dialoge ---------- */
 .ki-back { position: fixed; inset: 0; z-index: 2100; background: rgba(16, 20, 20, .5); display: flex; align-items: center; justify-content: center; padding: 24px; }
-.ki-dlg { width: min(620px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 18px 48px -16px rgba(0,0,0,.45); overflow: hidden; }
+.ki-dlg { width: min(620px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border: 1px solid var(--line-soft); border-radius: 8px; box-shadow: 0 18px 48px -16px rgba(0,0,0,.45); overflow: hidden; }
 .ki-consent { width: min(720px, 100%); }
 .ki-lb { width: min(760px, 100%); }
-.ki-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+.ki-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line-soft); background: var(--card); }
 .ki-head h2 { margin: 0; font: 600 21px/1.1 var(--f-display); letter-spacing: .01em; }
 .ki-sub { font-size: 13px; color: var(--muted); }
 .ki-sp { flex: 1; }
 .ki-x { min-height: 36px; width: 38px; padding: 0; border-color: transparent; background: transparent; font-size: 22px; line-height: 1; }
 .ki-body { flex: 1; min-height: 0; overflow: auto; display: grid; align-content: start; gap: 14px; padding: 14px 16px 16px; }
-.ki-foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding: 10px 14px 12px; border-top: 1px solid var(--line); }
+.ki-foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding: 10px 14px 12px; border-top: 1px solid var(--line-soft); }
 .ki-foot .primary { min-height: 40px; padding: 6px 18px; }
 .ki-body h3 { margin: 0; font: 600 16px/1.2 var(--f-display); letter-spacing: .02em; }
 .ki-h-note { font: 400 13px/1.2 var(--f-body); color: var(--muted); letter-spacing: 0; }
@@ -32,7 +32,7 @@
 .ki-help a { color: var(--blau); }
 .ki-lead { margin: 0; font-size: 15.5px; line-height: 1.45; }
 .ki-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.ki-cols section { display: grid; gap: 6px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.ki-cols section { display: grid; gap: 6px; align-content: start; padding: 12px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--card); }
 .ki-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; line-height: 1.4; }
 .ki-note { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
 .ki-warn { margin: 0; padding: 10px 12px; border-left: 4px solid var(--rot); background: var(--rot-soft); border-radius: 0 6px 6px 0; font-size: 14px; line-height: 1.4; }
@@ -51,13 +51,13 @@
 }
 
 /* ---------- Menü KI ---------- */
-.ki-sec { display: grid; gap: 8px; min-width: 0; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.ki-sec { display: grid; gap: 8px; min-width: 0; padding-bottom: 14px; border-bottom: 1px solid var(--line-soft); }
 .ki-sec:last-child { border-bottom: 0; padding-bottom: 0; }
-.ki-ex { padding: 12px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--card); }
+.ki-ex { padding: 12px; border: 1.5px solid var(--line-soft); border-radius: 6px; background: var(--card); }
 .ki-ex.on { border-color: var(--ink); }
 .ki-switchrow { display: flex; gap: 14px; align-items: center; justify-content: space-between; }
 .ki-switchrow > div { display: grid; gap: 3px; min-width: 0; }
-.ki-switch { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: flex-end; width: 78px; min-height: 36px; padding: 0 10px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--grid); font-weight: 600; font-size: 13px; color: var(--muted); }
+.ki-switch { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: flex-end; width: 78px; min-height: 36px; padding: 0 10px; border-radius: 999px; border: 1.5px solid var(--line-soft); background: var(--grid); font-weight: 600; font-size: 13px; color: var(--muted); }
 .ki-switch .ki-knob { position: absolute; left: 4px; top: 50%; width: 26px; height: 26px; margin-top: -13px; border-radius: 50%; background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: left .15s; }
 .ki-switch.on { justify-content: flex-start; background: var(--ink); border-color: var(--ink); color: var(--paper); }
 .ki-switch.on .ki-knob { left: calc(100% - 30px); background: var(--paper); }
@@ -66,10 +66,10 @@
 .ki-errline { margin: 0; font-size: 13.5px; color: var(--rot); font-weight: 600; }
 .ki-keyrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ki-keyedit { display: grid; gap: 8px; }
-.ki-keyin { flex: 1; min-width: 0; font-size: 14px; padding: 7px 10px; min-height: 38px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
-.ki-keymask { flex: 1; min-width: 140px; padding: 6px 10px; border: 1px dashed var(--line); border-radius: 6px; font-size: 14px; color: var(--ink); background: var(--card); }
+.ki-keyin { flex: 1; min-width: 0; font-size: 14px; padding: 7px 10px; min-height: 38px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--card); color: var(--ink); }
+.ki-keymask { flex: 1; min-width: 140px; padding: 6px 10px; border: 1px dashed var(--line-soft); border-radius: 6px; font-size: 14px; color: var(--ink); background: var(--card); }
 .ki-models { display: grid; gap: 6px; }
-.ki-model { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; font-size: 14px; line-height: 1.35; }
+.ki-model { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--card); cursor: pointer; font-size: 14px; line-height: 1.35; }
 .ki-model.on { border-color: var(--ink); box-shadow: inset 0 0 0 .5px var(--ink); }
 .ki-model input { margin: 2px 0 0; width: 17px; height: 17px; accent-color: var(--ink); flex: none; }
 .ki-mt { color: var(--muted); font-size: 13px; }
@@ -83,7 +83,7 @@
 
 /* Protokoll */
 .ki-log { display: grid; gap: 8px; }
-.ki-logl { list-style: none; margin: 0; padding: 0; display: grid; max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.ki-logl { list-style: none; margin: 0; padding: 0; display: grid; max-height: 300px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--card); }
 .ki-logl li { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 2px 10px; padding: 6px 10px; border-bottom: 1px solid var(--grid); font-size: 13px; line-height: 1.35; }
 .ki-logl li:last-child { border-bottom: 0; }
 .ki-lt { color: var(--muted); font-size: 12.5px; }
@@ -119,14 +119,14 @@
 .ki-pre-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ki-pre-btns button { min-height: 32px; }
 .ki-model-note { margin-left: auto; font-size: 12px; color: var(--muted); }
-.ki-run { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; border: 1px solid var(--line); background: var(--card); }
+.ki-run { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; border: 1px solid var(--line-soft); background: var(--card); }
 .ki-run button { min-height: 30px; }
 .ki-run-sent { grid-column: 1 / -1; min-width: 0; }
 .ki-run-sent .ki-sent, .ki-err .ki-sent, .ki-info .ki-sent { padding: 0; }
-.ki-info { display: grid; gap: 4px; width: 100%; min-width: 0; padding: 7px 10px; border: 1px dashed var(--line); border-radius: 6px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.ki-info { display: grid; gap: 4px; width: 100%; min-width: 0; padding: 7px 10px; border: 1px dashed var(--line-soft); border-radius: 6px; font-size: 13px; line-height: 1.4; color: var(--muted); }
 .ki-instrbtn { margin-top: 2px; }
 .ki-instr { max-height: 160px; opacity: .85; }
-.ki-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--ink); animation: ki-spin .8s linear infinite; }
+.ki-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line-soft); border-top-color: var(--ink); animation: ki-spin .8s linear infinite; }
 @keyframes ki-spin { to { transform: rotate(360deg); } }
 .ki-err { border: 1px solid var(--rot); background: var(--rot-soft); color: var(--ink); }
 .ki-err > span:first-child { color: var(--rot); font-weight: 600; }
@@ -167,7 +167,7 @@
 .ki-lbdraft { display: grid; gap: 6px; }
 .ki-lbtext { width: 100%; min-height: 300px; resize: vertical; padding: 10px 12px; border: 1.5px dashed var(--muted); border-radius: 6px; background: var(--card); color: var(--ink); font: 14px/1.5 var(--f-body); }
 .ki-lbtext:focus { outline: 2px solid var(--blau); outline-offset: 0; border-style: solid; }
-.ki-empty { margin: 0; padding: 18px; border: 1.5px dashed var(--line); border-radius: 6px; text-align: center; color: var(--muted); font-size: 14px; }
+.ki-empty { margin: 0; padding: 18px; border: 1.5px dashed var(--line-soft); border-radius: 6px; text-align: center; color: var(--muted); font-size: 14px; }
 @media (pointer: coarse) {
   .ki-pre-btns button, .ki-sugg-b button { min-height: 40px; }
   .ki-check.small input { width: 20px; height: 20px; }

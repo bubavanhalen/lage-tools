@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "vite", "build": "tsc --noEmit && vite build", "preview": "vite preview" },
+  "scripts": { "dev": "vite", "build": "tsc --noEmit && vite build", "preview": "vite preview", "e2e": "node e2e/run.mjs" },
   "dependencies": {
     "@lage/core": "*",
     "@lage/map": "*",

@@ -49,6 +49,7 @@ import {
 import { currentExerciseId, downloadText, getBlob, listExercises, onDbNotice, pickFile, safeFileName } from "./store";
 import { lastCurrent, openStored, peekStored, persister, requestPersist } from "./persist";
 import { useExerciseStore } from "./useExerciseStore";
+import { beispielAusUrl, beispielAusUrlEntfernen, beispielUebung } from "./beispiel";
 import { MergeBar, StatusBands, type MergeInfo } from "./SaveBand";
 import { useUndo } from "./undo";
 import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
@@ -164,6 +165,17 @@ export function Workspace({ product, tagline }: Props) {
   // Übung laden (mit Notfall-Puffer: was beim letzten Mal noch nicht in der Datenbank war)
   useEffect(() => {
     (async () => {
+      // Testzugang ?beispiel / ?beispiel=leer (beispiel.ts): ersetzt nur die Beispielübung, wie «Beispiel laden»
+      const art = beispielAusUrl();
+      if (art) {
+        const b = beispielUebung(art);
+        void persister.writeAll(b, true);
+        void requestPersist();
+        setEx(b);
+        beispielAusUrlEntfernen();
+        setSaved(await listExercises());
+        return;
+      }
       const id = lastCurrent() ?? await currentExerciseId().catch(() => null);
       let r = id ? await openStored(id).catch(() => null) : null;
       if (!r && id) { const db = await currentExerciseId().catch(() => null); if (db && db !== id) r = await openStored(db).catch(() => null); }

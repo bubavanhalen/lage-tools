@@ -159,8 +159,12 @@ export interface Hint {
   id: string;
   rule: string;
   level: HintLevel;
-  /** Titel, z. B. «Mögliche Übergabe in AK9» */
+  /** Titel, z. B. «Mögliche Übergabe in AK9» – bleibt für CSV/PDF/Tests */
   title: string;
+  /** Klartext-Titel für die Grundansicht (Kap. 4.2), ohne Code, z. B. «⚠ Mögliche Übergabe in AK9 – beobachten»; Paket D */
+  headline?: string;
+  /** Was tun (Teil nach «–» in `headline`), im Detail als «Jetzt prüfen:»; Paket D */
+  todo?: string;
   /** Begründung in einem bis zwei Sätzen, mit Zeiten/Orten */
   text: string;
   /** Meldungen, die den Hinweis auslösen (IDs), älteste zuerst */

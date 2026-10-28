@@ -6,7 +6,7 @@
  */
 import { pointInRing, ringCentroid } from "./geo";
 import { findCoordinates, type LV95 } from "./lv95";
-import { newEventId, type Area, type LageEvent, type Place, type RoadHint, type Side } from "./model";
+import { newEventId, revisionOf, type Area, type LageEvent, type Place, type RoadHint, type Side } from "./model";
 import { boundsCenter, cellBounds, findCells, type RasterSheet } from "./raster";
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
@@ -611,4 +611,15 @@ export function reviseEvent(e: LageEvent, patch: Partial<LageEvent>, device: str
   // neue Ereigniszeit: Offset dazu neu bestimmen (Sommerzeit), ausser er wird mitgegeben
   const off = patch.t && patch.t !== e.t && !("tOffset" in patch) ? { tOffset: offsetFor(patch.t, now) } : {};
   return { ...e, ...patch, ...off, rev: e.rev + 1, device, updatedAt: now.toISOString() };
+}
+
+/**
+ * Korrektur einer Meldung (Spez. MVP 1, Kap. 3.3): alte Fassung kommt in `history` (älteste zuerst), Revision steigt.
+ * Die Ereigniszeit `t` bleibt, ausser `patch.t` nennt eine neue; Eingang (`tReported`, `createdAt`) und ID ändern nie.
+ * Rückgängig = nochmals `correctEvent` mit den Feldern der alten Fassung (die Historie wächst dabei weiter).
+ */
+export function correctEvent(e: LageEvent, patch: Partial<LageEvent>, device: string, now = new Date()): LageEvent {
+  const { id: _id, rev: _rev, history: _h, createdAt: _c, tReported: _r, device: _d, updatedAt: _u, ...rest } = patch;
+  const history = [...(e.history ?? []), revisionOf(e)];
+  return { ...reviseEvent(e, rest, device, now), history };
 }

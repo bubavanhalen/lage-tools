@@ -1,6 +1,8 @@
 node_modules/
 dist/
 _site/
+# Abnahmetests: Build-Kopie, Screenshots, Ergebnisse
+apps/*/e2e/out/
 *.log
 .DS_Store
 # Übungsdaten gehören nie ins Repository

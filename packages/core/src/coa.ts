@@ -57,8 +57,10 @@ export interface RedCoa {
   kind: CoaKind;
   /** Einordnung: wahrscheinlichste, gefährlichste, weitere */
   label: "wahrscheinlichste" | "gefaehrlichste" | "weitere";
-  /** z. B. «Überfall auf Stao H05 (AQ11)» */
+  /** z. B. «Überfall auf Stao H05 (AQ11)» – bleibt für CSV/PDF/Tests */
   title: string;
+  /** Klartext-Titel (Kap. 4.3), z. B. «Rot könnte Stao H05 überfallen (AQ11)»; Paket D – sonst `coaHeadline` */
+  headline?: string;
   /** Ziel der Aktion */
   target?: { pos: LV95; unit?: string; cell?: string; nai?: string };
   /** erwartete Annäherung (Achse) in LV95, Ausgangspunkt zuerst */

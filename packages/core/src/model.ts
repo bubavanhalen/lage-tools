@@ -126,6 +126,45 @@ export interface LageEvent {
   /** Vom Benutzer bestätigt (sonst Vorschlag der Erkennung) */
   confirmed: boolean;
   note?: string;
+  /**
+   * Frühere Fassungen (älteste zuerst), gefüllt von `correctEvent` – für «korrigiert 07:34», Detail, PDF/CSV.
+   * Fehlt bei nie korrigierten Meldungen. `mergeEvents`: die höhere Revision gewinnt samt Historie.
+   */
+  history?: EventRevision[];
+}
+
+/** Eine frühere Fassung einer Meldung (Schnappschuss vor einer Korrektur). */
+export interface EventRevision {
+  /** Revision dieser Fassung (`LageEvent.rev` damals) */
+  rev: number;
+  /** wann diese Fassung entstand (`updatedAt` damals, ISO UTC) */
+  at: string;
+  /** Gerät, das diese Fassung geschrieben hat */
+  device: string;
+  text: string;
+  t: string;
+  melder?: string;
+  unit: string;
+  side: Side;
+  aff: Affiliation;
+  sym: string;
+  sidc?: string;
+  pos?: LV95;
+  cells?: string[];
+  nai?: string;
+  where?: string;
+  count?: number;
+  dir?: number;
+  desc?: string;
+  deleted?: boolean;
+}
+
+/** Schnappschuss einer Meldung als `EventRevision` (nur gesetzte Felder). */
+export function revisionOf(e: LageEvent): EventRevision {
+  const r: EventRevision = { rev: e.rev, at: e.updatedAt, device: e.device, text: e.text, t: e.t, unit: e.unit, side: e.side, aff: e.aff, sym: e.sym };
+  const opt = { melder: e.melder, sidc: e.sidc, pos: e.pos, cells: e.cells, nai: e.nai, where: e.where, count: e.count, dir: e.dir, desc: e.desc, deleted: e.deleted };
+  for (const [k, v] of Object.entries(opt)) if (v !== undefined) (r as unknown as Record<string, unknown>)[k] = Array.isArray(v) ? [...v] : v && typeof v === "object" ? { ...v } : v;
+  return r;
 }
 
 export interface Area {
@@ -228,14 +267,25 @@ export function newDeviceId(): string {
 /**
  * Führt zwei Journale zusammen: pro ID gewinnt die höhere Revision,
  * bei gleicher Revision die spätere Änderung, dann die Gerätekennung (deterministisch).
+ * Historie: die Gewinnerin behält ihre `history`; fehlen ihr ältere Fassungen, die die andere Seite kennt
+ * (z. B. Korrektur auf einem Gerät ohne Historie), werden sie ergänzt – nie Fassungen mit gleicher/höherer Revision.
  */
 export function mergeEvents(a: LageEvent[], b: LageEvent[]): LageEvent[] {
   const map = new Map<string, LageEvent>();
   for (const e of [...a, ...b]) {
     const cur = map.get(e.id);
-    if (!cur || wins(e, cur)) map.set(e.id, e);
+    if (!cur) map.set(e.id, e);
+    else if (wins(e, cur)) map.set(e.id, withHistory(e, cur));
+    else if (e !== cur) map.set(e.id, withHistory(cur, e));
   }
   return [...map.values()].sort(compareEvents);
+}
+
+/** Historie der Gewinnerin `w`, ergänzt um ältere Fassungen aus `l` (nach Revision, ohne Doppel). */
+function withHistory(w: LageEvent, l: LageEvent): LageEvent {
+  const extra = (l.history ?? []).filter((r) => r.rev < w.rev && !(w.history ?? []).some((x) => x.rev === r.rev));
+  if (!extra.length) return w;
+  return { ...w, history: [...(w.history ?? []), ...extra].sort((x, y) => x.rev - y.rev) };
 }
 
 function wins(x: LageEvent, y: LageEvent): boolean {

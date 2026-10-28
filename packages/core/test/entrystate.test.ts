@@ -1,0 +1,55 @@
+import { describe, expect, it } from "vitest";
+import { demoExercise, entryState, newExercise, parseMeldung, type EntryStateOptions, type Exercise, type JournalContext } from "../src";
+
+// fiktiv: Beispiel Bern (Raster BERN AA–AU × 1–15, NAI 1–3, Trupps H01–H05), T2 = 2030-05-15
+const now = new Date(2030, 4, 15, 7, 30);
+const ctxOf = (ex: Exercise): JournalContext => ({ sheets: ex.sheets, areas: ex.areas, units: ex.units, days: ex.days, day: ex.days[1] ?? "2030-05-15", now });
+const bern = demoExercise();
+const opt = (o: Partial<EntryStateOptions> = {}): EntryStateOptions => ({ hasRaster: true, online: true, placePending: false, manualPos: false, now, ...o });
+const state = (text: string, ex = bern, o: Partial<EntryStateOptions> = {}) => entryState(parseMeldung(text, ctxOf(ex)), opt({ hasRaster: ex.sheets.length > 0, ...o }));
+const codes = (s: ReturnType<typeof entryState>) => s.reasons.map((r) => r.code);
+
+describe("entryState – Zustand des Meldungsfelds (Kap. 3.2)", () => {
+  it("bereit: Trupp, Ort, Einordnung, Zeit nicht in der Zukunft", () => {
+    expect(state("H04 2 Fz in AK7 Rtg N")).toEqual({ level: "bereit", reasons: [] });
+  });
+  it("bitte prüfen: Trupp fehlt", () => {
+    const s = state("3 Pers bei AJ7");
+    expect(s.level).toBe("pruefen");
+    expect(codes(s)[0]).toBe("melder");
+    expect(s.reasons[0]!.text).toBe("Wer meldet? fehlt");
+  });
+  it("bitte prüfen: Ort fehlt", () => {
+    const s = state("H04 2 Fz Rtg N");
+    expect(s.level).toBe("pruefen");
+    expect(codes(s)).toContain("ort");
+  });
+  it("geht nicht: Planquadrat gibt es nicht (Textstelle markiert)", () => {
+    const s = state("H04 2 Fz in AK77");
+    expect(s.level).toBe("geht-nicht");
+    expect(s.reasons[0]).toMatchObject({ code: "problem", token: "AK77" });
+    expect(codes(s)).not.toContain("ort");
+  });
+  it("Ort von Hand gesetzt löst Ortsprobleme", () => {
+    expect(state("H04 2 Fz in AK77", bern, { manualPos: true }).level).toBe("bereit");
+  });
+  it("Planquadrat ohne Führungsraster: nur prüfen, nicht sperren", () => {
+    const leer = newExercise("Leer (fiktiv)");
+    leer.units.blau = ["H04"];
+    const s = state("H04 2 Fz in AK7", leer);
+    expect(s.level).toBe("pruefen");
+    expect(s.reasons[0]).toMatchObject({ code: "kein-raster", token: "AK7" });
+  });
+  it("Zeit mehr als 10 min in der Zukunft", () => {
+    const s = state("0750 H04 2 Fz in AK7");
+    expect(s.level).toBe("pruefen");
+    expect(codes(s)).toEqual(["zukunft"]);
+    expect(s.reasons[0]!.text).toContain("07:50");
+  });
+  it("Ortsname offline bzw. noch gesucht", () => {
+    const off = state("H04 2 Fz in Wabern", bern, { online: false });
+    expect(codes(off)).toContain("ort-offline");
+    const busy = state("H04 2 Fz in Wabern", bern, { placePending: true });
+    expect(codes(busy)).toContain("ort-suche");
+  });
+});

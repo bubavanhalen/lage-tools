@@ -5,7 +5,7 @@
 .ph-wrap { position: relative; display: inline-flex; }
 .ph-btn { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 3px 12px; }
 .ph-btn svg { flex: none; }
-.ph-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30; display: grid; min-width: 150px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 24px -10px rgba(0,0,0,.4); overflow: hidden; }
+.ph-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30; display: grid; min-width: 150px; background: var(--card); border: 1px solid var(--line-soft); border-radius: 8px; box-shadow: 0 10px 24px -10px rgba(0,0,0,.4); overflow: hidden; }
 .ph-menu button { border: 0; border-radius: 0; text-align: left; min-height: 44px; padding: 8px 14px; }
 .ph-menu button + button { border-top: 1px solid var(--grid); }
 .entry.photo-drop { border-style: dashed; border-color: var(--blau) !important; background: var(--blau-soft); }
@@ -18,8 +18,8 @@
 
 /* Foto-Dialog */
 .ph-back { position: fixed; inset: 0; z-index: 2000; background: rgba(16, 20, 20, .5); display: flex; align-items: center; justify-content: center; padding: 24px; }
-.ph-dlg { width: min(920px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 18px 48px -16px rgba(0,0,0,.45); overflow: hidden; }
-.ph-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+.ph-dlg { width: min(920px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border: 1px solid var(--line-soft); border-radius: 8px; box-shadow: 0 18px 48px -16px rgba(0,0,0,.45); overflow: hidden; }
+.ph-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line-soft); background: var(--card); }
 .ph-title { font: 600 21px/1.1 var(--f-display); }
 .ph-meta { font-size: 12.5px; color: var(--muted); }
 .ph-sp { flex: 1; }
@@ -34,7 +34,7 @@
 .ph-body .help.warn { color: var(--rot); }
 .ph-prog > div { background: var(--blau); }
 .ph-cell { display: flex; align-items: center; gap: 8px; font-size: 14px; flex-wrap: wrap; }
-.ph-cell input { width: 120px; font-size: 15px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+.ph-cell input { width: 120px; font-size: 15px; padding: 6px 10px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--card); color: var(--ink); }
 .ph-cell input.bad { border-color: var(--rot); }
 .ph-foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding: 10px 14px 12px; }
 .ph-foot .primary { min-height: 40px; padding: 6px 18px; }
@@ -57,7 +57,7 @@
 
 /* Anhänge in Journalzeile und Banner */
 .att-chips { display: inline-flex; }
-.att-btn { display: inline-flex; align-items: center; gap: 2px; min-height: 0; padding: 1px; border-radius: 4px; border: 1px solid var(--line); background: var(--card); color: var(--muted); line-height: 0; }
+.att-btn { display: inline-flex; align-items: center; gap: 2px; min-height: 0; padding: 1px; border-radius: 4px; border: 1px solid var(--line-soft); background: var(--card); color: var(--muted); line-height: 0; }
 .att-btn:hover { border-color: var(--ink); color: var(--ink); }
 .att-thumb { display: inline-block; border-radius: 3px; overflow: hidden; background: var(--grid); flex: none; }
 .att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }

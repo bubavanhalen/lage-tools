@@ -15,11 +15,11 @@
 .lr-sec { display: grid; gap: 6px; min-width: 0; }
 .lr-h { margin: 0; font: 600 12.5px/1.2 var(--f-display); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
 .lr-hnote { text-transform: none; letter-spacing: .01em; font-weight: 500; }
-.lr-empty { margin: 0; padding: 10px 12px; border: 1.5px dashed var(--line); border-radius: 6px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.lr-empty { margin: 0; padding: 10px 12px; border: 1.5px dashed var(--line-soft); border-radius: 6px; font-size: 13px; line-height: 1.45; color: var(--muted); }
 
 /* ---------- Möglichkeiten (Karten) ---------- */
 .lr-coas { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.lr-coa { --lv: var(--muted); position: relative; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--card); overflow: hidden; }
+.lr-coa { --lv: var(--muted); position: relative; min-width: 0; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--card); overflow: hidden; }
 .lr-coa.k-wahrscheinlichste, .lr-coa.k-gefaehrlichste { --lv: var(--rot); }
 .lr-coa::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--lv); }
 .lr-coa.k-weitere::before { opacity: .5; }
@@ -39,7 +39,7 @@
 /* Zeitraum nach Zustand: jetzt (rot hervorgehoben), erwartet, überfällig (grau, kursiv), offen */
 .lr-win.w-jetzt { background: var(--rot); color: var(--paper); font-family: var(--f-body); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; font-size: 11.5px; }
 .lr-win.w-ueberfaellig { background: none; color: var(--muted); font-style: italic; font-weight: 500; font-family: var(--f-body); padding-right: 0; }
-.lr-win.w-offen { background: none; color: var(--muted); font-family: var(--f-body); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line); }
+.lr-win.w-offen { background: none; color: var(--muted); font-family: var(--f-body); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line-soft); }
 .lr-cnt { justify-self: end; }
 .lr-pips { display: inline-flex; gap: 3px; vertical-align: 1px; }
 .lr-pips i { width: 7px; height: 7px; border-radius: 1.5px; border: 1.5px solid var(--muted); opacity: .6; }
@@ -60,7 +60,7 @@
 .lr-ind { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; align-items: baseline; width: 100%; min-height: 0; padding: 2px 4px; border: 0; border-radius: 4px; background: none; text-align: left; font-size: 13px; line-height: 1.35; color: var(--ink); }
 button.lr-ind { cursor: pointer; }
 button.lr-ind:hover { background: var(--grid); }
-button.lr-ind:hover span:last-child { text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 2px; }
+button.lr-ind:hover span:last-child { text-decoration: underline; text-decoration-color: var(--line-soft); text-underline-offset: 2px; }
 .lr-tick { font-weight: 700; text-align: center; }
 .lr-inds .met .lr-tick { color: var(--ok); }
 .lr-inds .off .lr-ind { color: var(--muted); }
@@ -79,10 +79,10 @@ button.lr-ind:hover span:last-child { text-decoration: underline; text-decoratio
 .lr-coa .hc-foot { margin-top: 2px; }
 
 /* ---------- Kräfte Rot ---------- */
-.lr-tab { display: grid; grid-template-columns: 92px minmax(0, 1fr); border-top: 1px solid var(--line); font-size: 13.5px; }
+.lr-tab { display: grid; grid-template-columns: 92px minmax(0, 1fr); border-top: 1px solid var(--line-soft); font-size: 13.5px; }
 .lr-tab.spec { grid-template-columns: 88px minmax(0, 1.2fr) minmax(70px, .6fr) minmax(96px, 1fr); }
 .lr-tr { display: contents; }
-.lr-tr > * { min-width: 0; padding: 5px 6px 5px 0; border-bottom: 1px solid var(--line); line-height: 1.3; }
+.lr-tr > * { min-width: 0; padding: 5px 6px 5px 0; border-bottom: 1px solid var(--line-soft); line-height: 1.3; }
 .lr-th > * { padding-top: 6px; padding-bottom: 4px; font: 600 10.5px/1.2 var(--f-body); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); white-space: nowrap; }
 .lr-tr.unk > * { color: var(--muted); }
 .lr-tr.unk .lr-name { font-weight: 500; font-style: italic; }
@@ -111,7 +111,7 @@ button.lr-ind:hover span:last-child { text-decoration: underline; text-decoratio
 .lr-tr.s-unerwartet > *, .lr-tr.s-mehr > * { background: color-mix(in srgb, var(--rot-soft) 60%, transparent); }
 .lr-tr.s-unerwartet > :first-child, .lr-tr.s-mehr > :first-child { box-shadow: inset 3px 0 0 var(--rot); padding-left: 6px; }
 .lr-tr.sub.s-unerwartet > :first-child { padding-left: 12px; }
-.lr-bar { position: relative; width: 34px; height: 6px; border-radius: 3px; background: var(--grid); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.lr-bar { position: relative; width: 34px; height: 6px; border-radius: 3px; background: var(--grid); box-shadow: inset 0 0 0 1px var(--line-soft); overflow: hidden; }
 .lr-bar i { position: absolute; inset: 0 auto 0 0; background: var(--warn); border-radius: 3px; }
 .lr-gone > * { border-bottom: 0; }
 .lr-gone .lr-name { color: var(--muted); font-weight: 500; }
@@ -132,16 +132,16 @@ button.lr-ind:hover span:last-child { text-decoration: underline; text-decoratio
 .lr-fa .mono { color: var(--ink); font-size: 12.5px; }
 .lr-fa-k { font: 600 11.5px/1.4 var(--f-body); text-transform: uppercase; letter-spacing: .06em; }
 .lr-fa-ed { min-height: 0; padding: 0 6px; border: 1px solid transparent; background: none; color: var(--blau); font-size: 14px; line-height: 1.4; }
-.lr-fa-ed:hover { border-color: var(--line); background: var(--card); }
+.lr-fa-ed:hover { border-color: var(--line-soft); background: var(--card); }
 .lr-fa.none { align-items: center; }
 .lr-fa-why { font-size: 12.5px; color: var(--muted); }
 .lr-fa-edit { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--ink); border-radius: 6px; background: var(--card); }
 .lr-fa-l { font: 600 12px/1.3 var(--f-body); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .lr-fa-l span { text-transform: none; letter-spacing: 0; font-weight: 500; }
-.lr-fa-edit input { width: 100%; min-width: 0; font-size: 14px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; min-height: 36px; }
+.lr-fa-edit input { width: 100%; min-width: 0; font-size: 14px; color: var(--ink); background: var(--paper); border: 1px solid var(--line-soft); border-radius: 6px; padding: 6px 9px; min-height: 36px; }
 .lr-fa-edit input:focus { outline: 2px solid var(--blau); outline-offset: -1px; }
 .lr-fa-prev { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
-.lr-fa-prev li { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--paper); font-size: 12.5px; line-height: 1.5; }
+.lr-fa-prev li { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line-soft); background: var(--paper); font-size: 12.5px; line-height: 1.5; }
 .lr-fa-prev li { font-family: var(--f-mono); }
 .lr-fa-prev li.sub { color: var(--muted); }
 .lr-fa-prev li.unk { color: var(--rot); border: 1px dashed var(--rot); background: var(--rot-soft); text-decoration: underline wavy color-mix(in srgb, var(--rot) 60%, transparent); text-underline-offset: 3px; }
