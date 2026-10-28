@@ -7,8 +7,12 @@ import { appendHintsPdf } from "./hintsExport";
 import type { LageRotState } from "./lageRot";
 import { appendLageRotPdf } from "./lageRotExport";
 
-/** `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite); `lageRot`: Lage Rot zur Lagezeit `t` davor */
-export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[], lageRot?: { lage: LageRotState; t: string }): Blob {
+/**
+ * `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite); `lageRot`: Lage Rot zur Lagezeit `t` davor;
+ * `kiNote`: Vermerk zur KI unter dem Journal (siehe `kiPdfNote`: aus den Meldungen abgeleitet, dazu das Geräte-Protokoll);
+ * Meldungen aus einem KI-Vorschlag (`via: "ki"`) sind in der Tabelle mit «[KI]» markiert
+ */
+export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[], lageRot?: { lage: LageRotState; t: string }, kiNote?: string | null): Blob {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210, M = 12;
   const cols = [
@@ -35,7 +39,7 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
   for (const e of events) {
     const di = ex.days.indexOf(e.t.slice(0, 10));
     const cells = [
-      di >= 0 ? `T${di + 1}` : e.t.slice(5, 10), e.t.slice(11, 16), e.side === "rot" && e.aff === "N" ? "Neutral" : kindLabel(e), e.melder ?? "", e.side === "blau" && e.unit === e.melder ? "" : e.unit, e.text,
+      di >= 0 ? `T${di + 1}` : e.t.slice(5, 10), e.t.slice(11, 16), e.side === "rot" && e.aff === "N" ? "Neutral" : kindLabel(e), e.melder ?? "", e.side === "blau" && e.unit === e.melder ? "" : e.unit, e.via === "ki" ? `${e.text} [KI]` : e.text,
       [e.where, ...(e.cells ?? []).filter((c) => c !== e.where)].filter(Boolean).join(", "),
     ];
     const lines = cells.map((c, i) => doc.splitTextToSize(c, cols[i]!.w - 2) as string[]);
@@ -48,6 +52,14 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
     lines.forEach((l, i) => { doc.text(l, x, y); x += cols[i]!.w; });
     doc.setDrawColor(210); doc.line(M, y - 3.2 + h, W - M, y - 3.2 + h);
     y += h;
+  }
+  if (kiNote) {
+    const l = doc.splitTextToSize(kiNote, W - 2 * M) as string[];
+    if (y + l.length * 3.6 + 4 > 285) { doc.addPage(); page++; header(); }
+    doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80);
+    doc.text(l, M, y + 4);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(0);
+    y += l.length * 3.6 + 4;
   }
   if (lageRot) page = appendLageRotPdf(doc, ex, lageRot.lage, lageRot.t, classification, page);
   if (hints?.length) appendHintsPdf(doc, ex, hints, classification, page);

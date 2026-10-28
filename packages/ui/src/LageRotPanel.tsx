@@ -13,6 +13,7 @@ import {
   rowName, shownIndicators, specChip, STATE_LABEL, windowLabel, type LageRotState,
 } from "./lageRot";
 import { dayLabel } from "./Timeline";
+import { KiCoaExplain, KiLageberichtButton } from "./ki/KiFeatures";
 import "./lagerot.css";
 
 const OPEN_KEY = "lage-tools.lagerot-offen";
@@ -111,12 +112,13 @@ export function LageRotPanel({ ex, lage, t, selected, onSelect, onMap, onHint, o
       </button>
       {open && (
         <div className="lr-body">
+          {!compact && <KiLageberichtButton hints={lage.hints} coas={coas} />}
           <div className="lr-sec">
             <h4 className="lr-h">Mögliche Aktionen Rot</h4>
             {coas.length ? (
               <ol className="lr-coas">
                 {coas.map((c) => (
-                  <CoaCard key={c.id} c={c} ex={ex} t={t} open={isExpanded(c)} sel={c.id === selected}
+                  <CoaCard key={c.id} c={c} ex={ex} t={t} open={isExpanded(c)} sel={c.id === selected} compact={compact}
                     onHead={() => head(c)} onMap={() => onMap(c)} onHint={(id) => hint(c, id)} onEvent={onEvent} />
                 ))}
               </ol>
@@ -206,8 +208,8 @@ function Pips({ c }: { c: RedCoa }) {
   );
 }
 
-function CoaCard({ c, ex, t, open, sel, onHead, onMap, onHint, onEvent }: {
-  c: RedCoa; ex: Exercise; t: string; open: boolean; sel: boolean;
+function CoaCard({ c, ex, t, open, sel, compact, onHead, onMap, onHint, onEvent }: {
+  c: RedCoa; ex: Exercise; t: string; open: boolean; sel: boolean; compact?: boolean;
   onHead: () => void; onMap: () => void; onHint: (id: string) => void; onEvent: (id: string) => void;
 }) {
   const w = windowLabel(c, ex.days, t);
@@ -263,6 +265,7 @@ function CoaCard({ c, ex, t, open, sel, onHead, onMap, onHint, onEvent }: {
               <ul className="lr-dd lr-checks">{c.check.map((x, k) => <li key={k}>{x}</li>)}</ul>
             </div>
           )}
+          {!compact && <KiCoaExplain c={c} />}
           {canMap && (
             <div className="hc-foot">
               <button className="hc-btn ghost" onClick={onMap} title="Ziel, Annäherung und Orte der Indikatoren auf der Karte zeigen">

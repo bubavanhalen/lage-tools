@@ -71,6 +71,9 @@ import { LageRotPanel } from "./LageRotPanel";
 import { coaEventIds, useLageRot } from "./lageRot";
 import { coaExtent, coaLayer } from "./coaLayer";
 import { lageRotCsv } from "./lageRotExport";
+import { KiMenuButton, KiProvider } from "./ki/context";
+import { kiPdfNote } from "./ki/settings";
+import { KI_PURPOSE_LABEL } from "@lage/core";
 
 function deviceId(): string {
   try {
@@ -432,7 +435,7 @@ export function Workspace({ product, tagline }: Props) {
     if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days), "text/csv;charset=utf-8"); return; }
     const { journalPdf } = await import("./journalpdf");
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN", hints, { lage: lageRot, t: tNow }));
+    a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN", hints, { lage: lageRot, t: tNow }, kiPdfNote(ex, KI_PURPOSE_LABEL)));
     a.download = `Lagejournal_${safeFileName(ex.name)}.pdf`;
     a.click();
   };
@@ -597,6 +600,7 @@ export function Workspace({ product, tagline }: Props) {
   const hasBlatt = ex.sheets.some((s) => s.variant === "blatt");
 
   return (
+    <KiProvider ex={ex} t={tNow} update={update} say={say}>
     <div className={"app" + (present ? " present" : "") + (night ? " night" : "")}>
       <header className="bar">
         <div className="brand">
@@ -620,6 +624,7 @@ export function Workspace({ product, tagline }: Props) {
           </select>
           <button onClick={openFile}>Öffnen</button>
           <button onClick={saveFile}>Speichern</button>
+          <KiMenuButton />
           <button className={"iconbtn" + (night ? " on" : "")} onClick={() => setNight(!night)} title="Nachtbetrieb: Karte abdunkeln" aria-pressed={night}>☾</button>
           <button className="primary" onClick={() => togglePresent(true)} title="Karte im Vollbild, Zeitstrahl oben (Esc beendet)">▶ Präsentation</button>
         </div>
@@ -731,6 +736,7 @@ export function Workspace({ product, tagline }: Props) {
       <ViewerHost />
       {dbBlocked && <div className="toast dbblocked" role="alert">Speicher blockiert: Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</div>}
     </div>
+    </KiProvider>
   );
 }
 

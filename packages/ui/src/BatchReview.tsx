@@ -13,9 +13,10 @@ import { iconSvg } from "@lage/map";
 import { dayLabel } from "./Timeline";
 import { defaultDay, journalCtx } from "./commit";
 import { getBlob } from "./store";
+import { initialRows, pqDoubt, type BatchItem, type BatchRow } from "./batchRows";
 import "./batch.css";
 
-export interface BatchItem { text: string; /** Herkunft für Anzeige, z. B. «Foto 07:12, Zeile 3» */ origin?: string }
+export type { BatchItem } from "./batchRows";
 export interface BatchReviewProps {
   items: BatchItem[];
   /** Anhang, der an jede übernommene Meldung gehängt wird */
@@ -36,10 +37,10 @@ const KIND_LABEL: Record<Kind, string> = { eigen: "Eigene", feind: "Feind", unkl
 const COMPASS = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
 const compass = (deg: number) => COMPASS[Math.round(deg / 45) % 8]!;
 
-interface Row { key: number; text: string; origin?: string; on: boolean; state: "offen" | "eingetragen" | "verworfen" }
+
 
 /** Vorschau einer Meldung wie im Meldungsfeld (Zeit, Melder, Art, Zeichen, Ort) – nur Anzeige */
-export function DraftPreview({ draft, days }: { draft: Draft; days: string[] }) {
+export function DraftPreview({ draft, days, posDoubt }: { draft: Draft; days: string[]; /** Ort nur vermutet (z. B. PQ nicht in der Meldung) */ posDoubt?: string }) {
   const sym = useMemo(() => ({ __html: iconSvg(draft.sym, draft.aff, 16, { sidc: draft.sidc, status: draft.status }).svg }), [draft.sym, draft.aff, draft.sidc, draft.status]);
   const kind = draft.side === "blau" ? "eigen" : draft.aff === "N" ? "neutral" : draft.kind;
   return (
@@ -51,7 +52,9 @@ export function DraftPreview({ draft, days }: { draft: Draft; days: string[] }) 
       {draft.kind !== "eigen" && draft.unit && draft.unit !== draft.melder && <span className="chip"><b>{draft.unit}</b></span>}
       <span className="chip"><span className="symmini" dangerouslySetInnerHTML={sym} />{draft.desc ?? symbolDef(draft.sym).name}{!draft.desc && draft.count && draft.count > 1 ? ` ×${draft.count}` : ""}</span>
       {(draft.dir !== undefined || draft.dirLabel) && <span className="chip" title="Bewegungsrichtung">{draft.dirLabel ?? `Rtg ${compass(draft.dir!)}`}</span>}
-      {draft.pos ? <span className="chip where">📍 {draft.where?.label}</span>
+      {draft.pos ? (posDoubt
+        ? <span className="chip warnsoft posdoubt" title={`${posDoubt} – Ort nur vermutet`}>📍 {draft.where?.label} · vermutet, prüfen</span>
+        : <span className="chip where">📍 {draft.where?.label}</span>)
         : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}»)` : ""}</span>}
     </div>
   );
@@ -60,7 +63,7 @@ export function DraftPreview({ draft, days }: { draft: Draft; days: string[] }) 
 const coarse = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
 
 export function BatchReview({ items, attachment, ex, onCommit, onClose, day, notice, title }: BatchReviewProps) {
-  const [rows, setRows] = useState<Row[]>(() => items.map((it, i) => ({ key: i, text: it.text, origin: it.origin, on: true, state: "offen" })));
+  const [rows, setRows] = useState<BatchRow[]>(() => initialRows(items));
   const [cur, setCur] = useState(0);
   const [raw, setRaw] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1100 && !!attachment);
   const [url, setUrl] = useState<string | null>(null);
@@ -176,6 +179,7 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
                   </label>
                   <div className="br-main">
                     {r.origin && <span className="br-origin">{r.origin}</span>}
+                    {r.doubt && <span className="br-doubt" role="note"><b>bitte prüfen:</b> {r.doubt.join(" · ")}</span>}
                     <textarea className="br-text" data-i={i} rows={1} value={r.text} spellCheck={false} aria-label={`Meldung ${i + 1}`}
                       ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight + 2, 120) + "px"; } }}
                       onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, text: e.target.value.replace(/\n/g, " ") } : x)))}
@@ -188,7 +192,7 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
                           }
                         }
                       }} />
-                    {dr ? <DraftPreview draft={dr} days={ex.days} /> : <span className="help">leer – verwerfen oder Text ergänzen</span>}
+                    {dr ? <DraftPreview draft={dr} days={ex.days} posDoubt={pqDoubt(r.doubt)} /> : <span className="help">leer – verwerfen oder Text ergänzen</span>}
                   </div>
                   <div className="br-acts">
                     <button className="br-take" onClick={() => take(i)} disabled={!r.text.trim()} title="Diese Meldung eintragen (Enter)">✓<span> Übernehmen</span></button>

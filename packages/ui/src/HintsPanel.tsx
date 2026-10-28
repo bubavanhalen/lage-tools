@@ -8,6 +8,7 @@ import type { Exercise, Hint, HintGroup, HintLevel, LageEvent } from "@lage/core
 import { iconSvg } from "@lage/map";
 import { decide, decisionOf, decisionRec, GROUPS, GROUP_LABEL, groupOf, hhmm, isOpen, isOver, nextLabel, ruleOf, type DecisionState } from "./hintsData";
 import { dayLabel } from "./Timeline";
+import { KiHintExplain } from "./ki/KiFeatures";
 import "./hints.css";
 
 type Filter = "neu" | "bestaetigt" | "verworfen" | "alle";
@@ -259,6 +260,7 @@ function HintDetail({ h, ex, t, state, evById, compact, nx, srcOpen, setSrcOpen,
           </button>
         )}
       </div>
+      {!compact && <KiHintExplain h={h} />}
       <button className="hc-src" aria-expanded={srcOpen} onClick={() => setSrcOpen(!srcOpen)} title="Regel und Quelle">
         <span className="hp-chev" aria-hidden="true">▸</span> {h.rule} {rule?.name ?? ""}{rule?.source ? <span className="hc-srcref"> · {rule.source}</span> : null}
       </button>

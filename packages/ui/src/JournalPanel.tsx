@@ -42,6 +42,8 @@ import { AttachmentChips } from "./Attachments";
 import { attachmentsOf, deleteAttachmentBlob } from "./attachmentStore";
 import type { Attachment } from "@lage/core";
 import { RowMemos, VoiceButton, VoiceStatus, useVoice } from "./VoiceInput";
+import { KiMeldungSuggest, meldungUnklar } from "./ki/KiFeatures";
+import { KiMark } from "./ki/context";
 
 interface Props {
   ex: Exercise;
@@ -155,6 +157,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   const [roadPick, setRoadPick] = useState<RoadPick | null>(null);
   /** Anhang (Foto), der an die nächste eingetragene Meldung gehängt wird */
   const [pendingAtt, setPendingAtt] = useState<Attachment | null>(null);
+  /** Text im Feld stammt aus einem übernommenen KI-Vorschlag («KI deuten») – bis das Feld leer ist */
+  const kiTaken = useRef(false);
+  useEffect(() => { if (!text.trim()) kiTaken.current = false; }, [text]);
   /** Sprechen: Memo → Meldungsfeld (eine Meldung) bzw. Übersicht (mehrere) */
   const voice = useVoice({ ex, update, say, text, setText, day, input: inputRef, onAttach: setPendingAtt, pendingId: pendingAtt?.id,
     onDetach: (id) => setPendingAtt((p) => (p?.id === id ? null : p)),
@@ -263,7 +268,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       shape: sd,
       attachments: pendingAtt ? [pendingAtt.id] : undefined,
       source: pendingAtt ? { kind: pendingAtt.kind === "audio" ? "audio" : "image", ref: pendingAtt.id } : undefined,
+      via: kiTaken.current ? "ki" : undefined,
     });
+    kiTaken.current = false;
     update((x) => addEvents(x, [ev], { place: found && effPos0 === found.pos ? found : undefined, attachments: pendingAtt ? [pendingAtt] : undefined }));
     setPendingAtt(null);
     setText(""); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setPickOpen(false); setRoadPick(null); setShapeDraft(undefined);
@@ -384,6 +391,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         ) : (
           <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen · <b>↑</b> = letzte korrigieren · <b>N</b> = zurück ins Feld.</p>
         )}
+        <KiMeldungSuggest ex={ex} text={text} day={day} unklar={meldungUnklar(draft, text, !!effPos)}
+          onTake={(kurz) => { kiTaken.current = true; setText(kurz); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setConfirmNoMelder(false); inputRef.current?.focus();
+            requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; } }); }} />
         <div className="btnrow">
           <button className="primary" disabled={!draft} onClick={add}>Eintragen</button>
           <PhotoButton ex={ex} day={day} say={say} onAttach={(a) => { setPendingAtt(a); inputRef.current?.focus(); }}
@@ -435,6 +445,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
                         {!e.cells?.length && !e.nai && (e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>)}
                         {quality && <QualityMarks e={e} q={quality.get(e.id)} events={events} />}
                         {e.attachments?.length ? <><AttachmentChips list={attachmentsOf(ex, e.attachments).filter((a) => a.kind !== "audio")} /><RowMemos list={attachmentsOf(ex, e.attachments)} /></> : null}
+                        {e.via === "ki" && <span className="kitag" title="Text aus einem KI-Vorschlag übernommen (Claude) – vom Benutzer eingetragen"><KiMark size={9} />KI</span>}
                         {fresh && <span className="newdot" title="in den letzten 10 Minuten erfasst">neu</span>}
                       </span>
                     </span>

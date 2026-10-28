@@ -6,11 +6,14 @@
  */
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent as RPointerEvent } from "react";
-import { findCells, type Attachment, type Exercise } from "@lage/core";
+import { findCells, type Attachment, type Exercise, type KiRequest, type KiZeile } from "@lage/core";
 import { BatchReview, type BatchItem } from "./BatchReview";
 import { attLabel, deleteAttachmentBlob, storeAttachmentBlob, useBlobUrl } from "./attachmentStore";
 import { clampRect, fmtSize, grayCanvas, imageFromTransfer, ocrPrepare, preparePhoto, type PhotoQuality, type PreparedPhoto, type Rect } from "./photo";
-import { HANDWRITING_KI, LOW_CONFIDENCE, OCR_MB, OcrAbort, abortable, downloadOcr, ocrState, ocrToMeldungen, originOf, recognize, recognizeOriented, type OcrState } from "./ocr";
+import { LOW_CONFIDENCE, OCR_MB, OcrAbort, abortable, downloadOcr, ocrState, ocrToMeldungen, originOf, recognize, recognizeOriented, type OcrState } from "./ocr";
+import { KiPhotoButton } from "./ki/KiFeatures";
+import { SentInfo } from "./ki/KiButton";
+import { useKi } from "./ki/context";
 import "./photo.css";
 
 const coarse = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
@@ -125,7 +128,8 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
   const [rect, setRect] = useState<Rect | null>(null);
   const [cell, setCell] = useState("");
   const [ocr, setOcr] = useState<OcrState>("unbekannt");
-  const [review, setReview] = useState<{ items: BatchItem[]; att: Attachment; conf: number; q: PhotoQuality; rot: number } | null>(null);
+  const [review, setReview] = useState<{ items: BatchItem[]; att: Attachment; conf: number; q: PhotoQuality; rot: number; ki?: { notes?: string; sent: KiRequest["disclosure"] }; n: number } | null>(null);
+  const ki = useKi();
   const used = useRef(false);
   const saved = useRef<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -200,11 +204,22 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
       const a: Attachment = { ...att(), text: r.text.trim(), engine: "ocr-offline" };
       if (!texts.length) { setStep({ s: "leer", conf: r.confidence, q: r.quality }); return; }
       const stamp = attLabel(a);
-      setReview({ items: texts.map((t, i) => ({ text: t, origin: originOf(stamp, i, texts.length) })), att: a, conf: r.confidence, q: r.quality, rot: r.rotation });
+      setReview({ items: texts.map((t, i) => ({ text: t, origin: originOf(stamp, i, texts.length) })), att: a, conf: r.confidence, q: r.quality, rot: r.rotation, n: Date.now() });
     } catch (e) {
       if (ac.signal.aborted || e instanceof OcrAbort) { if (abort.current === ac) setStep({ s: "bereit" }); return; }
       setStep({ s: "fehler", msg: navigator.onLine || ocr === "bereit" ? `Texterkennung fehlgeschlagen: ${(e as Error).message ?? e}` : "Texterkennung noch nicht geladen – braucht einmal Netz. Das Foto kann trotzdem angehängt werden." });
     }
+  };
+  /** Handschrift von der KI gelesen → gleiche Prüfung wie nach der Texterkennung (Herkunft «KI») */
+  const kiLines = (rows: KiZeile[], notes: string | undefined, sent: KiRequest["disclosure"]) => {
+    if (!ph) return;
+    const a: Attachment = { ...att(), text: rows.map((r) => r.line).join("\n"), engine: "ki" };
+    const stamp = attLabel(a);
+    setReview({
+      items: rows.map((r, i) => ({ text: r.line, origin: `KI · ${originOf(stamp, i, rows.length)}`, ki: true, unsicher: r.unsicher })),
+      att: a, conf: 100, q: review?.q ?? { bright: 255, contrast: 255, sharp: 1.3, verdict: "gut" }, rot: 0, ki: { notes, sent }, n: Date.now(),
+    });
+    setStep({ s: "bereit" });
   };
   /** Abbrechen: sofort zurück (Erkennung bzw. Laden wird im Hintergrund beendet) */
   const cancel = () => { abort.current?.abort(); setStep({ s: "bereit" }); };
@@ -222,7 +237,7 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
   const lowConf = (conf: number) => conf < LOW_CONFIDENCE;
   /** schlechte Bildqualität und unsichere Erkennung → «neu aufnehmen» statt «Handschrift?» */
   const badPhoto = (conf: number, q: PhotoQuality) => q.verdict !== "gut" && conf < QUALITY_HINT;
-  /** schlecht lesbar: bei schlechter Bildqualität «neu aufnehmen», sonst «Handschrift?» (KI ab Etappe 4c) */
+  /** schlecht lesbar: bei schlechter Bildqualität «neu aufnehmen», sonst «Handschrift?» (KI nur wenn eingeschaltet) */
   const kiHint = (conf: number, q: PhotoQuality) => badPhoto(conf, q) ? (
     <span className="ph-ki ph-bad">
       <b>{qualityText(q)} – {lowConf(conf) ? "neu aufnehmen" : "bitte genau prüfen oder neu aufnehmen"}.</b> Erkannt mit Sicherheit {Math.round(conf)} %{q.verdict === "dunkel" ? " – mehr Licht, Schatten vermeiden" : " – Gerät ruhig halten, scharf stellen"}.
@@ -231,14 +246,17 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
   ) : (
     <span className="ph-ki">
       {lowConf(conf) ? <>Schlecht lesbar (Sicherheit {Math.round(conf)} %) – <b>Handschrift?</b> Gedruckter Text wird offline erkannt, Handschrift kaum.</> : <>Handschrift wird offline kaum erkannt.</>}
-      {" "}<button className="chipbtn" disabled={!HANDWRITING_KI} title="Etappe 4c: Handschrift mit KI erkennen – nur nach ausdrücklichem Einschalten, Foto verlässt dann das Gerät">Mit KI erkennen (Etappe 4c)</button>
+      {" "}<KiPhotoButton ex={ex} canvas={ph?.canvas ?? null} rect={shown} onLines={kiLines} showOff />
     </span>
   );
   const rotNote = (rot: number) => (rot ? <> · Foto lag {rot === 2 ? "verkehrt" : "quer"} – automatisch gedreht</> : null);
 
   if (review) return (
-    <BatchReview ex={ex} day={day} items={review.items} attachment={review.att}
-      notice={lowConf(review.conf) || badPhoto(review.conf, review.q) ? <>{kiHint(review.conf, review.q)}{rotNote(review.rot)}</> : <span className="ph-conf">Gedruckter Text offline erkannt · Sicherheit {Math.round(review.conf)} %{rotNote(review.rot)} · bitte prüfen</span>}
+    <BatchReview key={review.n} ex={ex} day={day} items={review.items} attachment={review.att}
+      title={review.ki ? (review.items.length === 1 ? "1 Meldung von der KI gelesen" : `${review.items.length} Meldungen von der KI gelesen`) : undefined}
+      notice={review.ki ? <span className="ph-conf ph-kiconf"><b>KI-Vorschlag (Claude)</b> – jede Zeile mit dem Foto vergleichen, dann übernehmen.{review.items.some((x) => x.unsicher?.length) ? <> Unsichere Zeilen sind <b>nicht angehakt</b>.</> : null}{review.ki.notes ? <> Hinweis der KI: «{review.ki.notes}»</> : null}<SentInfo disclosure={review.ki.sent} /></span>
+        : lowConf(review.conf) || badPhoto(review.conf, review.q) ? <>{kiHint(review.conf, review.q)}{rotNote(review.rot)}</>
+        : <span className="ph-conf">Gedruckter Text offline erkannt · Sicherheit {Math.round(review.conf)} %{rotNote(review.rot)} · bitte prüfen{ki && ki.state !== "aus" ? <> · Handschrift? <KiPhotoButton ex={ex} canvas={ph?.canvas ?? null} rect={shown} onLines={kiLines} /></> : null}</span>}
       onCommit={(texts) => { used.current = true; onCommit(texts, review.att); }}
       onClose={() => { if (!used.current) { setReview(null); setStep({ s: "bereit" }); return; } onClose(); }} />
   );
@@ -279,6 +297,9 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
             <input value={cell} onChange={(e) => setCell(e.target.value)} placeholder="z. B. AG13" className={"mono" + (cellOk ? "" : " bad")} aria-invalid={!cellOk} />
           </label>
           {!cellOk && <p className="help warn">Planquadrat «{cell}» gibt es im Raster nicht.</p>}
+          {ki && ki.state !== "aus" && ph && step.s !== "ocr" && step.s !== "leer" && (
+            <div className="ph-kirow"><span className="help">Handschrift?</span><KiPhotoButton ex={ex} canvas={ph.canvas} rect={shown} onLines={kiLines} label="Mit KI lesen" /></div>
+          )}
         </div>
         <footer className="ph-foot">
           {step.s === "ocr"
