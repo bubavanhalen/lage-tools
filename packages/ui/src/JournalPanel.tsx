@@ -553,7 +553,12 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
   const [rePicked, setRePicked] = useState(false);
   const reProblems = re ? openProblems(re, { manualPos: rePicked }) : [];
   const liRef = useRef<HTMLLIElement>(null);
-  useEffect(() => { const id = requestAnimationFrame(() => revealEditRow(liRef.current)); return () => cancelAnimationFrame(id); }, []);
+  // Fokus in den Text (Laptop) ohne Browser-Sprung, dann unter dem klebenden Meldungsfeld sichtbar machen
+  useEffect(() => {
+    if (wideScreen) liRef.current?.querySelector<HTMLInputElement>("input[data-edit-text]")?.focus({ preventScroll: true });
+    const id = requestAnimationFrame(() => revealEditRow(liRef.current));
+    return () => cancelAnimationFrame(id);
+  }, []);
   const onText = (t: string) => {
     setText(t);
     setRePicked(false);
@@ -630,7 +635,7 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
           <label>Element auf der Karte<input value={unit} onChange={(x) => setUnit(x.target.value)} placeholder={kind === "eigen" ? "= Melder" : "leer = einzelne Sichtung"} /></label>
           <label>Anzahl<input type="number" min={0} value={count || ""} onChange={(x) => setCount(+x.target.value)} /></label>
         </div>
-        <label>Meldung<input value={text} autoFocus={wideScreen} onChange={(x) => onText(x.target.value)} /></label>
+        <label>Meldung<input value={text} data-edit-text onChange={(x) => onText(x.target.value)} /></label>
         {re && <EditPreview d={re} ex={ex} manualPos={rePicked} oldWhere={where ?? (pos ? formatLv95(pos) : undefined)} />}
         <BlockNote problems={reProblems} verb="Speichern" />
         <div className="btnrow">
