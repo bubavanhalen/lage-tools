@@ -37,7 +37,8 @@ export function storeProblem(where: StoreProblem["where"], e: unknown): StorePro
   const name = (e as DOMException)?.name ?? "";
   const msg = String((e as Error)?.message ?? e ?? "");
   const kind: StoreProblem["kind"] = name === "QuotaExceededError" || /quota|voll/i.test(msg) ? "voll" : /blockiert|blocked/i.test(msg) ? "blockiert" : "fehlt";
-  const text = kind === "voll" ? "Gerätespeicher voll" : kind === "blockiert" ? "Speicher blockiert – andere (ältere) Lagejournal-Fenster schliessen" : "Gerätespeicher nicht verfügbar";
+  const text = kind === "voll" ? "Gerätespeicher voll" : kind === "blockiert" ? "Speicher blockiert – andere (ältere) Lagejournal-Fenster schliessen"
+    : name === "VersionError" ? "In einem anderen Fenster läuft eine neuere Version – Datei sichern, dann dieses Fenster neu laden" : "Gerätespeicher nicht verfügbar";
   return { where, kind, text, at: Date.now() };
 }
 /** Status melden: Fehler (`e`) oder wieder gespeichert (`null`) */

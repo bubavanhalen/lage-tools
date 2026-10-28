@@ -4,7 +4,7 @@
  * scrollen. «Details» öffnet den Reiter auf Wunsch. Schliessen: ×, Esc, Tipp daneben auf die Karte.
  */
 import { useEffect, useSyncExternalStore } from "react";
-import L from "leaflet";
+import type L from "leaflet";
 import type { Exercise, Hint, RedCoa } from "@lage/core";
 import { COA_LABEL, windowLabel } from "./lageRot";
 import "./maptip.css";

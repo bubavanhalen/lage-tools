@@ -14,6 +14,7 @@ import { dayLabel } from "./Timeline";
 import { defaultDay, journalCtx } from "./commit";
 import { getBlob } from "./store";
 import { initialRows, pqDoubt, type BatchItem, type BatchRow } from "./batchRows";
+import { BlockNote, ProblemChips } from "./DraftProblems";
 import "./batch.css";
 
 export type { BatchItem } from "./batchRows";
@@ -41,6 +42,8 @@ const compass = (deg: number) => COMPASS[Math.round(deg / 45) % 8]!;
 
 /** Vorschau einer Meldung wie im Meldungsfeld (Zeit, Melder, Art, Zeichen, Ort) – nur Anzeige */
 export function DraftPreview({ draft, days, posDoubt }: { draft: Draft; days: string[]; /** Ort nur vermutet (z. B. PQ nicht in der Meldung) */ posDoubt?: string }) {
+  const problems = draft.problems ?? [];
+  const ortProblem = problems.some((p) => p.kind === "ort");
   const sym = useMemo(() => ({ __html: iconSvg(draft.sym, draft.aff, 16, { sidc: draft.sidc, status: draft.status }).svg }), [draft.sym, draft.aff, draft.sidc, draft.status]);
   const kind = draft.side === "blau" ? "eigen" : draft.aff === "N" ? "neutral" : draft.kind;
   return (
@@ -52,7 +55,8 @@ export function DraftPreview({ draft, days, posDoubt }: { draft: Draft; days: st
       {draft.kind !== "eigen" && draft.unit && draft.unit !== draft.melder && <span className="chip"><b>{draft.unit}</b></span>}
       <span className="chip"><span className="symmini" dangerouslySetInnerHTML={sym} />{draft.desc ?? symbolDef(draft.sym).name}{!draft.desc && draft.count && draft.count > 1 ? ` ×${draft.count}` : ""}</span>
       {(draft.dir !== undefined || draft.dirLabel) && <span className="chip" title="Bewegungsrichtung">{draft.dirLabel ?? `Rtg ${compass(draft.dir!)}`}</span>}
-      {draft.pos ? (posDoubt
+      <ProblemChips problems={problems} />
+      {ortProblem ? null : draft.pos ? (posDoubt
         ? <span className="chip warnsoft posdoubt" title={`${posDoubt} – Ort nur vermutet`}>📍 {draft.where?.label} · vermutet, prüfen</span>
         : <span className="chip where">📍 {draft.where?.label}</span>)
         : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}»)` : ""}</span>}
@@ -63,7 +67,11 @@ export function DraftPreview({ draft, days, posDoubt }: { draft: Draft; days: st
 const coarse = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
 
 export function BatchReview({ items, attachment, ex, onCommit, onClose, day, notice, title }: BatchReviewProps) {
-  const [rows, setRows] = useState<BatchRow[]>(() => initialRows(items));
+  // Zeilen mit Problem (unbekannter Ort, ungültige Zeit) sind nicht vorab angehakt
+  const [rows, setRows] = useState<BatchRow[]>(() => {
+    const c0 = journalCtx(ex, day ?? defaultDay(ex));
+    return initialRows(items, (t) => !!t.trim() && !!parseMeldung(t.replace(/\s*\n\s*/g, " "), c0).problems?.length);
+  });
   const [cur, setCur] = useState(0);
   const [raw, setRaw] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1100 && !!attachment);
   const [url, setUrl] = useState<string | null>(null);
@@ -91,7 +99,9 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
   useEffect(() => { if (!coarse() && window.innerWidth >= 860) window.setTimeout(() => focusRow(0), 30); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = rows.filter((r) => r.state === "offen");
-  const chosen = open.filter((r) => r.on && r.text.trim());
+  /** Zeile i hat ein Problem im Entwurf: nicht eintragen, nur nach Korrektur */
+  const blocked = (i: number) => !!drafts[i]?.problems?.length;
+  const chosen = open.filter((r) => r.on && r.text.trim() && !blocked(rows.indexOf(r)));
   const nextOpen = (from: number, list = rows) => {
     for (let k = 1; k <= list.length; k++) { const j = (from + k) % list.length; if (list[j]!.state === "offen") return j; }
     return -1;
@@ -99,7 +109,7 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
 
   const take = (i: number) => {
     const r = rows[i];
-    if (!r || r.state !== "offen" || !r.text.trim()) return;
+    if (!r || r.state !== "offen" || !r.text.trim() || blocked(i)) return;
     onCommit([r.text.trim()], attachment?.id);
     const next = rows.map((x, j) => (j === i ? { ...x, state: "eingetragen" as const } : x));
     setRows(next);
@@ -193,9 +203,11 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
                         }
                       }} />
                     {dr ? <DraftPreview draft={dr} days={ex.days} posDoubt={pqDoubt(r.doubt)} /> : <span className="help">leer – verwerfen oder Text ergänzen</span>}
+                    {dr?.normalized && dr.normalized !== dr.text && <span className="help br-read">gelesen als: <span className="mono">{dr.normalized}</span></span>}
+                    {dr && <BlockNote problems={dr.problems ?? []} verb="Übernehmen" />}
                   </div>
                   <div className="br-acts">
-                    <button className="br-take" onClick={() => take(i)} disabled={!r.text.trim()} title="Diese Meldung eintragen (Enter)">✓<span> Übernehmen</span></button>
+                    <button className="br-take" onClick={() => take(i)} disabled={!r.text.trim() || blocked(i)} title={blocked(i) ? "Zuerst korrigieren (Problem in der Meldung)" : "Diese Meldung eintragen (Enter)"}>✓<span> Übernehmen</span></button>
                     <button className="br-drop" onClick={() => drop(i)} title="Verwerfen" aria-label={`Zeile ${i + 1} verwerfen`}>✕</button>
                   </div>
                 </li>

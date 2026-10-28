@@ -11,3 +11,6 @@
 .editpreview .chip.kind-unklar { color: var(--unklar); border-color: var(--unklar); }
 .edit .edithint { font-size: 12px; color: var(--muted); }
 @media (hover: none) { .edit .edithint { display: none; } }
+/* Lesart der Funksprache («Hotel 4 … Alpha Kilo 7» → «H04 … AK7»), dezent unter der Vorschau */
+.readas, .br-read { display: block; margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.readas .mono, .br-read .mono { color: var(--ink); }

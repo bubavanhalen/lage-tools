@@ -20,6 +20,8 @@ const SYNC_KEY = "lage-tools.sync";
 const CHANNEL = "lage-tools.sync";
 /** Hülle nur bis zu dieser Grösse in den Notfall-Puffer (Bilder/Overlays können MB gross sein) */
 const WAL_HULL_MAX = 300_000;
+/** nach einem Speicherfehler erneut versuchen */
+const RETRY_MS = 10_000;
 
 /** Kennung dieses Fensters (Nachrichten an sich selbst ignorieren) */
 export const TAB_ID = Math.random().toString(36).slice(2, 10);
@@ -118,6 +120,7 @@ class Persister {
   onSaved: ((exId: string, hull: boolean) => void) | null = null;
   /** zuletzt gespeichert (ms seit 1970) */
   savedAt = 0;
+  private retry: number | undefined;
 
   private state(id: string): DbState {
     let s = this.st.get(id);
@@ -212,8 +215,10 @@ class Persister {
       }
       this.onSaved?.(id, hullChanged);
     } catch (e) {
-      // nicht gespeichert: Puffer bleibt, beim nächsten Speichern wird alles Ungespeicherte erneut versucht
+      // nicht gespeichert: Puffer bleibt, beim nächsten Speichern (spätestens in 10 s) wird alles Ungespeicherte erneut versucht
       reportStore("uebung", e);
+      window.clearTimeout(this.retry);
+      this.retry = window.setTimeout(() => flushNow(), RETRY_MS);
     }
   }
 

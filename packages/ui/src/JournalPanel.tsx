@@ -428,6 +428,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
           <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen · <b>↑</b> = letzte korrigieren · <b>N</b> = zurück ins Feld.</p>
         )}
         {draft && <BlockNote problems={problems} />}
+        {draft?.normalized && draft.normalized !== draft.text && <p className="readas">gelesen als: <span className="mono">{draft.normalized}</span></p>}
         <KiMeldungSuggest ex={ex} text={text} day={day} unklar={meldungUnklar(draft, text, !!effPos)}
           onTake={(kurz) => { kiTaken.current = true; setText(kurz); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setConfirmNoMelder(false); inputRef.current?.focus();
             requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; } }); }} />

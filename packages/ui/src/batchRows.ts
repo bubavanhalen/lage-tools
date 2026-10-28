@@ -13,11 +13,14 @@ export interface BatchItem {
 
 export interface BatchRow { key: number; text: string; origin?: string; doubt?: string[]; on: boolean; state: "offen" | "eingetragen" | "verworfen" }
 
-/** Zeilen zu Beginn: unsichere KI-Zeilen sind nicht angehakt («bitte prüfen»), «Alle übernehmen» nimmt sie nicht mit */
-export function initialRows(items: BatchItem[]): BatchRow[] {
+/**
+ * Zeilen zu Beginn: unsichere KI-Zeilen sind nicht angehakt («bitte prüfen»), «Alle übernehmen» nimmt sie nicht mit.
+ * `blocked(text)`: Zeile mit Problem im Entwurf (unbekannter Ort, ungültige Zeit – `Draft.problems`) ebenfalls nicht angehakt.
+ */
+export function initialRows(items: BatchItem[], blocked?: (text: string) => boolean): BatchRow[] {
   return items.map((it, i) => {
     const doubt = it.unsicher?.length ? it.unsicher : undefined;
-    return { key: i, text: it.text, origin: it.origin, doubt, on: !(it.ki && doubt), state: "offen" as const };
+    return { key: i, text: it.text, origin: it.origin, doubt, on: !(it.ki && doubt) && !blocked?.(it.text), state: "offen" as const };
   });
 }
 

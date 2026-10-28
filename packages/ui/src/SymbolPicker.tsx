@@ -169,8 +169,19 @@ export function SymbolPicker(p: SymbolPickerProps) {
   // aktive Kachel sichtbar halten
   useLayoutEffect(() => {
     if (!active) return;
-    grid.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(active)}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [active]);
+    const el = grid.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(active)}"]`);
+    if (!el) return;
+    // im Formular (Korrektur): nur im Raster selbst scrollen, nie die Seitenleiste/Seite (sonst springt die Zeile weg)
+    if (anchor === "inline") {
+      const g = grid.current!;
+      if (g.scrollHeight <= g.clientHeight) return;
+      const r = el.getBoundingClientRect(), gr = g.getBoundingClientRect();
+      if (r.top < gr.top) g.scrollTop -= gr.top - r.top;
+      else if (r.bottom > gr.bottom) g.scrollTop += r.bottom - gr.bottom;
+      return;
+    }
+    el.scrollIntoView({ block: "nearest" });
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // was die Suche vorgibt, gilt für die Auswahl (sonst die bisherigen Einstellungen)
   const tAff = search?.aff ?? p.value.aff;

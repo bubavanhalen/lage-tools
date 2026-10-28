@@ -37,11 +37,14 @@ export function useExerciseStore({ ex, exRef, setEx, setSaved, say, skip }: Opts
 
   // Sofort speichern
   const asked = useRef(false);
+  const seen = useRef<{ id: string; n: number } | null>(null);
   useEffect(() => {
     if (!ex || skip(ex)) return;
     persister.save(ex);
-    // erste Meldung dieser Sitzung: Browser um dauerhaften Speicher bitten
-    if (!asked.current && (ex.events ?? []).length) { asked.current = true; void requestPersist(); }
+    // erste neue Meldung dieser Sitzung: Browser um dauerhaften Speicher bitten
+    const n = (ex.events ?? []).length;
+    if (!asked.current && seen.current?.id === ex.id && n > seen.current.n) { asked.current = true; void requestPersist(); }
+    seen.current = { id: ex.id, n };
   }, [ex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Andere Fenster

@@ -149,7 +149,7 @@ export function Workspace({ product, tagline }: Props) {
     if (n !== "ready" || !fallbackId.current) return;
     // wieder frei: die zuletzt benutzte Übung laden, solange in der Ersatz-Übung noch nichts erfasst ist
     (async () => {
-      const id = await currentExerciseId();
+      const id = lastCurrent() ?? await currentExerciseId();
       const loaded = id ? (await openStored(id).catch(() => null))?.ex ?? null : null;
       setSaved(await listExercises());
       setEx((cur) => {
@@ -743,7 +743,13 @@ export function Workspace({ product, tagline }: Props) {
                 if (gone.length) undo.offer(gone.length === 1 ? `«${gone[0]!.a.name}» gelöscht` : `${gone.length} Flächen gelöscht`,
                   () => update((x) => { for (const { a, i } of gone) if (!x.areas.some((b) => b.id === a.id)) x.areas.splice(Math.min(i, x.areas.length), 0, a); return x; }));
               }}
-              onOverlays={(o) => update((x) => { x.overlays = o; return x; })}
+              onOverlays={(o) => {
+                // entferntes Bild (BNB, Skizze): Rückgängig anbieten
+                const gone = (ex.overlays ?? []).map((a, i) => ({ a, i })).filter(({ a }) => !o.some((b) => b.id === a.id));
+                update((x) => { x.overlays = o; return x; });
+                if (gone.length) undo.offer(`Bild «${gone[0]!.a.name}» entfernt`,
+                  () => update((x) => { const l = x.overlays ?? []; for (const { a, i } of gone) if (!l.some((b) => b.id === a.id)) l.splice(Math.min(i, l.length), 0, a); x.overlays = l; return x; }));
+              }}
               onImage={(c) => setGeoref(c)} say={say} />
           )}
         </aside>
