@@ -28,6 +28,9 @@ import {
   type LV95,
   type RasterSheet,
   wgs84ToLv95,
+  mergeExercise,
+  mergeReportText,
+  zoneMismatch,
 } from "@lage/core";
 import {
   AffineImageLayer,
@@ -42,7 +45,11 @@ import {
   type Basemap,
   type SwissMap,
 } from "@lage/map";
-import { currentExerciseId, downloadText, getBlob, listExercises, loadExercise, onDbNotice, pickFile, safeFileName, saveExercise } from "./store";
+import { currentExerciseId, downloadText, getBlob, listExercises, onDbNotice, pickFile, safeFileName } from "./store";
+import { lastCurrent, openStored, peekStored, persister, requestPersist } from "./persist";
+import { useExerciseStore } from "./useExerciseStore";
+import { MergeBar, SaveBand, type MergeInfo } from "./SaveBand";
+import { useUndo } from "./undo";
 import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
 import { RowMemos } from "./VoiceInput";
 import { attachmentLayer, attachmentsOf, forgetBlobUrls, putAttachmentBlob, useAttachmentGc } from "./attachmentStore";
@@ -143,7 +150,7 @@ export function Workspace({ product, tagline }: Props) {
     // wieder frei: die zuletzt benutzte Übung laden, solange in der Ersatz-Übung noch nichts erfasst ist
     (async () => {
       const id = await currentExerciseId();
-      const loaded = id ? await loadExercise(id) : null;
+      const loaded = id ? (await openStored(id).catch(() => null))?.ex ?? null : null;
       setSaved(await listExercises());
       setEx((cur) => {
         const untouched = cur && cur.id === fallbackId.current && !(cur.events ?? []).length && !cur.sheets.length && !cur.areas.length;
@@ -153,29 +160,21 @@ export function Workspace({ product, tagline }: Props) {
     })();
   }), []);
 
-  // Übung laden
+  // Übung laden (mit Notfall-Puffer: was beim letzten Mal noch nicht in der Datenbank war)
   useEffect(() => {
     (async () => {
-      const id = await currentExerciseId();
-      const loaded = id ? await loadExercise(id) : null;
-      const next = loaded ?? newExercise();
-      if (!loaded && dbBlockedRef.current) fallbackId.current = next.id;
+      const id = lastCurrent() ?? await currentExerciseId().catch(() => null);
+      let r = id ? await openStored(id).catch(() => null) : null;
+      if (!r && id) { const db = await currentExerciseId().catch(() => null); if (db && db !== id) r = await openStored(db).catch(() => null); }
+      const next = r?.ex ?? newExercise();
+      if (!r && dbBlockedRef.current) fallbackId.current = next.id;
       setEx(next);
+      if (r?.recovered) say(`${r.recovered} ${r.recovered === 1 ? "Änderung" : "Änderungen"} aus dem Notfallpuffer übernommen`);
+      const zm = zoneMismatch(next.tz);
+      if (zm) say(zm);
       setSaved(await listExercises());
     })();
-  }, []);
-
-  // Speichern (verzögert)
-  useEffect(() => {
-    if (!ex) return;
-    // leere Ersatz-Übung bei blockierter Datenbank nicht als «aktuelle Übung» speichern
-    if (fallbackId.current === ex.id && !(ex.events ?? []).length && !ex.sheets.length && !ex.areas.length) return;
-    const t = window.setTimeout(async () => {
-      await saveExercise(ex);
-      setSaved(await listExercises());
-    }, 400);
-    return () => window.clearTimeout(t);
-  }, [ex]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Karte
   useEffect(() => {
@@ -471,6 +470,20 @@ export function Workspace({ product, tagline }: Props) {
   const exRef = useRef<Exercise | null>(null);
   exRef.current = ex;
   const update = (f: (x: Exercise) => Exercise) => setEx((x) => (x ? f(structuredClone(x)) : x));
+  // Sofort speichern (jede Änderung, auch beim Verlassen der Seite) und mit anderen Fenstern abgleichen;
+  // leere Ersatz-Übung bei blockierter Datenbank nicht als «aktuelle Übung» speichern
+  useExerciseStore({ ex, exRef, setEx, setSaved, say,
+    skip: (x) => fallbackId.current === x.id && !(x.events ?? []).length && !x.sheets.length && !x.areas.length });
+  /** andere Übung zeigen: neu (alles schreiben), Beispiel (ersetzen) oder gespeichert */
+  const switchTo = (x: Exercise, how: "neu" | "ersetzen") => {
+    void persister.writeAll(x, how === "ersetzen");
+    void requestPersist();
+    setEx(x); setSelSheet(null);
+  };
+  const loadDemo = () => { switchTo(demoExercise(), "ersetzen"); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); };
+  // Rückgängig für Raster/NAI löschen; Ergebnis von «Öffnen»
+  const undo = useUndo();
+  const [mergeInfo, setMergeInfo] = useState<MergeInfo | null>(null);
   // Speicher freigeben: Anhänge gelöschter Meldungen, verwaiste Fotos/Memos (still)
   useAttachmentGc(ex, update);
   // Zeichen auf der Karte verschoben → Ort der Meldung korrigieren (mit Rückgängig)
@@ -536,26 +549,55 @@ export function Workspace({ product, tagline }: Props) {
 
   // ---------- Datei ----------
   // mit Anhängen (Fotos, Memos) als .lage.zip, sonst .lage.json
-  const saveFile = async () => {
-    if (!ex) return;
-    if (!ex.attachments?.length) { downloadText(`${safeFileName(ex.name)}.lage.json`, exerciseToFile(ex)); return; }
-    const { exerciseFile, sizeText } = await import("./exportZip");
-    const r = await exerciseFile(ex, safeFileName(ex.name), getBlob);
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(r.blob); a.download = r.name; a.click();
-    window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    say(`Gespeichert als ZIP mit ${r.files} ${r.files === 1 ? "Anhang" : "Anhängen"} (${sizeText(r.blob.size)})${r.missing ? ` – ${r.missing} nicht auf diesem Gerät` : ""}`);
+  const saveFile = async (): Promise<boolean> => {
+    // neuester Stand (auch, was wegen eines Speicherfehlers nicht in der Datenbank ist)
+    const ex = exRef.current;
+    if (!ex) return false;
+    try {
+      if (!ex.attachments?.length) { downloadText(`${safeFileName(ex.name)}.lage.json`, exerciseToFile(ex)); return true; }
+      const { exerciseFile, sizeText } = await import("./exportZip");
+      const r = await exerciseFile(ex, safeFileName(ex.name), getBlob);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(r.blob); a.download = r.name; a.click();
+      window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      say(`Gespeichert als ZIP mit ${r.files} ${r.files === 1 ? "Anhang" : "Anhängen"} (${sizeText(r.blob.size)})${r.missing ? ` – ${r.missing} nicht auf diesem Gerät` : ""}`);
+      return true;
+    } catch (e) {
+      say("Datei konnte nicht erstellt werden: " + (e as Error).message);
+      return false;
+    }
   };
+  /**
+   * Öffnen = Zusammenführen: gibt es die Übung (gleiche ID) hier schon, gehen keine Meldungen verloren
+   * (pro Meldung gilt die höhere Revision; Raster/NAI/Anhänge/Entscheide vereinigt). «Ersetzen» nur ausdrücklich.
+   */
   const openFile = async () => {
     const f = await pickFile(".json,.lage.json,.zip,.lage.zip,application/json,application/zip");
     if (!f) return;
     try {
       const { exerciseFromAny } = await import("./exportZip");
-      const { ex: x, files } = await exerciseFromAny(f, putAttachmentBlob);
+      // Anhang nicht ablegbar (Speicher voll): Übung trotzdem öffnen, Fehler zeigt das rote Band
+      const { ex: file, files } = await exerciseFromAny(f, (id, b) => putAttachmentBlob(id, b).catch(() => { /* gemeldet */ }));
       forgetBlobUrls();
-      setEx(x);
+      const att = files ? ` (${files} ${files === 1 ? "Anhang" : "Anhänge"})` : "";
+      const cur = exRef.current;
+      const local = cur?.id === file.id ? cur : await peekStored(file.id);
+      void requestPersist();
       setSelSheet(null);
-      say(`«${x.name}» geladen${files ? ` (${files} ${files === 1 ? "Anhang" : "Anhänge"})` : ""}`);
+      if (!local) {
+        switchTo(file, "neu");
+        const n = (file.events ?? []).filter((e) => !e.deleted).length;
+        setMergeInfo({ name: file.name, text: `${n} ${n === 1 ? "Meldung" : "Meldungen"}, neu auf diesem Gerät${att}`, nurHier: 0, replace: null });
+        return;
+      }
+      const { ex: merged, report } = mergeExercise(local, file);
+      void persister.writeAll(merged);
+      // inzwischen hier Eingetragenes bleibt (nochmals zusammenführen)
+      setEx((x) => (x && x.id === merged.id && x !== local ? mergeExercise(x, merged).ex : merged));
+      setMergeInfo({
+        name: merged.name, text: mergeReportText(report) + att, nurHier: report.nurHier,
+        replace: () => { switchTo(file, "ersetzen"); setMergeInfo(null); say(`«${file.name}» durch die Datei ersetzt`); },
+      });
     } catch (e) {
       say((e as Error).message);
     }
@@ -620,10 +662,10 @@ export function Workspace({ product, tagline }: Props) {
           <input className="exname" value={ex.name} onChange={(e) => update((x) => { x.name = e.target.value; return x; })} aria-label="Name der Übung" />
           <select aria-label="Gespeicherte Übungen" value="" onChange={async (e) => {
             const v = e.target.value;
-            if (v === "__new") { const x = newExercise(); setEx(x); setSelSheet(null); return; }
-            if (v === "__demo") { const x = demoExercise(); setEx(x); setSelSheet(null); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); return; }
-            const x = await loadExercise(v);
-            if (x) { setEx(x); setSelSheet(null); }
+            if (v === "__new") { switchTo(newExercise(), "neu"); return; }
+            if (v === "__demo") { loadDemo(); return; }
+            const r = await openStored(v).catch(() => null);
+            if (r) { setEx(r.ex); setSelSheet(null); void requestPersist(); }
           }}>
             <option value="" disabled>Übungen …</option>
             <option value="__new">+ Neue Übung</option>
@@ -655,7 +697,7 @@ export function Workspace({ product, tagline }: Props) {
             <JournalPanel ex={ex} map={sm.current!.map} device={device} selected={selEvent}
               win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => setWin({ mode: "alles" })}
               onSelect={selectEvent} reportAt={reportAt} editRequest={editReq}
-              onGoto={(t) => setTab(t)} onDemo={() => { const x = demoExercise(); setEx(x); setSelSheet(null); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); }} update={update} say={say} onExport={exportJournal}
+              onGoto={(t) => setTab(t)} onDemo={loadDemo} update={update} say={say} onExport={exportJournal}
               quality={quality} />
           ) : tab === "hinweise" ? (
             <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint}
@@ -685,12 +727,22 @@ export function Workspace({ product, tagline }: Props) {
                 ))}
               </ul>
               {sel && <SheetForm sheet={sel} onPatch={(p) => patchSheet(sel.id, p)} onPdf={(paper) => pdf(sel, paper)}
-                onDelete={() => { update((x) => { x.sheets = x.sheets.filter((s) => s.id !== sel.id); return x; }); setSelSheet(null); }} />}
+                onDelete={() => {
+                  const i = ex.sheets.findIndex((s) => s.id === sel.id), gone = sel;
+                  update((x) => { x.sheets = x.sheets.filter((s) => s.id !== gone.id); return x; }); setSelSheet(null);
+                  undo.offer(`Raster «${gone.name}» gelöscht`, () => update((x) => { if (!x.sheets.some((s) => s.id === gone.id)) x.sheets.splice(Math.min(i, x.sheets.length), 0, gone); return x; }));
+                }} />}
               {ex.sheets.length > 0 ? <OfflineBox ex={ex} map={sm.current.map} /> : <p className="help">Karte für den Einsatz ohne Netz speichern: zuerst ein Raster anlegen.</p>}
             </div>
           ) : (
             <NaiPanel exercise={ex} selected={selArea} onSelect={(id) => setSelArea(id)} map={sm.current!.map}
-              onChange={(areas: Area[]) => update((x) => { x.areas = areas; return x; })}
+              onChange={(areas: Area[]) => {
+                // gelöschte Flächen (NAI, AO …): Rückgängig anbieten
+                const gone = ex.areas.map((a, i) => ({ a, i })).filter(({ a }) => !areas.some((b) => b.id === a.id));
+                update((x) => { x.areas = areas; return x; });
+                if (gone.length) undo.offer(gone.length === 1 ? `«${gone[0]!.a.name}» gelöscht` : `${gone.length} Flächen gelöscht`,
+                  () => update((x) => { for (const { a, i } of gone) if (!x.areas.some((b) => b.id === a.id)) x.areas.splice(Math.min(i, x.areas.length), 0, a); return x; }));
+              }}
               onOverlays={(o) => update((x) => { x.overlays = o; return x; })}
               onImage={(c) => setGeoref(c)} say={say} />
           )}
@@ -743,6 +795,9 @@ export function Workspace({ product, tagline }: Props) {
       {busy && <div className="busy"><div>{busy}</div></div>}
       {toast && <div className="toast" role="status">{toast}</div>}
       {mover.notice}
+      {undo.bar}
+      {mergeInfo && <MergeBar info={mergeInfo} onClose={() => setMergeInfo(null)} />}
+      <SaveBand onSaveFile={saveFile} />
       <ViewerHost />
       {dbBlocked && <div className="toast dbblocked" role="alert">Speicher blockiert: Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</div>}
     </div>

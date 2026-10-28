@@ -30,6 +30,8 @@ import {
   type EventQuality,
 } from "@lage/core";
 import { QualityMarks, useDraftMissing } from "./QualityMarks";
+import { useNow } from "./useNow";
+import { localDay, withDay } from "@lage/core";
 import { iconSvg, pickPoint, toLatLng, toLv95 } from "@lage/map";
 import { dayLabel } from "./Timeline";
 import { SymbolPicker, choiceSvg, makeChoice, pickerEntry, rebaseSidc, type SymbolChoice } from "./SymbolPicker";
@@ -48,7 +50,7 @@ import { KiMeldungSuggest, meldungUnklar } from "./ki/KiFeatures";
 import { KiMark } from "./ki/context";
 import { BlockNote, ProblemChips, blockText, openProblems } from "./DraftProblems";
 import { useDraftPersist } from "./draftPersist";
-import { EditPreview, placeFromText, reparseEdit, reparseExtras } from "./editReparse";
+import { EditPreview, placeFromText, reparseEdit, reparseExtras, revealEditRow } from "./editReparse";
 
 interface Props {
   ex: Exercise;
@@ -132,7 +134,11 @@ function SymbolMini({ k, aff, sidc, status }: { k: string; aff: LageEvent["aff"]
 export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt, editRequest, onGoto, onDemo, win, onWinClear, quality }: Props) {
   const events = ex.events ?? [];
   const [kindOverride, setKindOverride] = useState<Kind | null>(null);
-  const [day, setDay] = useState(() => (ex.days.includes(todayIso()) ? todayIso() : ex.days[ex.days.length - 1] ?? todayIso()));
+  /** Uhr für die Vorschau («jetzt 10:40») – die Zeit einer Meldung ohne Zeitangabe wird erst beim Eintragen festgelegt */
+  const now = useNow();
+  /** von Hand gewählter Übungstag; null = Tag folgt der Uhr (nach Mitternacht automatisch der nächste, wird beim Eintragen angelegt) */
+  const [dayPick, setDay] = useState<string | null>(null);
+  const day = dayPick ?? localDay(now);
   const [text, setText] = useState("");
   const [manualPos, setManualPos] = useState<LV95 | null>(null);
   /** von Hand gezeichnete Fläche/Linie für die neue Meldung */
@@ -192,12 +198,12 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
   }, []);
   useEffect(() => { if (editRequest) { setFilter("alle"); setSearch(""); setEditing(editRequest.id); } }, [editRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (reportAt) { setManualPos(reportAt.pos); inputRef.current?.focus(); } }, [reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!ex.days.includes(day)) setDay(ex.days[ex.days.length - 1] ?? todayIso()); }, [ex.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setDay(null); }, [ex.id]);
 
   const ctx = useMemo(() => ({
-    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now: new Date(),
+    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now, dayFromClock: dayPick === null,
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
-  }), [ex, kindOverride, day, events]);
+  }), [ex, kindOverride, day, events, now, dayPick]);
   const draft: Draft | null = useMemo(() => (text.trim() ? parseMeldung(text, ctx) : null), [text, ctx]);
   /** E2: was der Meldung fehlt (Rückfrage nach AEIOU) */
   const draftMissing = useDraftMissing(draft, ex);
@@ -279,7 +285,11 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     if (!draft.melder && !confirmNoMelder) { setConfirmNoMelder(true); return; }
     setConfirmNoMelder(false);
     // Eintrage-Weg in commit.ts (gleich für mehrere Meldungen aus Foto/Sprachmemo)
-    const ev = buildEvent(draft, device, ex, {
+    // Zeit «jetzt» erst jetzt (Enter) festlegen, nicht beim Tippen; eine getippte Zeit hat Vorrang
+    const at = new Date();
+    const fresh = parseMeldung(text, { ...ctx, now: at, day: dayPick ?? localDay(at) });
+    const dNow: Draft = { ...draft, minutes: fresh.minutes, day: fresh.day, t: fresh.t };
+    const ev = buildEvent(dNow, device, ex, {
       pos: effPos, where: effWhere, whereKind: manualPos ? "karte" : "ort",
       sym: symOverride ? { ...symOverride, desc: choiceDesc } : undefined,
       road,
@@ -290,7 +300,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       attachments: pendingAtt ? [pendingAtt.id] : undefined,
       source: pendingAtt ? { kind: pendingAtt.kind === "audio" ? "audio" : "image", ref: pendingAtt.id } : undefined,
       via: kiTaken.current ? "ki" : undefined,
-    });
+    }, at);
     kiTaken.current = false;
     update((x) => addEvents(x, [ev], { place: found && effPos0 === found.pos ? found : undefined, attachments: pendingAtt ? [pendingAtt] : undefined }));
     setPendingAtt(null);
@@ -356,8 +366,9 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       <div className="entry" style={{ borderColor: effKind ? (symOverride?.aff === "N" ? "#2d7a4b" : KIND_COLOR[effKind]) : undefined }}>
         <div className="btnrow">
           <b className="entry-title">Meldung</b>
-          <select value={day} onChange={(e) => (e.target.value === "__add" ? addDay() : setDay(e.target.value))} aria-label="Übungstag">
-            {ex.days.map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.</option>)}
+          <select value={day} onChange={(e) => (e.target.value === "__add" ? addDay() : setDay(e.target.value === localDay(now) ? null : e.target.value))} aria-label="Übungstag"
+            title={dayPick ? "Tag von Hand gewählt" : "Tag folgt der Uhr (nach Mitternacht automatisch der nächste)"}>
+            {withDay(ex.days, day).map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.{ex.days.includes(d) ? "" : " (neu)"}</option>)}
             <option value="__add">+ Tag</option>
           </select>
         </div>
@@ -377,7 +388,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
         <VoiceStatus v={voice} />
         {draft ? (
           <div className="preview">
-            <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}>{dayLabel(draft.t, ex.days)} {draft.t.slice(11, 16)}</span>
+            <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={`${draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – Zeit beim Eintragen (Enter)"} · ${dayLabel(draft.t, withDay(ex.days, draft.day))} ${draft.day.slice(8, 10)}.${draft.day.slice(5, 7)}.${ex.days.includes(draft.day) ? "" : " (neuer Tag)"}`}>{draft.timeFromText ? `${dayLabel(draft.t, withDay(ex.days, draft.day))} ${draft.t.slice(11, 16)}` : `jetzt ${draft.t.slice(11, 16)}`}</span>
             {draft.melder ? <span className="chip" title="eigenes Element, das meldet">Melder <b>{draft.melder}</b></span>
               : <span className={"chip " + (confirmNoMelder ? "err" : "warnsoft")} title="Wer meldet? z. B. «H04» an den Anfang">{confirmNoMelder ? "Ohne Melder? Nochmals Enter" : "Melder fehlt"}</span>}
             {future && <span className="chip warnsoft" title="Zeit liegt nach jetzt">liegt in der Zukunft – Vortag?</span>}
@@ -402,7 +413,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
             {(draft.from !== undefined || draft.fromLabel) && <span className="chip" title="Herkunft (woher) – kein Bewegungspfeil">{draft.fromLabel ?? `aus ${compass(draft.from!)}`}</span>}
             {(() => {
               // «Melder fehlt» und «kein Ort» stehen schon als eigene Chips
-              const m = draftMissing.filter((x) => x !== "Melder" && !(x === "Ort" && !effPos));
+              // Ort aus Ortssuche/Karte (nicht aus dem Entwurf): kein «unvollständig: Ort» neben «📍 Wabern»
+              const m = draftMissing.filter((x) => x !== "Melder" && !(x === "Ort" && (!effPos || effPos !== draft.pos)));
               return m.length > 0 && <span className="chip aeiou" title={`Unvollständig: ${m.join(", ")} – Rückfrage nach AEIOU (Wann · Wer tut was · Wie · Wo · Umwelt)`}>unvollständig: {m.join(", ")}</span>;
             })()}
             {draft.roadHint && <span className="chip soft" title="wird auf die passende Strasse gelegt">{draft.roadHint === "autobahn" ? "auf Autobahn" : "auf Hauptstrasse"}</span>}
@@ -540,6 +552,8 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
   /** nach dem Neulesen von Hand auf der Karte gesetzt (löst ein Ort-Problem) */
   const [rePicked, setRePicked] = useState(false);
   const reProblems = re ? openProblems(re, { manualPos: rePicked }) : [];
+  const liRef = useRef<HTMLLIElement>(null);
+  useEffect(() => { const id = requestAnimationFrame(() => revealEditRow(liRef.current)); return () => cancelAnimationFrame(id); }, []);
   const onText = (t: string) => {
     setText(t);
     setRePicked(false);
@@ -596,7 +610,7 @@ function EditRow({ e, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise;
     });
   };
   return (
-    <li className="edit" onKeyDown={(k) => {
+    <li className="edit" ref={liRef} onKeyDown={(k) => {
       // Enter = speichern, Esc = abbrechen (nicht in der Zeichenwahl)
       const t = k.target as HTMLElement;
       if (t.closest(".editpick")) return;

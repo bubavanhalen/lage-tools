@@ -61,6 +61,11 @@ function writeWal(w: Wal): boolean {
   } catch { return false; }
 }
 
+const CURRENT_KEY = "lage-tools.current";
+/** zuletzt bearbeitete Übung, synchron gemerkt (die Datenbank könnte beim Neuladen noch nicht geschrieben sein) */
+function rememberCurrent(id: string) { try { localStorage.setItem(CURRENT_KEY, id); } catch { /* egal */ } }
+export function lastCurrent(): string | null { try { return localStorage.getItem(CURRENT_KEY); } catch { return null; } }
+
 // ---------- Nachrichten an andere Fenster
 
 let channel: BroadcastChannel | null = null;
@@ -158,6 +163,7 @@ class Persister {
     for (const e of changed) w.events[e.id] = e;
     if (hullChanged && hs.length < WAL_HULL_MAX) w.hull = hullOf(ex);
     writeWal(wal);
+    rememberCurrent(ex.id);
     this.pending.set(ex.id, ex);
     this.kick();
     return { changed: true, hull: hullChanged };
@@ -248,6 +254,7 @@ class Persister {
   writeAll(ex: Exercise, replace = false): Promise<boolean> {
     // sofort als gespeichert führen, damit die nächste Darstellung nicht doppelt schreibt; Puffer für den Notfall
     this.adopt(ex, "stored", -1);
+    rememberCurrent(ex.id);
     const wal = readWal();
     wal[ex.id] = { events: Object.fromEntries((ex.events ?? []).map((e) => [e.id, e])), hull: hullSig(ex).length < WAL_HULL_MAX ? hullOf(ex) : undefined };
     if (!replace) writeWal(wal);

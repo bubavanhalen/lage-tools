@@ -71,3 +71,19 @@ export function EditPreview({ d, ex, manualPos, oldWhere }: { d: Draft; ex: Exer
     </div>
   );
 }
+
+/**
+ * Korrektur-Zeile sichtbar machen: nicht unter dem (klebenden) Meldungsfeld verstecken. Scrollt die Seitenleiste
+ * bzw. die Seite nur so weit wie nötig.
+ */
+export function revealEditRow(li: HTMLElement | null): void {
+  if (!li) return;
+  const entry = document.querySelector<HTMLElement>(".journal .entry");
+  const sticky = !!entry && getComputedStyle(entry).position === "sticky";
+  const limit = sticky ? entry!.getBoundingClientRect().bottom + 8 : 8;
+  const r = li.getBoundingClientRect();
+  if (r.top >= limit) return;
+  const side = li.closest<HTMLElement>(".side");
+  if (side && side.scrollHeight > side.clientHeight) side.scrollBy({ top: r.top - limit });
+  else window.scrollBy({ top: r.top - limit });
+}

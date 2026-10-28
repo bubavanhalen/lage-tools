@@ -4,6 +4,7 @@
  * (`BatchReview` nach Foto bzw. Sprachmemo).
  */
 import {
+  localDay,
   cellAtAny,
   eventFromDraft,
   geometryOf,
@@ -34,19 +35,22 @@ function shapePatch(shape: EventShape, sheets: Exercise["sheets"]): Partial<Lage
   return { shape, pos, where: "Karte", cells: cell ? [cell.label] : undefined, angle: undefined, road: undefined };
 }
 
-const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-
-/** Tag für Meldungen ohne Tagesangabe: heute, wenn Übungstag, sonst der letzte Übungstag (wie im Meldungsfeld) */
-export function defaultDay(ex: Exercise): string {
-  const t = todayIso();
-  return ex.days.includes(t) ? t : ex.days[ex.days.length - 1] ?? t;
+/**
+ * Tag für Meldungen ohne Tagesangabe: der Kalendertag der Uhr (Lokalzeit) – wie im Meldungsfeld; nach Mitternacht
+ * also der nächste Tag (wird beim Eintragen als Übungstag angelegt).
+ */
+export function defaultDay(_ex?: Exercise, now = new Date()): string {
+  return localDay(now);
 }
 
-/** Kontext für `parseMeldung` aus der Übung (gleich wie im Meldungsfeld) */
+/**
+ * Kontext für `parseMeldung` aus der Übung (gleich wie im Meldungsfeld). Ist `day` der heutige Tag, folgt der Tag
+ * der Uhr («2355» kurz nach Mitternacht → Vortag).
+ */
 export function journalCtx(ex: Exercise, day: string, kind?: Kind, now = new Date()): JournalContext {
   const events = ex.events ?? [];
   return {
-    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind, days: ex.days, day, now,
+    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind, days: ex.days, day, now, dayFromClock: day === localDay(now),
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
   };
 }
