@@ -243,16 +243,46 @@ export function safeFileName(s: string): string {
 const sessionBlobs = new Set<string>();
 const baseId = (key: string) => key.replace(/:thumb$/, "");
 
-/** Inhalt eines Anhangs speichern (Schlüssel = Attachment.id) */
+/**
+ * Inhalte, die nicht in den Gerätespeicher passten (Speicher voll, blockiert): bleiben im Arbeitsspeicher dieses
+ * Fensters – für Anzeige, Erkennung und «Datei sichern» (`getBlob` liest hier nach). Nach dem nächsten gelungenen
+ * Speichern wird erneut versucht, sie abzulegen (`retryMemBlobs`).
+ */
+const memBlobs = new Map<string, Blob>();
+/** Anzahl Anhänge (ohne Vorschaubilder), die nur im Arbeitsspeicher liegen */
+export function memBlobCount(): number { return [...memBlobs.keys()].filter((k) => !k.endsWith(":thumb")).length; }
+
+/**
+ * Inhalt eines Anhangs speichern (Schlüssel = Attachment.id). Gelingt das nicht, bleibt er im Arbeitsspeicher
+ * (`getBlob` findet ihn weiter, «Datei sichern» nimmt ihn mit) und der Fehler wird gemeldet und weitergegeben.
+ */
 export async function putBlob(id: string, blob: Blob): Promise<void> {
   sessionBlobs.add(baseId(id));
   try {
     await (await db()).put(BLOB_STORE, blob, id);
+    memBlobs.delete(id);
   } catch (e) {
+    memBlobs.set(id, blob);
     // Vorschaubilder sind ersetzbar – nur Originale melden
     if (!id.endsWith(":thumb")) reportStore("anhang", e);
     throw e;
   }
+}
+
+let retrying = false;
+/** Inhalte aus dem Arbeitsspeicher erneut im Gerätespeicher ablegen (z. B. nachdem wieder Platz ist). Anzahl abgelegt. */
+export async function retryMemBlobs(): Promise<number> {
+  if (retrying || !memBlobs.size) return 0;
+  retrying = true;
+  let n = 0;
+  try {
+    const d = await db();
+    for (const [id, b] of [...memBlobs]) {
+      try { await d.put(BLOB_STORE, b, id); memBlobs.delete(id); n++; } catch { break; /* noch voll */ }
+    }
+  } catch { /* Speicher nicht verfügbar */ } finally { retrying = false; }
+  if (n && !memBlobCount()) reportStore("anhang", null);
+  return n;
 }
 
 /**
@@ -280,8 +310,10 @@ export async function collectOrphanBlobs(): Promise<{ n: number; bytes: number }
   }
 }
 
-/** Inhalt eines Anhangs lesen (null, wenn nicht auf diesem Gerät) */
+/** Inhalt eines Anhangs lesen (null, wenn nicht auf diesem Gerät) – auch, was nur im Arbeitsspeicher liegt */
 export async function getBlob(id: string): Promise<Blob | null> {
+  const mem = memBlobs.get(id);
+  if (mem) return mem;
   try {
     return ((await (await db()).get(BLOB_STORE, id)) as Blob | undefined) ?? null;
   } catch {
@@ -290,5 +322,6 @@ export async function getBlob(id: string): Promise<Blob | null> {
 }
 
 export async function deleteBlob(id: string): Promise<void> {
+  memBlobs.delete(id);
   try { await (await db()).delete(BLOB_STORE, id); } catch { /* egal */ }
 }

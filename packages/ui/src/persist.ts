@@ -13,7 +13,7 @@
  *    die Änderungen bleiben im Puffer und werden beim nächsten Speichern erneut versucht.
  */
 import { mergeEvents, mergeHull, type Exercise, type LageEvent } from "@lage/core";
-import { EVENT_STORE, db, eventRange, loadExerciseFull, reportStore, writeExercise, type EventRec, type HullRec } from "./store";
+import { EVENT_STORE, db, eventRange, loadExerciseFull, reportStore, retryMemBlobs, writeExercise, type EventRec, type HullRec } from "./store";
 
 const WAL_KEY = "lage-tools.wal";
 const SYNC_KEY = "lage-tools.sync";
@@ -88,6 +88,25 @@ export function onSync(cb: (m: SyncMsg) => void): () => void {
   channel?.addEventListener("message", onMsg);
   window.addEventListener("storage", onStorage);
   return () => { channel?.removeEventListener("message", onMsg); window.removeEventListener("storage", onStorage); };
+}
+
+// ---------- Änderungen anderer Fenster (für Konflikte beim Bearbeiten)
+
+/** höchste Revision einer Meldung, die von einem anderen Fenster kam (Schlüssel «Übung|Meldung») */
+const foreign = new Map<string, number>();
+/** Meldungen, die ein anderes Fenster geschrieben hat (hier gelesen), merken */
+export function noteForeign(exId: string, events: LageEvent[]): void {
+  for (const e of events) { const k = `${exId}|${e.id}`; if ((foreign.get(k) ?? -1) < e.rev) foreign.set(k, e.rev); }
+}
+/** höchste Revision dieser Meldung aus einem anderen Fenster (−1 = keine) */
+export function foreignRev(exId: string, id: string): number { return foreign.get(`${exId}|${id}`) ?? -1; }
+/**
+ * Wurde eine Meldung, die hier seit Revision `base.rev` bearbeitet wird, inzwischen in einem anderen Fenster geändert
+ * oder gelöscht? `cur` = Fassung, die dieses Fenster jetzt zeigt. Eigene Änderungen (z. B. Strasse nachgeführt) zählen nicht.
+ */
+export function editConflict(exId: string, base: LageEvent, cur: LageEvent | undefined): "geaendert" | "geloescht" | null {
+  if (!cur || cur.rev <= base.rev || foreignRev(exId, base.id) <= base.rev) return null;
+  return cur.deleted && !base.deleted ? "geloescht" : "geaendert";
 }
 
 // ---------- Speichern
@@ -208,6 +227,8 @@ class Persister {
       }
       this.savedAt = Date.now();
       reportStore("uebung", null);
+      void retryMemBlobs();
+      if (r.newer.length) noteForeign(id, r.newer);
       broadcast({ t: "saved", ex: id, ids: changed.map((e) => e.id), hull: hullChanged, from: TAB_ID, rev: r.rev });
       if (id === this.current) {
         if (r.merged) this.onMergedHull?.(id, r.merged, r.rev);
@@ -271,6 +292,7 @@ class Persister {
         const wl = readWal();
         if (wl[ex.id]) { delete wl[ex.id]; writeWal(wl); }
         reportStore("uebung", null);
+        void retryMemBlobs();
         this.savedAt = Date.now();
         broadcast(replace ? { t: "replaced", ex: ex.id, from: TAB_ID } : { t: "saved", ex: ex.id, ids: (ex.events ?? []).map((e) => e.id), hull: true, from: TAB_ID, rev });
         this.onSaved?.(ex.id, true);

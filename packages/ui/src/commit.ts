@@ -4,6 +4,7 @@
  * (`BatchReview` nach Foto bzw. Sprachmemo).
  */
 import {
+  clockDay,
   localDay,
   cellAtAny,
   eventFromDraft,
@@ -36,11 +37,11 @@ function shapePatch(shape: EventShape, sheets: Exercise["sheets"]): Partial<Lage
 }
 
 /**
- * Tag für Meldungen ohne Tagesangabe: der Kalendertag der Uhr (Lokalzeit) – wie im Meldungsfeld; nach Mitternacht
- * also der nächste Tag (wird beim Eintragen als Übungstag angelegt).
+ * Tag für Meldungen ohne Tagesangabe: wie im Meldungsfeld (`clockDay`) – der Kalendertag der Uhr, wenn die Übung
+ * heute läuft (nach Mitternacht der nächste, wird beim Eintragen angelegt); sonst kein heutiger Tag vor der Übung.
  */
-export function defaultDay(_ex?: Exercise, now = new Date()): string {
-  return localDay(now);
+export function defaultDay(ex?: Exercise, now = new Date()): string {
+  return ex ? clockDay(ex.days, now).day : localDay(now);
 }
 
 /**

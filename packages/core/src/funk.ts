@@ -54,7 +54,7 @@ const TENS: Record<string, number> = {
 const EIN_RE = /^(?:ein|eine|einen|einem|einer)$/i;
 /** zählbare Wörter (Personen, Fahrzeuge, Geräte) – vor diesen ist eine kleine Zahl die Anzahl */
 const COUNT_NOUN_RE =
-  /^(?:fahrzeug(?:e|en)?|fahrzüg|fz|person(?:en)?|persone|pers|mann|soldat(?:en)?|sdt|pw|pws|personenwagen|lw|lastwagen|lieferwagen|kastenwagen|transporter|drohnen?|spz|schützenpanzer|kpz|kampfpanzer|panzer|motorr(?:ad|äder)|töffs?|velos?|traktor(?:en)?|autos?|lkws?|busse?|kleinbus(?:se)?|jeeps?|pick-?ups?|geländewagen|duros?|zivilist(?:en)?|zivilperson(?:en)?|bewaffnete[rn]?|gegner|kolonne|kisten?|helikopter|helis?|minenwerfer|mw|mg|maschinengewehre?|stgw|sturmgewehre?|raketenwerfer|lenkwaffen?|kpz|pzaw|halbzug|hz|zug|gruppe|gr|trupp|trp|kompanie|kp|patrouille|pat)$/i;
+  /^(?:fahrzeug(?:e|en)?|fahrzüg|fz|person(?:en)?|persone|pers|mann|leute|männer|frauen|kinder|soldat(?:en)?|sdt|pw|pws|personenwagen|lw|lastwagen|lieferwagen|kastenwagen|transporter|drohnen?|spz|schützenpanzer|kpz|kampfpanzer|panzer|motorr(?:ad|äder)|töffs?|velos?|traktor(?:en)?|autos?|lkws?|busse?|kleinbus(?:se)?|jeeps?|pick-?ups?|geländewagen|duros?|zivilist(?:en)?|zivilperson(?:en)?|bewaffnete[rn]?|gegner|kolonne|kisten?|helikopter|helis?|minenwerfer|mw|mg|maschinengewehre?|stgw|sturmgewehre?|raketenwerfer|lenkwaffen?|kpz|pzaw|halbzug|hz|zug|gruppe|gr|trupp|trp|kompanie|kp|patrouille|pat)$/i;
 
 /** Himmelsrichtungen → Kürzel wie in `parseMeldung` */
 const DIRWORD: Record<string, string> = {
@@ -151,6 +151,8 @@ interface Tok {
   n?: boolean;
   /** einzelne Ziffer (gesprochen oder geschrieben) – wird mit Nachbarn zur Ziffernfolge */
   d?: boolean;
+  /** Zahl aus einem Zahlwort («acht» → 8), nicht als Ziffer geschrieben */
+  w?: boolean;
   /** aus Ziffern zusammengesetzt («null vier» → «04») */
   seq?: boolean;
   /** Uhrzeit HHMM */
@@ -222,33 +224,54 @@ function countNounAhead(toks: Tok[], i: number, max = 2): boolean {
 // ---------------------------------------------------------------------------------------------------------------
 // Schritte
 
-/** Zahlwörter → Ziffern */
+/** Zahlwörter → Ziffern; «ein Dutzend» → 12, «zwei Dutzend» → 24, «ein halbes Dutzend» → 6; «ein paar» bleibt (unbestimmt) */
 function stepNumbers(toks: Tok[]) {
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i]!;
-    if (t.p || t.n) {
-      if (t.n && t.s.length === 1) t.d = true;
+    if (t.p) continue;
+    const w = low(t);
+    // Dutzend: Zahl davor (Wort oder Ziffer) mal 12 («ein Dutzend», «2 Dutzend», «ein halbes Dutzend»)
+    const dz = low(toks[i + 1]) === "halbes" && DOZEN_RE.test(low(toks[i + 2])) ? 2 : DOZEN_RE.test(low(toks[i + 1])) ? 1 : -1;
+    if (dz > 0) {
+      const f = EIN_RE.test(w) ? 1 : t.n ? +t.s : spokenNumber(w);
+      if (f !== undefined && f >= 1 && f <= 20) {
+        merge(toks, i, i + dz, String(dz === 2 ? f * 6 : f * 12), { n: true, w: !t.n, done: true });
+        continue;
+      }
+    }
+    if (t.n) {
+      if (t.s.length === 1) t.d = true;
       continue;
     }
-    const w = low(t);
     if (EIN_RE.test(w)) {
-      // «ein Fahrzeug», «eine weisse Drohne» = 1; sonst Artikel («eine Sperre»)
-      if (countNounAhead(toks, i + 1)) Object.assign(t, { s: "1", n: true, d: true });
+      // «ein Fahrzeug», «eine weisse Drohne» = 1; sonst Artikel («eine Sperre»), «ein paar» = unbestimmt
+      if (low(toks[i + 1]) !== "paar" && countNounAhead(toks, i + 1)) Object.assign(t, { s: "1", n: true, d: true, w: true });
       continue;
     }
     const v = spokenNumber(w);
     if (v === undefined) continue;
-    Object.assign(t, { s: String(v), n: true, d: v <= 9 });
+    Object.assign(t, { s: String(v), n: true, d: v <= 9, w: true });
   }
 }
 
-/** Ziffernfolgen: «null sieben zwo null» → 0720, «eins drei» → 13; letzte Ziffer vor «Fahrzeuge» bleibt die Anzahl */
-function stepDigits(toks: Tok[]) {
+const DOZEN_RE = /^dutzend$/;
+
+/**
+ * Ziffernfolgen: «null sieben zwo null» → 0720, «eins drei» → 13; letzte Ziffer vor «Fahrzeuge» bleibt die Anzahl.
+ * Getippt (`typed`): nur Zahlwörter untereinander verschmelzen, nie mit einer geschriebenen Ziffer («acht 2 Fz» ≠ 82 Fz).
+ * Auch diktiert: eine geschriebene Ziffer direkt vor einem zählbaren Wort nach einem Zahlwort bleibt die Anzahl.
+ */
+function stepDigits(toks: Tok[], typed = false) {
   for (let i = 0; i < toks.length; i++) {
     if (!toks[i]!.d) continue;
     let j = i;
-    while (toks[j + 1]?.d && toks[j + 1]!.sp) j++;
+    while (toks[j + 1]?.d && toks[j + 1]!.sp && (!typed || (!!toks[j + 1]!.w && !!toks[i]!.w))) j++;
     if (j === i) continue;
+    // «zwanzig nach acht 2 Fz»: Wort + Ziffer vor zählbarem Wort → die Ziffer ist die Anzahl
+    if (!toks[j]!.w && toks[j - 1]!.w && countNounAhead(toks, j + 1, 2)) {
+      j--;
+      if (j === i) continue;
+    }
     // «Hotel null vier null sieben eins fünf …»: Element hat zwei Ziffern, der Rest ist eine neue Folge
     if (low(toks[i - 1]) === "hotel" && j - i >= 3) {
       merge(toks, i, i + 1, toks[i]!.s + toks[i + 1]!.s, { n: true, seq: true });
@@ -300,7 +323,8 @@ function stepTimes(toks: Tok[]) {
     // «7 Uhr 20», «19 Uhr»
     if (isNum(t) && t.s.length <= 2 && +t.s <= 24 && low(n1) === "uhr") {
       const m = toks[i + 2];
-      if (isNum(m) && m.s.length <= 2 && +m.s < 60) merge(toks, i, i + 2, hhmm(+t.s, +m.s), { n: true, time: true });
+      // «neun Uhr 4 Pers»: die Zahl nach «Uhr» ist die Anzahl, nicht die Minute
+      if (isNum(m) && m.s.length <= 2 && +m.s < 60 && !countNounAhead(toks, i + 3, 2)) merge(toks, i, i + 2, hhmm(+t.s, +m.s), { n: true, time: true });
       else merge(toks, i, i + 1, hhmm(+t.s, 0), { n: true, time: true });
       continue;
     }
@@ -324,6 +348,13 @@ function stepTimes(toks: Tok[]) {
         merge(toks, i, i + (halb ? 3 : 2), hhmm(Math.floor(total / 60), total % 60), { n: true, time: true });
       }
     }
+  }
+}
+
+/** «punkt neun Uhr», «genau 0900» → 0900 (Füllwort vor der Zeit fällt weg) */
+function stepTimeWords(toks: Tok[]) {
+  for (let i = 0; i < toks.length - 1; i++) {
+    if (/^(?:punkt|genau|pünktlich)$/.test(low(toks[i])) && toks[i + 1]!.time) toks[i]!.del = true;
   }
 }
 
@@ -743,8 +774,11 @@ export function looksSpoken(text: string): boolean {
   return einCount > 0 && einCount + otherCount >= 2;
 }
 
-/** Gesprochenen bzw. diktierten Text in Kurzschreibweise umwandeln */
-export function normalizeSpoken(text: string): SpokenResult {
+/**
+ * Gesprochenen bzw. diktierten Text in Kurzschreibweise umwandeln.
+ * @param o.typed getippter Text (siehe `normalizeTyped`): Zahlwörter verschmelzen nie mit geschriebenen Ziffern
+ */
+export function normalizeSpoken(text: string, o: { typed?: boolean } = {}): SpokenResult {
   const changes: SpokenResult["changes"] = [];
   const lines: string[] = [];
   for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
@@ -761,8 +795,9 @@ export function normalizeSpoken(text: string): SpokenResult {
     });
     stepSpelling(toks);
     stepNumbers(toks);
-    stepDigits(toks);
+    stepDigits(toks, !!o.typed);
     stepTimes(toks);
+    stepTimeWords(toks);
     stepPlanquadrat(toks);
     stepPhonetic(toks);
     stepElements(toks);

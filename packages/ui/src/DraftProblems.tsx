@@ -17,7 +17,7 @@ export function blockText(ps: DraftProblem[], verb = "Eintragen"): string {
   const what = ps.map((p) => p.text).join(" · ");
   const ort = ps.some((p) => p.kind === "ort");
   const zeit = ps.some((p) => p.kind === "zeit");
-  const fix = ort && zeit ? "Ort und Zeit im Text korrigieren (oder «Ort auf Karte»)" : ort ? "Text korrigieren oder «Ort auf Karte» setzen" : "Zeit im Text korrigieren";
+  const fix = ort && zeit ? "Ort und Zeit im Text korrigieren (oder «Ort auf Karte»)" : ort ? "Text korrigieren oder «Ort auf Karte» setzen" : verb === "Speichern" ? "Zeit korrigieren (Feld «Zeit» oder Text)" : "Zeit im Text korrigieren";
   return `${verb} gesperrt: ${what}. ${fix}.`;
 }
 
