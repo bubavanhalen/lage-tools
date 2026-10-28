@@ -4,7 +4,8 @@
  *   verdecken:
  *   · «Nicht gespeichert – Datei sichern», sobald das Speichern fehlschlägt (Speicher voll, blockiert, nicht verfügbar) –
  *     mit Knopf «Datei sichern». Verschwindet, sobald wieder gespeichert ist (Übung) bzw. nach dem Sichern/Schliessen
- *     oder wenn die Anhänge doch noch abgelegt werden konnten (Anhang).
+ *     oder wenn die Anhänge doch noch abgelegt bzw. verworfen wurden (Anhang). Der Text sagt ehrlich, was «Datei
+ *     sichern» mitnimmt: nur Anhänge der Übung – ein Foto, das noch an keiner Meldung hängt, nicht.
  *   · Zeitzone des Geräts ≠ Zeitzone der Übung (beim Start, beim Öffnen einer Datei oder einer gespeicherten Übung).
  *   · Datenbank blockiert durch ein altes Lagejournal-Fenster bzw. Update-Notiz nach dem Aktualisieren der Datenbank
  *     («alte Lagejournal-Fenster schliessen»).
@@ -13,10 +14,13 @@
  */
 import { useEffect, useState } from "react";
 import { zoneMismatch, type Exercise, type HullDiff } from "@lage/core";
-import { memBlobCount, onDbUpgraded, onStoreStatus, type StoreProblem } from "./store";
+import { memBlobIds, onDbUpgraded, onMemBlobs, onStoreStatus, type StoreProblem } from "./store";
 import "./persist.css";
 
-export function StatusBands({ ex, dbBlocked, onSaveFile }: { ex: Pick<Exercise, "id" | "tz"> | null; dbBlocked: boolean; onSaveFile: () => Promise<boolean> | void }) {
+export function StatusBands({ ex, dbBlocked, onSaveFile }: { ex: Pick<Exercise, "id" | "tz" | "attachments"> | null; dbBlocked: boolean; onSaveFile: () => Promise<boolean> | void }) {
+  // Anhänge im Arbeitsspeicher (neu darstellen, wenn einer dazukommt, abgelegt oder verworfen wird)
+  const [, setMemTick] = useState(0);
+  useEffect(() => onMemBlobs(() => setMemTick((n) => n + 1)), []);
   const [exP, setExP] = useState<StoreProblem | null>(null);
   const [att, setAtt] = useState<StoreProblem | null>(null);
   useEffect(() => onStoreStatus((p, where) => {
@@ -35,13 +39,22 @@ export function StatusBands({ ex, dbBlocked, onSaveFile }: { ex: Pick<Exercise, 
     const ok = await onSaveFile();
     if (ok !== false && !exP) setAtt(null);
   };
-  const nMem = memBlobCount();
+  const mem = memBlobIds();
+  const inEx = new Set((ex?.attachments ?? []).map((a) => a.id));
+  /** in der Übung: «Datei sichern» nimmt sie mit */
+  const nMem = mem.filter((id) => inEx.has(id)).length;
+  /** noch an keiner Meldung (Foto im Feld/Dialog): «Datei sichern» nimmt sie (noch) nicht mit */
+  const nOpen = mem.length - nMem;
+  const attWhy = [
+    nMem ? `${nMem > 1 ? `${nMem} Anhänge liegen` : "Der Anhang liegt"} nur im Arbeitsspeicher dieses Fensters – «Datei sichern» nimmt ${nMem > 1 ? "sie" : "ihn"} mit.` : "",
+    nOpen ? `${nOpen > 1 ? `${nOpen} Fotos/Sprachmemos hängen` : "Ein Foto/Sprachmemo hängt"} noch an keiner Meldung – erst eintragen, sonst nimmt «Datei sichern» ${nOpen > 1 ? "sie" : "es"} nicht mit.` : "",
+  ].filter(Boolean).join(" ");
   return (
     <div className="bands">
       {p && (
         <div className="savefail" role="alert">
           <b>Nicht gespeichert – Datei sichern</b>
-          <span className="savefail-why">{p.text}{exP ? "" : " (Foto/Sprachmemo)"}. {exP ? "Neue Meldungen sind nur in diesem Fenster und im Notfallpuffer." : `${nMem > 1 ? `${nMem} Anhänge liegen` : "Der Anhang liegt"} nur im Arbeitsspeicher dieses Fensters – «Datei sichern» nimmt ${nMem > 1 ? "sie" : "ihn"} mit.`}</span>
+          <span className="savefail-why">{p.text}{exP ? "" : " (Foto/Sprachmemo)"}. {exP ? "Neue Meldungen sind nur in diesem Fenster und im Notfallpuffer." : attWhy || "Der Anhang ist nicht mehr da (verworfen)."}</span>
           <button className="savefail-btn" onClick={save}>Datei sichern</button>
           {!exP && <button className="savefail-x" aria-label="Schliessen" onClick={() => setAtt(null)}>×</button>}
         </div>

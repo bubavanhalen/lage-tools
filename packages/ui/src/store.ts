@@ -264,7 +264,17 @@ const baseId = (key: string) => key.replace(/:thumb$/, "");
  */
 const memBlobs = new Map<string, Blob>();
 /** Anzahl Anhänge (ohne Vorschaubilder), die nur im Arbeitsspeicher liegen */
-export function memBlobCount(): number { return [...memBlobs.keys()].filter((k) => !k.endsWith(":thumb")).length; }
+export function memBlobCount(): number { return memBlobIds().length; }
+/** IDs der Anhänge (ohne Vorschaubilder), die nur im Arbeitsspeicher liegen */
+export function memBlobIds(): string[] { return [...memBlobs.keys()].filter((k) => !k.endsWith(":thumb")); }
+const memListeners = new Set<() => void>();
+/** Änderungen an den Anhängen im Arbeitsspeicher abonnieren (Speicherband: was «Datei sichern» mitnimmt) */
+export function onMemBlobs(cb: () => void): () => void { memListeners.add(cb); return () => { memListeners.delete(cb); }; }
+const memChanged = () => {
+  memListeners.forEach((cb) => { try { cb(); } catch { /* egal */ } });
+  // nichts mehr nur im Arbeitsspeicher (abgelegt oder verworfen): Band «Anhang nicht gespeichert» zurücksetzen
+  if (!memBlobCount()) reportStore("anhang", null);
+};
 
 /**
  * Inhalt eines Anhangs speichern (Schlüssel = Attachment.id). Gelingt das nicht, bleibt er im Arbeitsspeicher
@@ -274,9 +284,10 @@ export async function putBlob(id: string, blob: Blob): Promise<void> {
   sessionBlobs.add(baseId(id));
   try {
     await (await db()).put(BLOB_STORE, blob, id);
-    memBlobs.delete(id);
+    if (memBlobs.delete(id)) memChanged();
   } catch (e) {
     memBlobs.set(id, blob);
+    memListeners.forEach((cb) => { try { cb(); } catch { /* egal */ } });
     // Vorschaubilder sind ersetzbar – nur Originale melden
     if (!id.endsWith(":thumb")) reportStore("anhang", e);
     throw e;
@@ -295,7 +306,7 @@ export async function retryMemBlobs(): Promise<number> {
       try { await d.put(BLOB_STORE, b, id); memBlobs.delete(id); n++; } catch { break; /* noch voll */ }
     }
   } catch { /* Speicher nicht verfügbar */ } finally { retrying = false; }
-  if (n && !memBlobCount()) reportStore("anhang", null);
+  if (n) memChanged();
   return n;
 }
 
@@ -336,6 +347,6 @@ export async function getBlob(id: string): Promise<Blob | null> {
 }
 
 export async function deleteBlob(id: string): Promise<void> {
-  memBlobs.delete(id);
+  if (memBlobs.delete(id)) memChanged();
   try { await (await db()).delete(BLOB_STORE, id); } catch { /* egal */ }
 }

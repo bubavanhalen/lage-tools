@@ -18,6 +18,21 @@ describe("Probleme sperren (DraftProblems)", () => {
   it("Klartext", () => {
     expect(blockText([{ kind: "ort", text: "«AK77» gibt es nicht" }])).toBe("Eintragen gesperrt: «AK77» gibt es nicht. Text korrigieren oder «Ort auf Karte» setzen.");
     expect(blockText([])).toBe("");
+    expect(blockText([{ kind: "melder", text: "«H13» gibt es in der Übung nicht (bekannt: H01, H02)", token: "H13" }]))
+      .toBe("Eintragen gesperrt: «H13» gibt es in der Übung nicht (bekannt: H01, H02). Trupp im Text korrigieren oder als neuen Trupp aufnehmen.");
+    expect(blockText([{ kind: "orte", text: "zwei Orte (AK7, AL8) – bitte als zwei Meldungen eintragen" }, { kind: "zeit", text: "«kurz nach acht»: ungefähre Zeit" }]))
+      .toBe("Eintragen gesperrt: zwei Orte (AK7, AL8) – bitte als zwei Meldungen eintragen · «kurz nach acht»: ungefähre Zeit. Zeit im Text korrigieren; eine Meldung pro Ort eintragen.");
+  });
+  it("Ort auf Karte löst weder unbekannten Trupp noch zwei Orte", () => {
+    const d = { problems: [{ kind: "melder" as const, text: "«H13» …", token: "H13" }, { kind: "orte" as const, text: "zwei Orte" }] };
+    expect(openProblems(d, { manualPos: true })).toHaveLength(2);
+  });
+  it("unbekannter Trupp wird nicht eingetragen (mehrere Meldungen)", () => {
+    let ex: Exercise = demoExercise();
+    let skipped: string[] = [];
+    const evs = commitTexts(["0715 H13 2 Fz AK7", "0716 H01 3 Pers AK7 und 2 Fz AL8", "0717 H04 2 Fz AK7"], { ex, device: "d", update: (f) => { ex = f(structuredClone(ex)); }, day: ex.days[1], onSkipped: (t) => { skipped = t; } });
+    expect(evs.map((e) => e.melder)).toEqual(["H04"]);
+    expect(skipped).toHaveLength(2);
   });
 });
 

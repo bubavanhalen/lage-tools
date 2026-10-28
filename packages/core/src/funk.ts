@@ -323,8 +323,8 @@ function stepTimes(toks: Tok[]) {
     // «7 Uhr 20», «19 Uhr»
     if (isNum(t) && t.s.length <= 2 && +t.s <= 24 && low(n1) === "uhr") {
       const m = toks[i + 2];
-      // «neun Uhr 4 Pers»: die Zahl nach «Uhr» ist die Anzahl, nicht die Minute
-      if (isNum(m) && m.s.length <= 2 && +m.s < 60 && !countNounAhead(toks, i + 3, 2)) merge(toks, i, i + 2, hhmm(+t.s, +m.s), { n: true, time: true });
+      // «neun Uhr 4 Pers»: die Zahl nach «Uhr» ist die Anzahl, nicht die Minute; «dreiundzwanzig Uhr zehn 2 Pers»: Minute 10
+      if (isNum(m) && m.s.length <= 2 && +m.s < 60 && (!countNounAhead(toks, i + 3, 2) || isNum(toks[i + 3]))) merge(toks, i, i + 2, hhmm(+t.s, +m.s), { n: true, time: true });
       else merge(toks, i, i + 1, hhmm(+t.s, 0), { n: true, time: true });
       continue;
     }
@@ -736,7 +736,8 @@ function stepMelderBreak(toks: Tok[]) {
 
 /** Zahlwort (nicht Ziffer, nicht Artikel «ein/eine»), z. B. «zwei», «zwo», «drü», «vierzehn» */
 const isNumberWord = (w: string) => !/\d/.test(w) && !EIN_RE.test(w) && spokenNumber(w) !== undefined;
-const isCountNoun = (w: string | undefined) => !!w && COUNT_NOUN_RE.test(w.replace(/[.,;:!?]+$/, ""));
+/** zählbares Wort («Fz», «Pers», «Panzer», «Lastwagen» …) – davor ist eine Zahl die Anzahl */
+export const isCountNoun = (w: string | undefined) => !!w && COUNT_NOUN_RE.test(w.replace(/[.,;:!?]+$/, ""));
 
 /**
  * Enthält ein getippter Text Funk- bzw. Sprechsprache, die `normalizeSpoken` sicher in Kurzschrift bringt?

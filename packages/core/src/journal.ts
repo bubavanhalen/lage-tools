@@ -13,7 +13,7 @@ import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
 import { addDays, compareEvents, localDay, localIso, nearestDay, offsetFor } from "./clock";
 import { autoShape, shapeCenter } from "./shapes";
-import { countWords, isGenericPlace, isNeedNote, listParts, namesPlace, normalizeTyped, observedOwn, pickTime, placeProblems, placeSpans, staysOwn, stripLead, stueckCount, timeProblems, vagueAmount } from "./erkennung";
+import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeTyped, observedOwn, partPlaces, pickTime, placeProblems, placeSpans, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, vagueAmount } from "./erkennung";
 
 export interface JournalContext {
   sheets: RasterSheet[];
@@ -94,7 +94,12 @@ export interface Draft {
   /**
    * Probleme, die das Eintragen sperren (nie still falsch). Leer/fehlend = keine.
    * - `ort`: genannter Ort existiert nicht («AK77», «ZZ3», «NAI 9») → kein Ersatzort (kein «bei Melder»), `pos` fehlt
-   * - `zeit`: ungültige Zeitangabe («13:70») → Zeit «jetzt» ist nur Platzhalter
+   * - `zeit`: ungültige Zeitangabe («13:70»), zweite andere Zeitangabe oder ungefähre Zeit («kurz nach acht») → Zeit
+   *   «jetzt» ist nur Platzhalter
+   * - `melder`: eigenes Element, das es in der Übung nicht gibt («H13», wenn H01–H05 bekannt sind; `token` = Name) →
+   *   Ausweg: Trupp im Text korrigieren oder ausdrücklich als neues Element aufnehmen (UI)
+   * - `orte`: mehrere Anzahlen an verschiedenen Orten («2 Fz AK7 und 3 Pers AL8») – die Karte zeigt nur einen Ort →
+   *   als einzelne Meldungen eintragen («Ort auf Karte» löst das nicht)
    * Die UI zeigt `text` als roten Chip und sperrt Enter/Eintragen (Ausweg: Ort auf Karte setzen, Text korrigieren).
    */
   problems?: DraftProblem[];
@@ -102,7 +107,7 @@ export interface Draft {
 
 /** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
 export interface DraftProblem {
-  kind: "ort" | "zeit";
+  kind: "ort" | "zeit" | "melder" | "orte";
   /** Klartext, z. B. «AK77» gibt es nicht */
   text: string;
   /** betroffene Textstelle, z. B. «AK77» */
@@ -187,7 +192,10 @@ export function areaCenter(a: Area): LV95 {
 
 export function parseMeldung(input: string, ctx: JournalContext): Draft {
   // getippte Funk-/Sprechsprache wie beim Diktat lesen («Hotel 4 … zwei Fz … Alpha Kilo 7»); Kurzmeldungen unverändert
-  const typed = normalizeTyped(input.trim(), { blau: ctx.units.blau, now: ctx.now });
+  const typed0 = normalizeTyped(input.trim(), { blau: ctx.units.blau, now: ctx.now });
+  // «Hotel eins drei Personen» → «H13 Pers»: gibt es H13 nicht, aber H01 → «H01 3 Pers» (sichtbar als «gelesen als»)
+  const split = splitMelderCount(typed0.text, ctx.units.blau);
+  const typed = split === typed0.text ? typed0 : { text: split, changed: true };
   let rest = typed.text;
   /** Probleme, die das Eintragen sperren (Zeit hier, Ort weiter unten) – kommen als `problems` in den Entwurf */
   const problems: DraftProblem[] = [];
@@ -207,8 +215,12 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   let minutes = ctx.now.getHours() * 60 + ctx.now.getMinutes();
   let timeFromText = false;
   // Zeit irgendwo im Satz (Anfang, nach Melder, «um …», am Ende); weitere andere Zeitangabe → Problem
-  const tp = pickTime(rest, findTimes(rest));
+  const found0 = findTimes(rest);
+  const tp = pickTime(rest, [...found0, ...hourTimes(rest, found0)].sort((a, b) => a.index - b.index));
   problems.push(...timeProblems(rest), ...tp.problems);
+  // ohne Uhrzeit: «vor 10 min» = jetzt − 10, «gegen neun» = 09:00, «kurz nach acht» = Problem (nie still «jetzt»)
+  const loose = tp.used ? null : looseTime(rest, minutes);
+  if (loose) problems.push(...loose.problems);
   /** Meldungstext für das Journal (eine Zeit mitten im Satz bleibt stehen); `rest` = Text für die Erkennung */
   let shownRest = rest;
   if (tp.used) {
@@ -222,8 +234,18 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     }
     else rest = blank(rest, a, b);
   }
+  let relDay = false;
+  if (loose?.used) {
+    minutes = loose.used.minutes;
+    timeFromText = true;
+    rest = blank(rest, loose.span![0], loose.span![1]);
+    if (loose.used.relative) {
+      relDay = true;
+      if (loose.dayBefore && !dm) day = addDays(day, -1);
+    }
+  }
   // getippte Zeit ohne Tag kurz nach Mitternacht («2355» um 00:15) gehört zum Vortag
-  if (timeFromText && !dm && ctx.dayFromClock) day = nearestDay(day, minutes, ctx.now);
+  if (timeFromText && !dm && !relDay && ctx.dayFromClock) day = nearestDay(day, minutes, ctx.now);
 
   // ---- ausdrückliche Einordnung am Anfang («Rot …», «Feind …», «Eigen …»)
   let kind: Kind | null = null;
@@ -271,6 +293,8 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const melderHit = hits.find((h) => h.side !== "rot");
   const enemyHit = hits.find((h) => h.side === "rot");
   const melder = melderHit?.u ?? "";
+  // eigenes Element, das es in der Übung nicht gibt («H13» bei H01–H05): Problem statt still neuer Trupp
+  problems.push(...melderProblems(hits.filter((h) => h.side === null).map((h) => h.u), ctx.units.blau));
 
   // ---- Sichtung ohne Katalogbegriff («1 weisser Lieferwagen AO2»): Anzahl und allgemeines Zeichen
   let sight: { count: number; sym: string; civil: boolean } | undefined;
@@ -346,6 +370,9 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const found = findCells(locText, ctx.sheets, { exclude });
   // Aufzählung an mehreren Orten («2 Fz AK7 und 3 Pers AL8»): Ort je Teil in den Sinn (Zeichen steht am ersten Ort)
   if (parts && found.length > 1) parts = listParts(text, skip, found.map((f) => ({ index: f.index, label: f.label }))) ?? parts;
+  // die Karte zeigt nur einen Ort: Teile an verschiedenen Orten als einzelne Meldungen eintragen
+  const multi = partPlaces(locText, skip, found.map((f) => ({ index: f.index, label: f.label })));
+  if (multi.length > 1) problems.push({ kind: "orte", text: `${multi.length === 2 ? "zwei" : multi.length} Orte (${multi.join(", ")}) – bitte als ${multi.length === 2 ? "zwei" : multi.length} Meldungen eintragen`, token: multi.join(" ") });
   if (found.length) {
     cells = found.map((c) => c.label);
     if (!pos) {

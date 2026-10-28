@@ -202,7 +202,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
-  useEffect(() => { if (editRequest) { setFilter("alle"); setSearch(""); setEditing(editRequest.id); } }, [editRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  // gelöschte Meldungen sind nicht bearbeitbar (nur «Rückgängig» bzw. «Trotzdem speichern» im Konflikt)
+  useEffect(() => { if (editRequest && !events.find((x) => x.id === editRequest.id)?.deleted) { setFilter("alle"); setSearch(""); setEditing(editRequest.id); } }, [editRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (reportAt) { setManualPos(reportAt.pos); inputRef.current?.focus(); } }, [reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setDay(null); }, [ex.id]);
 
@@ -347,7 +348,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
       .filter((e) => (!e.deleted || e.id === editing) && (filter === "alle" || (filter === "unbest" ? quality?.get(e.id)?.status === "unbestaetigt" : kindOf(e) === filter)) && (!q || `${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")}`.toLowerCase().includes(q)))
       .filter((e) => !win || inWindow(e.t, win.from, win.to))
       .sort((a, b) => compareEvents(b, a));
-  }, [events, filter, search, win?.from, win?.to, filter === "unbest" && quality]); // eslint-disable-line react-hooks/exhaustive-deps
+    // `editing` gehört dazu: eine während der Bearbeitung gelöschte Meldung verschwindet nach «Verwerfen» (keine Geisterzeile)
+  }, [events, editing, filter, search, win?.from, win?.to, filter === "unbest" && quality]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addDay = () => {
     const last = ex.days[ex.days.length - 1] ?? todayIso();
@@ -429,7 +431,7 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
               return m.length > 0 && <span className="chip aeiou" title={`Unvollständig: ${m.join(", ")} – Rückfrage nach AEIOU (Wann · Wer tut was · Wie · Wo · Umwelt)`}>unvollständig: {m.join(", ")}</span>;
             })()}
             {draft.roadHint && <span className="chip soft" title="wird auf die passende Strasse gelegt">{draft.roadHint === "autobahn" ? "auf Autobahn" : "auf Hauptstrasse"}</span>}
-            <ProblemChips problems={problems} />
+            <ProblemChips problems={problems} onAddUnit={(u) => { update((x) => { if (!x.units.blau.includes(u)) x.units = { ...x.units, blau: [...x.units.blau, u] }; return x; }); say(`«${u}» als neuer Trupp aufgenommen.`); inputRef.current?.focus(); }} />
             {ortProblem ? null : effPos ? (roadTarget ? <RoadChoice where={effWhere0 ?? ""} res={roadRes} pick={roadPick} onPick={setRoadPick} onMap={pickOnMap} map={map} sheets={ex.sheets} /> : <span className="chip where">📍 {effWhere}</span>) : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
             <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
             <ShapeButton map={map} sym={choice?.key ?? draft.sym} value={shapeDraft} onChange={setShapeDraft} color={effKind ? KIND_COLOR[effKind] : undefined} owner="neu"
@@ -476,8 +478,13 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
               <Fragment key={e.id}>
                 {head && <li className="hourhead" aria-hidden="true">{dayLabel(e.t, ex.days)} {e.t.slice(11, 13)}:00</li>}
                 {editing === e.id ? (
-                  <EditRow e={e} ex={ex} map={map} onCancel={() => { setEditing(null); if (wideScreen) inputRef.current?.focus(); }} onSave={(p) => { patch(e.id, p); setEditing(null); if (wideScreen) inputRef.current?.focus(); }} />
-                ) : (
+                  <EditRow e={e} ex={ex} map={map} onCancel={() => { setEditing(null); if (wideScreen) inputRef.current?.focus(); }} onSave={(p) => {
+                    patch(e.id, p); setEditing(null);
+                    // «Trotzdem speichern» auf eine anderswo gelöschte Meldung: bewusst wiederhergestellt – sichtbar melden
+                    if (e.deleted && p.deleted === false) { say("Meldung wiederhergestellt (war in einem anderen Fenster gelöscht) – mit dieser Korrektur gespeichert."); onSelect(e.id); }
+                    if (wideScreen) inputRef.current?.focus();
+                  }} />
+                ) : e.deleted ? null : (
                   <li data-id={e.id} className={"jrow " + k + (e.id === selected ? " sel" : "") + (e.id === flashId ? " flash" : "")} tabIndex={0}
                     onClick={() => onSelect(e.id)} onKeyDown={(ev) => { if (ev.key === "Enter") onSelect(e.id); }}>
                     <span className="sbar" style={{ background: kindColor(e) }} />
@@ -537,7 +544,8 @@ export function JournalPanel({ ex, map, device, selected, onSelect, update, say,
 function EditRow({ e: cur, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise; map: L.Map; onCancel: () => void; onSave: (p: Partial<LageEvent>) => void }) {
   // Fassung beim Öffnen der Bearbeitung; ändert/löscht ein anderes Fenster die Meldung, bleibt die Bearbeitung offen (EditConflict)
   const e = useRef(cur).current;
-  const conflict = editConflict(ex.id, e, cur);
+  // gelöschte Meldung in Bearbeitung (auch ohne bekannte fremde Revision): nie still als gelöscht speichern
+  const conflict = editConflict(ex.id, e, cur) ?? (cur.deleted ? "geloescht" : null);
   const [nudge, setNudge] = useState(0);
   const [time, setTime] = useState(e.t.slice(11, 16));
   const [day, setDay] = useState(e.t.slice(0, 10));
