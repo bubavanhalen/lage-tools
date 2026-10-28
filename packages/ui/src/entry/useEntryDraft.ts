@@ -36,6 +36,9 @@ import { DELETED_EVENT } from "../journal/actions";
 import { kindOfEvent } from "../journal/filter";
 import { offerUndo } from "../journal/journalUndo";
 import type { EntryBoxProps } from "../shell/contracts";
+import { withTrupp } from "./trupp";
+
+export { truppOrder, withTrupp } from "./trupp";
 
 export type EntryMode = { art: "neu" } | { art: "korrektur"; id: string };
 
@@ -47,7 +50,6 @@ const affOfKind = (k: Kind, cur: Draft["aff"]): Draft["aff"] => (k === "eigen" ?
 /** Ort nur ersatzweise (letzte Lage bzw. beim Melder) – ein nachgeschlagener Ortsname geht vor */
 const fallbackWhere = (k: string | undefined) => k === "zuletzt" || k === "melder";
 const normText = (t: string) => t.replace(/\s+/g, " ").trim();
-const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
 
 /** Bereich der Übung (Raster, NAI) – für die Ortssuche */
 function exerciseBox(ex: Exercise, map: L.Map) {
@@ -81,23 +83,15 @@ function saveKorr(exId: string, k: StoredKorr | null): void {
   try { if (k) localStorage.setItem(KORR_KEY(exId), JSON.stringify(k)); else localStorage.removeItem(KORR_KEY(exId)); } catch { /* Speicher gesperrt */ }
 }
 
-/** Trupp als Text an den Anfang setzen (ersetzt einen erkannten Trupp; nach einer führenden Zeit) */
-export function withTrupp(text: string, name: string, melder?: string): string {
-  if (melder) {
-    const re = new RegExp(`(^|[\\s(])${escRe(melder)}(?=[\\s:,]|$)`, "i");
-    if (re.test(text)) return text.replace(re, `$1${name}`);
-  }
-  const t = text.replace(/^\s+/, "");
-  if (!t) return `${name} `;
-  const lead = /^(?:T\d+\s*)?\d{3,4}\s+/i.exec(t)?.[0] ?? "";
-  return `${lead}${name} ${t.slice(lead.length)}`;
-}
-
-/** Trupps «zuletzt meldend zuerst» */
-export function truppOrder(ex: Exercise): string[] {
-  const last = new Map<string, string>();
-  for (const e of ex.events ?? []) if (!e.deleted && e.melder && (last.get(e.melder) ?? "") < e.t) last.set(e.melder, e.t);
-  return ex.units.blau.map((u, i) => ({ u, i, t: last.get(u) ?? "" })).sort((a, b) => (a.t === b.t ? a.i - b.i : a.t < b.t ? 1 : -1)).map((x) => x.u);
+/**
+ * Korrektur direkt anfordern (ohne Umweg über Props, gleiche Darstellung wie der Klick): Liste «Korrigieren»,
+ * Meldungsband, Kontextmenü. false = kein Meldungsfeld eingehängt (dann Prop `correct` verwenden).
+ */
+let korrHandler: ((id: string) => void) | null = null;
+export function requestCorrection(id: string): boolean {
+  if (!korrHandler) return false;
+  korrHandler(id);
+  return true;
 }
 
 export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | null) => void }) {
@@ -136,10 +130,15 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); };
   }, []);
 
-  const resetExtras = () => { setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); };
+  /**
+   * Zuletzt angetippter Trupp-Chip: gilt weiter, wenn der Text danach ganz ersetzt wird und keinen Trupp mehr nennt
+   * (z. B. Feld markiert und neu getippt, Diktat) – beim Eintragen kommt er als Text an den Anfang. Gelöscht mit dem Feld.
+   */
+  const [chosen, setChosen] = useState<string | null>(null);
+  const resetExtras = () => { setChosen(null); setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); };
   const setText = useCallback((t: string) => {
     setTextState(t);
-    if (!t) { setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); kiTaken.current = false; }
+    if (!t) { setChosen(null); setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); kiTaken.current = false; }
   }, []);
   useEffect(() => { setArmed(null); }, [text]);
 
@@ -179,6 +178,10 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     });
   }, [ex.events, ex.id, text, say, fitInput]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const startRef = useRef(startKorr);
+  startRef.current = startKorr;
+  useEffect(() => { const h = (id: string) => startRef.current(id); korrHandler = h; return () => { if (korrHandler === h) korrHandler = null; }; }, []);
+
   // Korrekturzustand nach Neuladen / Übungswechsel
   useEffect(() => {
     korr.current = null;
@@ -205,15 +208,21 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now, dayFromClock: clk.follow,
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
   }), [ex, kindOverride, day, events, now, clk.follow]);
+  /** Text, der gelesen wird (mit angetipptem Trupp, wenn der Text keinen nennt) */
+  const srcText = useMemo(() => {
+    if (base || !chosen || !text.trim()) return text;
+    const d0 = parseMeldung(text, ctx);
+    return d0.melder || d0.problems?.some((x) => x.kind === "melder") ? text : withTrupp(text, chosen);
+  }, [text, ctx, base, chosen]);
   const draft: Draft | null = useMemo(() => {
     if (!text.trim()) return null;
-    if (!base) return parseMeldung(text, ctx);
+    if (!base) return parseMeldung(srcText, ctx);
     const d = reparseEdit(base, text, ex, kindOverride ?? undefined);
     if (!d) return null;
     // Trupp der Meldung, wenn der Text keinen nennt
     if (!d.melder && base.melder) return { ...d, melder: base.melder, unit: d.side === "blau" && !d.unit ? base.melder : d.unit };
     return d;
-  }, [text, ctx, base, ex, kindOverride]);
+  }, [text, srcText, ctx, base, ex, kindOverride]);
 
   const textChanged = !!base && normText(text) !== normText(base.text);
   /** Korrektur: Ort der Meldung bleibt (Text unverändert oder nennt keinen eigenen Ort) */
@@ -306,6 +315,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   // ---------- Trupps
   const chooseTrupp = (name: string) => {
     const next = withTrupp(text, name, draft?.melder);
+    if (!korr.current) setChosen(name);
     setTextState(next);
     fitInput();
     requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(next.length, next.length); } });
@@ -321,7 +331,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     // Zeit «jetzt» erst jetzt (Enter) festlegen; eine getippte Zeit hat Vorrang
     const at = new Date();
     const clkAt = clockDay(ex.days, at);
-    const fresh = parseMeldung(text, { ...ctx, now: at, day: clkAt.day, dayFromClock: clkAt.follow });
+    const fresh = parseMeldung(srcText, { ...ctx, now: at, day: clkAt.day, dayFromClock: clkAt.follow });
     const dNow: Draft = { ...d, minutes: fresh.minutes, day: fresh.day, t: fresh.t };
     const sd = drawn ?? shapeDraft;
     const ev = buildEvent(dNow, device, ex, {

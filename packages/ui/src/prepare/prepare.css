@@ -32,7 +32,7 @@
 .pp-btn { min-height: var(--hit); padding: 0 var(--sp-16); font: 500 var(--fs-14)/1.2 var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-4); cursor: pointer; }
 .pp-btn.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); font-weight: 600; }
 .pp-btn:disabled { opacity: .5; cursor: default; }
-.pp-link { align-self: flex-start; min-height: var(--hit); padding: 0; border: 0; background: transparent; color: var(--ink); font: 500 var(--fs-14) var(--f-body); text-decoration: underline; cursor: pointer; }
+.pp-link { align-self: flex-start; justify-self: start; min-height: var(--hit); padding: 0; border: 0; background: transparent; color: var(--ink); font: 500 var(--fs-14) var(--f-body); text-decoration: underline; cursor: pointer; }
 .pp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-8); }
 .pp-list li { border: 1px solid var(--line-soft); border-radius: var(--r-8); }
 .pp-list li.sel { border: 2px solid var(--sel); }

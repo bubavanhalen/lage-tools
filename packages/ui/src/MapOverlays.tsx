@@ -24,7 +24,7 @@ export interface EventBannerProps {
   event: LageEvent | null;
   days: string[];
   onClose: () => void;
-  /** optional: Knopf «Bearbeiten» */
+  /** optional: Knopf «Korrigieren» (lädt die Meldung ins Meldungsfeld, Spez. MVP 1 Kap. 3.3) */
   onEdit?: (e: LageEvent) => void;
   /** optional: Anhänge (Miniatur/Büroklammer) nach dem Meldungstext */
   extra?: ReactNode;
@@ -56,7 +56,9 @@ export function EventBanner({ event, days, onClose, onEdit, extra }: EventBanner
         const o = box.querySelector<HTMLElement>(sel);
         if (o && o.offsetHeight) bottom = Math.min(bottom, o.getBoundingClientRect().top - b.top);
       }
-      setPlace({ maxW, top, maxH: Math.max(48, bottom - top - 8) });
+      // im Rückblick liegt oben das gelbe Band (--rb-oben, Paket C): darunter rücken
+      const rb = parseFloat(getComputedStyle(box).getPropertyValue("--rb-oben")) || 0;
+      setPlace({ maxW, top, maxH: Math.max(48, bottom - top - rb - 8) });
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -87,18 +89,18 @@ export function EventBanner({ event, days, onClose, onEdit, extra }: EventBanner
   const unit = event.unit || (kind === "eigen" ? event.melder ?? "" : "");
   return (
     <div ref={ref} className="mo-banner" role="status" aria-label="Gewählte Meldung"
-      style={{ maxWidth: place.maxW, top: place.top, maxHeight: place.maxH }}>
+      style={{ maxWidth: place.maxW, top: place.top !== undefined ? `calc(${place.top}px + var(--rb-oben, 0px))` : undefined, maxHeight: place.maxH }}>
       <span className="mo-time tnum">{time}</span>
       <span className={`mo-kind k-${kind}`}>{kindText(event)}</span>
       <Sym k={event.sym} aff={event.aff} size={14} sidc={event.sidc} status={event.status} />
       {unit && <span className="mo-unit" style={{ color: UNIT_VAR[kind] }}>{unit}</span>}
-      {kind !== "eigen" && event.melder && <span className="mo-via">via {event.melder}</span>}
+      {kind !== "eigen" && event.melder && <span className="mo-via">von {event.melder}</span>}
       {where && <span className="mo-pq tnum">{where}</span>}
       {event.road && <span className="mo-road">auf {event.road}</span>}
       {event.desc && <span className="mo-desc">{event.desc}</span>}
       <span className="mo-msg">{event.text}</span>
       {extra}
-      {onEdit && <button className="mo-btn" onClick={() => onEdit(event)} title="Meldung bearbeiten">✎ Bearbeiten</button>}
+      {onEdit && <button className="mo-btn" onClick={() => onEdit(event)} aria-label="Diese Meldung korrigieren">Korrigieren</button>}
       <button className="mo-x" onClick={onClose} aria-label="Auswahl aufheben" title="Schliessen (Esc)">×</button>
     </div>
   );

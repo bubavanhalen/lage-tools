@@ -78,7 +78,7 @@ import { useOfflineStatus } from "./offlineStatus";
 import { useLageZeit, lastReportOf } from "./time/useLageZeit";
 import { RueckblickBanner } from "./time/RueckblickBanner";
 import { TimeBand } from "./time/TimeBand";
-import { RedTabLabel } from "./red/RedPanel";
+import { RedPanel, RedTabLabel } from "./red/RedPanel";
 import { AppShell, LageColumn, SideSwitch, type SideView } from "./shell/AppShell";
 import { Header, useSaveStatus } from "./shell/Header";
 import { MainMenu, APP_VERSION } from "./shell/MainMenu";
@@ -674,11 +674,11 @@ export function Workspace({ product, tagline }: Props) {
       quality={quality} />
   ) : <div className="panel"><p className="help">Karte wird geladen …</p></div>;
   const red = (
-    <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint}
-      onMap={focusHint} onEvent={(id) => { setSideView("journal"); selectEvent(id); }} update={update} winFrom={winFrom} onWinClear={() => zeit.setShowLast(null)}
-      onCsv={experte ? exportHints : undefined}
-      lead={<LageRotPanel ex={ex} lage={lageRot} t={tNow} selected={selCoa} onSelect={selectCoa} onMap={focusCoa}
-        onHint={coaHint} onEvent={(id) => { setSideView("journal"); selectEvent(id); }} update={update} />} />
+    <RedPanel ex={ex} t={tNow} from={winFrom} hints={hints} lage={lageRot}
+      variant={experte ? "experte" : "basis"} selHint={selHint} selCoa={selCoa}
+      onSelectHint={setSelHint} onSelectCoa={selectCoa} onMapHint={focusHint} onMapCoa={focusCoa}
+      onEvent={(id) => { setSideView("journal"); selectEvent(id); }} update={update}
+      stand={zeit.zeit.kind === "rueckblick" ? zeit.zeit.t : null} />
   );
 
   const side = lage ? (

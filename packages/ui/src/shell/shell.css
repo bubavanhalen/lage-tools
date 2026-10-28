@@ -5,13 +5,12 @@
 .app.shell { display: grid; grid-template-rows: var(--kopf-h) auto minmax(0, 1fr); height: 100%; background: var(--bg); color: var(--ink); }
 .app.shell.present { grid-template-rows: auto minmax(0, 1fr); }
 .sh-bands { min-width: 0; }
-.sh-bands:empty { display: none; }
 .app.shell .sh-work { display: grid; grid-template-columns: var(--spalte-w) minmax(0, 1fr); min-height: 0; }
 .app.shell.present .sh-work { grid-template-columns: minmax(0, 1fr); }
 .app.shell .sh-side { background: var(--surface); border-right: 1px solid var(--line-soft); overflow: auto; min-height: 0; display: flex; flex-direction: column; }
 .app.shell .sh-mapcol { position: relative; min-height: 0; display: flex; flex-direction: column; }
 .app.shell .sh-mapcol > .mapbox { flex: 1; min-height: 0; position: relative; }
-.sh-band { flex: none; min-height: var(--band-h); border-top: 1px solid var(--line-soft); background: var(--surface); min-width: 0; }
+.sh-band { flex: none; min-width: 0; }
 
 /* ---------- Kopf ---------- */
 .hd { display: flex; align-items: center; gap: var(--sp-12); height: var(--kopf-h); padding: 0 var(--sp-4) 0 var(--sp-16); background: var(--surface); border-bottom: 1px solid var(--line-soft); min-width: 0; }
@@ -118,7 +117,7 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
 .az-note { margin: 0 var(--sp-16) var(--sp-4); font-size: var(--fs-12); color: var(--muted); }
 
 /* Statuszeile (Koordinate, nur wenn die Maus über der Karte ist) */
-.app.shell .status { left: auto; right: var(--sp-8); bottom: var(--sp-8); font-size: var(--fs-12); color: var(--ink); background: color-mix(in srgb, var(--surface) 92%, transparent); border-color: var(--line-soft); }
+.app.shell .status { left: auto; right: var(--sp-8); bottom: calc(var(--sp-8) + 18px); font-size: var(--fs-12); color: var(--ink); background: color-mix(in srgb, var(--surface) 92%, transparent); border-color: var(--line-soft); }
 
 /* Nacht (Kap. 5.4): Karte stark abgedunkelt, Hintergrund schwarz */
 .app.shell.night .leaflet-container { background: black; }

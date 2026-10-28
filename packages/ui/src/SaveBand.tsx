@@ -46,29 +46,29 @@ export function StatusBands({ ex, dbBlocked, onSaveFile }: { ex: Pick<Exercise, 
   /** noch an keiner Meldung (Foto im Feld/Dialog): «Datei sichern» nimmt sie (noch) nicht mit */
   const nOpen = mem.length - nMem;
   const attWhy = [
-    nMem ? `${nMem > 1 ? `${nMem} Anhänge liegen` : "Der Anhang liegt"} nur im Arbeitsspeicher dieses Fensters – «Datei sichern» nimmt ${nMem > 1 ? "sie" : "ihn"} mit.` : "",
+    nMem ? `${nMem > 1 ? `${nMem} Anhänge liegen` : "Der Anhang liegt"} nur im Arbeitsspeicher dieses Fensters – «Datei für anderes Gerät sichern» nimmt ${nMem > 1 ? "sie" : "ihn"} mit.` : "",
     nOpen ? `${nOpen > 1 ? `${nOpen} Fotos/Sprachmemos hängen` : "Ein Foto/Sprachmemo hängt"} noch an keiner Meldung – erst eintragen, sonst nimmt «Datei sichern» ${nOpen > 1 ? "sie" : "es"} nicht mit.` : "",
   ].filter(Boolean).join(" ");
   return (
     <div className="bands">
       {p && (
         <div className="savefail" role="alert">
-          <b>Nicht gespeichert – Datei sichern</b>
+          <b>⛔ Nicht gespeichert</b>
           <span className="savefail-why">{p.text}{exP ? "" : " (Foto/Sprachmemo)"}. {exP ? "Neue Meldungen sind nur in diesem Fenster und im Notfallpuffer." : attWhy || "Der Anhang ist nicht mehr da (verworfen)."}</span>
-          <button className="savefail-btn" onClick={save}>Datei sichern</button>
+          <button className="savefail-btn" onClick={save}>Datei für anderes Gerät sichern</button>
           {!exP && <button className="savefail-x" aria-label="Schliessen" onClick={() => setAtt(null)}>×</button>}
         </div>
       )}
       {dbBlocked && (
         <div className="savefail dbband" role="alert">
-          <b>Speicher blockiert</b>
-          <span className="savefail-why">Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</span>
+          <b>Ein anderes Lagejournal-Fenster ist offen – bitte schliessen.</b>
+          <span className="savefail-why">Danach geht es hier automatisch weiter.</span>
         </div>
       )}
       {upd > 0 && (
         <div className="savefail updband" role="alert">
           <b>Lagejournal aktualisiert – alte Lagejournal-Fenster schliessen</b>
-          <span className="savefail-why">Ist noch ein Fenster/Tab mit der alten Version offen, speichert es ab jetzt nichts mehr. Dort zuerst «Speichern» (Datei), das Fenster schliessen und die Datei hier mit «Öffnen» zusammenführen.</span>
+          <span className="savefail-why">Ist noch ein Fenster/Tab mit der alten Version offen, speichert es ab jetzt nichts mehr. Dort zuerst «Datei für anderes Gerät …», das Fenster schliessen und die Datei hier mit «Datei öffnen (zusammenführen) …» übernehmen.</span>
           <button className="savefail-x" aria-label="Hinweis schliessen" title="Hinweis schliessen" onClick={() => setUpd(0)}>×</button>
         </div>
       )}

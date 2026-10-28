@@ -1,6 +1,7 @@
 /**
- * Meldungsqualität im Journal: E1 nur «bestätigt» (zweite Quelle) als Marke – «unbestätigt» wäre an fast jeder
- * Sichtung Rauschen (dafür Filter «Unbest.» in der Liste); E2 «unvollständig: …» (Rückfrage nach AEIOU) in Liste und Vorschau.
+ * Meldungsqualität (Texte Spez. MVP 1, Kap. 4.1/4.2): E1 nur «von 2 Trupps gesehen» (zweite Quelle) als Marke –
+ * «nur 1 Trupp» wäre an fast jeder Sichtung Rauschen (dafür Suche «nur 1 Trupp»); E2 «Fehlt noch: … – nachfragen».
+ * Die Journal-Liste (journal/JournalList.tsx) zeigt dieselben Texte selbst; diese Marken bleiben für andere Ansichten.
  */
 import { useMemo } from "react";
 import { eventFromDraft, eventQuality, type Draft, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
@@ -18,9 +19,9 @@ export function QualityMarks({ e, q, events }: { e: LageEvent; q?: EventQuality;
   return (
     <>
       {enemy && (q.status === "bestaetigt" || by.length > 0) && (
-        <span className="qmark ok" title={by.length ? `bestätigt durch ${by.map((x) => `${x.melder ?? x.unit ?? "?"} ${x.t.slice(11, 16)}`).join(", ")}` : "bestätigt durch zweite Quelle"}>bestätigt</span>
+        <span className="qmark ok" title={by.length ? `auch gesehen von ${by.map((x) => `${x.melder ?? x.unit ?? "?"} ${x.t.slice(11, 16)}`).join(", ")}` : "von einer zweiten Quelle gesehen"}>von {Math.max(2, by.length + 1)} Trupps gesehen</span>
       )}
-      {missing.length > 0 && <span className="qmark inc" title={`${missing.join(", ")} fehlt – ${AEIOU}`}>unvollständig: {missing.join(", ")}</span>}
+      {missing.length > 0 && <span className="qmark inc" title={`${missing.join(", ")} fehlt – ${AEIOU}`}>Fehlt noch: {missing.join(", ")} – nachfragen</span>}
     </>
   );
 }

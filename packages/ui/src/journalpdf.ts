@@ -2,7 +2,7 @@
  * Lagejournal als PDF (A4 hoch): Zeit, Seite, Element, Meldung, Ort – chronologisch.
  */
 import { jsPDF } from "jspdf";
-import { compareEvents, kindLabel, type Exercise, type Hint } from "@lage/core";
+import { compareEvents, historyText, journalStatus, kindLabel, type Exercise, type Hint } from "@lage/core";
 import { appendHintsPdf } from "./hintsExport";
 import type { LageRotState } from "./lageRot";
 import { appendLageRotPdf } from "./lageRotExport";
@@ -10,7 +10,9 @@ import { appendLageRotPdf } from "./lageRotExport";
 /**
  * `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite); `lageRot`: Lage Rot zur Lagezeit `t` davor;
  * `kiNote`: Vermerk zur KI unter dem Journal (siehe `kiPdfNote`: aus den Meldungen abgeleitet, dazu das Geräte-Protokoll);
- * Meldungen aus einem KI-Vorschlag (`via: "ki"`) sind in der Tabelle mit «[KI]» markiert
+ * Meldungen aus einem KI-Vorschlag (`via: "ki"`) sind in der Tabelle mit «[KI]» markiert.
+ * Journalführung (Spez. MVP 1, Kap. 3.3): gelöschte Meldungen bleiben als «gestrichen» (grau, durchgestrichen) stehen,
+ * korrigierte tragen «korrigiert 07:34» und die früheren Fassungen.
  */
 export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[], lageRot?: { lage: LageRotState; t: string }, kiNote?: string | null): Blob {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -18,7 +20,7 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
   const cols = [
     { h: "Tag", w: 10 }, { h: "Zeit", w: 12 }, { h: "Art", w: 14 }, { h: "Melder", w: 18 }, { h: "Element", w: 18 }, { h: "Meldung", w: 80 }, { h: "Ort", w: 34 },
   ];
-  const events = (ex.events ?? []).filter((e) => !e.deleted).sort(compareEvents);
+  const events = [...(ex.events ?? [])].sort(compareEvents);
   let page = 1;
   let y = 0;
   const header = () => {
@@ -39,17 +41,29 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
   for (const e of events) {
     const di = ex.days.indexOf(e.t.slice(0, 10));
     const cells = [
-      di >= 0 ? `T${di + 1}` : e.t.slice(5, 10), e.t.slice(11, 16), e.side === "rot" && e.aff === "N" ? "Neutral" : kindLabel(e), e.melder ?? "", e.side === "blau" && e.unit === e.melder ? "" : e.unit, e.via === "ki" ? `${e.text} [KI]` : e.text,
+      di >= 0 ? `T${di + 1}` : e.t.slice(5, 10), e.t.slice(11, 16), e.side === "rot" && e.aff === "N" ? "Neutral" : kindLabel(e), e.melder ?? "", e.side === "blau" && e.unit === e.melder ? "" : e.unit,
+      (e.via === "ki" ? `${e.text} [KI]` : e.text) + (journalStatus(e) ? `\n[${journalStatus(e)}${!e.deleted && historyText(e) ? ` – ${historyText(e)}` : ""}]` : ""),
       [e.where, ...(e.cells ?? []).filter((c) => c !== e.where)].filter(Boolean).join(", "),
     ];
     const lines = cells.map((c, i) => doc.splitTextToSize(c, cols[i]!.w - 2) as string[]);
     const h = Math.max(...lines.map((l) => l.length)) * 3.6 + 1.6;
     if (y + h > 285) { doc.addPage(); page++; header(); }
-    if (e.side === "rot" && e.aff === "U") { doc.setFillColor(252, 244, 214); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
+    if (e.deleted) { /* gestrichen: ohne Farbe */ }
+    else if (e.side === "rot" && e.aff === "U") { doc.setFillColor(252, 244, 214); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
     else if (e.side === "rot") { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
     else if (e.side === "blau") { doc.setFillColor(232, 240, 252); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
     let x = M + 1;
-    lines.forEach((l, i) => { doc.text(l, x, y); x += cols[i]!.w; });
+    if (e.deleted) doc.setTextColor(120);
+    lines.forEach((l, i) => {
+      doc.text(l, x, y);
+      // gestrichen: Meldung durchstreichen (Status-Zeile nicht)
+      if (e.deleted && i === 5) {
+        const lh = (doc.getFontSize() * doc.getLineHeightFactor()) / doc.internal.scaleFactor;
+        l.slice(0, -1).forEach((ln, k) => { const w = doc.getTextWidth(ln); doc.setDrawColor(120); doc.line(x, y + k * lh - 1, x + w, y + k * lh - 1); });
+      }
+      x += cols[i]!.w;
+    });
+    doc.setTextColor(0);
     doc.setDrawColor(210); doc.line(M, y - 3.2 + h, W - M, y - 3.2 + h);
     y += h;
   }
