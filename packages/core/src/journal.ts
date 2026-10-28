@@ -79,6 +79,22 @@ export interface Draft {
   placeQuery?: string;
   /** Meldungstext ohne führende Zeit/Seite */
   text: string;
+  /**
+   * Probleme, die das Eintragen sperren (nie still falsch). Leer/fehlend = keine.
+   * - `ort`: genannter Ort existiert nicht («AK77», «ZZ3», «NAI 9») → kein Ersatzort (kein «bei Melder»), `pos` fehlt
+   * - `zeit`: ungültige Zeitangabe («13:70») → Zeit «jetzt» ist nur Platzhalter
+   * Die UI zeigt `text` als roten Chip und sperrt Enter/Eintragen (Ausweg: Ort auf Karte setzen, Text korrigieren).
+   */
+  problems?: DraftProblem[];
+}
+
+/** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
+export interface DraftProblem {
+  kind: "ort" | "zeit";
+  /** Klartext, z. B. «AK77» gibt es nicht */
+  text: string;
+  /** betroffene Textstelle, z. B. «AK77» */
+  token?: string;
 }
 
 const KIND_WORDS: Array<[RegExp, Kind]> = [
