@@ -80,8 +80,8 @@ const ROWS: Array<[string, Exp]> = [
   ["H04 hat 2 Gefangene gemacht in AK3", { kind: "unklar", melder: "H04", sym: "gefangene", count: 2, wo: "raster", label: "AK3" }],
   ["Verdächtiges Paket an der Bushaltestelle AE5, H01", { kind: "unklar", melder: "H01", wo: "raster", label: "AE5" }],
   ["H05 sieht H03 bei AQ2 vorbeifahren", { kind: "eigen", melder: "H05", unit: "H03", wo: "raster", label: "AQ2" }],
-  // zwei Orte: Ort je Teil im Sinn, keine falsche Einzelanzahl
-  ["2 Fz AK7 und 3 Pers AL8 (H04)", { kind: "feind", melder: "H04", count: null, wo: "raster", label: "AK7", desc: "2 Fahrzeuge in AK7, 3 Personen in AL8" }],
+  // zwei Orte: Ort je Teil im Sinn, keine falsche Einzelanzahl – und gesperrt (Karte zeigt nur einen Ort, laien3.test.ts)
+  ["2 Fz AK7 und 3 Pers AL8 (H04)", { kind: "feind", melder: "H04", count: null, wo: "raster", label: "AK7", desc: "2 Fahrzeuge in AK7, 3 Personen in AL8", problem: "zwei Orte (AK7, AL8) – bitte als zwei Meldungen eintragen" }],
   ["H02 halb elf 1 Fz AG4", { kind: "feind", melder: "H02", sym: "fz", count: 1, wo: "raster", label: "AG4", time: "10:30" }],
   // «punkt neun Uhr 4 Pers»: 09:00 und 4 Pers (nicht 09:04)
   ["H03 punkt neun Uhr 4 Pers AH9", { kind: "feind", melder: "H03", sym: "inf_trp", count: 4, wo: "raster", label: "AH9", time: "09:00" }],

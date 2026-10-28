@@ -220,6 +220,26 @@ describe("Speicher voll (Quota)", () => {
     expect(await (await w2.store.getBlob("a-memo1"))!.text()).toBe("fiktives Memo");
   });
 
+  it("Foto verworfen (×): Band zurückgesetzt, nichts mehr im Arbeitsspeicher", async () => {
+    const w = await openWindow();
+    const att: string[] = [];
+    let ticks = 0;
+    w.store.onStoreStatus((p, where) => { if (where === "anhang") att.push(p ? p.kind : "ok"); });
+    w.store.onMemBlobs(() => { ticks++; });
+    storageFull(true);
+    await w.store.putBlob("a-foto2", new Blob(["jpg"], { type: "image/jpeg" })).catch(() => undefined);
+    await w.store.putBlob("a-foto2:thumb", new Blob(["t"], { type: "image/jpeg" })).catch(() => undefined);
+    expect(w.store.memBlobIds()).toEqual(["a-foto2"]);
+    expect(att).toEqual(["voll"]);
+    await w.store.deleteBlob("a-foto2:thumb");
+    expect(att).toEqual(["voll"]);
+    await w.store.deleteBlob("a-foto2");
+    expect(w.store.memBlobCount()).toBe(0);
+    expect(att.at(-1)).toBe("ok");
+    expect(ticks).toBeGreaterThan(0);
+    storageFull(false);
+  });
+
   it("nach gelungenem Speichern werden Anhänge aus dem Arbeitsspeicher automatisch abgelegt", async () => {
     const w = await openWindow();
     const ex = exercise();
