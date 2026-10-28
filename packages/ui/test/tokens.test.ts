@@ -111,15 +111,10 @@ const BEKANNT: Record<string, number> = {
   "SymbolPicker.tsx": 1,
   "Workspace.tsx": 2,
   "attachmentStore.ts": 2,
-  "hints.css": 3,
   "journalLayer.ts": 14,
-  "lagerot.css": 2,
   "mapoverlays.css": 6,
   "pdf.ts": 16,
-  "photo.css": 7,
-  "shapes.css": 15,
   "style.css": 11,
-  "symbolpicker.css": 8,
   "tiles.ts": 1,
 };
 

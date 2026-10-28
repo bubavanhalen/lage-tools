@@ -131,6 +131,8 @@ export interface LageEvent {
    * Fehlt bei nie korrigierten Meldungen. `mergeEvents`: die höhere Revision gewinnt samt Historie.
    */
   history?: EventRevision[];
+  /** letzte Korrektur (ISO UTC), gesetzt von `correctEvent` – für «korrigiert 07:34» */
+  correctedAt?: string;
 }
 
 /** Eine frühere Fassung einer Meldung (Schnappschuss vor einer Korrektur). */

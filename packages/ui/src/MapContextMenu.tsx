@@ -4,12 +4,15 @@
  * Schliesst mit Esc, Klick daneben oder Verschieben der Karte. Während einer Messung beendet Rechtsklick die Messung.
  * Langes Drücken: 500 ms ohne Bewegung (> 8 px oder zweiter Finger bricht ab), danach kein Klick und kein
  * natives Kontextmenü mehr (keine Doppelöffnung), siehe `longpress.ts`.
+ * Liegt an der Stelle eine Meldung (Zeichen, `eventNear`), steht zuoberst «Korrigieren» (lädt die Meldung ins
+ * Meldungsfeld, Spez. MVP 1, Kap. 3.3).
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { cellAtAny, formatLv95, type CellRef, type LV95, type RasterSheet } from "@lage/core";
 import { activeMeasure, isMeasuring, overlayPane, startMeasure, toLatLng, toLv95, zoomToCell } from "@lage/map";
 import { IconCell, IconCopy, IconPen, IconQuad, IconRuler } from "./navicons";
+import { LAGE_KARTE } from "./colors";
 import { contextMenuSuppressed, longPress } from "./longpress";
 import "./navigation.css";
 
@@ -19,6 +22,8 @@ interface Open {
   y: number;
   cell: CellRef | null;
   sheet?: RasterSheet;
+  /** Meldung unter dem Punkt (für «Korrigieren») */
+  ev: { id: string; label: string } | null;
 }
 
 async function copyText(t: string): Promise<boolean> {
@@ -42,13 +47,25 @@ async function copyText(t: string): Promise<boolean> {
 /** langes Drücken bis zum Kontextmenü (ms) */
 const LONG_PRESS_MS = 500;
 
-export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; sheets: RasterSheet[]; onReportHere: (pos: LV95) => void }) {
+export interface MapContextMenuProps {
+  map: L.Map;
+  sheets: RasterSheet[];
+  onReportHere: (pos: LV95) => void;
+  /** Meldung nahe am Punkt (Bildschirmpunkt in der Karte), z. B. «07:20 H03» – null = keine */
+  eventNear?: (pos: LV95, pt: { x: number; y: number }) => { id: string; label: string } | null;
+  /** «Korrigieren» (fehlt = Eintrag nicht anbieten, z. B. Präsentation) */
+  onCorrect?: (id: string) => void;
+}
+
+export function MapContextMenu({ map, sheets, onReportHere, eventNear, onCorrect }: MapContextMenuProps) {
   const [open, setOpen] = useState<Open | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
   const menu = useRef<HTMLDivElement>(null);
   const sheetsRef = useRef(sheets);
   sheetsRef.current = sheets;
+  const nearRef = useRef(eventNear);
+  nearRef.current = eventNear;
   const marker = useRef<L.CircleMarker | null>(null);
   const lastOpen = useRef(0);
 
@@ -62,7 +79,8 @@ export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; shee
       const cell = cellAtAny(sheetsRef.current, pos);
       setCopied(null);
       setPlace(null);
-      setOpen({ pos, x: pt.x, y: pt.y, cell, sheet: cell ? sheetsRef.current.find((s) => s.id === cell.sheetId) : undefined });
+      const ev = nearRef.current?.(pos, { x: pt.x, y: pt.y }) ?? null;
+      setOpen({ pos, x: pt.x, y: pt.y, cell, sheet: cell ? sheetsRef.current.find((s) => s.id === cell.sheetId) : undefined, ev });
     };
     const onCtx = (ev: L.LeafletMouseEvent) => {
       ev.originalEvent?.preventDefault();
@@ -112,7 +130,7 @@ export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; shee
     marker.current?.remove();
     marker.current = null;
     if (open) {
-      marker.current = L.circleMarker(toLatLng(open.pos), { pane: overlayPane(map), radius: 5, color: "#fff", weight: 2, fillColor: "#101414", fillOpacity: 1, interactive: false }).addTo(map);
+      marker.current = L.circleMarker(toLatLng(open.pos), { pane: overlayPane(map), radius: 5, color: LAGE_KARTE.halo, weight: 2, fillColor: LAGE_KARTE.ink, fillOpacity: 1, interactive: false }).addTo(map);
     }
     return () => { marker.current?.remove(); marker.current = null; };
   }, [open, map]);
@@ -166,7 +184,12 @@ export function MapContextMenu({ map, sheets, onReportHere }: { map: L.Map; shee
         )}
         <div className="mono nav-ctx-c">{formatLv95(open.pos)}</div>
       </div>
-      <button type="button" role="menuitem" className="nav-ctx-main" onClick={act(() => onReportHere(open.pos))}>
+      {open.ev && onCorrect && (
+        <button type="button" role="menuitem" className="nav-ctx-main" onClick={act(() => onCorrect(open.ev!.id))}>
+          <IconPen /><span>Korrigieren <span className="mono">{open.ev.label}</span></span>
+        </button>
+      )}
+      <button type="button" role="menuitem" className={open.ev && onCorrect ? "" : "nav-ctx-main"} onClick={act(() => onReportHere(open.pos))}>
         <IconPen /><span>Meldung hier</span>
       </button>
       <button type="button" role="menuitem" onClick={() => doCopy("koord", coord)}>

@@ -583,15 +583,36 @@ function shapeCsv(e: LageEvent): string {
   return `${word}: ${e.shape.pts.map((p) => `${Math.round(p.e)} ${Math.round(p.n)}`).join(", ")}`;
 }
 
-export function journalToCsv(events: LageEvent[], days: string[]): string {
-  const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Form"];
-  const rows = events.filter((e) => !e.deleted).sort(compareEvents).map((e) => {
+/** «hh:mm» lokal zu einem Zeitpunkt (ISO UTC) */
+const localHhmm = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+
+/** Status einer Meldung für Journal-Export und Liste: «gestrichen» (gelöscht), «korrigiert 07:34» oder leer */
+export function journalStatus(e: Pick<LageEvent, "deleted" | "history" | "correctedAt">): string {
+  if (e.deleted) return "gestrichen";
+  if (e.history?.length) return e.correctedAt ? `korrigiert ${localHhmm(e.correctedAt)}` : "korrigiert";
+  return "";
+}
+
+/** frühere Fassungen in einer Zeile, z. B. «vorher: 1 Fz in NAI 2 Rtg N (NAI 2)» */
+export function historyText(e: Pick<LageEvent, "history">): string {
+  const h = (e.history ?? []).filter((r) => !r.deleted);
+  if (!h.length) return "";
+  return "vorher: " + h.map((r) => { const p = placeLabel(r); return `${r.t.slice(11, 16)} ${r.text}${p ? ` (${p})` : ""}`; }).join(" | ");
+}
+
+/**
+ * Journal als CSV (Excel, «;»). Gelöschte Meldungen erscheinen als «gestrichen» (Journalführung: nichts verschwindet),
+ * korrigierte mit «korrigiert hh:mm» und den früheren Fassungen (`gestrichen: false` lässt Gelöschte weg).
+ */
+export function journalToCsv(events: LageEvent[], days: string[], o: { gestrichen?: boolean } = {}): string {
+  const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Status", "Fassungen", "Form"];
+  const rows = events.filter((e) => !e.deleted || o.gestrichen !== false).sort(compareEvents).map((e) => {
     const d = e.t.slice(0, 10);
     const tag = days.indexOf(d) >= 0 ? `T${days.indexOf(d) + 1}` : d;
     return [tag, e.t.slice(11, 16), kindLabel(e), e.unit, e.melder ?? "", e.text, e.sym, e.where ?? "", (e.cells ?? []).join(" "), e.nai ?? "",
-      e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", shapeCsv(e)];
+      e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", journalStatus(e), historyText(e), shapeCsv(e)];
   });
-  return "﻿" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
+  return "\uFEFF" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
 }
 
 /**
@@ -641,12 +662,40 @@ export function reviseEvent(e: LageEvent, patch: Partial<LageEvent>, device: str
 }
 
 /**
- * Korrektur einer Meldung (Spez. MVP 1, Kap. 3.3): alte Fassung kommt in `history` (älteste zuerst), Revision steigt.
- * Die Ereigniszeit `t` bleibt, ausser `patch.t` nennt eine neue; Eingang (`tReported`, `createdAt`) und ID ändern nie.
- * Rückgängig = nochmals `correctEvent` mit den Feldern der alten Fassung (die Historie wächst dabei weiter).
+ * Korrektur einer Meldung (Spez. MVP 1, Kap. 3.3): alte Fassung kommt in `history` (älteste zuerst), Revision steigt,
+ * `correctedAt` = jetzt. Die Ereigniszeit `t` bleibt, ausser `patch.t` nennt eine neue; Eingang (`tReported`,
+ * `createdAt`) und ID ändern nie. Rückgängig unmittelbar danach: `undoCorrection`.
  */
 export function correctEvent(e: LageEvent, patch: Partial<LageEvent>, device: string, now = new Date()): LageEvent {
-  const { id: _id, rev: _rev, history: _h, createdAt: _c, tReported: _r, device: _d, updatedAt: _u, ...rest } = patch;
+  const { id: _id, rev: _rev, history: _h, createdAt: _c, tReported: _r, device: _d, updatedAt: _u, correctedAt: _k, ...rest } = patch;
   const history = [...(e.history ?? []), revisionOf(e)];
-  return { ...reviseEvent(e, rest, device, now), history };
+  return { ...reviseEvent(e, rest, device, now), history, correctedAt: now.toISOString() };
+}
+
+/**
+ * Rückgängig einer eben gespeicherten Korrektur (Leiste «Korrigiert: … · Rückgängig»): die Fassung `before` gilt
+ * wieder – mit ihrer Historie, aber höherer Revision als `cur` (damit sie beim Zusammenführen gewinnt).
+ */
+export function undoCorrection(cur: LageEvent, before: LageEvent, device: string, now = new Date()): LageEvent {
+  return { ...before, rev: Math.max(cur.rev, before.rev) + 1, device, updatedAt: now.toISOString() };
+}
+
+/** Ort einer Meldung in Worten (für «vorher NAI 2», «NAI 2 → AK9»), z. B. «AK9», «NAI 2», «Karte (AK9)» */
+export function placeLabel(e: Pick<LageEvent, "where" | "cells" | "nai" | "pos">): string {
+  if (e.where === "Karte") return e.cells?.[0] ? `Karte (${e.cells[0]})` : "Karte";
+  return e.where ?? e.cells?.[0] ?? e.nai ?? (e.pos ? "Koordinate" : "");
+}
+
+/** Was hat eine Korrektur geändert? Kurz in Worten, z. B. «NAI 2 → AK9» (höchstens zwei Teile), sonst «Text geändert». */
+export function correctionSummary(before: Pick<LageEvent, "text" | "t" | "side" | "aff" | "melder" | "where" | "cells" | "nai" | "pos" | "sym" | "count">, after: typeof before): string {
+  const out: string[] = [];
+  const pb = placeLabel(before) || "ohne Ort", pa = placeLabel(after) || "ohne Ort";
+  if (pb !== pa) out.push(`${pb} → ${pa}`);
+  if (before.t !== after.t) out.push(`${before.t.slice(11, 16)} → ${after.t.slice(11, 16)}`);
+  const kb = kindLabel(before), ka = kindLabel(after);
+  if (kb !== ka) out.push(`${kb} → ${ka}`);
+  if ((before.melder ?? "") !== (after.melder ?? "")) out.push(`von ${before.melder || "?"} → ${after.melder || "?"}`);
+  if (!out.length && (before.count ?? 0) !== (after.count ?? 0)) out.push(`Anzahl ${before.count ?? "–"} → ${after.count ?? "–"}`);
+  if (!out.length) out.push(before.text !== after.text ? "Text geändert" : "Zeichen geändert");
+  return out.slice(0, 2).join(" · ");
 }

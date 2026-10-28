@@ -286,8 +286,8 @@ export function LevelIcon({ level, size = 16 }: { level: HintLevel; size?: numbe
   return (
     <span className={`hc-lvl l-${level}`} title={level === "hoch" ? "wichtig – Handeln prüfen" : level === "mittel" ? "beobachten" : "Normalbild"} aria-hidden="true">
       <svg width={size} height={size} viewBox="0 0 16 16">
-        {level === "hoch" && <><path d="M8 1.6L15 14H1z" fill="currentColor" /><path d="M8 6v3.6" stroke="var(--card)" strokeWidth="1.8" strokeLinecap="round" /><circle cx="8" cy="11.8" r="1" fill="var(--card)" /></>}
-        {level === "mittel" && <><path d="M8 1.5L14.5 8 8 14.5 1.5 8z" fill="currentColor" /><path d="M5.2 8h5.6" stroke="var(--card)" strokeWidth="1.8" strokeLinecap="round" /></>}
+        {level === "hoch" && <><path d="M8 1.6L15 14H1z" fill="currentColor" /><path d="M8 6v3.6" stroke="var(--surface)" strokeWidth="1.8" strokeLinecap="round" /><circle cx="8" cy="11.8" r="1" fill="var(--surface)" /></>}
+        {level === "mittel" && <><path d="M8 1.5L14.5 8 8 14.5 1.5 8z" fill="currentColor" /><path d="M5.2 8h5.6" stroke="var(--surface)" strokeWidth="1.8" strokeLinecap="round" /></>}
         {level === "info" && <><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M8 7.2v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /><circle cx="8" cy="4.8" r="1" fill="currentColor" /></>}
       </svg>
     </span>

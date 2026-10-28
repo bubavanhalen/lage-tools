@@ -19,7 +19,7 @@ interface Props {
 
 const KINDS: Array<[Area["kind"], string]> = [["nai", "NAI"], ["ao", "AO / Raum"], ["stao", "Standort"], ["other", "Andere"]];
 /** Geländetyp eines NAI (steuert Hinweise, z. B. Engnis → Hinterhalt-Gefahr) */
-const TYPEN: Array<[NaiTyp, string]> = [["strasse", "Strasse"], ["engnis", "Engnis"], ["siedlung", "Siedlung"], ["bruecke", "Brücke"], ["wald", "Wald"], ["offen", "offenes Gelände"], ["anlage", "Anlage"]];
+const TYPEN: Array<[NaiTyp, string]> = [["strasse", "Strasse"], ["engnis", "Engstelle"], ["siedlung", "Siedlung"], ["bruecke", "Brücke"], ["wald", "Wald"], ["offen", "offenes Gelände"], ["anlage", "Anlage"]];
 
 export function NaiPanel({ exercise, map, selected, onSelect, onChange, onOverlays, onImage, say }: Props) {
   const [link, setLink] = useState("");
@@ -83,10 +83,10 @@ export function NaiPanel({ exercise, map, selected, onSelect, onChange, onOverla
   return (
     <div className="panel">
       <div className="importbox">
-        <b>NAI / BNB einpflegen</b>
+        <b>NAI und Räume einfügen</b>
         <div className="btnrow">
-          <button className="primary" onClick={importImage} disabled={loading}>Bild, PDF oder Word</button>
-          <button onClick={importFile} disabled={loading}>KML / GeoJSON / GPX</button>
+          <button className="primary" onClick={importImage} disabled={loading}>Bild, PDF oder Word einpassen</button>
+          <button onClick={importFile} disabled={loading}>Datei (KML, GeoJSON, GPX)</button>
         </div>
         <div className="linkrow">
           <input placeholder="Link aus map.geo.admin.ch einfügen" value={link} onChange={(e) => setLink(e.target.value)} />
@@ -96,28 +96,28 @@ export function NaiPanel({ exercise, map, selected, onSelect, onChange, onOverla
 
       <datalist id="nai-trupps">{exercise.units.blau.map((u) => <option key={u} value={u} />)}</datalist>
       {areas.length === 0 ? (
-        <div className="empty"><p>Noch keine NAI. Lade eine BNB-Skizze (Bild, PDF oder Word mit Kartenausschnitten): Sie wird automatisch auf der Karte eingepasst, die NAI werden als Linien übernommen. Oder eine GIS-Datei bzw. einen Link aus map.geo.admin.ch.</p></div>
+        <div className="empty"><p>Noch keine NAI. Datei (KML, GeoJSON) oder Bild/Word einfügen. Ein Bild (z. B. BNB-Skizze) wird auf der Karte eingepasst, die NAI werden als Linien übernommen.</p></div>
       ) : (
         <ul className="list">
           {areas.map((a) => (
             <li key={a.id} className={a.id === selected ? "sel" : ""}>
               <div className="arearow">
                 <input type="color" value={a.color ?? "#1f78d1"} onChange={(e) => patch(a.id, { color: e.target.value })} aria-label="Farbe" />
-                <input className="aname" value={a.name} onChange={(e) => patch(a.id, { name: e.target.value })} onFocus={() => onSelect(a.id)} />
+                <input className="aname" value={a.name} aria-label="Name" onChange={(e) => patch(a.id, { name: e.target.value })} onFocus={() => onSelect(a.id)} />
                 <select value={a.kind} onChange={(e) => patch(a.id, { kind: e.target.value as Area["kind"] })} aria-label="Art">
                   {KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
-                <button title="Zeigen" onClick={() => { onSelect(a.id); zoomTo([a]); }}>◎</button>
-                <button title="Löschen" className="danger" onClick={() => onChange(areas.filter((x) => x.id !== a.id))}>✕</button>
+                <button title="Auf der Karte zeigen" aria-label={`${a.name} auf der Karte zeigen`} onClick={() => { onSelect(a.id); zoomTo([a]); }}>◎</button>
+                <button title="Löschen" aria-label={`${a.name} löschen`} onClick={() => onChange(areas.filter((x) => x.id !== a.id))}>✕</button>
               </div>
               {a.kind === "nai" && (
                 <div className="nairow2">
                   <label>Trupp
                     <input list="nai-trupps" value={a.trupp ?? ""} placeholder="nicht zugeteilt" onFocus={() => onSelect(a.id)}
-                      onChange={(e) => patch(a.id, { trupp: e.target.value.trimStart() || undefined })} title="Eigenes Element, das den NAI überwacht (Auswahl oder frei)" />
+                      onChange={(e) => patch(a.id, { trupp: e.target.value.trimStart() || undefined })} title="Eigener Trupp, der den NAI beobachtet (Auswahl oder frei)" />
                   </label>
-                  <label>Typ
-                    <select value={a.typ ?? ""} onChange={(e) => patch(a.id, { typ: (e.target.value || undefined) as NaiTyp | undefined })} title="Geländetyp – steuert Hinweise (z. B. Engnis → Hinterhalt)">
+                  <label>Gelände
+                    <select value={a.typ ?? ""} onChange={(e) => patch(a.id, { typ: (e.target.value || undefined) as NaiTyp | undefined })} title="Gelände – steuert die Hinweise «Was Rot vorhaben könnte» (z. B. Engstelle → Hinterhalt)">
                       <option value="">– wählen –</option>
                       {TYPEN.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
@@ -140,7 +140,7 @@ export function NaiPanel({ exercise, map, selected, onSelect, onChange, onOverla
                   <span className="oname" title={o.name}>{o.name}</span>
                   <input type="range" min={0.1} max={1} step={0.05} value={o.opacity} aria-label="Deckkraft"
                     onChange={(e) => onOverlays((exercise.overlays ?? []).map((x) => (x.id === o.id ? { ...x, opacity: +e.target.value } : x)))} />
-                  <button className="danger" title="Entfernen" onClick={() => onOverlays((exercise.overlays ?? []).filter((x) => x.id !== o.id))}>✕</button>
+                  <button title="Entfernen" aria-label={`Bild ${o.name} entfernen`} onClick={() => onOverlays((exercise.overlays ?? []).filter((x) => x.id !== o.id))}>✕</button>
                 </div>
               </li>
             ))}

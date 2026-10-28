@@ -7,23 +7,23 @@
 /* Hinweis «mehrdeutig»: Punkt oben rechts am Chip */
 .rc-dot {
   position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%;
-  background: var(--warn); border: 2px solid var(--card); box-sizing: content-box;
+  background: var(--warn-sym); border: 2px solid var(--surface); box-sizing: content-box;
 }
 @media (prefers-reduced-motion: no-preference) {
   .rc-dot { animation: rc-pulse 1.6s ease-out 2; }
-  @keyframes rc-pulse { 0% { box-shadow: 0 0 0 0 var(--warn); } 100% { box-shadow: 0 0 0 7px transparent; } }
+  @keyframes rc-pulse { 0% { box-shadow: 0 0 0 0 var(--warn-sym); } 100% { box-shadow: 0 0 0 7px transparent; } }
 }
 
 .rc-pop {
   position: fixed; z-index: 1200; width: min(320px, calc(100vw - 24px)); overflow: auto;
-  background: var(--card); color: var(--ink); border: 1px solid var(--line-soft); border-radius: 10px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line-soft); border-radius: 10px;
   box-shadow: 0 10px 28px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.08);
   padding: 6px; font: 400 13px/1.3 var(--f-body);
 }
 @media (max-width: 560px) { .rc-pop { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; max-height: 70vh; } }
 .rc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 4px 8px 6px; }
 .rc-head b { font: 600 13px/1.2 var(--f-display); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
-.rc-amb { font-size: 12px; font-weight: 600; color: var(--warn); }
+.rc-amb { font-size: 12px; font-weight: 600; color: var(--warn-sym); }
 .rc-list { display: grid; gap: 2px; }
 .rc-more { border-top: 1px solid var(--line-soft); margin-top: 6px; padding-top: 6px; }
 .rc-item {
@@ -31,13 +31,13 @@
   text-align: left; background: transparent; border: 1px solid transparent; border-radius: 8px; color: inherit; cursor: pointer;
   font: inherit;
 }
-.rc-item:hover, .rc-item:focus-visible { background: var(--grid); outline: none; }
+.rc-item:hover, .rc-item:focus-visible { background: var(--line-soft); outline: none; }
 .rc-item:focus-visible { border-color: var(--ink); }
-.rc-item.on { border-color: var(--ok); background: var(--card); }
+.rc-item.on { border-color: var(--sel); box-shadow: inset 0 0 0 1px var(--sel); background: var(--surface); }
 .rc-item.on .rc-name::after { content: " ✓"; color: var(--ok); }
 .rc-num {
   flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
-  font: 600 12px/1 var(--f-mono); background: var(--ink); color: var(--card);
+  font: 600 12px/1 var(--f-mono); background: var(--ink); color: var(--surface);
 }
 .rc-num.rc-ico { background: transparent; color: var(--muted); border: 1px solid var(--line-soft); font-family: var(--f-body); }
 .rc-txt { display: grid; min-width: 0; }
@@ -46,16 +46,16 @@
 
 /* Karte (bleibt hell): Zielgebiet, Strasse hervorgehoben, Nummern am Ort */
 .leaflet-container path.rc-area { stroke: var(--m-ink); stroke-width: 1.5; stroke-dasharray: 5 4; fill: var(--m-flash); fill-opacity: 0.06; }
-.leaflet-container path.rc-road-halo { stroke: #fff; stroke-width: 10; stroke-opacity: 0.85; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.leaflet-container path.rc-road-halo { stroke: white; stroke-width: 10; stroke-opacity: 0.85; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .leaflet-container path.rc-road { stroke: var(--m-flash); stroke-width: 6; stroke-opacity: 0.95; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .rc-pin span {
   display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
-  background: var(--m-ink); color: #fff; font: 600 12px/1 var(--f-mono); border: 2px solid #fff;
+  background: var(--m-ink); color: white; font: 600 12px/1 var(--f-mono); border: 2px solid white;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.35); box-sizing: border-box;
 }
 .rc-pin.lit span { background: var(--m-flash); color: var(--m-ink); transform: scale(1.18); }
 
 /* Strasse liegt ausserhalb des gemeldeten Feldes */
-.rc-out { font-weight: 500; color: var(--warn); }
+.rc-out { font-weight: 500; color: var(--warn-sym); }
 .rc-chip .rc-lbl { display: inline; text-align: left; }
 .rc-chip:has(.rc-out) { border-radius: 12px; }

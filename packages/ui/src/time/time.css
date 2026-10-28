@@ -101,9 +101,14 @@
 @container (max-width: 760px) {
   .tb-long { display: none; }
   .tb-short { display: inline; }
-  .tb-rb { flex-wrap: wrap; row-gap: var(--sp-4); padding-block: var(--sp-8); min-height: 112px; }
-  .tb-rb .tb-range { order: 10; flex: 1 1 100%; }
-  .tb-rb .tb-golive { margin-left: auto; }
+  /* Zeile 1: Lage um, Schritte · Zeile 2: Regler (ganze Breite), Countdown, Zurück zu LIVE */
+  .tb-rb { flex-wrap: wrap; row-gap: var(--sp-8); padding-block: var(--sp-8); min-height: 112px; }
+  .tb-rb::after { content: ""; order: 9; flex-basis: 100%; height: 0; }
+  .tb-rb .tb-range { order: 10; flex: 1 1 160px; }
+  .tb-rb .tb-count { order: 11; }
+  .tb-rb .tb-chip { order: 12; }
+  .tb-rb .tb-golive { order: 13; }
+  .tb-rb .tb-bad { order: 8; }
 }
 @container (max-width: 520px) {
   .tb-live { font-size: var(--fs-12); }
@@ -138,7 +143,7 @@
   color: var(--rueckblick-ink);
   border-bottom: 1px solid var(--rueckblick-ink);
 }
-.rb-text { flex: 1 1 auto; min-width: 0; font: 600 var(--fs-20)/1.1 var(--f-body); letter-spacing: .01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-text { flex: 1 1 auto; min-width: 0; padding-block: 2px; text-wrap: balance; font: 600 var(--fs-20)/1.1 var(--f-body); letter-spacing: .01em; overflow-wrap: anywhere; }
 .rb-play { font: 600 var(--fs-14) var(--f-body); white-space: nowrap; }
 .rb-band .rb-live {
   flex: none;

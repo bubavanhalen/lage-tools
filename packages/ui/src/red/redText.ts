@@ -46,15 +46,19 @@ export function sideMark(e: Pick<LageEvent, "side" | "aff">): { mark: string; cl
   return { mark: "•", cls: "", label: "" };
 }
 
-/** Auslöser-Zeile: «Gn Sperre in AG13 (von H04)» */
+const escRe = (x: string) => x.replace(/[.*+?^$()|[\]{}\\]/g, "\\$&");
+
+/** Auslöser-Zeile: «Gn Sperre in AG13 (von H04)» – Melder am Anfang des Texts («H05: …», «0620 H05 …») steht dahinter */
 export function eventLine(e: LageEvent): string {
-  const what = e.desc && e.desc.length < 60 ? e.desc : e.text;
-  return `${what.replace(/\s+/g, " ").trim()}${e.melder ? ` (von ${e.melder})` : ""}`;
+  let what = (e.text || e.desc || "").replace(/\s+/g, " ").trim();
+  if (e.melder) what = what.replace(new RegExp(`^(?:\\d{3,4}\\s+)?${escRe(e.melder)}\\s*:?\\s+`, "i"), "");
+  if (what.length > 90) what = what.slice(0, 88) + "…";
+  return `${what}${e.melder ? ` (von ${e.melder})` : ""}`;
 }
 
 /** Anzeichen ohne Code und ohne «– nicht gemeldet»/«– keine» (offene stehen schon unter «noch offen») */
 export function indicatorLine(i: CoaIndicator): string {
-  return indicatorText(i).replace(/\s+–\s+(?:nicht gemeldet|keine)$/, "");
+  return indicatorText(i).replace(/\s+–\s+(?:nicht gemeldet|keine)$|\s+noch nicht gemeldet$/, "");
 }
 
 /** Anzeichen einer Möglichkeit für das Detail: dafür (✓), noch offen (○), spricht dagegen (✗); doppelt gezählte nur in Experte */
