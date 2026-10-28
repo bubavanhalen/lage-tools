@@ -4,6 +4,7 @@
 import { makeBlattSheet, makeFeldSheet, niceScaleBar, type RasterSheet } from "./raster";
 import type { Area, Exercise } from "./model";
 import type { LV95 } from "./lv95";
+import { localDay, zoneOf } from "./clock";
 
 export const FILE_FORMAT = "lage-tools/uebung";
 export const FILE_VERSION = 1;
@@ -15,11 +16,17 @@ export interface ExerciseFile {
   exercise: Exercise;
 }
 
-export function newExercise(name = "Neue Übung"): Exercise {
+/**
+ * Neue Übung: erster Tag = heutiger Kalendertag in Lokalzeit (nicht UTC – sonst um 00:30 der Vortag),
+ * Zeitzone des Geräts (IANA + Offset) wird mitgespeichert.
+ */
+export function newExercise(name = "Neue Übung", now = new Date()): Exercise {
   return {
-    id: "ex-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    id: "ex-" + now.getTime().toString(36) + Math.random().toString(36).slice(2, 6),
     name,
-    days: [new Date().toISOString().slice(0, 10)],
+    days: [localDay(now)],
+    tz: zoneOf(now),
+    createdAt: now.toISOString(),
     sheets: [],
     areas: [],
     units: { rot: [], blau: [], ul: [] },
@@ -43,6 +50,7 @@ export function exerciseFromFile(text: string): Exercise {
   ex.units ??= { rot: [], blau: [], ul: [] };
   ex.events ??= [];
   ex.places ??= [];
+  ex.days ??= [];
   return ex;
 }
 

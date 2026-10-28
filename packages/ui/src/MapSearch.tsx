@@ -9,6 +9,8 @@ import L from "leaflet";
 import {
   cellAtAny,
   cellLabel,
+  isPlaceName,
+  onlineAllowed,
   searchAll,
   wantsPlaceLookup,
   type Bounds,
@@ -29,6 +31,9 @@ const isTyping = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
 };
+
+/** Pause nach der letzten Taste, bevor online gesucht wird (ms) */
+export const ONLINE_PAUSE_MS = 600;
 
 /** swisstopo-Ortssuche (online). */
 async function lookupPlaces(q: string, signal: AbortSignal): Promise<OnlineHit[]> {
@@ -70,19 +75,20 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
   );
   const hits: Hit[] = useMemo(() => [...local, ...online.filter((o) => !local.some((l) => l.kind === "ort" && l.label === o.label))].slice(0, 14), [local, online]);
 
-  // Online-Ortssuche (verzögert, offline still weglassen)
+  // Online-Ortssuche: erst nach einer Pause, nur für echte Ortsnamen (nicht «Alpha Kilo 7», «AK77»), nur wenn für
+  // die Übung erlaubt (Online-Dienste); offline still weglassen
   useEffect(() => {
     setOnline([]);
     setLoading(false);
-    if (!open || q === shown || !navigator.onLine || !wantsPlaceLookup(q, local)) return;
+    if (!open || q === shown || !navigator.onLine || !onlineAllowed(ex, "ortssuche") || !wantsPlaceLookup(q, local) || !isPlaceName(q)) return;
     const ctl = new AbortController();
     setLoading(true);
     const t = window.setTimeout(async () => {
       try { setOnline(await lookupPlaces(q.trim(), ctl.signal)); } catch { /* offline oder abgebrochen */ }
       if (!ctl.signal.aborted) setLoading(false);
-    }, 280);
+    }, ONLINE_PAUSE_MS);
     return () => { ctl.abort(); window.clearTimeout(t); };
-  }, [q, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q, open, ex.onlineDienste?.ortssuche]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setActive(0); setMiss(false); }, [q]);
 
@@ -236,7 +242,7 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
                   <span>{x.k}</span><code>{x.v}</code>
                 </button>
               ))}
-              <div className="nav-foot">{navigator.onLine ? "Ortsnamen zusätzlich online (swisstopo)" : "Offline: Planquadrat, NAI, Element, Koordinate"}</div>
+              <div className="nav-foot">{!onlineAllowed(ex, "ortssuche") ? "Online-Ortssuche für diese Übung aus (Ebenen-Menü)" : navigator.onLine ? "Ortsnamen zusätzlich online (swisstopo)" : "Offline: Planquadrat, NAI, Element, Koordinate"}</div>
             </div>
           ) : (
             <>
@@ -261,7 +267,7 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
               {hits.length === 0 && !loading && (
                 <div className="nav-none">
                   <b>Nichts gefunden.</b> Planquadrat z. B. <code>{examples[0]?.v ?? "W18"}</code>, NAI-Name, Element, Koordinate <code>2600000 1200000</code>
-                  {navigator.onLine ? "" : " – Ortsnamen nur online."}
+                  {!onlineAllowed(ex, "ortssuche") ? " – Online-Ortssuche ist aus." : navigator.onLine ? "" : " – Ortsnamen nur online."}
                 </div>
               )}
               {loading && <div className="nav-foot">swisstopo-Ortssuche …</div>}

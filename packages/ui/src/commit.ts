@@ -4,6 +4,7 @@
  * (`BatchReview` nach Foto bzw. Sprachmemo).
  */
 import {
+  localDay,
   cellAtAny,
   eventFromDraft,
   geometryOf,
@@ -34,19 +35,22 @@ function shapePatch(shape: EventShape, sheets: Exercise["sheets"]): Partial<Lage
   return { shape, pos, where: "Karte", cells: cell ? [cell.label] : undefined, angle: undefined, road: undefined };
 }
 
-const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-
-/** Tag für Meldungen ohne Tagesangabe: heute, wenn Übungstag, sonst der letzte Übungstag (wie im Meldungsfeld) */
-export function defaultDay(ex: Exercise): string {
-  const t = todayIso();
-  return ex.days.includes(t) ? t : ex.days[ex.days.length - 1] ?? t;
+/**
+ * Tag für Meldungen ohne Tagesangabe: der Kalendertag der Uhr (Lokalzeit) – wie im Meldungsfeld; nach Mitternacht
+ * also der nächste Tag (wird beim Eintragen als Übungstag angelegt).
+ */
+export function defaultDay(_ex?: Exercise, now = new Date()): string {
+  return localDay(now);
 }
 
-/** Kontext für `parseMeldung` aus der Übung (gleich wie im Meldungsfeld) */
+/**
+ * Kontext für `parseMeldung` aus der Übung (gleich wie im Meldungsfeld). Ist `day` der heutige Tag, folgt der Tag
+ * der Uhr («2355» kurz nach Mitternacht → Vortag).
+ */
 export function journalCtx(ex: Exercise, day: string, kind?: Kind, now = new Date()): JournalContext {
   const events = ex.events ?? [];
   return {
-    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind, days: ex.days, day, now,
+    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind, days: ex.days, day, now, dayFromClock: day === localDay(now),
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
   };
 }
@@ -141,6 +145,8 @@ export interface CommitTextsOptions {
   attachment?: Attachment;
   /** Texte stammen aus einem KI-Vorschlag (Standard: wenn der Anhang von der KI gelesen wurde) */
   via?: LageEvent["via"];
+  /** Texte mit Problem im Entwurf (unbekannter Ort, ungültige Zeit) werden nie eingetragen – hier gemeldet */
+  onSkipped?: (texts: string[]) => void;
 }
 
 /**
@@ -159,15 +165,19 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
   const via = o.via ?? (o.attachment?.engine === "ki" ? "ki" : undefined);
   const base = Date.now();
   const out: LageEvent[] = [];
+  const skipped: string[] = [];
   texts.forEach((raw, i) => {
     const text = raw.replace(/\s*\n\s*/g, " ").trim();
     if (!text) return;
     const now = new Date(base + i);
     const draft = parseMeldung(text, journalCtx(work, day, undefined, now));
+    // nie still falsch: mit Problem (z. B. «AK77» gibt es nicht) nicht eintragen – nur nach Korrektur
+    if (draft.problems?.length) { skipped.push(text); return; }
     const ev = buildEvent(draft, o.device, work, { attachments: attId ? [attId] : undefined, source: src, via }, now);
     out.push(ev);
     work = addEvents(work, [ev]);
   });
+  if (skipped.length) o.onSkipped?.(skipped);
   if (!out.length && !o.attachment) return out;
   o.update((x) => addEvents(x, out, { attachments: o.attachment ? [o.attachment] : undefined }));
   return out;

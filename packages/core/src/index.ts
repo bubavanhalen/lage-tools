@@ -23,3 +23,7 @@ export * from "./funk";
 export * from "./redforce";
 export * from "./coa";
 export * from "./ki";
+export * from "./erkennung";
+export * from "./placequery";
+export * from "./clock";
+export * from "./sync";

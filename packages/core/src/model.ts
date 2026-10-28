@@ -60,10 +60,12 @@ export interface LageEvent {
   attachments?: string[];
   deleted?: boolean;
 
-  /** Zeitpunkt der Beobachtung / Handlung (ISO, lokale Zeit) */
+  /** Zeitpunkt der Beobachtung / Handlung (ISO, lokale Zeit der Übung `Exercise.tz`, ohne Offset) */
   t: string;
-  /** Zeitpunkt der Meldung (ISO), falls abweichend */
+  /** Eingang der Meldung im Journal (ISO lokal, Minute, wie `t`) – beim Eintragen gesetzt, ändert bei Korrekturen nicht */
   tReported?: string;
+  /** genauer Zeitpunkt der Erfassung (ISO UTC mit «Z»), unabhängig von Zeitzone und Sommerzeit; ändert nie */
+  createdAt?: string;
   side: Side;
   /** Element auf der Karte, z. B. «H04», «Det 2» (leer bei Sichtungen ohne bekanntes Element) */
   unit: string;
@@ -159,8 +161,12 @@ export interface Place {
 export interface Exercise {
   id: string;
   name: string;
-  /** Übungstage, z. B. ["2026-10-19", "2026-10-20"] */
+  /** Übungstage (Lokalzeit), z. B. ["2026-10-19", "2026-10-20"] */
   days: string[];
+  /** Zeitzone beim Anlegen (IANA + Offset), z. B. { zone: "Europe/Zurich", offset: "+01:00" } – Zeiten `t` gelten darin */
+  tz?: import("./clock").ZoneInfo;
+  /** Anlegezeitpunkt (ISO UTC) */
+  createdAt?: string;
   sheets: RasterSheet[];
   areas: Area[];
   overlays?: Overlay[];
@@ -176,6 +182,11 @@ export interface Exercise {
   feindannahme?: string;
   /** Entscheide zu Hinweisen (Hinweis-ID → bestätigt/verworfen) */
   hintDecisions?: Record<string, HintDecision>;
+  /**
+   * Online-Dienste dieser Übung (Standard: alles an). `ortssuche`: Ortsnamen bei swisstopo nachschlagen (Meldungsfeld,
+   * Kartensuche); `strassen`: Strassennetz (TLM) für Hindernisse & Co. laden. Aus = kein Request (siehe `onlineAllowed`).
+   */
+  onlineDienste?: { ortssuche?: boolean; strassen?: boolean };
 }
 
 /** Entscheid des Benutzers zu einem Hinweis */

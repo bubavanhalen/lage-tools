@@ -1,0 +1,15 @@
+/* Kleines Blatt über der Karte (Handy): Hinweis bzw. Aktion Rot nach Tipp auf das Fähnchen */
+.maptip {
+  position: absolute; left: 8px; right: 8px; bottom: 34px; z-index: 1200;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-left: 5px solid var(--warn);
+  border-radius: 8px; padding: 10px 12px 10px; box-shadow: 0 6px 24px rgb(0 0 0 / .22);
+  max-height: 45%; overflow: auto; font: 400 14px/1.35 var(--f-body);
+}
+.maptip.t-hoch, .maptip.t-rot { border-left-color: var(--rot); }
+.maptip.t-info { border-left-color: var(--muted); }
+.maptip-k { font: 600 12px/1.2 var(--f-body); color: var(--muted); text-transform: none; letter-spacing: .01em; }
+.maptip-t { font: 600 18px/1.2 var(--f-display); margin-top: 2px; }
+.maptip-x { margin: 4px 0 0; color: var(--ink); }
+.maptip-b { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.maptip-b button { min-height: 44px; padding: 6px 14px; font-size: 15px; }
+.maptip-b .maptip-close { margin-left: auto; }

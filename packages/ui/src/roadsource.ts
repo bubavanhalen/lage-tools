@@ -7,6 +7,7 @@ import {
   NAMED_ROAD_NEAR, parseTlmIdentify, placeAlongRoad, placeOnRoad, roadsInBounds, roadTiles, tlmRoadsUrl,
   type Bounds, type LV95, type PlaceOptions, type RoadHint, type RoadPlacement, type RoadSegment, type RoadTarget, type RoadTile,
 } from "@lage/core";
+import { onlineOn } from "./onlinePolicy";
 import { db, ROADS_STORE } from "./store";
 
 const TILE_M = 1000;
@@ -79,7 +80,8 @@ async function fetchTile(tile: RoadTile): Promise<RoadSegment[] | null> {
   return out.filter((s) => (seen.has(s.id) ? false : (seen.add(s.id), true)));
 }
 
-const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
+/** Netz da und Strassennetz für diese Übung erlaubt (Online-Dienste, siehe onlinePolicy.ts) */
+const isOnline = () => onlineOn("strassen") && (typeof navigator === "undefined" || navigator.onLine !== false);
 
 /** Auf ein geteiltes Ergebnis warten, aber mit eigenem Abbruch: bei Abbruch sofort null (der Abruf läuft weiter). */
 function waitFor<T>(p: Promise<T>, signal?: AbortSignal): Promise<T | null> {

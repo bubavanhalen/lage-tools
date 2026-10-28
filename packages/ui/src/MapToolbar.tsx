@@ -18,8 +18,10 @@ import {
   type MeasureEvent,
   type MeasureState,
 } from "@lage/map";
+import type { Exercise } from "@lage/core";
 import { DEFAULT_FLAGS, isLocked, setLocked, subscribeLock, type LayerFlags } from "./layers";
-import { IconCell, IconCheck, IconChevron, IconClose, IconFit, IconLayers, IconMore, IconQuad, IconRuler, IconUndo } from "./navicons";
+import { setOnlinePolicy } from "./onlinePolicy";
+import { IconCell, IconCheck, IconChevron, IconClose, IconFit, IconGlobe, IconLayers, IconMore, IconQuad, IconRuler, IconUndo } from "./navicons";
 import "./navigation.css";
 
 export interface MapToolbarProps {
@@ -32,7 +34,15 @@ export interface MapToolbarProps {
   onFitAll: () => void;
   /** Gibt es etwas einzupassen (Raster oder NAI)? Standard: ein Raster ist angemeldet. */
   canFitAll?: boolean;
+  /** Online-Dienste der Übung (Standard an) – Schalter im Ebenen-Menü */
+  online?: Exercise["onlineDienste"];
+  onOnline?: (o: NonNullable<Exercise["onlineDienste"]>) => void;
 }
+
+const ONLINE: Array<{ key: "ortssuche" | "strassen"; label: string; title: string }> = [
+  { key: "ortssuche", label: "Ortssuche", title: "Ortsnamen aus Meldungen und Kartensuche online bei swisstopo nachschlagen (Text und Übungsraum gehen ans Netz). Aus = kein Request." },
+  { key: "strassen", label: "Strassennetz", title: "Strassen (swisstopo TLM) online laden, um Hindernisse & Co. auf die Strasse zu legen. Aus = kein Request (gespeicherte Strassen bleiben nutzbar)." },
+];
 
 const BASEMAPS: Array<{ id: Basemap; label: string }> = [
   { id: "lk", label: "Landeskarte" },
@@ -104,6 +114,8 @@ export function MapToolbar(p: MapToolbarProps) {
   const layersRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
   const width = useMapWidth(p.map);
+  // Strassennetz (roadsource) hat keine Übung: Einstellung hier spiegeln
+  setOnlinePolicy(p.online);
   const locked = useSyncExternalStore(subscribeLock, isLocked);
   const full = width >= TOOLBAR_FULL_MIN;
   const tiny = width < TOOLBAR_TINY_MAX;
@@ -181,6 +193,22 @@ export function MapToolbar(p: MapToolbarProps) {
               <div className="nav-pop-foot">
                 <button type="button" className="nav-link" onClick={() => p.onFlags({ ...DEFAULT_FLAGS })} disabled={hidden.length === 0}>Alle einblenden</button>
               </div>
+              {p.onOnline && (
+                <>
+                  <div className="nav-pop-h" title="Gilt für diese Übung. Ohne Netz wird ohnehin nichts abgefragt.">Online-Dienste (diese Übung)</div>
+                  <div className="nav-pills">
+                    {ONLINE.map((o) => {
+                      const on = p.online?.[o.key] !== false;
+                      return (
+                        <button key={o.key} type="button" className="nav-pill" aria-pressed={on} title={o.title}
+                          onClick={() => p.onOnline!({ ...(p.online ?? {}), [o.key]: !on })}>
+                          <IconGlobe />{o.label}{on ? "" : " aus"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

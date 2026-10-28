@@ -140,7 +140,8 @@ const ROWS: Array<[string, Row]> = [
   ["H03 Grenadier Trp", { sym: "spez", kind: "feind", ech: "trp", wo: "melder", desc: "gegnerischer Trupp Spezialkräfte", sidc: "SHFPG------A---" }],
   ["H04 gn Kpz beschädigt", { sym: "kpz", kind: "feind", status: "damaged", wo: "melder", desc: "beschädigter gegnerischer Kampfpanzer", sidc: "SHGDEVATH-MQ---" }],
   ["H02 2 gn Mtw", { sym: "mtw", kind: "feind", count: 2, wo: "melder", desc: "2 gegnerische Mannschaftstransportwagen", sidc: "SHGPEVAA-------" }],
-  ["H05 Dorfeingang Wabern Sperre", { sym: "sperre", kind: "feind", wo: "melder", q: "Wabern", desc: "Sperre", sidc: "GHOPPR----****X" }],
+  // MVP 0: genannter Ort («Dorfeingang Wabern») ist offen (Ortssuche/Karte) – kein Ersatzort «bei H05» mehr
+  ["H05 Dorfeingang Wabern Sperre", { sym: "sperre", kind: "feind", wo: null, q: "Wabern", desc: "Sperre", sidc: "GHOPPR----****X" }],
   ["H03 mögl gn Beo Po AM4", { sym: "beob_aufkl", kind: "feind", status: "anticipated", wo: "raster", desc: "möglicher gegnerischer Beobachtungsposten", sidc: "GHGADPOR--****X" }],
   ["H02 gn UAV", { sym: "drohne", kind: "feind", wo: "melder", desc: "gegnerische Drohne", sidc: "SHAPMFQ--------" }],
   ["H01 Kolonne 4 Duro", { sym: "kolonne", kind: "feind", count: 4, wo: "melder", desc: "4 gegnerische Lastwagen (Kolonne)", sidc: "SHGPEVUL-------" }],
