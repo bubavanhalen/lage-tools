@@ -37,13 +37,13 @@
 .ebox .eb-field {
   flex: 1; min-width: 0; display: block; resize: none; overflow: hidden;
   font: 500 var(--fs-16)/1.4 var(--f-mono); color: var(--ink); background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--r-4); padding: 11px 52px 11px 12px; min-height: 48px;
+  border: 1px solid var(--line); border-radius: var(--r-4); padding: 11px calc(var(--hit) + 8px) 11px 12px; min-height: calc(var(--hit) + 4px);
 }
 .ebox .eb-field::placeholder { color: var(--muted); font-family: var(--f-body); font-weight: 400; }
 .ebox .eb-field[aria-invalid="true"] { border-color: var(--stop); }
 .ebox.is-korr .eb-field { border: 2px solid var(--ink); }
 .ebox .eb-helpbtn {
-  position: absolute; right: 2px; top: 2px; min-height: calc(var(--hit) - 2px); min-width: calc(var(--hit) - 2px);
+  position: absolute; right: 2px; top: 2px; min-height: var(--hit); min-width: var(--hit);
   border: 0; background: transparent; font-weight: 600; font-size: var(--fs-16); color: var(--muted); padding: 0;
 }
 .ebox .eb-helpbtn:hover, .ebox .eb-helpbtn[aria-expanded="true"] { color: var(--ink); }
