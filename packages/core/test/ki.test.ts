@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   KI_LIMITS, KI_MAX_TOKENS, KI_MODELS, analyzeJournal, analyzeRedCoas, buildCoaExplainRequest, buildHandwritingRequest,
   buildHintExplainRequest, buildLageberichtRequest, buildMeldungRequest, compactNames, demoExercise, demoFeldSheet,
-  estimateKiCost, estimateKiInputUnits, eventLine, kiApiBody, kiEnabled, kiPreviewText, lastPosition, maskCoordinates,
+  estimateKiCost, estimateKiInputUnits, eventLine, kiApiBody, kiBaseAllowed, kiEnabled, kiPreviewParts, kiPreviewText, lostUncertainty, lastPosition, maskCoordinates,
   parseExplainResponse, parseHandwritingResponse, parseLageberichtResponse, parseMeldung, parseMeldungResponse,
   parseTextResponse, rasterDescription, readKiResponse, type Exercise, type Hint, type KiContext, type KiRequest, type LageEvent,
 } from "../src";
@@ -121,7 +121,7 @@ describe("buildHandwritingRequest", () => {
   it("Offenlegung: Foto mit Grösse, Namen, Raster, NAI", () => {
     expect(r.disclosure.items).toEqual([
       "Foto (420 kB)", "Namen der eigenen Elemente H01–H05", "Namen der Elemente Rot Det 1, Det 2",
-      "Raster-Bezeichnungen (Muster, ohne Koordinaten)", "NAI-Namen (3)",
+      "Raster-Bezeichnungen (Muster, ohne Koordinaten)", "NAI-Namen (3)", "Übungstage T1, T2 (ohne Kalenderdatum)",
     ]);
     expect(r.disclosure.imageBytes).toBe(430000);
   });
@@ -164,9 +164,9 @@ describe("buildMeldungRequest", () => {
   });
   it("Offenlegung nennt jede Datenart", () => {
     expect(r.disclosure.items).toContain(`Meldungstext (${text.length} Zeichen)`);
-    expect(r.disclosure.items).toContain("Letzter Standort von H02 (als PQ)");
+    expect(r.disclosure.items).toContain("Letzter Standort von H02 (als PQ, mit Meldezeit)");
     expect(r.disclosure.items).toContain("Bekannte Orte mit PQ (1)");
-    expect(r.disclosure.items).toContain("NAI-Namen mit PQ-Bereich (3)");
+    expect(r.disclosure.items).toContain("NAI-Namen mit PQ-Bereich, Geländetyp und «überwacht durch» (eigenes Element) (3)");
   });
   it("keine anderen Meldungen aus dem Journal", () => {
     for (const w of ["Kofferraum", "Lieferwagen", "Seftigenstrasse", "Baumstämmen"]) expect(t).not.toContain(w);
@@ -200,7 +200,7 @@ describe("buildHintExplainRequest / buildCoaExplainRequest", () => {
     expect(t).toContain("Quelle: TF 17 Ziff 7101");
     expect(t).toContain("T2 0345 [Feind] H02: 2 Pers AN10 laden Kisten in Kofferraum");
     expect(t).toContain("Entscheid: offen");
-    expect(r.disclosure.items).toEqual(["Hinweis (Titel, Begründung, Regel und Quelle)", "1 auslösende Meldung T2 03:45 (gekürzt)", "Lagezeit"]);
+    expect(r.disclosure.items).toEqual(["Hinweis: Titel, Begründung, Stufe, Regel mit Quelle, Zeitangaben, Ort (PQ/NAI/Element), Entscheid des Zfhr", "1 auslösende Meldung T2 03:45 (gekürzt)", "Lagezeit"]);
   });
   it("Hinweis: nur die Auslöser, keine anderen Meldungen", () => {
     const t = textOf(buildHintExplainRequest(c1, ex.events!, ctxOf(ex)));
@@ -234,7 +234,7 @@ describe("buildHintExplainRequest / buildCoaExplainRequest", () => {
     expect(t).toMatch(/✓ erfüllt: /);
     expect(t).toMatch(/Zeitraum: ca\. T2 \d\d:\d\d–T2 \d\d:\d\d/);
     expect(t).toContain("T2 0725 [Feind] H05: 4 Pers in Linie AP11");
-    expect(r.disclosure.items[0]).toBe("Mögliche Aktion Rot (Titel, Ziel, Zeitraum, Indikatoren)");
+    expect(r.disclosure.items[0]).toBe("Mögliche Aktion Rot: Titel, Art, Ziel, Annäherung, Zeitraum, Gewicht und Gefährlichkeit, Indikatoren, Prüfpunkte des Lagejournals");
     expect(r.disclosure.items[1]).toMatch(/^\d+ auslösende Meldungen T1 \d\d:\d\d–T2 07:25 \(gekürzt\)$/);
   });
 });
@@ -512,7 +512,13 @@ describe("API-Hilfen", () => {
     expect(p).toContain("[Foto 420 kB, image/jpeg]");
     expect(p).not.toContain(PHOTO.base64);
     expect(p).toContain("Antwortformular «meldungen_erkannt»");
-    expect(p.startsWith("Anweisung an die KI:")).toBe(true);
+    expect(p.startsWith("Gesendete Daten:")).toBe(true);
+    expect(p.indexOf("Hilfen zum Lesen")).toBeLessThan(p.indexOf("Anweisung an die KI"));
+    const parts = kiPreviewParts(hw);
+    expect(parts.data.startsWith("[Foto 420 kB, image/jpeg]")).toBe(true);
+    expect(parts.data).not.toContain("Du bist Assistent");
+    expect(parts.instruction.startsWith("Du bist Assistent im LVZ")).toBe(true);
+    expect(parts.instruction).toContain("Antwortformular «meldungen_erkannt»");
   });
   it("Modelle, Kosten, Umfang, Schalter", () => {
     expect(KI_MODELS.map((m) => m.id)).toEqual(["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]);
@@ -535,5 +541,155 @@ describe("Handschrift: unbekannter Melder", () => {
     expect(r.rows[0]!.unsicher.join(" ")).toContain("X99");
     const d = parseMeldung(r.lines[0]!, { sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], days: ex.days, day: ex.days.at(-1)!, now: new Date() } as never);
     expect(d?.count ?? 1).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+describe("Offenlegung vollständig: jedes gesendete Datenfeld hat einen Posten", () => {
+  /** Zeile im gesendeten Text → Posten der Offenlegung, der sie abdecken muss; `sec`: Folgezeilen («- …», eingerückt) gehören dazu */
+  const RULES: Array<{ line: RegExp; item: RegExp; sec?: boolean }> = [
+    { line: /^Meldung \(wörtlich\):$/, item: /^Meldungstext \(\d+ Zeichen\)$/ },
+    { line: /^«/, item: /^Meldungstext/ },
+    { line: /^-? ?Lagezeit: /, item: /^Lagezeit$/ },
+    { line: /^- Gültige Melder/, item: /^Namen der eigenen Elemente/ },
+    { line: /^- Bekannte Elemente Rot/, item: /^Namen der Elemente Rot/ },
+    { line: /^- Letzter Standort von (\S+): .*\(gemeldet /, item: /^Letzter Standort von \S+ \(als PQ, mit Meldezeit\)$/ },
+    { line: /^- Letzter Standort von /, item: /^Letzter Standort von / },
+    { line: /^- Raster: /, item: /^Raster-Bezeichnungen/ },
+    { line: /^- NAI: .*\(PQ /, item: /^NAI-Namen mit PQ-Bereich/ },
+    { line: /^- NAI: .*(Strasse|Engnis|Siedlung|Brücke|Wald|offenes Gelände|Anlage)/, item: /Geländetyp/ },
+    { line: /^- NAI: .*überwacht durch/, item: /«überwacht durch»/ },
+    { line: /^- NAI: /, item: /^NAI-Namen/ },
+    { line: /^- Bekannte Orte: /, item: /^Bekannte Orte mit PQ/ },
+    { line: /^- Übungstage: (.*)$/, item: /^Übungstage T1, T2/ },
+    { line: /^Hinweis des Lagejournals/, item: /^Hinweis: / },
+    { line: /^- Titel: /, item: /^Hinweis: .*Titel/ },
+    { line: /^- Begründung: /, item: /^Hinweis: .*Begründung/ },
+    { line: /^- Stufe: /, item: /^Hinweis: .*Stufe/ },
+    { line: /^- Regel .*\(Quelle: /, item: /^Hinweis: .*Regel mit Quelle/ },
+    { line: /^- Regel /, item: /^Hinweis: .*Regel/ },
+    { line: /^- Zeit: /, item: /^Hinweis: .*Zeitangaben/ },
+    { line: /^- Ort: /, item: /^Hinweis: .*Ort/ },
+    { line: /^- Entscheid: /, item: /^Hinweis: .*Entscheid/ },
+    { line: /^Auslösende Meldungen \([1-9]/, item: /auslösende Meldung/, sec: true },
+    { line: /^Mögliche Aktion Rot \(offline/, item: /^Mögliche Aktion Rot: / },
+    { line: /^Mögliche Aktionen Rot \(/, item: /mögliche Aktion(en)? Rot: / },
+    { line: /^- (wahrscheinlichste|gefährlichste|weitere) Möglichkeit: /, item: /Aktion(en)? Rot: Titel, Art/ },
+    { line: /^ {2}Ziel: /, item: /Aktion(en)? Rot: .*Ziel/ },
+    { line: /^ {2}Annäherung: /, item: /Aktion(en)? Rot: .*Annäherung/ },
+    { line: /^ {2}Zeitraum: /, item: /Aktion(en)? Rot: .*Zeitraum/ },
+    { line: /^ {2}Gewicht der Indikatoren: .*Gefährlichkeit/, item: /Aktion(en)? Rot: .*Gewicht und Gefährlichkeit/ },
+    { line: /^ {2}(✓|○|✗|–) /, item: /Aktion(en)? Rot: .*Indikatoren/ },
+    { line: /^ {2}Vom Lagejournal vorgeschlagen zu prüfen: /, item: /Prüfpunkte des Lagejournals/ },
+    { line: /^Feindannahme: /, item: /^Feindannahme$/ },
+    { line: /^Kräfte Rot \(/, item: /^Kräfte Rot \(Schätzung/, sec: true },
+    { line: /^- .* nicht mehr gemeldet seit /, item: /^Kräfte Rot .*nicht mehr gemeldete Elemente/ },
+    { line: /^Hinweise des Lagejournals \(keine Fakten\):$/, item: /^\d+ Hinweise? \(Stand offen\/bestätigt, Titel, Begründung, Regel, Zeit\)$/, sec: true },
+    { line: /^Eigene Elemente \(/, item: /^Letzter Standort und letzte Meldezeit von \d+ eigenen Elementen/, sec: true },
+    { line: /^Meldungen( seit .*)? \([1-9]/, item: /^\d+ Meldungen? .*\(gekürzt\)$/, sec: true },
+  ];
+  /** Zeilen ohne Daten (Überschriften, Aufforderung) */
+  const STRUCT = [/^$/, /^Angaben zur Übung \(nur zur Einordnung\):$/, /^Hilfen zum Lesen \(keine Meldungsinhalte\):$/, /^Lies alle Meldungen auf dem Foto\.$/,
+    /^(Auslösende Meldungen|Meldungen( seit .*)?) \(0[,)].*:$/, /^- keine$/];
+
+  function check(r: KiRequest) {
+    const problems: string[] = [];
+    const lines = r.messages.flatMap((m) => m.content).flatMap((c) => (c.type === "text" ? c.text.split("\n") : []));
+    let sec = false;
+    for (const l of lines) {
+      const rule = RULES.find((x) => x.line.test(l));
+      // Unterzeilen einer Gruppe («- …» bzw. eingerückt) ohne eigene Regel
+      if (!rule && sec && /^(- |  )/.test(l)) continue;
+      if (rule) {
+        if (!r.disclosure.items.some((i) => rule.item.test(i))) problems.push(`${r.purpose}: «${l.slice(0, 60)}» ohne Posten ${rule.item}`);
+        sec = !!rule.sec;
+        // Zeilen mit mehreren Angaben: auch die übrigen Regeln prüfen
+        for (const x of RULES) if (x !== rule && x.line.test(l) && !r.disclosure.items.some((i) => x.item.test(i))) problems.push(`${r.purpose}: «${l.slice(0, 60)}» ohne Posten ${x.item}`);
+        continue;
+      }
+      if (STRUCT.some((x) => x.test(l))) { if (l && !/^- keine$/.test(l)) sec = false; continue; }
+      problems.push(`${r.purpose}: unbekannte Zeile «${l.slice(0, 80)}»`);
+    }
+    if (r.messages.some((m) => m.content.some((c) => c.type === "image")) && !r.disclosure.items.some((i) => /^Foto \(\d+ (kB|MB)\)$/.test(i))) problems.push("Foto ohne Posten");
+    return problems;
+  }
+
+  it("alle Zwecke mit Beispiel Bern", () => {
+    const { reqs } = allRequests();
+    expect(reqs.length).toBeGreaterThan(5);
+    expect(reqs.flatMap(check)).toEqual([]);
+  });
+  it("Meldung deuten: Geländetyp und «überwacht durch» der NAI werden genannt", () => {
+    const ex = demo();
+    const r = buildMeldungRequest("H02 sieht 3 Pers bei der Kirche Wabern, eventuell bewaffnet", ctxOf(ex));
+    expect(textOf(r)).toMatch(/Engnis, überwacht durch H05/);
+    expect(r.disclosure.items.join(" | ")).toMatch(/Geländetyp und «überwacht durch»/);
+    // ohne Geländetyp/Trupp nur, was gesendet wird
+    for (const a of ex.areas) { delete a.typ; delete a.trupp; }
+    const r2 = buildMeldungRequest("H02 sieht 3 Pers bei der Kirche Wabern", ctxOf(ex));
+    expect(r2.disclosure.items).toContain("NAI-Namen mit PQ-Bereich (3)");
+    expect(check(r2)).toEqual([]);
+  });
+  it("Handschrift: Übungstage nur, wenn gesendet", () => {
+    const ex = demo();
+    expect(check(buildHandwritingRequest(PHOTO, ctxOf(ex)))).toEqual([]);
+    ex.days = [ex.days[0]!];
+    const r = buildHandwritingRequest(PHOTO, ctxOf(ex));
+    expect(textOf(r)).not.toContain("Übungstage");
+    expect(r.disclosure.items.join()).not.toContain("Übungstage");
+  });
+  it("leeres Journal und Übung ohne NAI/Orte: weiterhin vollständig", () => {
+    const ex = demo();
+    ex.events = []; ex.areas = []; ex.places = [];
+    const ctx = ctxOf(ex);
+    for (const r of [buildMeldungRequest("H02 sieht etwas", ctx), buildHandwritingRequest(PHOTO, ctx), buildLageberichtRequest(ctx, { hints: [], coas: [] })]) expect(check(r)).toEqual([]);
+  });
+});
+
+describe("Halluzinationsschutz: Unsicherheit darf nicht wegfallen", () => {
+  const ex = demo();
+  const ctx = ctxOf(ex);
+  it("lostUncertainty", () => {
+    expect(lostUncertainty("eventuell bewaffnet", "evtl bewaffnet")).toEqual([]);
+    expect(lostUncertainty("eventuell bewaffnet", "bewaffnet")).toEqual(["eventuell"]);
+    expect(lostUncertainty("vermutlich gn, vielleicht Rtg Bahnhof", "vmtl gn Rtg Bahnhof")).toEqual(["vielleicht"]);
+    expect(lostUncertainty("vielleicht gegnerisch", "evtl gn")).toEqual([]);
+    expect(lostUncertainty("Zugehörigkeit unklar", "Zugehörigkeit unklar")).toEqual([]);
+    expect(lostUncertainty("mögliche Sperre", "Sperre")).toEqual(["mögliche"]);
+    expect(lostUncertainty("so schnell wie möglichst", "schnell")).toEqual([]);
+    expect(lostUncertainty("bewaffnet?", "bewaffnet")).toEqual(["?"]);
+    expect(lostUncertainty("3 Pers", "3 Pers")).toEqual([]);
+  });
+  it("parseMeldungResponse: weggefallenes «eventuell» → unsicher", () => {
+    const orig = "H02 sieht 3 Pers bei der Kirche Wabern, eventuell bewaffnet, laufen Richtung Bahnhof";
+    const r = parseMeldungResponse({ kurz: "H02: 3 Pers AL10 C Rtg Bahnhof, bewaffnet", begruendung: "", unsicher: [] }, { ctx, text: orig });
+    expect(r.unsicher).toEqual(["Unsicherheit «eventuell» fehlt im Vorschlag – prüfen"]);
+    const ok = parseMeldungResponse({ kurz: "H02: 3 Pers AL10 C Rtg Bahnhof, evtl bewaffnet", begruendung: "", unsicher: [] }, { ctx, text: orig });
+    expect(ok.unsicher).toBeUndefined();
+  });
+  it("Anweisung: Beispiel ohne erfundenen PQ, Unsicherheit bleibt", () => {
+    const r = buildMeldungRequest("H02 sieht 3 Pers bei der Kirche Wabern", ctx);
+    expect(r.system).toContain("«0715 H02: 3 Pers bei Kirche Wabern Rtg Bahnhof, evtl bewaffnet»");
+    // Beispiel der Aufgabe «Meldung deuten»: Ortsname bleibt Ortsname (kein geschätzter PQ)
+    expect(r.system.split("Aufgabe:")[1]).not.toMatch(/\b[A-Z]{2}\d{1,2}\b/);
+    expect(JSON.stringify(r.tool)).not.toMatch(/AK9/);
+    expect(r.system).toContain("Unsicherheit aus dem Text bleibt erhalten");
+  });
+});
+
+describe("kiBaseAllowed: Basis-URL nur für Tests auf diesem Rechner", () => {
+  it("localhost, 127.0.0.1, ::1 erlaubt; Schrägstrich am Ende weg", () => {
+    expect(kiBaseAllowed("http://localhost:8964/")).toBe("http://localhost:8964");
+    expect(kiBaseAllowed("http://127.0.0.1:9000")).toBe("http://127.0.0.1:9000");
+    expect(kiBaseAllowed("http://[::1]:9000/api/")).toBe("http://[::1]:9000/api");
+  });
+  it("fremde Server nur im Entwicklungsmodus; Unsinn nie", () => {
+    expect(kiBaseAllowed("https://evil.example.com")).toBeNull();
+    expect(kiBaseAllowed("https://localhost.evil.example.com")).toBeNull();
+    expect(kiBaseAllowed("http://user:pw@localhost:8964")).toBeNull();
+    expect(kiBaseAllowed("https://proxy.example.com/", true)).toBe("https://proxy.example.com");
+    expect(kiBaseAllowed("javascript:alert(1)", true)).toBeNull();
+    expect(kiBaseAllowed("")).toBeNull();
+    expect(kiBaseAllowed(null)).toBeNull();
   });
 });

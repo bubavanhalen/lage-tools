@@ -10,6 +10,7 @@ import { clearRoads, estimateRoadTiles, prefetchRoads, roadTileCount } from "./r
 import type { Bounds } from "./tiles";
 import { OcrOffline } from "./PhotoInput";
 import { SpeechModelRow } from "./SpeechSettings";
+import { useKi } from "./ki/context";
 
 const DETAIL: Array<[number, string]> = [[5, "Übersicht (bis 5 m)"], [2, "Normal (bis 2 m)"], [1, "Detail (bis 1 m)"]];
 
@@ -26,6 +27,9 @@ function areaOf(ex: Exercise, map: L.Map): { b: Bounds; label: string } {
 }
 
 export function OfflineBox({ ex, map }: { ex: Exercise; map: L.Map }) {
+  // KI-Hinweis nur, wenn sie auf diesem Gerät wirklich eingeschaltet ist (Übung an + eigene Einwilligung)
+  const ki = useKi();
+  const kiOn = !!ex.ki?.enabled && !!ki && ki.state !== "aus" && ki.state !== "einwilligung";
   const [finest, setFinest] = useState(2);
   const [img, setImg] = useState(false);
   const [prog, setProg] = useState<{ done: number; total: number } | null>(null);
@@ -111,7 +115,7 @@ export function OfflineBox({ ex, map }: { ex: Exercise; map: L.Map }) {
       )}
       <OcrOffline />
       <SpeechModelRow compact />
-      {ex.ki?.enabled && <p className="help">KI (Claude) ist für diese Übung eingeschaltet und braucht Netz – ohne Netz sind nur die KI-Knöpfe gesperrt.</p>}
+      {kiOn && <p className="help">KI (Claude) ist für diese Übung eingeschaltet und braucht Netz – ohne Netz sind nur die KI-Knöpfe gesperrt.</p>}
     </div>
   );
 }

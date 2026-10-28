@@ -6,19 +6,27 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Exercise, KiPurpose, KiRequest } from "@lage/core";
 import { KiError, kiSend, kiSize, type KiResult } from "./client";
-import { addKiLog, estimateUsd, KI_MODELS, setSkip, skipPurposes, useKiSettings } from "./settings";
+import { addKiLog, estimateUsd, KI_MODELS, kiConsented, setKiConsent, setSkip, skipPurposes, useKiSettings } from "./settings";
 import { KiSettings } from "./KiSettings";
 import { KiConsent } from "./KiConsent";
 
-/** aus = für diese Übung nicht eingeschaltet; schluessel = kein Schlüssel auf dem Gerät; offline = kein Netz */
-export type KiState = "aus" | "schluessel" | "offline" | "bereit";
+/**
+ * aus = für diese Übung nicht eingeschaltet; einwilligung = in der Übung(sdatei) eingeschaltet, auf diesem Gerät aber
+ * noch nicht eingewilligt (gilt wie aus, bis eingewilligt); schluessel = kein Schlüssel auf dem Gerät; offline = kein Netz
+ */
+export type KiState = "aus" | "einwilligung" | "schluessel" | "offline" | "bereit";
 
 export interface KiApi {
   ex: Exercise;
   /** Lagezeit (ISO lokal) */
   t: string;
   state: KiState;
+  /** wirklich eingeschaltet: in der Übung an und auf diesem Gerät eingewilligt */
   enabled: boolean;
+  /** Einwilligungsdialog zeigen (z. B. beim ersten KI-Knopf auf einem neuen Gerät) */
+  requestConsent: () => void;
+  /** ID der Übung, die jetzt offen ist (für Antworten, die nach einem Übungswechsel eintreffen) */
+  currentExId: () => string;
   online: boolean;
   /** Modell-ID für die nächste Anfrage */
   model: string;
@@ -56,10 +64,13 @@ export function KiProvider({ ex, t, update, say, children }: {
   const [consent, setConsent] = useState(false);
   const memoRef = useRef(new Map<string, unknown>());
   const [memoTick, setMemoTick] = useState(0);
-  // andere Übung: Ergebnisse vergessen
-  useEffect(() => { memoRef.current.clear(); setMemoTick((n) => n + 1); }, [ex.id]);
-  const enabled = !!ex.ki?.enabled;
-  const state: KiState = !enabled ? "aus" : !key ? "schluessel" : !online ? "offline" : "bereit";
+  // andere Übung: Ergebnisse vergessen, offene Einwilligung schliessen
+  useEffect(() => { memoRef.current.clear(); setMemoTick((n) => n + 1); setConsent(false); }, [ex.id]);
+  const fileOn = !!ex.ki?.enabled;
+  // Einwilligung pro Gerät und Übung (useKiSettings meldet Änderungen)
+  const consented = kiConsented(ex.id);
+  const enabled = fileOn && consented;
+  const state: KiState = !fileOn ? "aus" : !consented ? "einwilligung" : !key ? "schluessel" : !online ? "offline" : "bereit";
   const m = KI_MODELS[model];
 
   const exRef = useRef(ex);
@@ -80,7 +91,7 @@ export function KiProvider({ ex, t, update, say, children }: {
   }, [key, m.id]);
 
   const setEnabled = useCallback((on: boolean) => {
-    if (on && !exRef.current.ki?.since) { setConsent(true); return; }
+    if (on && !kiConsented(exRef.current.id)) { setConsent(true); return; }
     update((x) => { x.ki = { ...(x.ki ?? {}), enabled: on, since: x.ki?.since ?? new Date().toISOString() }; return x; });
     say(on ? "KI für diese Übung eingeschaltet" : "KI für diese Übung ausgeschaltet – alles andere funktioniert weiter");
   }, [update, say]);
@@ -88,6 +99,8 @@ export function KiProvider({ ex, t, update, say, children }: {
   const api = useMemo<KiApi>(() => ({
     ex, t, state, enabled, online, model: m.id, modelLabel: m.label,
     openSettings: () => setSettings(true),
+    requestConsent: () => setConsent(true),
+    currentExId: () => exRef.current.id,
     setEnabled, send,
     skips: (p) => skipPurposes(ex.id).includes(p),
     setSkips: (p, on) => setSkip(ex.id, p, on),
@@ -104,7 +117,8 @@ export function KiProvider({ ex, t, update, say, children }: {
           onCancel={() => setConsent(false)}
           onAgree={() => {
             setConsent(false);
-            update((x) => { x.ki = { enabled: true, since: new Date().toISOString() }; return x; });
+            setKiConsent(exRef.current.id, true);
+            update((x) => { x.ki = { ...(x.ki ?? {}), enabled: true, since: x.ki?.since ?? new Date().toISOString() }; return x; });
             say("KI für diese Übung eingeschaltet");
             if (!key) setSettings(true);
           }} />
@@ -117,12 +131,12 @@ export function KiProvider({ ex, t, update, say, children }: {
 export function KiMenuButton() {
   const ki = useKi();
   if (!ki) return null;
-  const title = ki.state === "aus" ? "KI (Claude) – für diese Übung aus" : ki.state === "schluessel" ? "KI eingeschaltet – Schlüssel fehlt noch" : ki.state === "offline" ? "KI eingeschaltet – zurzeit offline" : `KI eingeschaltet (${ki.modelLabel})`;
+  const title = ki.state === "aus" ? "KI (Claude) – für diese Übung aus" : ki.state === "einwilligung" ? "KI aus – auf diesem Gerät noch nicht eingewilligt" : ki.state === "schluessel" ? "KI eingeschaltet – Schlüssel fehlt noch" : ki.state === "offline" ? "KI eingeschaltet – zurzeit offline" : `KI eingeschaltet (${ki.modelLabel})`;
   return (
     <button className={"ki-menubtn s-" + ki.state} onClick={ki.openSettings} title={title} aria-label={title}>
       <KiMark />
       <span className="ki-mb-l">KI</span>
-      <span className="ki-mb-s">{ki.state === "aus" ? "aus" : ki.state === "bereit" ? "an" : ki.state === "offline" ? "offline" : "Schlüssel?"}</span>
+      <span className="ki-mb-s">{ki.state === "aus" ? "aus" : ki.state === "einwilligung" ? "einwilligen?" : ki.state === "bereit" ? "an" : ki.state === "offline" ? "offline" : "Schlüssel?"}</span>
     </button>
   );
 }

@@ -27,6 +27,9 @@
 .br-check input { width: 18px; height: 18px; accent-color: var(--ink); cursor: pointer; }
 .br-main { display: grid; gap: 6px; min-width: 0; }
 .br-origin { font: 500 11.5px/1.2 var(--f-body); color: var(--muted); letter-spacing: .02em; }
+.br-doubt { font-size: 12.5px; line-height: 1.35; color: var(--warn); }
+.br-doubt b { font-weight: 600; }
+.chip.posdoubt { border-style: dashed; }
 .br-text { font: 500 15px/1.35 var(--f-mono); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%; resize: none; overflow: hidden; display: block; min-height: 38px; }
 .br-text:focus { outline: 2px solid var(--blau); outline-offset: 0; border-color: transparent; }
 .br-preview { gap: 4px; }

@@ -113,6 +113,8 @@ export interface LageEvent {
   /** Herkunft als Text, wenn keine Himmelsrichtung, z. B. «aus Rtg Bern» */
   fromLabel?: string;
   source?: SourceRef;
+  /** «ki» = Text stammt aus einem übernommenen KI-Vorschlag (Handschrift auf Foto, «KI deuten») – für Kennzeichnung und PDF-Vermerk */
+  via?: "ki";
   /** Vom Benutzer bestätigt (sonst Vorschlag der Erkennung) */
   confirmed: boolean;
   note?: string;

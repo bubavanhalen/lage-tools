@@ -3,7 +3,7 @@
  * Zeitlimit (Bild 60 s, Text 30 s), Abbrechen, eine Wiederholung bei «überlastet» (529), Fehler in Klartext.
  * POST wird vom Service Worker nicht angefasst; die API antwortet mit CORS – funktioniert auch mit COEP «credentialless».
  */
-import { kiApiBody, kiPreviewText, readKiResponse, type KiRequest } from "@lage/core";
+import { kiApiBody, readKiResponse, type KiRequest } from "@lage/core";
 import { kiBase, scrub } from "./settings";
 
 export type KiErrorCode =
@@ -46,9 +46,6 @@ export interface KiResult {
   /** Antwort wurde wegen der Längenbegrenzung abgeschnitten */
   truncated?: boolean;
 }
-
-/** Rohinhalt für die Anzeige «Genauer Inhalt» (Foto nur als Platzhalter) */
-export const kiBodyPreview = (req: KiRequest) => kiPreviewText(req);
 
 /** Zeichen der Anfrage (Text) und Bildgrösse – für Protokoll */
 export function kiSize(req: KiRequest): { chars: number; imageBytes?: number } {

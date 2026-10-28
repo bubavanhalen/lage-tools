@@ -28,7 +28,7 @@
 1. Projektgerüst, Kern, Karten-Shell, GitHub Pages ✅
 2. Führungsraster-Editor (beide Varianten, PDF-Export) und NAI-Import ✅
 3. Lagejournal: Texteingabe, Karte, Zeitstrahl, offline (Kartenpakete) ✅
-4. Lagejournal: Hinweise zu Rot (4a ✅), Foto- und Spracheingabe (4b ✅), KI optional (4c)
+4. Lagejournal: Hinweise zu Rot (4a ✅), Foto- und Spracheingabe (4b ✅), KI optional (4c ✅)
 5. Übungsauswertung: Import, Auswertung, AAR-Regie
 6. vNext: Abgleich Gerät ↔ Gerät
 
@@ -98,3 +98,10 @@ Oben im Reiter «Hinweise», darunter die Hinweise.
 - **Mögliche Aktionen Rot:** Katalog (Überfall auf eigenen Stao, Hinterhalt an Engnis/Strasse, Sperren/Kanalisieren, Versorgung/Übergabe, Aufklärung zur Vorbereitung, Infiltration durch unbewachten NAI, Absetzen) mit gewichteten Indikatoren und Gegenindikatoren aus Hinweisen und Meldungen. Angezeigt höchstens: wahrscheinlichste, gefährlichste, eine weitere – erst ab zwei Rot-Indikatoren aus verschiedenen Meldungen. Je Möglichkeit Indikatoren (✓ erfüllt, ○ offen, ✗ dagegen), Annäherung, Zeitraum (fest, «überfällig», «jetzt»), «Prüfen». Indikatoren altern (90 Min), Rangfolge mit Hysterese, verworfene Hinweise zählen nicht.
 - **Kräfte Rot:** erkannt (benannte Elemente einmal, unbenannte Sichtungen über Erreichbarkeit abgeglichen: «mind.» vorsichtig, «bis» alle verschieden) gegenüber der Feindannahme (eine Kurzschrift-Zeile pro Übung, z. B. «2 Det, 14 Pers, 5 Fz, 1 Drohne»), «nicht mehr gesehen seit», mit Zeitfenster Zusatzspalte «im Fenster».
 - Karte: Ebene «Aktionen Rot» (Annäherungspfeil, Ziel mit Zeitraum, Engnis-Warnung). Export im Journal-PDF und CSV.
+
+## Lagejournal – KI auf Wunsch (Etappe 4c)
+- Claude mit **eigenem Anthropic-Schlüssel**, nur auf dem Gerät gespeichert (nie in Übung, Export, Protokoll). Modelle: Standard (Sonnet), Genauer (Opus), Schneller (Haiku); Kosten über das eigene Konto, Schätzung im Protokoll.
+- **Pro Übung einschalten** und **pro Gerät einwilligen** (Hinweis: keine klassifizierten Daten; Daten gehen an Anthropic, USA). Ohne KI funktioniert alles andere.
+- **Jeder Aufruf sichtbar:** vor dem Senden «Wird gesendet: …» (Daten zuerst, Anweisung eingeklappt), danach «Gesendet: …» – auch bei «nicht mehr fragen». Datensparsam: keine IDs, Gerätekennung, Übungsname, Kalenderdaten; Koordinaten nur als PQ.
+- **Einsatz:** Handschrift auf Fotos lesen · unklare Meldung deuten (Vorschlag mit Begründung) · Hinweis bzw. mögliche Aktion Rot ausformulieren · Lagebericht für Rapport/Übergabe entwerfen. Alles Vorschläge; unsichere Zeilen sind nicht vorab angehakt; übernommene Meldungen tragen die Marke «KI».
+- Schutz gegen Erfindungen: unbekannte Melder/PQ/NAI, nicht genannte Zeiten/Anzahlen und weggefallene Unsicherheit werden als «unsicher» markiert. Text in Meldungen und auf Fotos gilt als Inhalt, nie als Anweisung.

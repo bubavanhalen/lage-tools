@@ -203,17 +203,43 @@ export function readKiResponse(json: unknown, req?: Pick<KiRequest, "tool">): Ki
   return { toolInput, text: texts.join("\n").trim(), stopReason, truncated: stopReason === "max_tokens", usage };
 }
 
-/** Rohinhalt zum Aufklappen in der Vorschau (Foto nur als Platzhalter) */
-export function kiPreviewText(req: KiRequest): string {
-  const parts = [`Anweisung an die KI:\n${req.system}`];
+/**
+ * Rohinhalt zum Aufklappen in der Vorschau, getrennt: `data` = die Nutzdaten dieser Anfrage (Foto nur als Platzhalter),
+ * `instruction` = die bei jedem Aufruf gleiche Anweisung an die KI samt Antwortformular (in der Anzeige eingeklappt).
+ */
+export function kiPreviewParts(req: KiRequest): { data: string; instruction: string } {
+  const data: string[] = [];
   for (const m of req.messages) {
     for (const c of m.content) {
-      if (c.type === "image") parts.push(`[Foto ${fmtBytes(req.disclosure.imageBytes ?? Math.round(c.source.data.length * 0.75))}, ${c.source.media_type}]`);
-      else parts.push(c.text);
+      if (c.type === "image") data.push(`[Foto ${fmtBytes(req.disclosure.imageBytes ?? Math.round(c.source.data.length * 0.75))}, ${c.source.media_type}]`);
+      else data.push(c.text);
     }
   }
-  if (req.tool) parts.push(`Antwortformular «${req.tool.name}»: ${JSON.stringify(req.tool.input_schema)}`);
-  return parts.join("\n\n");
+  const instruction = [req.system];
+  if (req.tool) instruction.push(`Antwortformular «${req.tool.name}»: ${JSON.stringify(req.tool.input_schema)}`);
+  return { data: data.join("\n\n"), instruction: instruction.join("\n\n") };
+}
+
+/** Rohinhalt als ein Text: zuerst die Nutzdaten, danach die Anweisung an die KI */
+export function kiPreviewText(req: KiRequest): string {
+  const p = kiPreviewParts(req);
+  return `Gesendete Daten:\n${p.data}\n\nAnweisung an die KI (bei jedem Aufruf gleich):\n${p.instruction}`;
+}
+
+/**
+ * Basis-URL der API aus den Einstellungen (für Tests mit dem Mock-Server): nur Ziele auf diesem Rechner
+ * (localhost, 127.0.0.1, ::1) bzw. beliebig im Entwicklungsmodus; alles andere → null (= Standard api.anthropic.com).
+ * So kann ein untergeschobener Eintrag den Schlüssel nicht an einen fremden Server schicken.
+ */
+export function kiBaseAllowed(raw: string | null | undefined, dev = false): string | null {
+  const v = (raw ?? "").trim();
+  if (!v || !/^https?:\/\//i.test(v)) return null;
+  let u: URL;
+  try { u = new URL(v); } catch { return null; }
+  if (u.username || u.password) return null;
+  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]" || u.hostname === "::1";
+  if (!local && !dev) return null;
+  return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -251,10 +277,11 @@ const SYSTEM_HANDSCHRIFT = [
 
 const SYSTEM_MELDUNG = [
   "Aufgabe: Forme eine frei formulierte Meldung in eine Zeile Kurzschrift des Lagejournals um (Feld «kurz»).",
-  "- Reihenfolge: [Zeit] Melder[:] Anzahl Begriff Ort [Rtg …] [Zusatz], z. B. «0715 H02: 3 Pers AK9 B Rtg Bahnhof, evtl bewaffnet».",
+  "- Reihenfolge: [Zeit] Melder[:] Anzahl Begriff Ort [Rtg …] [Zusatz], z. B. «0715 H02: 3 Pers bei Kirche Wabern Rtg Bahnhof, evtl bewaffnet».",
   "- Zeit nur, wenn sie im Text steht (HHMM); sonst weglassen.",
   "- Ort: PQ oder NAI aus dem Text; ist ein bekannter Ort aus der Liste genannt, dessen PQ; sonst den Ortsnamen stehen lassen («bei Kirche Wabern»). Nie einen PQ schätzen. Der letzte Standort des Melders ist nicht der Ort der Sichtung.",
   "- Zugehörigkeit nur, wenn der Text sie hergibt: «gn» wenn klar gegnerisch, «unklar» oder «evtl» bei Unsicherheit.",
+  "- Unsicherheit aus dem Text bleibt erhalten («eventuell» → «evtl», «vermutlich» → «vmtl»); nie eine Vermutung als Tatsache schreiben.",
   "- Nichts weglassen, was für die Lage wichtig ist (Bewaffnung, Fz-Beschreibung, Tätigkeit), nichts hinzufügen.",
   "- «begruendung»: ein bis zwei Sätze, wie du die Meldung gelesen hast.",
   "- «unsicher»: was fehlt oder unklar ist (z. B. «Zeit fehlt», «Ort nur als Ortsname», «Anzahl geschätzt»), sonst leer.",
@@ -331,7 +358,7 @@ export const KI_TOOL_MELDUNG: KiTool = {
   input_schema: {
     type: "object",
     properties: {
-      kurz: { type: "string", description: "eine Zeile Kurzschrift, z. B. «0715 H02: 3 Pers AK9 Rtg N»" },
+      kurz: { type: "string", description: "eine Zeile Kurzschrift, z. B. «0715 H02: 3 Pers bei Kirche Wabern Rtg N»" },
       begruendung: { type: "string", description: "ein bis zwei Sätze, wie die Meldung gelesen wurde" },
       unsicher: { type: "array", items: { type: "string" }, description: "was fehlt oder unklar ist" },
     },
@@ -435,6 +462,17 @@ function naiDescription(ex: Exercise, a: Area): string {
   return parts.length ? `${a.name} (${parts.join(", ")})` : a.name;
 }
 
+/** Offenlegung der NAI-Angaben: welche Teile gesendet werden (Name immer, PQ-Bereich, Geländetyp, «überwacht durch») */
+function naiItem(ex: Exercise, list: Area[], withDetails: boolean): string {
+  if (!withDetails) return `NAI-Namen (${list.length})`;
+  const parts: string[] = [];
+  const descs = list.map((a) => naiDescription(ex, a));
+  if (descs.some((d) => /\(PQ /.test(d))) parts.push("PQ-Bereich");
+  if (list.some((a) => a.typ)) parts.push("Geländetyp");
+  if (list.some((a) => a.trupp)) parts.push("«überwacht durch» (eigenes Element)");
+  return parts.length ? `NAI-Namen mit ${parts.length > 1 ? parts.slice(0, -1).join(", ") + " und " + parts[parts.length - 1] : parts[0]} (${list.length})` : `NAI-Namen (${list.length})`;
+}
+
 /** Bekannte Orte: Name mit PQ (nie Koordinaten) */
 function placesDescription(ex: Exercise): string[] {
   return (ex.places ?? []).slice(0, LIM.PLACES).map((p) => {
@@ -523,7 +561,8 @@ export function buildHandwritingRequest(image: { base64: string; mime: string; b
   ];
   const items = [`Foto (${fmtBytes(bytes)})`, ...unitItems(ex)];
   if (ex.sheets.length) items.push("Raster-Bezeichnungen (Muster, ohne Koordinaten)");
-  if (naiNames.length) items.push(`NAI-Namen (${naiNames.length})`);
+  if (naiNames.length) items.push(naiItem(ex, nais(ex), false));
+  if (ex.days.length > 1) items.push(`Übungstage ${ex.days.map((_, i) => `T${i + 1}`).join(", ")} (ohne Kalenderdatum)`);
   return finish("handschrift", system(SYSTEM_HANDSCHRIFT), content, {
     summary: "Das Foto und die Namen von Meldern, Raster und NAI zum Lesen – keine Meldungen aus dem Journal.",
     items,
@@ -708,7 +747,7 @@ export function buildMeldungRequest(text: string, ctx: KiContext): KiRequest {
     const lastEv = [...evs].reverse().find((e) => e.side === "blau" && e.pos && nkName(e.unit) === nkName(melder));
     if (pq) {
       lines.push(`- Letzter Standort von ${melder}: PQ ${pq}${lastEv ? ` (gemeldet ${lageZeit(ex, lastEv.t)})` : ""}`);
-      items.push(`Letzter Standort von ${melder} (als PQ)`);
+      items.push(`Letzter Standort von ${melder} (als PQ${lastEv ? ", mit Meldezeit" : ""})`);
     }
   }
   for (const r of rasterDescription(ex.sheets)) lines.push(`- Raster: ${r}`);
@@ -716,7 +755,7 @@ export function buildMeldungRequest(text: string, ctx: KiContext): KiRequest {
   const naiList = nais(ex);
   if (naiList.length) {
     lines.push(`- NAI: ${naiList.map((a) => naiDescription(ex, a)).join("; ")}`);
-    items.push(`NAI-Namen mit PQ-Bereich (${naiList.length})`);
+    items.push(naiItem(ex, naiList, true));
   }
   const places = placesDescription(ex);
   if (places.length) {
@@ -786,6 +825,8 @@ function meldungChecks(kurz: string, original: string, ctx: KiContext): string[]
     const n = +m[1]!;
     if (!origNums.has(n)) addU(out, vague ? `Anzahl ${n} geschätzt` : `Anzahl ${n} steht nicht in der Meldung – prüfen`);
   }
+  // Unsicherheit darf nicht wegfallen («eventuell bewaffnet» → «bewaffnet» wäre eine erfundene Gewissheit)
+  for (const w of lostUncertainty(orig, kurz)) addU(out, `Unsicherheit «${w}» fehlt im Vorschlag – prüfen`);
   // für das Lagejournal lesbar?
   try {
     const d = parseMeldung(kurz, journalCtx(ctx));
@@ -794,6 +835,33 @@ function meldungChecks(kurz: string, original: string, ctx: KiContext): string[]
   } catch {
     addU(out, "Vorschlag nicht lesbar");
   }
+  return out;
+}
+
+/** Wortfamilien für Unsicherheit (Langform und Kurzschrift zählen gleich) */
+const UNCERTAIN: Array<[string, RegExp]> = [
+  ["eventuell", /(?<![\p{L}])(?:eventuell\p{L}*|evtl\.?)(?![\p{L}])/giu],
+  ["vermutlich", /(?<![\p{L}])(?:vermutlich\p{L}*|vermutet\p{L}*|vmtl\.?|vermutung)(?![\p{L}])/giu],
+  ["möglich", /(?<![\p{L}])(?:möglich(?!st)\p{L}*|mögl\.?|moeglich\p{L}*)(?![\p{L}])/giu],
+  ["unklar", /(?<![\p{L}])(?:unklar\p{L}*|unsicher\p{L}*|nicht\s+sicher|nicht\s+erkennbar)(?![\p{L}])/giu],
+  ["wahrscheinlich", /(?<![\p{L}])(?:wahrscheinlich\p{L}*|wahrsch\.?)(?![\p{L}])/giu],
+  ["vielleicht", /(?<![\p{L}])(?:vielleicht|allenfalls|womöglich|scheinbar|anscheinend|könnte\p{L}*|glaub\p{L}*)(?![\p{L}])/giu],
+  ["?", /\?/g],
+];
+
+/**
+ * Unsicherheitswörter, die in der Meldung stehen, im Vorschlag aber fehlen. Gezählt wird insgesamt (aus «vielleicht»
+ * darf «evtl» werden); fehlen insgesamt welche, werden die Wortfamilien mit weniger Treffern genannt (wie im Original).
+ */
+export function lostUncertainty(original: string, kurz: string): string[] {
+  const count = (s: string) => UNCERTAIN.map(([, re]) => [...s.matchAll(re)]);
+  const o = count(original), k = count(kurz);
+  const total = (l: RegExpMatchArray[][]) => l.reduce((n, x) => n + x.length, 0);
+  if (total(k) >= total(o)) return [];
+  const out: string[] = [];
+  UNCERTAIN.forEach(([name], i) => {
+    if (o[i]!.length > k[i]!.length) out.push(name === "?" ? "?" : o[i]![0]![0].toLowerCase());
+  });
   return out;
 }
 
@@ -832,7 +900,12 @@ export function buildHintExplainRequest(hint: Hint, events: LageEvent[], ctx: Ki
   const tr = triggerLines(hint.events, events, ctx);
   lines.push("", `Auslösende Meldungen (${tr.evs.length}${tr.omitted ? `, ${tr.omitted} ältere weggelassen` : ""}, gekürzt):`, ...(tr.lines.length ? tr.lines : ["- keine"]));
   lines.push("", `Lagezeit: ${lageZeit(ex, ctx.t)}`);
-  const items = ["Hinweis (Titel, Begründung, Regel und Quelle)"];
+  const parts = ["Titel", "Begründung", "Stufe"];
+  if (rule) parts.push(rule.source ? "Regel mit Quelle" : "Regel");
+  parts.push("Zeitangaben");
+  if (where.length) parts.push("Ort (PQ/NAI/Element)");
+  parts.push("Entscheid des Zfhr");
+  const items = [`Hinweis: ${parts.join(", ")}`];
   if (tr.evs.length) items.push(`${tr.evs.length} auslösende Meldung${tr.evs.length === 1 ? "" : "en"} ${timeSpan(ex, tr.evs)} (gekürzt)`);
   items.push("Lagezeit");
   return finish("hinweis", system(SYSTEM_HINWEIS), [{ type: "text", text: lines.join("\n") }], {
@@ -862,6 +935,18 @@ function coaLines(coa: RedCoa, ex: Exercise, maxInd = 10): string[] {
   return out;
 }
 
+/** Offenlegung: welche Angaben einer bzw. mehrerer möglicher Aktionen Rot gesendet werden (wie `coaLines`) */
+function coaParts(coas: RedCoa[], ex: Exercise, withCheck: boolean): string {
+  const parts = ["Titel", "Art"];
+  if (coas.some((c) => c.target && (c.target.unit || c.target.cell || pqOf(ex.sheets, c.target.pos) || c.target.nai))) parts.push("Ziel");
+  if (coas.some((c) => c.approachText)) parts.push("Annäherung");
+  if (coas.some((c) => c.window || c.windowState)) parts.push("Zeitraum");
+  parts.push("Gewicht und Gefährlichkeit");
+  if (coas.some((c) => c.indicators.length)) parts.push("Indikatoren");
+  if (withCheck && coas.some((c) => c.check.length)) parts.push("Prüfpunkte des Lagejournals");
+  return parts.join(", ");
+}
+
 /** Mögliche Aktion Rot + Indikatoren + Auslöser-Meldungen (gekürzt) → Anfrage «Ausformulieren» */
 export function buildCoaExplainRequest(coa: RedCoa, events: LageEvent[], ctx: KiContext): KiRequest {
   const { ex } = ctx;
@@ -870,7 +955,7 @@ export function buildCoaExplainRequest(coa: RedCoa, events: LageEvent[], ctx: Ki
   const tr = triggerLines(coa.events, events, ctx);
   lines.push("", `Auslösende Meldungen (${tr.evs.length}${tr.omitted ? `, ${tr.omitted} ältere weggelassen` : ""}, gekürzt):`, ...(tr.lines.length ? tr.lines : ["- keine"]));
   lines.push("", `Lagezeit: ${lageZeit(ex, ctx.t)}`);
-  const items = ["Mögliche Aktion Rot (Titel, Ziel, Zeitraum, Indikatoren)"];
+  const items = [`Mögliche Aktion Rot: ${coaParts([coa], ex, true)}`];
   if (tr.evs.length) items.push(`${tr.evs.length} auslösende Meldung${tr.evs.length === 1 ? "" : "en"} ${timeSpan(ex, tr.evs)} (gekürzt)`);
   items.push("Lagezeit");
   return finish("lagerot", system(SYSTEM_LAGEROT), [{ type: "text", text: lines.join("\n") }], {
@@ -908,14 +993,15 @@ export function buildLageberichtRequest(ctx: KiContext, o: { hints: Hint[]; coas
       lines.push(`- ${c.row.name}: ${range}${names}${exp}`);
     }
     for (const n of force.notSeen.slice(0, 8)) lines.push(`- ${n.unit} nicht mehr gemeldet seit ${lageZeit(ex, n.since)}`);
-    items.push("Kräfte Rot (Schätzung)");
+    items.push(`Kräfte Rot (Schätzung je Art${force.notSeen.length ? ", nicht mehr gemeldete Elemente" : ""})`);
   }
 
   // mögliche Aktionen
   if (o.coas.length) {
     lines.push("", "Mögliche Aktionen Rot (Einschätzung des Lagejournals):");
     for (const c of o.coas.slice(0, 3)) lines.push(...coaLines(c, ex, 6));
-    items.push(`${Math.min(3, o.coas.length)} mögliche Aktion${Math.min(3, o.coas.length) === 1 ? "" : "en"} Rot`);
+    const n = Math.min(3, o.coas.length);
+    items.push(`${n} mögliche Aktion${n === 1 ? "" : "en"} Rot: ${coaParts(o.coas.slice(0, 3), ex, false)}`);
   }
 
   // Hinweise (verworfene nicht)
@@ -930,7 +1016,7 @@ export function buildLageberichtRequest(ctx: KiContext, o: { hints: Hint[]; coas
       const st = d?.state === "bestaetigt" ? "bestätigt" : `offen, ${h.level}`;
       lines.push(`- [${st}] ${oneLine(maskCoordinates(h.title, ex.sheets))} – ${cut(oneLine(maskCoordinates(h.text, ex.sheets)), 200)} (Regel ${h.rule}, ${lageZeit(ex, h.last ?? h.t)})`);
     }
-    items.push(`${hs.length} Hinweis${hs.length === 1 ? "" : "e"} (offen/bestätigt, Titel und Begründung)`);
+    items.push(`${hs.length} Hinweis${hs.length === 1 ? "" : "e"} (Stand offen/bestätigt, Titel, Begründung, Regel, Zeit)`);
   }
 
   // eigene Elemente
@@ -942,7 +1028,7 @@ export function buildLageberichtRequest(ctx: KiContext, o: { hints: Hint[]; coas
       const lastAny = [...evs].reverse().find((e) => e.melder && nkName(e.melder) === nkName(u.unit) || e.side === "blau" && nkName(e.unit) === nkName(u.unit));
       lines.push(`- ${u.unit}: PQ ${pq} (seit ${lageZeit(ex, u.event.t)})${lastAny ? `, letzte Meldung ${lageZeit(ex, lastAny.t)}` : ""}`);
     }
-    items.push(`Letzter Standort von ${own.length} eigenen Elementen (als PQ)`);
+    items.push(`Letzter Standort und letzte Meldezeit von ${own.length} eigenen Elementen (als PQ)`);
   }
 
   // neue Meldungen seit

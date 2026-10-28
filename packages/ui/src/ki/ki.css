@@ -10,7 +10,8 @@
 .ki-menubtn.s-aus .ki-mark { color: var(--muted); }
 .ki-menubtn.s-bereit { border-color: var(--ink); }
 .ki-menubtn.s-bereit .ki-mb-s { color: var(--ok); font-weight: 600; }
-.ki-menubtn.s-schluessel .ki-mb-s, .ki-menubtn.s-offline .ki-mb-s { color: var(--warn); font-weight: 600; }
+.ki-menubtn.s-einwilligung .ki-mark { color: var(--muted); }
+.ki-menubtn.s-schluessel .ki-mb-s, .ki-menubtn.s-offline .ki-mb-s, .ki-menubtn.s-einwilligung .ki-mb-s { color: var(--warn); font-weight: 600; }
 
 /* ---------- Dialoge ---------- */
 .ki-back { position: fixed; inset: 0; z-index: 2100; background: rgba(16, 20, 20, .5); display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -120,6 +121,11 @@
 .ki-model-note { margin-left: auto; font-size: 12px; color: var(--muted); }
 .ki-run { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; border: 1px solid var(--line); background: var(--card); }
 .ki-run button { min-height: 30px; }
+.ki-run-sent { grid-column: 1 / -1; min-width: 0; }
+.ki-run-sent .ki-sent, .ki-err .ki-sent, .ki-info .ki-sent { padding: 0; }
+.ki-info { display: grid; gap: 4px; width: 100%; min-width: 0; padding: 7px 10px; border: 1px dashed var(--line); border-radius: 6px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.ki-instrbtn { margin-top: 2px; }
+.ki-instr { max-height: 160px; opacity: .85; }
 .ki-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--ink); animation: ki-spin .8s linear infinite; }
 @keyframes ki-spin { to { transform: rotate(360deg); } }
 .ki-err { border: 1px solid var(--rot); background: var(--rot-soft); color: var(--ink); }
@@ -138,6 +144,7 @@
 .ki-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 4px; background: var(--ink); color: var(--paper); font: 600 11px/1.6 var(--f-body); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
 .ki-badge .ki-mark { color: var(--paper); }
 .ki-uns { margin: 0; font-size: 13px; color: var(--warn); }
+.ki-sugg .ki-sent { padding: 0; }
 .ki-why { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink); }
 .ki-sugg-b { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ki-sugg-b button { min-height: 32px; }
@@ -174,3 +181,8 @@
 .br-notice .ki-act.active { display: grid; margin-top: 6px; }
 .ki-since { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .ki-since select { min-height: 32px; padding: 3px 8px; }
+.br-notice .ki-sent { display: grid; margin-top: 4px; padding: 0; }
+
+/* Meldung aus KI-Vorschlag (Journal-Liste) und vermuteter Ort im Vorschlag */
+.kitag { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; border: 1px dashed var(--muted); border-radius: 3px; font: 600 10.5px/1.5 var(--f-body); letter-spacing: .05em; color: var(--muted); white-space: nowrap; }
+.kitag .ki-mark { color: var(--muted); }

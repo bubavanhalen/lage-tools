@@ -74,6 +74,8 @@ export interface CommitOverrides {
   attachments?: string[];
   /** Herkunft (Standard: Text) */
   source?: LageEvent["source"];
+  /** Text stammt aus einem übernommenen KI-Vorschlag */
+  via?: LageEvent["via"];
 }
 
 const sideOfAff = (a: Affiliation): Side => (a === "F" ? "blau" : "rot");
@@ -103,6 +105,7 @@ export function buildEvent(draft: Draft, device: string, ex: Pick<Exercise, "she
   if (o.shape && shapeFits(o.shape, ev.sym)) Object.assign(ev, shapePatch(o.shape, ex.sheets));
   if (o.attachments?.length) ev.attachments = [...o.attachments];
   if (o.source) ev.source = o.source;
+  if (o.via) ev.via = o.via;
   return ev;
 }
 
@@ -136,6 +139,8 @@ export interface CommitTextsOptions {
   /** an jede Meldung hängen (ID); mit `attachment` werden auch die Metadaten gespeichert */
   attachmentId?: string;
   attachment?: Attachment;
+  /** Texte stammen aus einem KI-Vorschlag (Standard: wenn der Anhang von der KI gelesen wurde) */
+  via?: LageEvent["via"];
 }
 
 /**
@@ -151,6 +156,7 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
     : attId ? { kind: "image", ref: attId } : undefined;
   // Arbeitskopie: Einheiten/Ereignisse der früheren Meldungen im Stapel gelten für die späteren
   let work: Exercise = { ...o.ex, units: { rot: [...o.ex.units.rot], blau: [...o.ex.units.blau], ul: [...o.ex.units.ul] }, events: [...(o.ex.events ?? [])], days: [...o.ex.days] };
+  const via = o.via ?? (o.attachment?.engine === "ki" ? "ki" : undefined);
   const base = Date.now();
   const out: LageEvent[] = [];
   texts.forEach((raw, i) => {
@@ -158,7 +164,7 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
     if (!text) return;
     const now = new Date(base + i);
     const draft = parseMeldung(text, journalCtx(work, day, undefined, now));
-    const ev = buildEvent(draft, o.device, work, { attachments: attId ? [attId] : undefined, source: src }, now);
+    const ev = buildEvent(draft, o.device, work, { attachments: attId ? [attId] : undefined, source: src, via }, now);
     out.push(ev);
     work = addEvents(work, [ev]);
   });

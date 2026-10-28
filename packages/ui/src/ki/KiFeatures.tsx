@@ -3,18 +3,19 @@
  * Lagebericht entwerfen. Alles als Vorschlag – nie automatisch eintragen.
  */
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildCoaExplainRequest, buildHandwritingRequest, buildHintExplainRequest, buildLageberichtRequest, buildMeldungRequest,
   parseExplainResponse, parseHandwritingResponse, parseLageberichtResponse, parseMeldung, parseMeldungResponse,
   type Draft, type Exercise, type Hint, type KiRequest, type KiZeile, type LageEvent, type RedCoa,
 } from "@lage/core";
 import { DraftPreview } from "../BatchReview";
+import { pqDoubt } from "../batchRows";
 import { journalCtx } from "../commit";
 import { downloadText, safeFileName } from "../store";
 import { dayLabel } from "../Timeline";
 import type { Rect } from "../photo";
-import { KiAction, KiDraft } from "./KiButton";
+import { KiAction, KiDraft, KiStale, SentInfo } from "./KiButton";
 import { KiMark, useKi } from "./context";
 import { modelLabel } from "./settings";
 import "./ki.css";
@@ -39,19 +40,22 @@ export function photoForKi(canvas: HTMLCanvasElement, rect?: Rect | null): { bas
   return { base64, mime: "image/jpeg", bytes: Math.floor((base64.length * 3) / 4) - pad };
 }
 
-/** «Mit KI erkennen» im Foto-Dialog: Ergebnis als Zeilen für die Prüfung (BatchReview) */
+/**
+ * «Mit KI erkennen» im Foto-Dialog: Ergebnis als Zeilen für die Prüfung (BatchReview). Die Offenlegung (`sent`)
+ * geht mit – die Prüfung zeigt «Gesendet: …», auch wenn für diesen Zweck nicht mehr nachgefragt wird.
+ */
 export function KiPhotoButton({ ex, canvas, rect, onLines, showOff, primary, label = "Mit KI erkennen" }: {
-  ex: Exercise; canvas: HTMLCanvasElement | null; rect?: Rect | null; onLines: (rows: KiZeile[], notes?: string) => void; showOff?: boolean; primary?: boolean; label?: string;
+  ex: Exercise; canvas: HTMLCanvasElement | null; rect?: Rect | null; onLines: (rows: KiZeile[], notes: string | undefined, sent: KiRequest["disclosure"]) => void; showOff?: boolean; primary?: boolean; label?: string;
 }) {
   const ki = useKi();
   if (!ki) return null;
   return (
     <KiAction purpose="handschrift" label={label} showOff={showOff} subtle={!primary} primary={primary} disabled={!canvas} sentLine={false}
       build={() => buildHandwritingRequest(photoForKi(canvas!, rect), { ex, t: ki.t })}
-      onResult={(r) => {
+      onResult={(r, req) => {
         const out = parseHandwritingResponse(r.toolInput, { ex, t: ki.t });
         if (!out.rows.length) throw new Error("leer");
-        onLines(out.rows, out.notes);
+        onLines(out.rows, out.notes, req.disclosure);
       }} />
   );
 }
@@ -66,21 +70,26 @@ export function meldungUnklar(draft: Draft | null, text: string, hasPos: boolean
   return !draft.melder || !hasPos || (draft.sym === "einheit" && draft.kind !== "eigen" && words >= 5) || prose;
 }
 
-interface MeldungVorschlag { kurz: string; begruendung?: string; unsicher?: string[]; model: string; for: string }
+interface MeldungVorschlag { kurz: string; begruendung?: string; unsicher?: string[]; model: string; for: string; sent: KiRequest["disclosure"]; ms: number }
 
 /** dezenter Knopf «KI deuten» unter dem Meldungsfeld, Vorschlag mit Übernehmen/Verwerfen */
 export function KiMeldungSuggest({ ex, text, day, unklar, onTake }: { ex: Exercise; text: string; day: string; unklar: boolean; onTake: (kurz: string) => void }) {
   const ki = useKi();
   const [v, setV] = useState<MeldungVorschlag | null>(null);
   const [why, setWhy] = useState(false);
+  /** aktueller Text im Feld (die Antwort kommt später – gilt nur, wenn der Text noch derselbe ist) */
+  const textRef = useRef(text);
+  textRef.current = text;
+  /** Text, der gesendet wurde */
+  const sentFor = useRef("");
   // Vorschlag gilt nur für den Text, zu dem er erstellt wurde
   useEffect(() => { if (v && text.trim() !== v.for) setV(null); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
   const prev = useMemo(() => (v ? parseMeldung(v.kurz, journalCtx(ex, day)) : null), [v, ex, day]);
   if (!ki || ki.state === "aus") return null;
-  if (v) return (
+  if (v && v.for === text.trim()) return (
     <div className="ki-sugg" role="group" aria-label="Vorschlag der KI">
       <div className="ki-sugg-h"><span className="ki-badge"><KiMark size={12} />Vorschlag</span><span className="mono ki-sugg-t">{v.kurz}</span></div>
-      {prev && <DraftPreview draft={prev} days={ex.days} />}
+      {prev && <DraftPreview draft={prev} days={ex.days} posDoubt={pqDoubt(v.unsicher)} />}
       {v.unsicher && v.unsicher.length > 0 && <p className="ki-uns"><b>Unsicher:</b> {v.unsicher.join(" · ")}</p>}
       {v.begruendung && (
         <>
@@ -93,17 +102,20 @@ export function KiMeldungSuggest({ ex, text, day, unklar, onTake }: { ex: Exerci
         <button onClick={() => setV(null)}>Verwerfen</button>
         <span className="ki-help">{modelLabel(v.model)} · erst «Eintragen» trägt ein</span>
       </div>
+      <SentInfo disclosure={v.sent} extra={`${modelLabel(v.model)} · ${(v.ms / 1000).toFixed(1).replace(".", ",")} s`} />
     </div>
   );
   if (!unklar) return null;
   return (
     <KiAction purpose="meldung" label="KI deuten" subtle className="ki-meld"
       aside={<span className="ki-help ki-meld-why">Meldung unklar?</span>}
-      build={() => buildMeldungRequest(text.trim(), { ex, t: ki.t })}
-      onResult={(r) => {
-        const out = parseMeldungResponse(r.toolInput, { ctx: { ex, t: ki.t }, text: text.trim() });
+      build={() => { sentFor.current = text.trim(); return buildMeldungRequest(sentFor.current, { ex, t: ki.t }); }}
+      onResult={(r, req) => {
+        // Text inzwischen geändert: Vorschlag passt nicht mehr
+        if (textRef.current.trim() !== sentFor.current) throw new KiStale("Meldung inzwischen geändert – Vorschlag verworfen. Bei Bedarf nochmals «KI deuten».");
+        const out = parseMeldungResponse(r.toolInput, { ctx: { ex, t: ki.t }, text: sentFor.current });
         if (!out.kurz.trim()) throw new Error("leer");
-        setV({ ...out, model: r.model, for: text.trim() });
+        setV({ ...out, model: r.model, for: sentFor.current, sent: req.disclosure, ms: r.ms });
         setWhy(false);
       }} />
   );

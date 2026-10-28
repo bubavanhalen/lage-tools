@@ -4,13 +4,14 @@
  * Der Schlüssel liegt nie in der Übung, im Export, im Protokoll oder in Fehlermeldungen.
  */
 import { useEffect, useState } from "react";
-import { estimateKiCost, KI_MODELS as CORE_MODELS, type KiPurpose } from "@lage/core";
+import { estimateKiCost, kiBaseAllowed, KI_MODELS as CORE_MODELS, type Exercise, type KiPurpose } from "@lage/core";
 
 const KEY = "lt-ki-key";
 const MODEL = "lt-ki-model";
 const BASE = "lt-ki-base";
 const SKIP = "lt-ki-skip:";
 const LOG = "lt-ki-log:";
+const CONSENT = "lt-ki-consent:";
 
 export type KiModelChoice = "standard" | "genauer" | "schneller";
 
@@ -30,10 +31,17 @@ export const KI_MODELS: Record<KiModelChoice, { id: string; label: string; text:
 export const KI_MODEL_ORDER: KiModelChoice[] = ["standard", "genauer", "schneller"];
 export const modelLabel = (id: string) => Object.values(KI_MODELS).find((m) => id.startsWith(m.id))?.label ?? id;
 
-/** Basis-URL der API (für Tests überschreibbar mit localStorage["lt-ki-base"]) */
+const isDev = (): boolean => { try { return !!(import.meta as { env?: { DEV?: boolean } }).env?.DEV; } catch { return false; } };
+
+/**
+ * Basis-URL der API. Für Tests mit dem Mock-Server überschreibbar mit localStorage["lt-ki-base"] – aber nur auf
+ * diesen Rechner (localhost/127.0.0.1) bzw. im Entwicklungsmodus; ein anderer Eintrag wird ignoriert, damit der
+ * Schlüssel nie an einen fremden Server geht.
+ */
 export function kiBase(): string {
-  try { const b = localStorage.getItem(BASE)?.trim(); if (b && /^https?:\/\//.test(b)) return b.replace(/\/+$/, ""); } catch { /* egal */ }
-  return "https://api.anthropic.com";
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(BASE); } catch { /* egal */ }
+  return kiBaseAllowed(raw, isDev()) ?? "https://api.anthropic.com";
 }
 
 // ---------- kleiner Speicher mit Benachrichtigung (alle Komponenten bleiben gleich) ----------
@@ -83,6 +91,13 @@ export function setSkip(exId: string, p: KiPurpose, on: boolean) {
   put(SKIP + exId, cur.size ? JSON.stringify([...cur]) : null);
 }
 
+/**
+ * Einwilligung pro Gerät und Übung: Die Freigabe «KI für diese Übung» reist mit der Übungsdatei – auf einem anderen
+ * Gerät gilt sie erst, wenn dort selbst eingewilligt wurde.
+ */
+export function kiConsented(exId: string): boolean { return !!read(CONSENT + exId); }
+export function setKiConsent(exId: string, on: boolean) { put(CONSENT + exId, on ? new Date().toISOString() : null); }
+
 export interface KiLogEntry {
   /** ISO-Zeit */
   at: string;
@@ -122,7 +137,21 @@ export function estimateUsd(modelId: string, inTok?: number, outTok?: number): n
 }
 export const usdText = (v?: number) => (v === undefined ? "–" : v < 0.01 ? "< 0.01 USD" : `${v.toFixed(2)} USD`);
 
-/** Zusammenfassung für das Journal-PDF: «Handschrift erkennen (3×), Lagebericht entwerfen (1×)» */
+/**
+ * Vermerk für das Journal-PDF – aus den Meldungen selbst (gilt auf jedem Gerät): «2 Meldungen aus KI-Vorschlag
+ * übernommen (im Journal mit «KI» markiert)»; dazu, was auf diesem Gerät sonst mit KI gemacht wurde (Protokoll).
+ */
+export function kiPdfNote(ex: Exercise, labels: Record<KiPurpose, string>): string | null {
+  const n = (ex.events ?? []).filter((e) => !e.deleted && e.via === "ki").length;
+  const parts: string[] = [];
+  if (n) parts.push(`${n === 1 ? "1 Meldung" : `${n} Meldungen`} aus einem KI-Vorschlag übernommen (in der Tabelle mit «KI» markiert)`);
+  const log = kiUsageSummary(ex.id, labels);
+  if (log) parts.push(`auf diesem Gerät verwendet für: ${log}`);
+  if (!parts.length) return null;
+  return `KI (Claude, Anthropic): ${parts.join("; ")}. KI-Ergebnisse sind Vorschläge; Übernahme durch Benutzer.`;
+}
+
+/** Zusammenfassung des Geräte-Protokolls: «Handschrift erkennen (3×), Lagebericht entwerfen (1×)» */
 export function kiUsageSummary(exId: string, labels: Record<KiPurpose, string>): string | null {
   const n = new Map<KiPurpose, number>();
   for (const e of kiLog(exId)) if (e.ok) n.set(e.purpose, (n.get(e.purpose) ?? 0) + 1);

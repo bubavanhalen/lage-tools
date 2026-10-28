@@ -73,7 +73,9 @@ export function KiSettings({ api, onClose }: { api: KiApi; onClose: () => void }
                 <h3>KI für diese Übung</h3>
                 <p className="ki-help">{on
                   ? <>Eingeschaltet{api.ex.ki?.since ? ` seit ${new Date(api.ex.ki.since).toLocaleDateString("de-CH")}` : ""}. KI-Knöpfe sind sichtbar; gesendet wird nur auf Knopfdruck.</>
-                  : <>Aus. Es geht nichts an eine KI. Alles andere funktioniert wie gewohnt.</>}</p>
+                  : api.state === "einwilligung"
+                    ? <><b>KI aus – auf diesem Gerät noch nicht eingewilligt.</b> In der Übung ist die KI eingeschaltet; auf diesem Gerät geht erst etwas an eine KI, wenn du hier einwilligst.</>
+                    : <>Aus. Es geht nichts an eine KI. Alles andere funktioniert wie gewohnt.</>}</p>
               </div>
               <button role="switch" aria-checked={on} className={"ki-switch" + (on ? " on" : "")} onClick={() => api.setEnabled(!on)} aria-label="KI für diese Übung">
                 <span className="ki-knob" /><span className="ki-sw-l">{on ? "An" : "Aus"}</span>
