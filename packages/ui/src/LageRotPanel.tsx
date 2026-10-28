@@ -8,11 +8,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { coaHeadline, indicatorText, type CoaIndicator, type Exercise, type RedCoa, type StrengthCompare } from "@lage/core";
+import { coaHeadline, indicatorText, type CoaIndicator, type Exercise, type RedCoa } from "@lage/core";
 import { hhmm } from "./hintsData";
 import {
-  countLabel, durLabel, expectedLabel, foundLabel, indCounts, indSign, inWindowLabel, isAgainst, MIND_BIS_TITLE,
-  rowName, shownIndicators, STATE_LABEL, windowLabel, type LageRotState,
+  countLabel, indCounts, indSign, isAgainst, shownIndicators, windowLabel, type LageRotState,
 } from "./lageRot";
 import { COA_KICKER, coaWhen, EMPTY_COA } from "./red/redText";
 import { ForceTable } from "./red/ForceTable";

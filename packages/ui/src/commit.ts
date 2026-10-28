@@ -183,3 +183,37 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
   o.update((x) => addEvents(x, out, { attachments: o.attachment ? [o.attachment] : undefined }));
   return out;
 }
+
+// ---------- Korrektur (Spez. MVP 1, Kap. 3.3) ----------
+
+/** Ort einer Meldung (bleibt bei einer Korrektur, wenn der neue Text keinen Ort nennt) */
+const PLACE_KEYS = ["pos", "where", "cells", "nai", "angle", "road", "roadNone", "shape"] as const;
+/** Zeichen und Einordnung (bleiben, solange der Text unverändert ist und nichts von Hand gewählt wurde) */
+const SYMBOL_KEYS = ["side", "unit", "aff", "sym", "sidc", "echelon", "status", "desc", "count", "label"] as const;
+/** übrige Inhalte, die der neu gelesene Text bestimmt */
+const TEXT_KEYS = ["melder", "text", "dir", "from", "fromLabel", "roadHint", "via"] as const;
+
+/**
+ * Änderung für `correctEvent` aus der neu gelesenen Fassung `cand` (`buildEvent` aus dem Korrekturtext):
+ * nur Felder, die sich gegenüber `base` wirklich ändern (leer = keine Änderung). `keepPlace`: Ort der Meldung bleibt
+ * (Text nennt keinen Ort, Ort von Hand gesetzt); `keepSymbol`: Zeichen/Einordnung bleiben; `keepTime`: Zeit bleibt.
+ */
+export function correctionPatch(base: LageEvent, cand: LageEvent, o: { keepPlace: boolean; keepSymbol: boolean; keepTime: boolean }): Partial<LageEvent> {
+  const out: Record<string, unknown> = {};
+  const take = (keys: readonly (keyof LageEvent)[], from: LageEvent) => {
+    for (const k of keys) if (JSON.stringify(from[k]) !== JSON.stringify(base[k])) out[k] = from[k];
+  };
+  take(TEXT_KEYS, cand);
+  if (!o.keepPlace) take(PLACE_KEYS, cand);
+  if (!o.keepSymbol) take(SYMBOL_KEYS, cand);
+  if (!o.keepTime && cand.t !== base.t) out.t = cand.t;
+  return out as Partial<LageEvent>;
+}
+
+/** Melder/Element einer korrigierten Meldung in der Übung merken (wie `addEvents`) */
+export function rememberUnits(x: Exercise, ev: Pick<LageEvent, "melder" | "unit" | "side">): Exercise {
+  const remember = (side: Side, u?: string) => { if (u && !x.units[side].some((v) => v.toLowerCase() === u.toLowerCase())) x.units = { ...x.units, [side]: [...x.units[side], u] }; };
+  remember("blau", ev.melder);
+  remember(ev.side, ev.unit);
+  return x;
+}

@@ -48,6 +48,7 @@ export function SaveStatusView({ s }: { s: SaveStatus }) {
 
 export function OfflineStatusView({ s, onFix }: { s: OfflineStatus & { checked?: boolean }; onFix: () => void }) {
   const net = s.net ? "" : "Kein Netz · ";
+  if (s.checked === false) return net ? <span className="hd-off">Kein Netz</span> : null;
   if (s.ready) return <span className="hd-off ok" title="Journal, Karte und Speicher funktionieren auch ohne Netz">{net}Offline bereit ✓</span>;
   return (
     <button type="button" className="hd-off fix" onClick={onFix} title={s.missing.join(" · ")}>

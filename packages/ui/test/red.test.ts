@@ -4,7 +4,7 @@
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { analyzeJournal, demoExercise, type Hint, type LageEvent } from "@lage/core";
 import { decide, redBadge } from "../src/hintsData";
 import { type LageRotState } from "../src/lageRot";
@@ -12,6 +12,9 @@ import { analyzeRedCoas, compareStrength, estimateRedForce, parseStrength } from
 import { RedPanel, RedTabLabel } from "../src/red/RedPanel";
 import { coaWhen, decidedText, eventLine, forceLine, hintLine, hintMeta, indicatorGroups, indicatorLine, sideMark } from "../src/red/redText";
 import type { RedPanelProps } from "../src/shell/contracts";
+
+// KI-Knöpfe erscheinen nur mit eingeschalteter KI (ohne KiProvider: nichts); hier ohne die schweren Abhängigkeiten
+vi.mock("../src/ki/KiFeatures", () => ({ KiHintExplain: () => null, KiCoaExplain: () => null, KiLageberichtButton: () => null }));
 
 const T = "2030-05-15T07:25";
 const CODE_RE = /\b[A-E][1-6]\b|Ziff|TF 17|GS 17|53\.005|Indikator|COA/;

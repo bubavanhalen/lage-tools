@@ -5,7 +5,6 @@
 import { coaHeadline, hintHeadline, indicatorText, type CoaIndicator, type Exercise, type Hint, type LageEvent, type RedCoa } from "@lage/core";
 import { hhmm, nextLabel } from "../hintsData";
 import type { LageRotState } from "../lageRot";
-import { dayLabel } from "../Timeline";
 
 /** Einordnung der Karten (Kap. 4.1) */
 export const COA_KICKER: Record<RedCoa["label"], string> = {
@@ -22,6 +21,8 @@ export const LEAD = "Vermutungen aus den Meldungen – keine Fakten.";
 /** Titel einer Hinweis-Zeile ohne führendes «⚠» (die Zeile zeigt die Stufe als Zeichen) */
 export const hintLine = (h: Hint): string => hintHeadline(h).replace(/^⚠\s*/, "");
 
+/** Übungstag «T2» (wie `Timeline.dayLabel`, hier ohne Kartenabhängigkeit), sonst «15.05» */
+const dayLabel = (t: string, days: string[]) => { const i = days.indexOf(t.slice(0, 10)); return i >= 0 ? `T${i + 1}` : t.slice(5, 10).split("-").reverse().join("."); };
 /** «T2 07:05» */
 export const dayTime = (t: string, ex: Pick<Exercise, "days">): string => `${dayLabel(t, ex.days)} ${t.slice(11, 16)}`;
 

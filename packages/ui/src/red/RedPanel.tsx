@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { CoaIndicator, Hint, HintGroup, RedCoa } from "@lage/core";
 import { decide, GROUPS, groupOf, hhmm, isDone, isOpen, type DecisionState, type RedBadge } from "../hintsData";
 import { KiLageberichtButton } from "../ki/KiFeatures";
-import { ForceTable } from "../LageRotPanel";
+import { ForceTable } from "./ForceTable";
 import type { RedPanelProps } from "../shell/contracts";
 import { RedCard, RedHintRow } from "./RedCard";
 import { RedCoaDetail, RedHintDetail } from "./RedDetail";
