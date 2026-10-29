@@ -151,3 +151,47 @@
   .ebox .eb-btns .eb-btn, .ebox .eb-btns .ph-btn, .ebox .eb-btns .vc-btn { padding: 0 10px; }
   .ebox .eb-main { min-width: 0; }
 }
+
+/* ---------- MVP 3: «Was ist es?», Nicht-Meldungen, AEIOU, Aufheben, Kürzel (Spez. MVP 3, Kap. 2.2, 2.3) ---------- */
+.eb-artwrap { position: relative; display: inline-flex; max-width: 100%; }
+.eb-seg.eb-art { flex-wrap: wrap; row-gap: var(--sp-4); }
+.eb-seg button.k-andere span[aria-hidden] { color: var(--ink); }
+.eb-seg button.k-andere[aria-pressed="true"] span[aria-hidden] { color: inherit; }
+.eb-artmenu {
+  position: absolute; z-index: 45; top: calc(100% + 4px); right: 0; min-width: 300px; max-width: calc(100vw - 32px);
+  display: grid; padding: var(--sp-4); gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-8);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .18);
+}
+.eb-artmenu button {
+  min-height: var(--hit); display: grid; grid-template-columns: 20px auto 1fr; align-items: center; gap: var(--sp-8); text-align: left;
+  padding: 0 var(--sp-12); border: 0; border-radius: var(--r-4); background: transparent; color: var(--ink); font-size: var(--fs-14); cursor: pointer;
+}
+.eb-artmenu button:hover, .eb-artmenu button:focus-visible { background: var(--bg); outline: none; box-shadow: inset 0 0 0 2px var(--sel); }
+.eb-artmenu button[aria-checked="true"] { font-weight: 600; }
+.eb-artmenu .eb-am-n { font-weight: 600; }
+.eb-artmenu .eb-am-w { color: var(--muted); font-size: var(--fs-12); justify-self: end; }
+@media (pointer: coarse) { .eb-artmenu button { font-size: var(--fs-16); } }
+.eb-art-v { font-weight: 600; }
+.eb-dringend { font-weight: 700; }
+.eb-genannt, .eb-lift { margin: 0; font-size: var(--fs-14); color: var(--ink); line-height: 1.4; }
+.eb-genannt { color: var(--muted); }
+.eb-felder { color: var(--ink); }
+.eb-liftpick { margin: 0; }
+
+/* Kürzel-Abfrage: dort, wo der Bediener sowieso hinschaut (über der Vorschau) */
+.eb-kuerzel {
+  display: grid; gap: var(--sp-8); padding: var(--sp-8) var(--sp-12); border-radius: var(--r-4);
+  background: var(--surface); border: 2px solid var(--ink);
+}
+.eb-kuerzel p { margin: 0; }
+.eb-kz-q { font-size: var(--fs-14); color: var(--ink); }
+.eb-kz-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); }
+.eb-kz-l { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
+.eb-kz-f {
+  width: 7.5em; min-height: var(--hit); font: 500 var(--fs-16) var(--f-mono); text-transform: uppercase; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-4); padding: 0 var(--sp-8);
+}
+.eb-kz-f:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
+.eb-kz-f[aria-invalid="true"] { border-color: var(--stop); }
+.eb-kz-h { font-size: var(--fs-12); color: var(--muted); }
+.eb-kz-err { color: var(--stop); }

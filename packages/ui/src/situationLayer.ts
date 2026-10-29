@@ -19,6 +19,7 @@ import {
   type Box, type LageEvent, type LV95, type RasterSheet, type Stack,
 } from "@lage/core";
 import { escapeHtml, iconSvg, symbolSvg, toLatLng, toLv95 } from "@lage/map";
+import { liftMap } from "@lage/core";
 import { KIND_COLOR, kindText, MAP_INK, SIDE_COLOR, situationModel, type SituationItem } from "./journalLayer";
 import { isLocked, subscribeLock, type LayerFlags } from "./layers";
 import { clickSuppressed, longPress, suppressClick, suppressContextMenu } from "./longpress";
@@ -323,7 +324,7 @@ class SituationLayer extends L.LayerGroup {
 
   private buildItems() {
     const o = this.o;
-    const model = situationModel(this.events, o.t, o.flags, { recentMin: o.recentMin, selectedId: o.selectedId, from: o.from });
+    const model = situationModel(ohneAufgehobene(this.events, o.t), o.t, o.flags, { recentMin: o.recentMin, selectedId: o.selectedId, from: o.from });
     // Beschriftungs- und Deckkraftregel (Grundansicht ruhig, Experte wie bisher)
     for (const it of model.items) {
       const q = quietLook(it, { quiet: !!o.quiet, zeiten: o.flags.zeiten, neuMin: o.recentMin });
@@ -990,6 +991,27 @@ function cellRing(label: string, sheets: RasterSheet[]): L.LatLng[] | null {
   if (!c || !sh) return null;
   const b = cellBounds(sh, c.col, c.row, c.quadrant);
   return [{ e: b.minE, n: b.maxN }, { e: b.maxE, n: b.maxN }, { e: b.maxE, n: b.minN }, { e: b.minE, n: b.minN }].map(toLatLng);
+}
+
+const OHNE = new WeakMap<LageEvent[], { lifts: Map<string, { t: string; by: string }>; byT: Map<string, LageEvent[]> }>();
+/**
+ * Meldungen ohne die zur Lagezeit `t` aufgehobenen (Sperre, Checkpoint, Fläche, Linie – Spez. MVP 3, Kap. 3.5;
+ * `liftMap` aus dem Kern): Rückblick vor der Aufhebung zeigt das Zeichen noch. Gleiche Liste ohne Aufhebung → dieselbe
+ * Liste (Identität bleibt, Memos greifen). Für Lageebene, Legende und Lagekarte.
+ */
+export function ohneAufgehobene(events: LageEvent[], t: string): LageEvent[] {
+  let m = OHNE.get(events);
+  if (!m) { m = { lifts: liftMap(events), byT: new Map() }; OHNE.set(events, m); }
+  if (!m.lifts.size) return events;
+  let out = m.byT.get(t);
+  if (out) return out;
+  const lifts = m.lifts;
+  out = events.some((e) => { const l = lifts.get(e.id); return !!l && l.t <= t; })
+    ? events.filter((e) => { const l = lifts.get(e.id); return !l || l.t > t; })
+    : events;
+  if (m.byT.size > 20) m.byT.clear();
+  m.byT.set(t, out);
+  return out;
 }
 
 export function situationLayer(map: L.Map, events: LageEvent[], o: SituationOptions): L.LayerGroup {

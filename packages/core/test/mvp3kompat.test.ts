@@ -15,10 +15,11 @@ function mvp1Datei(): string {
   const d = parseMeldung("H04 Rückfrage: Standort Det 2?", {
     sheets: ex.sheets, areas: ex.areas, units: ex.units, days: ex.days, day: ex.days[1]!, now, lastPos: (u, s) => lastPosition(ex.events!, s, u),
   });
-  expect(d.kindHint).toBe("notiz");
+  expect(d.art).toBe("rueckfrage");
   const e = eventFromDraft(d, "dev-alt", now);
-  // MVP 1 kannte `art` nicht: so wie damals gespeichert
-  const { art: _a, ...alt } = e;
+  expect(e.notiz).toBe(true);
+  // MVP 1 kannte `art` (und die übrigen MVP-3-Felder) nicht: so wie damals gespeichert
+  const { art: _a, an: _an, quelle: _q, frist: _f, vbk: _v, orte: _o, ...alt } = e;
   ex.events = [...ex.events!, alt as LageEvent];
   const json = exerciseToFile(ex);
   for (const k of ["\"art\"", "\"nr\"", "\"lvz\"", "\"schichten\"", "\"erfasstVon\""]) expect(json.includes(k), k).toBe(false);

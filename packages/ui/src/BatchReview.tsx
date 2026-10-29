@@ -8,6 +8,9 @@
  * z. B. «15:35 liegt in der Zukunft – meintest du 07:35?» mit Knopf «07:35 einsetzen»). Vorab angehakt und von
  * «Alle übernehmen» erfasst werden nur grüne Zeilen; gelbe nur einzeln.
  *
+ * MVP 3: Art je Zeile wie im Meldungsfeld (Chip «Auftrag an H01 – kein Zeichen», «Rückfrage von H04 …»), gleiche
+ * Gründe (`entryState`, inkl. «Tag fremd» mit Knopf «Als T2 07:26 übernehmen»), Zeile «gelesen als AEIOU: …».
+ *
  * Tastatur: ↑/↓ = Zeile wechseln · Enter = Zeile übernehmen · Esc = schliessen (mit offenen Vorschlägen: Rückfrage,
  * nochmals Esc = verwerfen).
  */
@@ -19,7 +22,8 @@ import { dayLabel } from "./Timeline";
 import { defaultDay, journalCtx } from "./commit";
 import { getBlob } from "./store";
 import { initialRows, pqDoubt, type BatchItem, type BatchRow } from "./batchRows";
-import { dayTitle, genericWhat, replaceToken } from "./entry/labels";
+import { isLageDraft } from "./commit";
+import { dayTitle, felderText, genericWhat, replaceToken } from "./entry/labels";
 import { stateOf } from "./entry/stateOptions";
 import "./batch.css";
 
@@ -41,6 +45,16 @@ export interface BatchReviewProps {
 }
 
 const KIND_LABEL: Record<Kind, string> = { eigen: "Eigene", feind: "Feind", unklar: "Unklar" };
+/** Art einer Nicht-Meldung in Worten (wie «Verstanden: …» im Meldungsfeld) */
+function artChip(d: Draft): string {
+  switch (d.art) {
+    case "auftrag": return d.an ? `Auftrag an ${d.an}` : "Auftrag";
+    case "orientierung": return d.quelle ? `Orientierung von ${d.quelle}` : "Orientierung";
+    case "rueckfrage": return d.an ? `Rückfrage an ${d.an}` : d.melder ? `Rückfrage von ${d.melder}` : "Rückfrage";
+    case "vbk": return `Verbindung ${d.melder || "?"}${d.vbk ? ` ${d.vbk}` : ""}`;
+    default: return "Notiz";
+  }
+}
 const COMPASS = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
 const compass = (deg: number) => COMPASS[Math.round(deg / 45) % 8]!;
 
@@ -50,16 +64,16 @@ const compass = (deg: number) => COMPASS[Math.round(deg / 45) % 8]!;
 export function DraftPreview({ draft, days, posDoubt }: { draft: Draft; days: string[]; /** Ort nur vermutet (z. B. PQ nicht in der Meldung) */ posDoubt?: string }) {
   const problems = draft.problems ?? [];
   const ortProblem = problems.some((p) => p.kind === "ort");
-  const note = draft.kindHint === "notiz";
+  const note = !isLageDraft(draft) || !!draft.hebtAuf;
   const what = draft.desc ?? genericWhat(draft.sym, draft.side, draft.unit || draft.melder) ?? symbolDef(draft.sym).name;
   const sym = useMemo(() => ({ __html: iconSvg(draft.sym, draft.aff, 16, { sidc: draft.sidc, status: draft.status }).svg }), [draft.sym, draft.aff, draft.sidc, draft.status]);
   const kind = draft.side === "blau" ? "eigen" : draft.aff === "N" ? "neutral" : draft.kind;
   return (
     <div className="preview br-preview">
       <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={`${dayTitle(draft.t, days)} · ${draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}`}>{dayLabel(draft.t, days)} {draft.t.slice(11, 16)}</span>
-      {draft.melder ? <span className="chip" title="Trupp, der meldet"><b>{draft.melder}</b> meldet</span>
+      {draft.melder && !note ? <span className="chip" title="Trupp, der meldet"><b>{draft.melder}</b> meldet</span>
         : !note && <span className="chip warnsoft" title="Wer meldet? z. B. «H04» an den Anfang">Wer meldet? fehlt</span>}
-      {note ? <span className="chip">Notiz – ohne Zeichen</span> : <>
+      {note ? <span className="chip">{draft.hebtAuf ? "Aufhebung" : artChip(draft)} – kein Zeichen</span> : <>
         <span className={"chip br-kind k-" + kind}>{kind === "neutral" ? "Neutral" : KIND_LABEL[draft.kind]}</span>
         {draft.kind !== "eigen" && draft.unit && draft.unit !== draft.melder && <span className="chip"><b>{draft.unit}</b></span>}
         <span className="chip"><span className="symmini" dangerouslySetInnerHTML={sym} />{what}{!draft.desc && draft.count && draft.count > 1 ? ` ×${draft.count}` : ""}</span>
@@ -235,6 +249,7 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
               const asked = lvl === "pruefen" && armed[r.key] === r.text;
               const green = lvl === "bereit";
               const offer = st?.reasons.find((x) => x.code === "zukunft" && x.suggest && x.token);
+              const tagOffer = st?.reasons.find((x) => x.code === "tag-fremd" && x.suggest);
               const wasOffer = st?.reasons.find((x) => x.code === "was" && x.token) && dr?.unknownWord?.suggestLabel ? dr.unknownWord : undefined;
               return (
                 <li key={r.key} className={`br-row k-${k}` + (i === cur ? " cur" : "") + (r.on && green ? "" : " off") + (lvl ? ` lvl-${lvl}` : "")} onFocus={() => setCur(i)} data-zustand={lvl ?? undefined}>
@@ -267,8 +282,9 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
                             <p className="br-st-h"><span aria-hidden="true">{lvl === "pruefen" ? "⚠ " : "⛔ "}</span>{LEVEL_TEXT[lvl]}: {r0?.text}{st.reasons.length > 1 && <span className="br-more"> +{st.reasons.length - 1}</span>}</p>
                             {r0?.hint && <p className="br-st-t">{batchHint(r0.hint)}</p>}
                           </>}
-                        {(offer || wasOffer) && (
+                        {(offer || wasOffer || tagOffer) && (
                           <span className="br-st-acts">
+                            {tagOffer && <button type="button" className="chipbtn" onClick={() => setText(i, `${tagOffer.suggest} ${r.text.trim()}`)}>Als {tagOffer.suggest!.replace(/(\d{2})(\d{2})$/, "$1:$2")} übernehmen</button>}
                             {offer && <button type="button" className="chipbtn" onClick={() => setText(i, replaceToken(r.text, offer.token!, offer.suggest!))}>{offer.suggest!.slice(0, 2)}:{offer.suggest!.slice(2)} einsetzen</button>}
                             {wasOffer && <button type="button" className="chipbtn" onClick={() => setText(i, replaceToken(r.text, wasOffer.token, wasOffer.suggestLabel!))}>«{wasOffer.suggestLabel}» einsetzen</button>}
                           </span>
@@ -276,7 +292,8 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
                       </div>
                     )}
                     {dr ? <DraftPreview draft={dr} days={ex.days} posDoubt={pqDoubt(r.doubt)} /> : <span className="help">leer – verwerfen oder Text ergänzen</span>}
-                    {dr?.normalized && dr.normalized !== dr.text && <span className="help br-read">gelesen als: <span className="mono">{dr.normalized}</span></span>}
+                    {dr?.felder ? <span className="help br-read">{felderText(dr.felder)}</span>
+                      : dr?.normalized && dr.normalized !== dr.text && <span className="help br-read">gelesen als: <span className="mono">{dr.normalized}</span></span>}
                   </div>
                   <div className="br-acts">
                     <button className="br-take" onClick={() => take(i)} disabled={!r.text.trim() || lvl === "geht-nicht"}

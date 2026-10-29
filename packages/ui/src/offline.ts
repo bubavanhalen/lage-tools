@@ -2,7 +2,8 @@
  * Offline: Service Worker anmelden, Kartenkacheln für ein Gebiet vorab speichern.
  */
 import { RESOLUTIONS } from "@lage/map";
-import { WMTS_LAYER, type Bounds, type TileLayer } from "./tiles";
+import { tileUrl, WMTS_LAYER, type Bounds, type TileLayer } from "./tiles";
+import type { TileCoverage } from "./shell/contracts";
 
 const TILE_CACHE = "lt-tiles-v1";
 const TILE = 256;
@@ -87,6 +88,34 @@ export async function areaTilesCached(b: Bounds, finest = 5, maxCheck = 160): Pr
     return !!(await cache.match(urls[urls.length - 1]!));
   } catch {
     return false;
+  }
+}
+
+/**
+ * Abdeckung des Kachel-Caches für Gebiet `b` auf Stufe `z` (Spez. MVP 3, Kap. 3.10): nur `caches.match`, keine
+ * Netzanfragen. Bei sehr vielen Kacheln wird eine gleichmässige Stichprobe (`maxCheck`) geprüft und hochgerechnet.
+ * Ohne Cache-API (z. B. unsicherer Ursprung): nichts vorhanden.
+ */
+export async function tileCoverage(b: Bounds, z: number, layer: TileLayer = "lk", maxCheck = 800): Promise<TileCoverage> {
+  const r = tileRange(b, z);
+  const xs = r.x1 - r.x0 + 1, ys = r.y1 - r.y0 + 1;
+  const total = Math.max(0, xs * ys);
+  if (!total) return { z, total: 0, cached: 0, share: 1 };
+  try {
+    if (typeof caches === "undefined") return { z, total, cached: 0, share: 0 };
+    const cache = await caches.open(TILE_CACHE);
+    const step = Math.max(1, Math.ceil(total / maxCheck));
+    const idx: number[] = [];
+    for (let i = 0; i < total; i += step) idx.push(i);
+    let hit = 0;
+    for (let k = 0; k < idx.length; k += 64) {
+      const part = await Promise.all(idx.slice(k, k + 64).map((i) => cache.match(tileUrl(layer, z, r.x0 + (i % xs), r.y0 + Math.floor(i / xs)))));
+      hit += part.filter(Boolean).length;
+    }
+    const share = hit / idx.length;
+    return { z, total, cached: step === 1 ? hit : Math.round(share * total), share };
+  } catch {
+    return { z, total, cached: 0, share: 0 };
   }
 }
 

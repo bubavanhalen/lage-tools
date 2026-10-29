@@ -8,14 +8,15 @@
  *  R3 Eintragen/Korrektur → `goLive("eintragen")` (ruft die Hülle),
  *  R4 Timer ruht beim Abspielen und solange ein `suspend`-Schlüssel an ist (Präsentation, Menü, Dialog);
  *     verborgene Seite zählt als «ohne Bedienung» (beim Zurückkehren nach > 120 s sofort LIVE),
- *  R5 nichts wird gespeichert: Neuladen und Übungswechsel → LIVE und «Zeige letzte: alles»,
+ *  R5 nichts wird gespeichert: Neuladen und Übungswechsel → LIVE und Standard «Zeige letzte» (alles; MVP 3: ab
+ *     200 Meldungen 6 h, Spez. MVP 3 Kap. 3.12/E16 – der Chip «zeigt nur letzte 6 h ✕» macht es sichtbar),
  *  R6 gewählte Zeit ≥ LIVE → LIVE,
  *  Taste L (ausserhalb von Eingabefeldern) → LIVE.
  *
  * `LageZeitCtl` ist ohne React (Test mit vitest und Fake-Timern), `useLageZeit` hängt ihn an die Seite.
  */
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { localIso, showLastStart, windowStart, type LageEvent } from "@lage/core";
+import { localIso, showLastStart, windowStart, zaehleMeldungen, type LageEvent } from "@lage/core";
 import type { GoLiveGrund, LageZeit, ShowLast, ZeitApi } from "../shell/contracts";
 
 /** so lange ohne Bedienung, dann zurück nach LIVE (R1) */
@@ -199,6 +200,13 @@ export class LageZeitCtl {
   }
 }
 
+/** ab so vielen Meldungen (Art Meldung, nicht gestrichen) gilt beim Laden «Zeige letzte 6 h» (Spez. MVP 3, E16) */
+export const LANG_AB = 200;
+/** Standard «Zeige letzte» beim Laden/Übungswechsel: alles, ab 200 Meldungen 6 h */
+export function showLastStandard(events: LageEvent[] | undefined): ShowLast {
+  return zaehleMeldungen({ events }) >= LANG_AB ? 360 : null;
+}
+
 /** Taste L (ohne Ctrl/Alt/⌘, nicht in Eingabefeldern) */
 export function isLiveKey(ev: KeyboardEvent): boolean {
   if (ev.ctrlKey || ev.altKey || ev.metaKey || (ev.key !== "l" && ev.key !== "L")) return false;
@@ -321,10 +329,15 @@ export function useLageZeit({ exId, events, say }: UseLageZeitOptions): ZeitApi 
     };
   }, [ctl]);
 
-  // Übungswechsel → LIVE, alles zeigen (R5)
-  const prevEx = useRef(exId);
+  // Laden und Übungswechsel → LIVE, Standard «Zeige letzte» (R5: alles, ab 200 Meldungen 6 h)
+  const prevEx = useRef<string | undefined>(undefined);
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
   useEffect(() => {
-    if (prevEx.current !== exId) { prevEx.current = exId; ctl.reset(); }
+    if (prevEx.current === exId) return;
+    prevEx.current = exId;
+    ctl.reset();
+    if (exId) { const d = showLastStandard(eventsRef.current); if (d) ctl.setShowLast(d); }
   }, [exId, ctl]);
 
   return useMemo(() => ({

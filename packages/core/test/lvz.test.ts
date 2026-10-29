@@ -142,3 +142,164 @@ describe("Nicht-Meldungen zeichnen nie (Invariante E3)", () => {
     expect(s.loose).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Paket A: Verdrahtung in parseMeldung, Hinweise, CSV (nur fiktive Daten, Beispiel Bern)
+import { analyzeJournal, aufhebDraft, aufhebEvent, entryState, eventFromDraft, journalToCsv, kurzText, nrLabel, parseMeldung, type JournalContext } from "../src";
+
+const bernCtx = (ex: Exercise, hhmm: string, o: Partial<JournalContext> = {}): JournalContext => ({
+  sheets: ex.sheets, areas: ex.areas, units: ex.units, days: ex.days, day: ex.days[1]!, now: new Date(2030, 4, 15, +hhmm.slice(0, 2), +hhmm.slice(2)),
+  events: ex.events, ex, ...o,
+});
+const add = (ex: Exercise, text: string, hhmm: string, o: Partial<JournalContext> = {}) => {
+  const d = parseMeldung(text, bernCtx(ex, hhmm, o));
+  const e = eventFromDraft(d, "dev-a", new Date(2030, 4, 15, +hhmm.slice(0, 2), +hhmm.slice(2)), { nr: (ex.events?.length ?? 0) + 1, kuerzel: "BSP" });
+  ex.events = [...(ex.events ?? []), e];
+  return { d, e };
+};
+
+describe("Hinweise: nur Lage, Lebenszeichen, Nachlauf bei Aufhebung", () => {
+  const d3 = (ex: Exercise, t: string) => analyzeJournal(ex, { t }).hints.find((h) => h.rule === "D3" && h.nai === "NAI 1");
+  it("D3: «H01 Vbk i.O.» ist ein Lebenszeichen und beendet «NAI 1 nicht überwacht»", () => {
+    const ex = demoExercise();
+    expect(d3(ex, "2030-05-15T04:00")?.until).toBeUndefined();
+    add(ex, "T2 0150 H01 Vbk i.O.", "0150");
+    expect(d3(ex, "2030-05-15T04:00")?.until).toBe("2030-05-15T01:50");
+  });
+  it("D3: «H01 keine Verbindung» ist kein Lebenszeichen", () => {
+    const ex = demoExercise();
+    add(ex, "T2 0150 H01 keine Verbindung", "0150");
+    expect(d3(ex, "2030-05-15T04:00")?.until).toBeUndefined();
+  });
+  it("Nicht-Meldungen ändern die Hinweise nicht (Auftrag, Orientierung, Rückfrage, Notiz)", () => {
+    const ex = demoExercise();
+    const sig = (x: Exercise) => analyzeJournal(x, { t: "2030-05-15T07:30" }).hints.map((h) => `${h.id}|${h.until ?? ""}|${h.events.length}`).sort().join("\n");
+    const vorher = sig(ex);
+    for (const t of ["Auftrag an H03: Sperre in NAI 3 beobachten bis 0800", "Bat: 2 Kpz erwartet in NAI 2 ab 0800", "H04 Rückfrage: 2 Fz in AK9?", "Notiz: Checkpoint AK7 geplant"]) add(ex, t, "0728");
+    expect(sig(ex)).toBe(vorher);
+  });
+  it("C5: Sperre in NAI 3 aufgehoben → «Hinterhalt-Gefahr in NAI 3» vorbei (Nachlauf), Rückblick davor offen", () => {
+    const ex = demoExercise();
+    const c5 = (x: Exercise, t: string) => analyzeJournal(x, { t }).hints.find((h) => h.rule === "C5" && h.nai === "NAI 3");
+    expect(c5(ex, "2030-05-15T07:30")?.until).toBeUndefined();
+    const { d } = add(ex, "H05 Sperre in NAI 3 aufgehoben", "0728");
+    expect(d.hebtAuf).toBeTruthy();
+    expect(entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now: new Date(2030, 4, 15, 7, 28) }).level).toBe("bereit");
+    expect(c5(ex, "2030-05-15T07:30")?.until).toBe("2030-05-15T07:28");
+    expect(c5(ex, "2030-05-15T07:20")?.until).toBeUndefined();
+  });
+});
+
+describe("Aufheben über parseMeldung und Knopf", () => {
+  it("keine aktive Sperre am Ort → gelb «Keine aktive Sperre in AA1 gefunden …», normale Meldung", () => {
+    const ex = demoExercise();
+    const d = parseMeldung("H04 Sperre AA1 aufgehoben", bernCtx(ex, "0730"));
+    expect(d.hebtAuf).toBeUndefined();
+    expect(d.hebtAufKandidaten).toEqual([]);
+    const st = entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now: new Date(2030, 4, 15, 7, 30) });
+    expect(st.reasons.find((r) => r.code === "aufheben")?.text).toBe("Keine aktive Sperre in AA1 gefunden – als normale Meldung eintragen?");
+  });
+  it("zwei Sperren am Ort → gelb «Zwei Sperren in AG13 – welche?»; Wahl mit aufhebDraft", () => {
+    const ex = demoExercise();
+    add(ex, "T2 0715 H04: 2. Sperre in AG13", "0715");
+    const d = parseMeldung("H04 Sperre AG13 aufgehoben", bernCtx(ex, "0730"));
+    expect(d.hebtAufKandidaten).toHaveLength(2);
+    const st = entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now: new Date(2030, 4, 15, 7, 30) });
+    expect(st.reasons.find((r) => r.code === "aufheben")?.text).toBe("Zwei Sperren in AG13 – welche?");
+    const ziel = ex.events!.find((e) => e.id === d.hebtAufKandidaten![1])!;
+    const w = aufhebDraft(d, ziel);
+    expect(w).toMatchObject({ hebtAuf: ziel.id, unit: "", sym: "einheit", desc: "Sperre aufgehoben" });
+    expect(w.pos).toBeUndefined();
+    expect(entryState(w, { hasRaster: true, online: false, placePending: false, manualPos: false, now: new Date(2030, 4, 15, 7, 30) }).reasons.some((r) => r.code === "aufheben")).toBe(false);
+  });
+  it("Knopf «Aufgehoben (jetzt)»: Meldung «Sperre AG13 aufgehoben», Zeichen weg, Streichen bringt es zurück", () => {
+    const ex = demoExercise();
+    const ziel = ex.events!.find((e) => e.sym === "sperre" && e.cells?.includes("AG13"))!;
+    const lift = aufhebEvent(ziel, "dev-a", new Date(2030, 4, 15, 7, 40), { t: "2030-05-15T07:40", nr: 99, kuerzel: "BSP" });
+    expect(lift).toMatchObject({ text: "Sperre AG13 aufgehoben", hebtAuf: ziel.id, art: "meldung", unit: "", sym: "einheit", erfasstVon: "BSP", nr: 99, orte: ["AG13"] });
+    expect(lift.pos).toBeUndefined();
+    const evs = [...ex.events!, lift];
+    expect(situationAt(evs, "2030-05-15T07:45").loose.some((e) => e.id === ziel.id)).toBe(false);
+    expect(situationAt(evs, "2030-05-15T07:39").loose.some((e) => e.id === ziel.id)).toBe(true);
+    expect(vermerkeOf(ziel, lvzIndex(evs)).aufgehoben).toEqual({ t: "2030-05-15T07:40", id: lift.id });
+    const zurueck = [...ex.events!, { ...lift, deleted: true }];
+    expect(situationAt(zurueck, "2030-05-15T07:45").loose.some((e) => e.id === ziel.id)).toBe(true);
+  });
+});
+
+describe("Bezüge über die Nummer", () => {
+  it("«Antwort zu 99» ohne Nr 99 → gelb «Nr 99 gibt es nicht – ohne Bezug eintragen?»", () => {
+    const ex = demoExercise();
+    const d = parseMeldung("Antwort zu 99: Det 2 in AJ8", bernCtx(ex, "0730"));
+    expect(d).toMatchObject({ bezugNr: "99", bezugFehlt: true, art: "meldung" });
+    expect(d.text).toBe("Antwort zu 99: Det 2 in AJ8");
+    const st = entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now: new Date(2030, 4, 15, 7, 30) });
+    expect(st.reasons.find((r) => r.code === "bezug")?.text).toBe("Nr 99 gibt es nicht – ohne Bezug eintragen?");
+  });
+  it("«Quittung» → jüngster offener Auftrag an den Trupp (quittiert, nicht erledigt); «ausgeführt» erledigt ihn", () => {
+    const ex = demoExercise();
+    const { e: a } = add(ex, "Auftrag an H02: Beo AK9 bis 0900", "0720");
+    const { d: q } = add(ex, "Quittung H02 Auftrag erhalten", "0722");
+    expect(q).toMatchObject({ art: "notiz", bezug: a.id, bezugArt: "quittung", bezugNr: nrLabel(a, ex) });
+    expect(vermerkeOf(a, lvzIndex(ex.events!))).toMatchObject({ status: "offen", quittiert: { t: "2030-05-15T07:22" } });
+    const { d: x } = add(ex, "H02 Auftrag ausgeführt, Beo Stao AK9", "0740");
+    expect(x).toMatchObject({ art: "meldung", bezug: a.id, bezugArt: "ausgefuehrt" });
+    expect(vermerkeOf(a, lvzIndex(ex.events!)).status).toBe("erledigt");
+  });
+  it("«zu 2 Häusern» ist kein Bezug (nur am Anfang bzw. mit Doppelpunkt)", () => {
+    const ex = demoExercise();
+    expect(parseMeldung("H03: 1 Fz fährt zu 2 Häusern in AN6", bernCtx(ex, "0730")).bezugNr).toBeUndefined();
+    expect(parseMeldung("H03 zu 12: Fz wieder weg", bernCtx(ex, "0730")).bezugNr).toBe("12");
+  });
+});
+
+describe("Zeitregel und Tag fremd", () => {
+  it("Nicht-Meldung: Zeit nur am Anfang («T2 0715 Auftrag …»), «ab 2200»/«bis 1200» sind Inhalt", () => {
+    const ex = demoExercise();
+    expect(parseMeldung("T2 0715 Auftrag an H01: Beo NAI 1 bis 1200", bernCtx(ex, "0730")).t).toBe("2030-05-15T07:15");
+    const o = parseMeldung("Kp: Lagerapport um 1800 im KP", bernCtx(ex, "0730"));
+    expect(o).toMatchObject({ art: "orientierung", quelle: "Kp", t: "2030-05-15T07:30", timeFromText: false });
+    expect(o.problems).toBeUndefined();
+  });
+  it("E17: heute kein Tag der Übung → gelb «Heute (29.10.) ist kein Tag dieser Übung …» mit Vorschlag «T2 0726»", () => {
+    const ex = demoExercise();
+    const now = new Date(2026, 9, 29, 9, 15);
+    const d = parseMeldung("H04 2 Fz AK7", { ...bernCtx(ex, "0915"), now });
+    const st = entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now, days: ex.days, follow: false, lastReport: "2030-05-15T07:25" });
+    const r = st.reasons.find((x) => x.code === "tag-fremd")!;
+    expect(r.text).toBe("Heute (29.10.) ist kein Tag dieser Übung (T1 14.05.–T2 15.05.2030).");
+    expect(r.suggest).toBe("T2 0726");
+    expect(st.level).toBe("pruefen");
+    // mit Tagesangabe: kein Hinweis
+    const d2 = parseMeldung("T2 0726 H04 2 Fz AK7", { ...bernCtx(ex, "0915"), now });
+    expect(entryState(d2, { hasRaster: true, online: false, placePending: false, manualPos: false, now, days: ex.days, follow: false }).reasons.some((x) => x.code === "tag-fremd")).toBe(false);
+  });
+});
+
+describe("Offen-Texte und CSV", () => {
+  it("Kurztexte «Feind … (Melder)» und «– weitergemeldet Bat 07:15»", () => {
+    const ex = demoExercise();
+    const i = ex.events!.findIndex((e) => e.text.includes("2 Kpz AJ9"));
+    let e = setVermerk(ex.events![i]!, "dringend", true, { device: "a", now: at(5) });
+    e = setVermerk(e, "weiter", { an: "Bat", um: "2030-05-15T07:15" }, { device: "a", now: at(6) });
+    ex.events = ex.events!.map((x, j) => (j === i ? e : x));
+    expect(kurzText(e, ex.units.blau)).toBe("Feind 2 Kpz AJ9 Rtg W (H05)");
+    expect(offenePunkte(ex, "2030-05-15T07:30")[0]!.text).toBe("Feind 2 Kpz AJ9 Rtg W (H05) – weitergemeldet Bat 07:15");
+  });
+  it("CSV: neue Spalten hinten, Art in Worten, Nummer, Bezug, Stand", () => {
+    const ex = demoExercise();
+    const { e: rf } = add(ex, "H04 Rückfrage: Standort Det 2?", "0725");
+    add(ex, `Antwort zu ${nrLabel(rf, ex)}: Det 2 in AJ8`, "0728");
+    const rows = journalToCsv(ex.events!, ex.days).replace(/^﻿/, "").split("\r\n").map((r) => r.split(";"));
+    const head = rows[0]!;
+    expect(head.slice(0, 15).join(";")).toBe("Tag;Zeit;Art;Element;Melder;Meldung;Zeichen;Ort;Planquadrat;NAI;E;N;Status;Fassungen;Form");
+    expect(head.slice(15)).toEqual(["Nr", "Eingang", "An/Quelle", "Erfasst von", "Dringend", "Stand", "Massnahme", "Weitergemeldet", "Bezug", "Hebt auf"]);
+    const col = (r: string[], n: string) => r[head.indexOf(n)];
+    const rfRow = rows.find((r) => col(r, "Meldung") === "H04 Rückfrage: Standort Det 2?")!;
+    expect(col(rfRow, "Art")).toBe("Rückfrage von H04");
+    expect(col(rfRow, "Erfasst von")).toBe("BSP");
+    expect(col(rfRow, "Stand")).toMatch(/^erledigt .* beantwortet 07:28 \(Nr \d+\)$/);
+    const an = rows.find((r) => col(r, "Meldung")?.startsWith("Antwort zu"))!;
+    expect(col(an, "Bezug")).toBe(nrLabel(rf, ex));
+  });
+});

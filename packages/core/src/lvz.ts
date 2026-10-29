@@ -11,7 +11,7 @@
  * Kein Import aus journal.ts (journal.ts wird `liftMap` importieren).
  */
 import { artOf, artText, isLage, lebenszeichen, readArt } from "./arten";
-import { catalogEntry } from "./catalog";
+import { AUFHEBBAR, catalogEntry } from "./catalog";
 import { compareEvents } from "./clock";
 import { QUITTUNG_ERLEDIGT, STILL_MIN } from "./entscheide";
 import type { Draft } from "./journal";
@@ -110,11 +110,9 @@ export function vermerkeOf(e: LageEvent, idx: LvzIndex): VermerkStand {
   return out;
 }
 
-/** Aufhebbar: Tätigkeit (Sperre, Checkpoint, IED …) oder Fläche/Linie aus dem Katalog bzw. gezeichnet */
+/** Aufhebbar: Hindernis, Anlage (Checkpoint …), Fläche/Linie aus dem Katalog (`AUFHEBBAR`) bzw. gezeichnet */
 export function istAufhebbar(e: Pick<LageEvent, "sym" | "shape">): boolean {
-  if (e.shape) return true;
-  const c = catalogEntry(e.sym);
-  return !!c && (!!c.activity || (!!c.geometry && c.geometry !== "punkt"));
+  return !!e.shape || AUFHEBBAR.has(e.sym);
 }
 
 /** Oberbegriffe: «Sperre aufgehoben» passt auf alle Hindernisse */
@@ -174,6 +172,17 @@ function inhalt(e: LageEvent, blau: string[]): string {
 }
 
 /**
+ * Kurztext eines Eintrags für «Offen» und die Übergabe: «Feind 2 Kpz AJ9 Rtg W (H05)», «Feind 1 Fz Rtg N (H02, AK9)» –
+ * Art in Worten, Inhalt ohne Melder, dahinter Melder und Ort (wenn nicht schon im Text).
+ */
+export function kurzText(e: LageEvent, blau: string[] = []): string {
+  const base = inhalt(e, blau);
+  const ort = ortText(e) || (e.orte ?? [])[0] || "";
+  const extra = [e.melder && !base.includes(e.melder) ? e.melder : "", ort && !base.includes(ort) ? ort : ""].filter(Boolean);
+  return `${artText(e)} ${base}${extra.length ? ` (${extra.join(", ")})` : ""}`.replace(/\s+/g, " ").trim();
+}
+
+/**
  * Offene Punkte zur Lagezeit `tLive` (Stand jetzt): dringend & nicht erledigt · Konflikte beim Zusammenführen
  * (`conflictIds` und `history` mit `conflict`, solange nicht «erledigt») · offene Aufträge (Frist vorbei zuerst) ·
  * Rückfragen ohne Antwort · Verbindung «keine» bis zum nächsten Lebenszeichen · Trupp > `stillMin` ohne Lebenszeichen ·
@@ -184,6 +193,7 @@ export function offenePunkte(ex: Exercise, tLive: string, o: { conflictIds?: str
   const idx = lvzIndex(all);
   const stillMin = o.stillMin ?? STILL_MIN;
   const conflicts = new Set(o.conflictIds ?? []);
+  const blau = ex.units?.blau ?? [];
   const out: OffenItem[] = [];
   const live = all.filter((e) => !e.deleted && e.t <= tLive);
   const item = (art: OffenArt, e: LageEvent, text: string, extra: Partial<OffenItem> = {}): OffenItem => ({
@@ -199,7 +209,7 @@ export function offenePunkte(ex: Exercise, tLive: string, o: { conflictIds?: str
     const erledigt = v.status === "erledigt";
     const conflict = conflicts.has(e.id) || (e.history ?? []).some((h) => h.conflict);
     if (conflict && !erledigt) out.push(item("konflikt", e, "zwei Fassungen – ansehen"));
-    if (v.dringend && !erledigt) { out.push(item("dringend", e, `${artText(e)} ${e.text}`.trim())); continue; }
+    if (v.dringend && !erledigt) { out.push(item("dringend", e, `${kurzText(e, blau)}${v.weiter ? ` – weitergemeldet ${v.weiter.an} ${hhmm(v.weiter.um)}` : ""}`)); continue; }
     if (art === "auftrag" && v.status === "offen") {
       const frist = e.frist;
       const ueberfaellig = !!frist && frist < tLive;
@@ -215,8 +225,8 @@ export function offenePunkte(ex: Exercise, tLive: string, o: { conflictIds?: str
       }
       continue;
     }
-    if (isLage(e) && !e.pos && !erledigt) { out.push(item("ohne-ort", e, `${artText(e)} ${e.text} – Ort fehlt`)); continue; }
-    if (e.lvz?.status?.v === "offen") out.push(item("offen", e, `${artText(e)} ${e.text}`.trim()));
+    if (isLage(e) && !e.pos && !erledigt) { out.push(item("ohne-ort", e, `${kurzText(e, blau)} – Ort fehlt`)); continue; }
+    if (e.lvz?.status?.v === "offen") out.push(item("offen", e, kurzText(e, blau)));
   }
   // stumme Trupps (nur solche, die schon gemeldet haben)
   for (const u of ex.units?.blau ?? []) {

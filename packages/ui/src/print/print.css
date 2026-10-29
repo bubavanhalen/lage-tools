@@ -1,0 +1,29 @@
+/* Druck-Dialoge «Journal drucken …» und «Lagekarte drucken …» (Paket D, Spez. MVP 3, Kap. 2.8/2.9) – nur Tokens */
+.pr-form { display: grid; gap: var(--sp-12); }
+.pr-group { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--sp-4) var(--sp-12); align-items: start; }
+.pr-group > legend { float: left; padding: 0; width: 96px; font: 600 var(--fs-14)/var(--hit) var(--f-body); color: var(--muted); }
+.pr-group > legend + * { grid-column: 2; }
+.pr-opts { grid-column: 2; display: grid; gap: 0; }
+.pr-opt { display: flex; align-items: center; gap: var(--sp-8); min-height: var(--hit); font-size: var(--fs-14); color: var(--ink); flex-wrap: wrap; }
+.pr-opt input[type="radio"], .pr-opt input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: var(--ink); flex: none; }
+.pr-opt .pr-sub { color: var(--muted); }
+.pr-opt select, .pr-opt input[type="text"] { min-height: var(--hit); padding: 0 var(--sp-8); border: 1px solid var(--line); border-radius: var(--r-4); background: var(--surface); color: var(--ink); font: 500 var(--fs-14) var(--f-mono); }
+.pr-opt input[type="text"] { width: 9ch; }
+.pr-row { display: flex; align-items: center; gap: var(--sp-8); flex-wrap: wrap; }
+.pr-info { margin: 0; font-size: var(--fs-14); color: var(--ink); }
+.pr-info.warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: var(--r-4); padding: var(--sp-8) var(--sp-12); }
+.pr-info.warn .pr-sym { color: var(--warn-sym); font-weight: 700; }
+.pr-info.ok .pr-sym { color: var(--ok); font-weight: 700; }
+.pr-info.stop { background: var(--stop-bg); color: var(--ink); border-radius: var(--r-4); padding: var(--sp-8) var(--sp-12); }
+.pr-muted { color: var(--muted); font-size: var(--fs-12); }
+.pr-foot { display: flex; align-items: center; gap: var(--sp-8); flex-wrap: wrap; border-top: 1px solid var(--line-soft); padding-top: var(--sp-12); }
+.pr-foot .pr-est { flex: 1; color: var(--muted); font-size: var(--fs-14); min-width: 10ch; }
+.pr-foot button { min-height: var(--hit); padding: 0 var(--sp-16); }
+.pr-progress { height: 6px; border-radius: var(--r-pill); background: var(--line-soft); overflow: hidden; }
+.pr-progress > span { display: block; height: 100%; background: var(--ink); transition: width .2s; }
+@media (max-width: 560px) {
+  .pr-group { grid-template-columns: minmax(0, 1fr); }
+  .pr-group > legend { float: none; width: auto; line-height: 1.4; }
+  .pr-group > legend + *, .pr-opts { grid-column: 1; }
+}
+.pr-key { font: 600 var(--fs-14)/1.4 var(--f-body); color: var(--muted); padding-top: var(--sp-4); }

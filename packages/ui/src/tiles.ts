@@ -45,7 +45,28 @@ export function nearestLevel(metersPerPx: number, maxZ = 27): number {
   return best;
 }
 
-export async function renderTiles(b: Bounds, z: number, layer: TileLayer, onProgress?: (p: number) => void): Promise<MapRaster> {
+/** Adresse einer Kachel (gleich wie Karte, Service Worker und Offline-Paket) */
+export const tileUrl = (layer: TileLayer, z: number, x: number, y: number): string =>
+  `https://wmts.geo.admin.ch/1.0.0/${WMTS_LAYER[layer]}/default/current/2056/${z}/${x}/${y}.jpeg`;
+
+const TILE_CACHE = "lt-tiles-v1";
+
+export interface RenderTilesOptions {
+  /** abbrechen (z. B. Dialog geschlossen) – die bereits gezeichneten Kacheln bleiben */
+  signal?: AbortSignal;
+  /** zuerst im Kachel-Cache nachsehen (auch ohne Service Worker, z. B. offline oder im Test) */
+  cacheFirst?: boolean;
+  /** nicht aus dem Netz laden (nur Cache) */
+  cacheOnly?: boolean;
+  /** Hintergrund, wo eine Kachel fehlt (Standard grau-grün wie die Karte; Druck: weiss) */
+  background?: string;
+}
+
+/**
+ * Kacheln zu einem Bild zusammensetzen. `onProgress(0…1)` nach jeder Kachel. Ergebnis mit `missing`/`total`: wie
+ * viele Kacheln fehlen (nicht geladen, nicht im Cache) – nie still ein halbes Bild.
+ */
+export async function renderTiles(b: Bounds, z: number, layer: TileLayer, onProgress?: (p: number) => void, o: RenderTilesOptions = {}): Promise<MapRaster & { missing: number; total: number }> {
   const res = RESOLUTIONS[z]!;
   const x0 = Math.floor((b.minE - ORIGIN_E) / (TILE * res)), x1 = Math.floor((b.maxE - ORIGIN_E) / (TILE * res));
   const y0 = Math.floor((ORIGIN_N - b.maxN) / (TILE * res)), y1 = Math.floor((ORIGIN_N - b.minN) / (TILE * res));
@@ -53,28 +74,33 @@ export async function renderTiles(b: Bounds, z: number, layer: TileLayer, onProg
   cv.width = Math.max(1, Math.round((b.maxE - b.minE) / res));
   cv.height = Math.max(1, Math.round((b.maxN - b.minN) / res));
   const ctx = cv.getContext("2d", { willReadFrequently: true })!;
-  ctx.fillStyle = "#eef0ea";
+  ctx.fillStyle = o.background ?? "rgb(238, 240, 234)";
   ctx.fillRect(0, 0, cv.width, cv.height);
+  let cache: Cache | null = null;
+  if (o.cacheFirst || o.cacheOnly) { try { cache = typeof caches !== "undefined" ? await caches.open(TILE_CACHE) : null; } catch { cache = null; } }
+  let missing = 0;
   const jobs: Array<() => Promise<void>> = [];
   for (let ty = y0; ty <= y1; ty++)
     for (let tx = x0; tx <= x1; tx++)
       jobs.push(async () => {
-        const url = `https://wmts.geo.admin.ch/1.0.0/${WMTS_LAYER[layer]}/default/current/2056/${z}/${tx}/${ty}.jpeg`;
+        const url = tileUrl(layer, z, tx, ty);
         try {
-          const r = await fetch(url);
-          if (!r.ok) return;
+          let r: Response | undefined = cache ? await cache.match(url) : undefined;
+          if (!r && !o.cacheOnly) r = await fetch(url, { signal: o.signal });
+          if (!r || !r.ok) { missing++; return; }
           const bmp = await createImageBitmap(await r.blob());
           const e = ORIGIN_E + tx * TILE * res, n = ORIGIN_N - ty * TILE * res;
           ctx.drawImage(bmp, Math.round((e - b.minE) / res), Math.round((b.maxN - n) / res));
-        } catch { /* Kachel fehlt – Rest trotzdem verwenden */ }
+        } catch { missing++; /* Kachel fehlt – Rest trotzdem verwenden */ }
       });
   const total = jobs.length;
   let done = 0;
   await Promise.all(Array.from({ length: 6 }, async () => {
     while (jobs.length) {
+      if (o.signal?.aborted) { missing += jobs.length; jobs.length = 0; break; }
       await jobs.shift()!();
       onProgress?.(++done / total);
     }
   }));
-  return { canvas: cv, res, minE: b.minE, maxN: b.maxN };
+  return { canvas: cv, res, minE: b.minE, maxN: b.maxN, missing, total };
 }

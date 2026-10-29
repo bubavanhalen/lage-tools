@@ -328,6 +328,15 @@ export function catalogEntry(key: string): CatalogEntry | undefined {
   return byKey.get(key);
 }
 
+/**
+ * (MVP 3, Kap. 3.5) Zeichen, die mit «… aufgehoben» bzw. «Aufgehoben (jetzt)» enden können: Hindernisse (Sperre,
+ * Minenfeld, IED, Stacheldraht …), Anlagen (Checkpoint, Verkehrsposten, Stellung …), Räume und Linien sowie der
+ * Hinterhalt. Nicht: Fahrzeuge, Einheiten, punktuelle Tätigkeiten/Ereignisse (Kontakt, Explosion) – die sind vorbei.
+ */
+export const AUFHEBBAR: ReadonlySet<string> = new Set(
+  CATALOG.filter((c) => c.category === "Hindernisse" || c.kind === "anlage" || (!!c.geometry && c.geometry !== "punkt") || c.key === "hinterhalt").map((c) => c.key),
+);
+
 // ---------- Normalisierung / Suche
 
 /** klein, Punkte/Bindestriche/Schrägstriche als Trenner, mehrfache Leerzeichen weg */

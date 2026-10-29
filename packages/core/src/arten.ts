@@ -81,6 +81,8 @@ export interface ArtLesung {
   /** «zu 42», «Antwort 57» → Nummer wie geschrieben («42», «12a» bei doppelter Nummer) */
   bezugNr?: string;
   bezugArt?: LageEvent["bezugArt"];
+  /** Textstelle des Bezugs («Antwort zu 57», «zu 42») – parseMeldung liest die Meldung ohne sie */
+  bezugToken?: string;
   /** Text ohne Art-Hinweis (für die weitere Erkennung) */
   rest: string;
 }
@@ -98,8 +100,20 @@ function unitName(raw: string, blau: string[]): string {
 }
 
 const FRIST_RE = re(String.raw`(?<!${L})bis\s+(\d{1,2})[:.]?(\d{2})(?!${L})`);
-const BEZUG_RE = re(String.raw`(?<!${L})(?:antwort\s+(?:zu|auf)|zu|nr\.?|quittung)\s+(\d{1,4}[a-z]?)(?!${L})`);
-const ANTWORT_RE = re(String.raw`^\s*antwort\b`);
+/**
+ * Bezug auf eine Nummer: «Antwort zu/auf 42» und «Quittung 42» überall; «zu 42», «Nr 42», «Bezug 42» nur am Anfang
+ * (bzw. nach dem Melder) oder mit Doppelpunkt danach – sonst wäre «fährt zu 2 Häusern» ein Bezug (nie still falsch).
+ */
+const NRW = String.raw`(?:nr\.?\s*)?(\d{1,4}[a-z]?)(?!${L})`;
+const BEZUG_RES = [
+  re(String.raw`(?<!${L})(?:antwort|rückfrage|rueckfrage)\s+(?:zu|auf)\s+${NRW}`),
+  re(String.raw`(?<!${L})quittung\s+(?:zu\s+|für\s+)?${NRW}`),
+  re(String.raw`^(?:(?:${EL})\s*[:,]?\s+)?(?:zu|bezug|nr\.?)\s*${NRW}`),
+  re(String.raw`(?<!${L})(?:zu|bezug)\s+${NRW}\s*:`),
+];
+const ANTWORT_RE = re(String.raw`^(?:(?:${EL})\s*[:,]?\s+)?antwort(?!${L})\s*[:,]?`);
+/** Tag und Zeit am Anfang («T2 0715 », «07:15 »): gehören nicht zum Art-Hinweis (Zeit liest parseMeldung) */
+const LEAD_TIME_RE = re(String.raw`^(?:T\s?\d(?!\d)[\s,:]*)?(?:(?:[01]?\d|2[0-3])[:.h]?[0-5]\d(?:\s*uhr)?(?![\d'’]))?[\s,:]*`);
 
 /** Frist «bis 1200» → «1200» (Stunde gültig) */
 function fristOf(text: string): { frist?: string; token?: string } {
@@ -108,10 +122,13 @@ function fristOf(text: string): { frist?: string; token?: string } {
   return { frist: `${m[1]!.padStart(2, "0")}${m[2]}`, token: m[0] };
 }
 
-/** Bezug «zu 42», «Antwort auf 12a», «Nr 42», «Quittung 42» → Nummer wie geschrieben (Endung klein) */
-function bezugOf(text: string): { bezugNr?: string } {
-  const m = BEZUG_RE.exec(text);
-  return m ? { bezugNr: m[1]!.toLowerCase() } : {};
+/** Bezug «zu 42», «Antwort auf 12a», «Nr 42», «Quittung 42» → Nummer wie geschrieben (Endung klein) und Textstelle */
+function bezugOf(text: string): { bezugNr?: string; bezugToken?: string } {
+  for (const r of BEZUG_RES) {
+    const m = r.exec(text);
+    if (m) return { bezugNr: m[1]!.toLowerCase(), bezugToken: m[0].trim() };
+  }
+  return {};
 }
 
 const cut = (text: string, m: RegExpExecArray) => (text.slice(0, m.index) + " " + text.slice(m.index + m[0].length)).replace(/\s+/g, " ").replace(/^[\s,:;–-]+/, "").trim();
@@ -122,7 +139,7 @@ const cut = (text: string, m: RegExpExecArray) => (text.slice(0, m.index) + " " 
  * `o.blau` = eigene Trupps der Übung (Schreibweise «H01»). Reine Funktion; Zeiten und Orte liest `parseMeldung`.
  */
 export function readArt(text: string, o: { blau: string[] }): ArtLesung {
-  const t = text.trim();
+  const t = text.trim().replace(LEAD_TIME_RE, "");
   const lead = String.raw`^(?:(${EL})\s*[:,]?\s+)?`;
   const bez = bezugOf(t);
 
@@ -145,8 +162,11 @@ export function readArt(text: string, o: { blau: string[] }): ArtLesung {
   // ---- Rückfrage
   m = re(String.raw`${lead}(?:rückfrage|rueckfrage|anfrage)(?:\s+an\s+(${EL}))?(?!${L})\s*[:,]?`).exec(t);
   if (m) return { art: "rueckfrage", stark: true, token: m[0].trim(), ...(m[2] ? { an: unitName(m[2], o.blau) } : {}), rest: cut(t, m) };
-  m = re(String.raw`^frage\s+an\s+(${EL})(?!${L})\s*[:,]?`).exec(t);
-  if (m) return { art: "rueckfrage", stark: true, token: m[0].trim(), an: unitName(m[1]!, o.blau), rest: cut(t, m) };
+  m = re(String.raw`${lead}frage\s+an\s+(${EL})(?!${L})\s*[:,]?`).exec(t);
+  if (m) return { art: "rueckfrage", stark: true, token: m[0].trim(), an: unitName(m[2]!, o.blau), rest: cut(t, m) };
+  // «H03 Frage: Ablösung wann» – schwach (gelb), wie MVP 1
+  m = re(String.raw`${lead}frage\s*:`).exec(t);
+  if (m) return { art: "rueckfrage", stark: false, token: m[0].trim(), rest: t };
 
   // ---- Orientierung (von oben)
   m = re(String.raw`^(bat|kp|kdt|s2|rgt|ori|orientierung)\s*:`).exec(t);
@@ -177,11 +197,16 @@ export function readArt(text: string, o: { blau: string[] }): ArtLesung {
   m = re(String.raw`(?<!${L})quittung(?!${L})`).exec(t);
   if (m) return { art: QUITTUNG_ART, stark: true, token: m[0], bezugArt: "quittung", ...bez, rest: cut(t, m) };
 
+  // ---- Antwort (bleibt Meldung): mit Nummer «Antwort zu 57: …», ohne Nummer «H04 Antwort: …» (→ jüngste offene Rückfrage)
+  const an0 = ANTWORT_RE.exec(t);
+  if (an0) return { art: "meldung", stark: true, bezugArt: "antwort", ...(bez.bezugNr ? bez : { bezugToken: an0[0].trim().replace(new RegExp(String.raw`^${EL}\s*[:,]?\s*`, "iu"), "") }), rest: t };
+
   // ---- Rückfrage schwach: Frage am Ende
   if (/\?\s*$/.test(t)) return { art: "rueckfrage", stark: false, token: "?", rest: t.replace(/\?\s*$/, "").trim() };
 
-  // ---- Meldung (auch «Antwort zu 57: …»)
-  return { art: "meldung", stark: true, ...bez, ...(bez.bezugNr ? { bezugArt: ANTWORT_RE.test(t) ? "antwort" : "verweis" } : {}), rest: t };
+  // ---- Meldung (mit Verweis «zu 42: …», «Nr 42 …», «Antwort auf 57» mitten im Text)
+  const antwort = bez.bezugToken && /^(?:antwort|rückfrage|rueckfrage)/i.test(bez.bezugToken);
+  return { art: "meldung", stark: true, ...bez, ...(bez.bezugNr ? { bezugArt: antwort ? "antwort" : "verweis" } : {}), rest: t };
 }
 
 const DRINGEND_RE = re(String.raw`(?<!${L})(dringend|sofort|eilt)(?!${L})|!!|(?<!${L})kontakt\s*!|(?<!${L})feuer\s+(?:auf|aus)(?!${L})|(?<!${L})san(?:ität)?\s+(?:angefordert|benötigt)(?!${L})`);

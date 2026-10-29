@@ -7,7 +7,7 @@ import { type Area, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import type { LayerFlags } from "./layers";
 import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
-import { getSituationLayout, subscribeSituationLayout } from "./situationLayer";
+import { getSituationLayout, ohneAufgehobene, subscribeSituationLayout } from "./situationLayer";
 import { dayLabel } from "./Timeline";
 import { LAGE_KARTE } from "./colors";
 import "./mapoverlays.css";
@@ -174,7 +174,8 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
   }, []);
   const folded = present ? !presentOpen : userFold ?? autoFold;
   const layout = useSyncExternalStore(subscribeSituationLayout, getSituationLayout);
-  const model = useMemo(() => situationModel(events, t, flags, { recentMin, selectedId, from }), [events, t, flags, recentMin, selectedId, from]);
+  // aufgehobene Sperren/Checkpoints fehlen ab der Aufhebung auch in der Legende (Spez. MVP 3, Kap. 3.5)
+  const model = useMemo(() => situationModel(ohneAufgehobene(events, t), t, flags, { recentMin, selectedId, from }), [events, t, flags, recentMin, selectedId, from]);
 
   const entries = useMemo(() => {
     const out: Array<{ key: string; icon: ReactNode; label: string }> = [];

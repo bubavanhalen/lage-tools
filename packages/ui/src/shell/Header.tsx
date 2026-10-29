@@ -8,6 +8,7 @@ import { hasPending, persister } from "../persist";
 import { onStoreStatus } from "../store";
 import type { OfflineStatus, SaveStatus } from "./contracts";
 import "./shell.css";
+import "../lvzui/lvzui.css";
 
 /** «speichert …» erst, wenn länger als so viele ms ausstehend (kein Flackern) */
 export const SPEICHERT_AB_MS = 2000;
@@ -86,14 +87,28 @@ export interface HeaderProps {
   menu: ReactNode;
   /** Produktname (nur für Screenreader und Titel) */
   product: string;
+  /** (MVP 3) Schicht dieses Geräts: «Schicht MU seit 22:00» bzw. «Kürzel fehlt» (Text, kein Bedienelement); weglassen = nichts */
+  schicht?: { kuerzel: string | null; seit: string | null } | null;
 }
 
-export function Header({ name, save, offline, onFixOffline, menu, product }: HeaderProps) {
+/** Kopf-Text der Schicht (Kap. 2.1): «Schicht BSP seit 06:00»; schmal (< 860 px) nur «BSP», voller Text im Titel */
+export function SchichtText({ s }: { s: { kuerzel: string | null; seit: string | null } }) {
+  if (!s.kuerzel) return <span className="hd-schicht fehlt" title="Kürzel fehlt – es wird beim ersten Eintragen abgefragt">Kürzel fehlt</span>;
+  const full = `Schicht ${s.kuerzel}${s.seit ? ` seit ${s.seit}` : ""}`;
+  return (
+    <span className="hd-schicht" title={full}>
+      <span className="hd-long">{full}</span><span className="hd-short" aria-hidden="true">{s.kuerzel}</span>
+    </span>
+  );
+}
+
+export function Header({ name, save, offline, onFixOffline, menu, product, schicht }: HeaderProps) {
   useEffect(() => { document.title = `${name} – ${product}`; }, [name, product]);
   return (
     <header className="hd" aria-label={product}>
       <h1 className="hd-name" title={name}>{name}</h1>
       <div className="hd-status">
+        {schicht && <SchichtText s={schicht} />}
         <SaveStatusView s={save} />
         <OfflineStatusView s={offline} onFix={onFixOffline} />
       </div>

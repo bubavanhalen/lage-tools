@@ -4,13 +4,14 @@
  * Die Journal-Liste (journal/JournalList.tsx) zeigt dieselben Texte selbst; diese Marken bleiben für andere Ansichten.
  */
 import { useMemo } from "react";
-import { eventFromDraft, eventQuality, type Draft, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
+import { eventFromDraft, eventQuality, isLage, type Draft, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
 import "./hints.css";
 
 const AEIOU = "Rückfrage nach AEIOU: Wann · Wer tut was · Wie · Wo · Umwelt";
 
 export function QualityMarks({ e, q, events }: { e: LageEvent; q?: EventQuality; events: LageEvent[] }) {
-  if (!q) return null;
+  // MVP 3: nur Meldungen (Lage) haben Qualität – Auftrag, Rückfrage, Notiz, Aufhebung nie «Fehlt noch»
+  if (!q || !isLage(e)) return null;
   // E1 nur bei Sichtungen (Feind/Unklar): der Kern setzt dann `status`
   const enemy = q.status !== undefined || (e.side === "rot" && !!q.confirmedBy?.length);
   // «ohne Ort» steht schon in der Zeile
@@ -31,6 +32,7 @@ export function useDraftMissing(draft: Draft | null, ex: Exercise): string[] {
   return useMemo(() => {
     if (!draft) return [];
     const tmp = eventFromDraft(draft, "vorschau");
+    if (!isLage(tmp)) return [];
     const m = eventQuality([tmp], tmp.t, ex);
     return m.get(tmp.id)?.missing ?? [];
   }, [draft, ex]);

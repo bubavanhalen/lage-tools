@@ -19,13 +19,18 @@ export const dayDateT = (t: string, days: string[]) => {
   const d = t.slice(0, 10).split("-").reverse().join(".");
   return `${i >= 0 ? `T${i + 1} (${d})` : d} ${t.slice(11, 16)}`;
 };
-/** Fusszeile «Seite 2 von 5» auf jeder Seite (am Schluss, wenn die Seitenzahl feststeht) */
-export function pdfPageNumbers(doc: jsPDF): void {
+/**
+ * Fusszeile «Seite 2 von 5» auf jeder Seite (am Schluss, wenn die Seitenzahl feststeht); mit `classification` zudem
+ * die Klassifizierung links unten (Spez. MVP 3, Kap. 3.9). Passt sich der Seitengrösse an (A4 hoch/quer, A3).
+ */
+export function pdfPageNumbers(doc: jsPDF, classification?: string): void {
   const n = doc.getNumberOfPages();
   for (let i = 1; i <= n; i++) {
     doc.setPage(i);
+    const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(0);
-    doc.text(`Seite ${i} von ${n}`, 210 - 12, 292, { align: "right" });
+    doc.text(`Seite ${i} von ${n}`, pw - 12, ph - 5, { align: "right" });
+    if (classification) { doc.setFont("helvetica", "bold"); doc.text(classification, 12, ph - 5); doc.setFont("helvetica", "normal"); }
   }
 }
 /**
@@ -83,14 +88,22 @@ export function lageRotCsv(ex: Exercise, lage: LageRotState, t: string): string 
   return "\r\n" + out.map((row) => row.map(csvCell).join(";")).join("\r\n");
 }
 
-/** Anhang «Lage Rot» (neue Seite A4 hoch); gibt die neue Seitenzahl zurück */
-export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t: string, classification: string, page: number): number {
+/**
+ * Anhang «Lage Rot» (neue Seite A4 hoch); gibt die neue Seitenzahl zurück. `kompakt` (Journal-PDF, Spez. MVP 3,
+ * Kap. 3.9): kleinere Schrift, je Möglichkeit nur zutreffende Indikatoren und höchstens zwei Prüfpunkte, **höchstens
+ * eine Seite** – was nicht passt, fällt weg und die Seite sagt es («gekürzt»).
+ */
+export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t: string, classification: string, page: number, o: { kompakt?: boolean } = {}): number {
   safePdf(doc);
   const r = lageRotRows(ex, lage, t);
   if (!r.coas.length && !r.kraefte.length && !r.weg.length) return page;
-  const W = 210, M = 12, LH = 3.8;
+  const k = !!o.kompakt;
+  const W = 210, M = 12, LH = k ? 3.3 : 3.8, FS = k ? 7.5 : 8.5, TS = k ? 9 : 10;
+  /** kompakt: Seite voll – Rest weglassen */
+  let voll = false;
   let y = 0;
   const header = () => {
+    if (k && page > 0 && y > 0) { voll = true; return; }
     doc.addPage(); page++;
     doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(0);
     doc.text(`Anhang: Lage Rot – ${ex.name}`, M, 14);
@@ -99,9 +112,10 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
     doc.text(`Stand ${dayDateT(t, ex.days)} · Vermutungen, keine Fakten – Entscheid durch Zfhr`, M, 19);
     y = 26;
   };
-  const need = (h: number) => { if (y + h > 285) header(); };
+  /** Platz für `h` mm? Sonst neue Seite (kompakt: nichts mehr, `false`) */
+  const need = (h: number): boolean => { if (y + h > 285) header(); return !voll; };
   const section = (s: string) => {
-    need(12);
+    if (!need(12)) return;
     doc.setFillColor(29, 29, 29); doc.rect(M, y - 4, W - 2 * M, 6, "F");
     doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
     doc.text(s.toUpperCase(), M + 1.5, y);
@@ -110,33 +124,34 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
   };
   header();
   section("Was Rot vorhaben könnte");
-  doc.setFontSize(8.5);
+  doc.setFontSize(FS);
   if (!r.coas.length) { doc.text("Keine Vermutung möglich (mindestens zwei Anzeichen aus verschiedenen Meldungen nötig).", M + 1.5, y); y += 6; }
   const txt = pdfText;
   r.coas.forEach((c, k) => {
     const coa = lage.coas[k]!;
     const g = indicatorGroups(coa);
+    const pro = k ? g.pro.slice(0, 4) : g.pro;
     const body: Array<[string, string[]]> = [
-      ["Anzeichen", [indicatorSummary(coa), ...g.pro.map((i) => `+ ${indicatorLine(i)}`), ...g.open.map((i) => `o ${indicatorLine(i)} (offen)`), ...g.contra.map((i) => `x ${indicatorLine(i)} (spricht dagegen)`)].map(txt)],
+      ["Anzeichen", [indicatorSummary(coa), ...pro.map((i) => `+ ${indicatorLine(i)}`), ...(k ? [] : g.open.map((i) => `o ${indicatorLine(i)} (offen)`)), ...g.contra.map((i) => `x ${indicatorLine(i)} (spricht dagegen)`)].map(txt)],
       ...(c.annaeherung ? [["Annäherung", [txt(c.annaeherung)]] as [string, string[]]] : []),
-      ...(c.pruefen.length ? [["Prüfen", c.pruefen.map((p) => `- ${txt(p)}`)] as [string, string[]]] : []),
+      ...(c.pruefen.length ? [["Prüfen", (k ? c.pruefen.slice(0, 2) : c.pruefen).map((p) => `- ${txt(p)}`)] as [string, string[]]] : []),
     ];
     const wrapped = body.map(([key, ls]) => [key, ls.flatMap((l) => doc.splitTextToSize(l, W - 2 * M - 34) as string[])] as const);
     const titleLines = doc.splitTextToSize(txt(coaLine(coa)), W - 2 * M - 70) as string[];
     const h = titleLines.length * 4.4 + wrapped.reduce((sum, [, ls]) => sum + ls.length * LH + 1, 0) + 4;
-    need(h);
+    if (!need(h)) return;
     const top = y - 3.6;
     if (coa.label !== "weitere") { doc.setFillColor(253, 232, 235); doc.rect(M, top, W - 2 * M, titleLines.length * 4.4 + 1.6, "F"); }
     doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(150, 30, 35);
     doc.text(doc.splitTextToSize(COA_KICKER[coa.label], 30) as string[], M + 1.5, y);
-    doc.setTextColor(0); doc.setFontSize(10);
+    doc.setTextColor(0); doc.setFontSize(TS);
     doc.text(titleLines, M + 34, y);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(FS);
     if (c.zeitraumKurz) doc.text(txt(c.zeitraumKurz), W - M - 1.5, y, { align: "right" });
     y += titleLines.length * 4.4 + 1.2;
     for (const [key, ls] of wrapped) {
       doc.setTextColor(90); doc.setFontSize(7.5); doc.text(key.toUpperCase(), M + 1.5, y);
-      doc.setTextColor(0); doc.setFontSize(8.5); doc.text(ls, M + 34, y);
+      doc.setTextColor(0); doc.setFontSize(FS); doc.text(ls, M + 34, y);
       y += ls.length * LH + 1;
     }
     doc.setDrawColor(210); doc.line(M, y - 2.2, W - M, y - 2.2);
@@ -150,15 +165,15 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
     : (win ? [{ h: "", w: 40 }, { h: "erkannt", w: 73 }, { h: "im Fenster", w: 73 }] : [{ h: "", w: 40 }, { h: "erkannt", w: 146 }]);
   doc.setFontSize(7.5); doc.setTextColor(90);
   let x = M + 1.5;
-  for (const c of cols) { doc.text(c.h.toUpperCase(), x, y); x += c.w; }
-  doc.setTextColor(0); doc.setFontSize(8.5);
+  if (!voll) for (const c of cols) { doc.text(c.h.toUpperCase(), x, y); x += c.w; }
+  doc.setTextColor(0); doc.setFontSize(FS);
   y += 5;
-  for (const k of r.kraefte) {
-    const cells = [k.art, k.erkannt, ...(win ? [k.fenster] : []), ...(lage.spec ? [k.erwartet, k.stand] : [])];
+  for (const kr of r.kraefte) {
+    const cells = [kr.art, kr.erkannt, ...(win ? [kr.fenster] : []), ...(lage.spec ? [kr.erwartet, kr.stand] : [])];
     const lines = cells.map((s, i) => doc.splitTextToSize(txt(s), cols[i]!.w - 2) as string[]);
     const h = Math.max(...lines.map((l) => l.length)) * LH + 1.6;
-    need(h);
-    if (k.stand === STATE_LABEL.unerwartet || k.stand.startsWith(STATE_LABEL.mehr)) { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
+    if (!need(h)) break;
+    if (kr.stand === STATE_LABEL.unerwartet || kr.stand.startsWith(STATE_LABEL.mehr)) { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
     x = M + 1.5;
     lines.forEach((l, i) => { doc.setFont("helvetica", i === 0 ? "bold" : "normal"); doc.text(l, x, y); x += cols[i]!.w; });
     doc.setDrawColor(210); doc.line(M, y - 3.2 + h, W - M, y - 3.2 + h);
@@ -172,9 +187,14 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
   y += 2;
   for (const s of tail) {
     const l = doc.splitTextToSize(txt(s), W - 2 * M - 3) as string[];
-    need(l.length * LH + 1);
+    if (!need(l.length * LH + 1)) break;
     doc.text(l, M + 1.5, y);
     y += l.length * LH + 1;
+  }
+  if (voll) {
+    doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80);
+    doc.text("gekürzt auf eine Seite – vollständig in der App unter «Was Rot vorhaben könnte»", M, 287);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(0);
   }
   return page;
 }

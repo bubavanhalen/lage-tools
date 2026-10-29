@@ -7,6 +7,7 @@ import {
   analyzeJournal, compareHints, decisionFor, hintRule,
   type EventQuality, type Exercise, type Hint, type HintDecision, type HintGroup, type HintLevel, type HintRule,
 } from "@lage/core";
+import "./perf"; // Messpunkte lt:enter/lt:zeile/lt:bereit und window.__ltPerf (P1)
 
 /** IDs aller Hinweise derselben Berechnung – `decisionFor` übernimmt keine Entscheide, die einem anderen aktuellen Hinweis gehören */
 const siblings = new WeakMap<Hint, Set<string>>();

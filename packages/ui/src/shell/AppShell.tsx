@@ -6,9 +6,11 @@
  * `LageColumn` ordnet die linke Spalte im Modus «Lage führen»: Meldungsfeld oben (fest), darunter der Umschalter
  * «Journal | Was Rot vorhaben könnte» und die Liste. `SideSwitch` ist der Umschalter (zählt im Inventar als 1).
  */
+import type React from "react";
 import type { ReactNode } from "react";
 import type { Arbeitsweise } from "./contracts";
 import "./shell.css";
+import "../lvzui/lvzui.css";
 
 export interface AppShellProps {
   aw: Arbeitsweise;
@@ -67,11 +69,28 @@ export function LageColumn({ entry, switcher, list }: { entry?: ReactNode; switc
 export type { SideView } from "./contracts";
 import type { SideView } from "./contracts";
 
-export function SideSwitch({ view, onView, redLabel }: { view: SideView; onView: (v: SideView) => void; redLabel: ReactNode }) {
+/**
+ * Umschalter der Spalte (zählt im Inventar als 1). MVP 3 (Kap. 2.1, E10): dreiteilig `Journal | Offen 4 | Was Rot ⚠3`,
+ * sobald `offenLabel` gegeben ist; in schmaler Spalte steht «Was Rot» (Name für Screenreader bleibt voll).
+ */
+export function SideSwitch({ view, onView, redLabel, offenLabel }: { view: SideView; onView: (v: SideView) => void; redLabel: ReactNode; offenLabel?: ReactNode }) {
+  const tabs: Array<[SideView, ReactNode]> = offenLabel ? [["journal", "Journal"], ["offen", offenLabel], ["rot", redLabel]] : [["journal", "Journal"], ["rot", redLabel]];
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const i = tabs.findIndex(([v]) => v === view);
+    const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]![0];
+    e.preventDefault();
+    const box = e.currentTarget as HTMLElement;
+    onView(n);
+    window.setTimeout(() => box.querySelector<HTMLElement>(`[data-view="${n}"]`)?.focus(), 0);
+  };
   return (
-    <div className="sw2" role="tablist" aria-label="Ansicht der Spalte" data-zaehl="umschalter">
-      <button type="button" role="tab" aria-selected={view === "journal"} onClick={() => onView("journal")}>Journal</button>
-      <button type="button" role="tab" aria-selected={view === "rot"} onClick={() => onView("rot")}>{redLabel}</button>
+    <div className="sw-box">
+      <div className={offenLabel ? "sw2 sw3" : "sw2"} role="tablist" aria-label="Ansicht der Spalte" data-zaehl="umschalter" onKeyDown={onKey}>
+        {tabs.map(([v, l]) => (
+          <button key={v} type="button" role="tab" data-view={v} aria-selected={view === v} tabIndex={view === v ? 0 : -1} onClick={() => onView(v)}>{l}</button>
+        ))}
+      </div>
     </div>
   );
 }

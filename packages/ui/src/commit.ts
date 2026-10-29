@@ -4,6 +4,8 @@
  * (`BatchReview` nach Foto bzw. Sprachmemo).
  */
 import {
+  artOf,
+  isLage,
   clockDay,
   localDay,
   cellAtAny,
@@ -11,6 +13,7 @@ import {
   geometryOf,
   shapeCenter,
   lastPosition,
+  nextNr,
   parseMeldung,
   type Attachment,
   type Affiliation,
@@ -25,8 +28,23 @@ import {
   type Side,
   type Status,
   type Echelon,
+  type EntryArt,
 } from "@lage/core";
 import { stateOf } from "./entry/stateOptions";
+import { NR_KEY } from "./shell/contracts";
+
+/**
+ * Nächste laufende Nummer (Spez. MVP 3, Kap. 3.3, Entscheid 1): liest den Gerätezähler `localStorage[NR_KEY]`
+ * (geteilt von allen Fenstern des Geräts), nimmt `nextNr` (höher als Zähler und als jede bekannte Nummer der Übung)
+ * und schreibt sofort zurück – synchron im selben Task. Ohne Speicher (gesperrt): nur aus der Übung.
+ */
+export function takeNr(ex: Pick<Exercise, "id" | "events">): number {
+  let z = 0;
+  try { z = Number(localStorage.getItem(NR_KEY(ex.id)) ?? 0) || 0; } catch { /* Speicher gesperrt */ }
+  const n = nextNr(ex, z);
+  try { localStorage.setItem(NR_KEY(ex.id), String(n)); } catch { /* Speicher gesperrt */ }
+  return n;
+}
 
 // gleich wie `shapeFits`/`shapePatch` in ShapeDraw.tsx (hier ohne Leaflet, damit der Eintrage-Weg ohne Browser testbar bleibt)
 const shapeFits = (shape: EventShape, sym: string) => geometryOf(sym) === shape.kind;
@@ -54,6 +72,8 @@ export function journalCtx(ex: Exercise, day: string, kind?: Kind, now = new Dat
   return {
     sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind, days: ex.days, day, now, dayFromClock: day === localDay(now),
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
+    // MVP 3: Bezüge («zu 42», «Antwort …») und Aufhebungen brauchen die bisherigen Einträge
+    events, ex,
   };
 }
 
@@ -82,9 +102,14 @@ export interface CommitOverrides {
   source?: LageEvent["source"];
   /** Text stammt aus einem übernommenen KI-Vorschlag */
   via?: LageEvent["via"];
+  /** (MVP 3) laufende Nummer (beim Erfassen vergeben, nie geändert) und Kürzel der Schicht («erfasst von») */
+  nr?: number;
+  kuerzel?: string | null;
 }
 
 const sideOfAff = (a: Affiliation): Side => (a === "F" ? "blau" : "rot");
+/** Entwurf ist eine Meldung (zeichnet); alte Entwürfe ohne `art`: Notiz-Vorschlag = keine Meldung */
+export const isLageDraft = (d: Pick<Draft, "art" | "kindHint">): boolean => (d.art ?? (d.kindHint === "notiz" ? "notiz" : "meldung")) === "meldung";
 
 /**
  * Journaleintrag aus einem erkannten Entwurf (mit allfälligen Wahlen von Hand).
@@ -93,22 +118,32 @@ const sideOfAff = (a: Affiliation): Side => (a === "F" ? "blau" : "rot");
 export function buildEvent(draft: Draft, device: string, ex: Pick<Exercise, "sheets">, o: CommitOverrides = {}, now = new Date()): LageEvent {
   const pos = "pos" in o ? o.pos : draft.pos;
   const where = "where" in o ? o.where : draft.where?.label;
-  const ev = eventFromDraft({ ...draft, pos, where: where ? { kind: o.whereKind === "karte" ? "karte" : "ort", label: where } : undefined }, device, now);
-  const s = o.sym;
-  if (s) {
-    ev.sym = s.key; ev.aff = s.aff; ev.sidc = s.sidc; ev.echelon = s.echelon; ev.status = s.status; ev.desc = s.desc;
-    // neutral = Zugehörigkeit N, Seite rot (Art «unklar»), nie «ul»
-    ev.side = sideOfAff(s.aff);
-    if (ev.side === "blau") ev.unit = ev.unit || ev.melder || "";
-    else if (ev.unit && ev.unit === ev.melder) ev.unit = "";
+  const ev = eventFromDraft({ ...draft, pos, where: where ? { kind: o.whereKind === "karte" ? "karte" : "ort", label: where } : undefined }, device, now,
+    { ...(o.nr !== undefined ? { nr: o.nr } : {}), ...(o.kuerzel ? { kuerzel: o.kuerzel } : {}) });
+  // Invariante E3: Nicht-Meldungen haben nie Ort, Zeichen, Fläche – auch nicht von Hand gewählt
+  if (draft.hebtAuf) {
+    // Aufhebung (Kap. 3.5): zeichnet nie – Ort nur als Text in `orte`
+    const ort = ev.where ?? ev.cells?.[0] ?? ev.nai;
+    delete ev.pos; delete ev.cells; delete ev.nai; delete ev.shape; delete ev.where; delete ev.angle; delete ev.road;
+    ev.unit = "";
+    if (ort && !ev.orte?.length) ev.orte = [ort];
+  } else if (isLageDraft(draft)) {
+    const s = o.sym;
+    if (s) {
+      ev.sym = s.key; ev.aff = s.aff; ev.sidc = s.sidc; ev.echelon = s.echelon; ev.status = s.status; ev.desc = s.desc;
+      // neutral = Zugehörigkeit N, Seite rot (Art «unklar»), nie «ul»
+      ev.side = sideOfAff(s.aff);
+      if (ev.side === "blau") ev.unit = ev.unit || ev.melder || "";
+      else if (ev.unit && ev.unit === ev.melder) ev.unit = "";
+    }
+    if (draft.from !== undefined && ev.from === undefined) ev.from = draft.from;
+    if (draft.fromLabel && !ev.fromLabel) ev.fromLabel = draft.fromLabel;
+    if (draft.roadHint && !ev.roadHint) ev.roadHint = draft.roadHint;
+    if (o.road) { ev.angle = o.road.angle; if (o.road.road) ev.road = o.road.road; }
+    if (o.roadCell) ev.cells = [o.roadCell];
+    if (o.roadNone) ev.roadNone = true;
+    if (o.shape && shapeFits(o.shape, ev.sym)) Object.assign(ev, shapePatch(o.shape, ex.sheets));
   }
-  if (draft.from !== undefined && ev.from === undefined) ev.from = draft.from;
-  if (draft.fromLabel && !ev.fromLabel) ev.fromLabel = draft.fromLabel;
-  if (draft.roadHint && !ev.roadHint) ev.roadHint = draft.roadHint;
-  if (o.road) { ev.angle = o.road.angle; if (o.road.road) ev.road = o.road.road; }
-  if (o.roadCell) ev.cells = [o.roadCell];
-  if (o.roadNone) ev.roadNone = true;
-  if (o.shape && shapeFits(o.shape, ev.sym)) Object.assign(ev, shapePatch(o.shape, ex.sheets));
   if (o.attachments?.length) ev.attachments = [...o.attachments];
   if (o.source) ev.source = o.source;
   if (o.via) ev.via = o.via;
@@ -149,6 +184,11 @@ export interface CommitTextsOptions {
   via?: LageEvent["via"];
   /** Texte mit Problem im Entwurf bzw. «geht nicht» (unbekannter Ort, ungültige Zeit, Zeit in der Zukunft) werden nie eingetragen – hier gemeldet */
   onSkipped?: (texts: string[]) => void;
+  /** (MVP 3) laufende Nummer je Eintrag (Standard: `takeNr`) und Kürzel der Schicht */
+  onNr?: () => number;
+  kuerzel?: string | null;
+  /** (MVP 3) Art je Text von Hand gewählt (Foto-/Sprach-Übersicht), Index wie `texts` */
+  arten?: Array<EntryArt | null | undefined>;
 }
 
 /**
@@ -172,11 +212,13 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
     const text = raw.replace(/\s*\n\s*/g, " ").trim();
     if (!text) return;
     const now = new Date(base + i);
-    const draft = parseMeldung(text, journalCtx(work, day, undefined, now));
+    const art = o.arten?.[i] ?? undefined;
+    const draft = parseMeldung(text, { ...journalCtx(work, day, undefined, now), ...(art ? { art } : {}) });
     // nie still falsch: mit Problem (z. B. «AK77» gibt es nicht) oder «geht nicht» nach denselben Regeln wie das
     // Meldungsfeld (z. B. Zeit in der Zukunft ohne Tagesangabe) nicht eintragen – nur nach Korrektur
     if (draft.problems?.length || stateOf(draft, work, { now }).level === "geht-nicht") { skipped.push(text); return; }
-    const ev = buildEvent(draft, o.device, work, { attachments: attId ? [attId] : undefined, source: src, via }, now);
+    const nr = o.onNr ? o.onNr() : takeNr(work);
+    const ev = buildEvent(draft, o.device, work, { attachments: attId ? [attId] : undefined, source: src, via, nr, kuerzel: o.kuerzel }, now);
     out.push(ev);
     work = addEvents(work, [ev]);
   });
@@ -192,8 +234,9 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
 const PLACE_KEYS = ["pos", "where", "cells", "nai", "angle", "road", "roadNone", "shape"] as const;
 /** Zeichen und Einordnung (bleiben, solange der Text unverändert ist und nichts von Hand gewählt wurde) */
 const SYMBOL_KEYS = ["side", "unit", "aff", "sym", "sidc", "echelon", "status", "desc", "count", "label"] as const;
-/** übrige Inhalte, die der neu gelesene Text bestimmt */
-const TEXT_KEYS = ["melder", "text", "dir", "from", "fromLabel", "roadHint", "via"] as const;
+/** übrige Inhalte, die der neu gelesene Text bestimmt (MVP 3: Art und ihre Felder) */
+const TEXT_KEYS = ["melder", "text", "dir", "from", "fromLabel", "roadHint", "via",
+  "art", "notiz", "an", "quelle", "frist", "vbk", "bezug", "bezugArt", "hebtAuf", "orte", "felder"] as const;
 
 /**
  * Änderung für `correctEvent` aus der neu gelesenen Fassung `cand` (`buildEvent` aus dem Korrekturtext):
@@ -202,6 +245,8 @@ const TEXT_KEYS = ["melder", "text", "dir", "from", "fromLabel", "roadHint", "vi
  */
 export function correctionPatch(base: LageEvent, cand: LageEvent, o: { keepPlace: boolean; keepSymbol: boolean; keepTime: boolean }): Partial<LageEvent> {
   const out: Record<string, unknown> = {};
+  // Art ändern ist eine Korrektur (Kap. 3.4): Nicht-Meldung bzw. Aufhebung hat nie Ort/Zeichen – alte Werte entfernen
+  if (!isLage(cand) || artOf(cand) !== artOf(base) || !!cand.hebtAuf !== !!base.hebtAuf) o = { ...o, keepPlace: false, keepSymbol: false };
   const take = (keys: readonly (keyof LageEvent)[], from: LageEvent) => {
     for (const k of keys) if (JSON.stringify(from[k]) !== JSON.stringify(base[k])) out[k] = from[k];
   };

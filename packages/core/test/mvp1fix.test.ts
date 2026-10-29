@@ -128,15 +128,19 @@ describe("Unbekanntes Wort statt geratener Art", () => {
   });
 });
 
-describe("Rückfrage, Auftrag, Frage → Notiz ohne Zeichen (K4)", () => {
-  it("«H04 Rückfrage: Standort Det 2?»: gelb, kein Zeichen, Det 2 nicht gesetzt", () => {
+// MVP 3 (Entscheid E2): starke Hinweise («Rückfrage:», «Auftrag an», «Befehl an») sind grün als eigene Art; nur schwache
+// («… ?», «Frage:», «befohlen») bleiben gelb mit `kindHint: "notiz"` (Code jetzt `art-schwach`). Kein Zeichen in beiden Fällen.
+describe("Rückfrage, Auftrag, Frage → Notiz ohne Zeichen (K4, MVP 3: eigene Arten)", () => {
+  it("«H04 Rückfrage: Standort Det 2?»: grün als Rückfrage, kein Zeichen, Det 2 nicht gesetzt", () => {
     const d = parse("H04 Rückfrage: Standort Det 2?");
-    expect(d).toMatchObject({ kindHint: "notiz", melder: "H04", unit: "", side: "blau" });
+    expect(d).toMatchObject({ art: "rueckfrage", artStark: true, melder: "H04", unit: "", side: "blau" });
+    expect(d.kindHint).toBeUndefined();
     expect(d.pos).toBeUndefined();
     const s = entryState(d, opt(bern, prepared));
-    expect(s.level).toBe("pruefen");
-    expect(s.reasons.map((r) => r.code)).toEqual(["notiz"]);
-    expect(s.reasons[0]!.text).toContain("Als Notiz ohne Zeichen?");
+    expect(s.level).toBe("bereit");
+    const w = entryState(parse("H03 wo ist Det 1?"), opt(bern, prepared));
+    expect(w.reasons.map((r) => r.code)).toEqual(["art-schwach"]);
+    expect(w.reasons[0]!.text).toContain("Als Rückfrage ohne Zeichen?");
     const ev = eventFromDraft(d, "dev-test", now);
     expect(ev.notiz).toBe(true);
     expect(kindLabel(ev)).toBe("Notiz");
@@ -145,7 +149,7 @@ describe("Rückfrage, Auftrag, Frage → Notiz ohne Zeichen (K4)", () => {
   });
   it("«Auftrag an H01: Beo NAI 1 bis 0800»: H01 wird nicht versetzt, kein Melder", () => {
     const d = parse("Auftrag an H01: Beo NAI 1 bis 0800");
-    expect(d).toMatchObject({ kindHint: "notiz", melder: "", unit: "" });
+    expect(d).toMatchObject({ art: "auftrag", an: "H01", melder: "", unit: "", orte: ["NAI 1"] });
     expect(d.nai).toBeUndefined();
     expect(d.pos).toBeUndefined();
     const before = situationAt(bern.events!, "2030-05-15T07:30").units.find((u) => u.unit === "H01")!;
@@ -153,7 +157,7 @@ describe("Rückfrage, Auftrag, Frage → Notiz ohne Zeichen (K4)", () => {
     expect(after.pos).toEqual(before.pos);
   });
   it("weitere Stichwörter; normale Meldungen und Einordnung von Hand ohne Hinweis", () => {
-    expect(parse("Befehl an H02: Stao halten").kindHint).toBe("notiz");
+    expect(parse("Befehl an H02: Stao halten")).toMatchObject({ art: "auftrag", an: "H02", artStark: true });
     expect(parse("H03 Frage: Ablösung wann").kindHint).toBe("notiz");
     expect(parse("H03 wo ist Det 1?").kindHint).toBe("notiz");
     expect(parse("H04 2 Fz in AK7 Rtg N").kindHint).toBeUndefined();

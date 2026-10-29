@@ -171,11 +171,15 @@ describe("Export", () => {
     const a = ev("H04 Minenfeld K12");
     const b = { ...ev("gn Stacheldraht K13"), id: "b", shape: { kind: "linie" as const, pts: [{ e: 2598000.4, n: 1200700 }, { e: 2598100, n: 1200700 }], auto: false } };
     const c = { ...ev("1 gn Hz Inf K14"), id: "c" };
+    // MVP 3: neue Spalten hinten angefügt – «Form» per Spaltenname lesen
     const rows = journalToCsv([a, b, c], ["2030-05-14", "2030-05-15"]).split("\r\n");
-    expect(rows[0]!.endsWith(";Form")).toBe(true);
-    expect(rows.some((r) => r.endsWith(";Fläche (aus Ort)"))).toBe(true);
-    expect(rows.some((r) => r.endsWith(";Linie: 2598000 1200700, 2598100 1200700"))).toBe(true);
-    expect(rows.some((r) => r.includes("Inf") && r.endsWith(";"))).toBe(true);
+    const head = rows[0]!.replace(/^\uFEFF/, "").split(";");
+    const form = head.indexOf("Form");
+    expect(form).toBeGreaterThan(0);
+    const col = (r: string) => r.split(";")[form];
+    expect(rows.some((r) => col(r) === "Fläche (aus Ort)")).toBe(true);
+    expect(rows.some((r) => r.includes("Linie: 2598000 1200700, 2598100 1200700"))).toBe(true);
+    expect(rows.some((r) => r.includes("Inf") && col(r) === "")).toBe(true);
   });
 });
 

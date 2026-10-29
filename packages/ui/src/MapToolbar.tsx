@@ -64,6 +64,7 @@ const SHOW_LAST: Array<{ v: ShowLast; label: string }> = [
   { v: 30, label: "30 min" },
   { v: 60, label: "1 h" },
   { v: 120, label: "2 h" },
+  { v: 360, label: "6 h" },
   { v: null, label: "alles" },
 ];
 

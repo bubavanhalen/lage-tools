@@ -2,6 +2,7 @@
  * Aufbereitung der Meldungen für «Lage Rot» (Kräfte Rot, mögliche Aktionen Rot) – intern, nicht im öffentlichen Index.
  * Gleiche Grundsätze wie `hints.ts`: nur Meldungen bis zur Lagezeit, gelöschte zählen nicht, aktuelle Revision gilt.
  */
+import { isLage } from "./arten";
 import { catalogEntry, type CatalogEntry, type Echelon } from "./catalog";
 import { pointInRing } from "./geo";
 import { baseCellAt, type BaseCell } from "./hintgeo";
@@ -168,7 +169,8 @@ export function prepareRed(ex: Pick<Exercise, "events" | "sheets" | "areas">, tM
     const nais = (ex.areas ?? []).filter((a) => a.kind === "nai");
     const list: PEv[] = [];
     for (const e of currentEvents(events)) {
-      if (e.deleted) continue;
+      // MVP 3: nur Lage (Art Meldung, keine Aufhebung) – Aufträge, Rückfragen, Vbk … zählen nie zu den Kräften Rot
+      if (!isLage(e)) continue;
       let c = PEV_CACHE.get(e);
       if (!c || c.sheets !== ex.sheets || c.areas !== ex.areas || c.rev !== e.rev || c.upd !== e.updatedAt) {
         c = { sheets: ex.sheets, areas: ex.areas, rev: e.rev, upd: e.updatedAt, v: toPEv(e, ex.sheets ?? [], nais) };

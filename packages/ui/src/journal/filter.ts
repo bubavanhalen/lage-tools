@@ -1,8 +1,11 @@
 /**
  * Filter der Journal-Liste aus der einen Suche (Spez. MVP 1, Kap. 3.4): Text (Trupp, PQ, NAI, Ort, Meldung) und
  * Stichwörter «feind», «eigene», «unklar», «nur 1 Trupp» (→ Chip «Art: …»). Reine Funktionen, ohne Browser testbar.
+ *
+ * MVP 3 (Kap. 1.1, 2.5): Stichwörter «gestrichen», «dringend», «offen», «Auftrag», «Orientierung», «Rückfrage», «Vbk»,
+ * «Notiz»; eine Zahl allein («54», «Nr 54», «12a») sucht die laufende Nummer. Feind/Eigene/Unklar zeigen nur Meldungen.
  */
-import { compareEvents, type EventQuality, type Kind, type LageEvent } from "@lage/core";
+import { artOf, compareEvents, lvzIndex, nrLabel, vermerkeOf, type EventQuality, type Exercise, type Kind, type LageEvent } from "@lage/core";
 import type { SearchArt } from "../shell/contracts";
 
 /** Art einer Meldung für Filter: neutral (N) zählt zu «Unklar» */
@@ -13,6 +16,15 @@ const KEYWORDS: Array<[RegExp, Exclude<SearchArt, null>]> = [
   [/(^|\s)(feind|gegner|rot)(\s|$)/i, "feind"],
   [/(^|\s)(eigene?|blau)(\s|$)/i, "eigen"],
   [/(^|\s)unklar(\s|$)/i, "unklar"],
+  // MVP 3
+  [/(^|\s)(gestrichen|gestrichene|gelöscht|gelöschte)(\s|$)/i, "gestrichen"],
+  [/(^|\s)dringend(e)?(\s|$)/i, "dringend"],
+  [/(^|\s)offen(e)?(\s|$)/i, "offen"],
+  [/(^|\s)(auftrag|aufträge|auftraege)(\s|$)/i, "auftrag"],
+  [/(^|\s)(orientierung|orientierungen)(\s|$)/i, "orientierung"],
+  [/(^|\s)(rückfrage|rückfragen|rueckfrage|rueckfragen)(\s|$)/i, "rueckfrage"],
+  [/(^|\s)(vbk|verbindungskontrolle|verbindungskontrollen)(\s|$)/i, "vbk"],
+  [/(^|\s)(notiz|notizen)(\s|$)/i, "notiz"],
 ];
 
 /** Chip-Text zur Art */
@@ -45,7 +57,7 @@ const norm = (s: string) => s.toLowerCase().replace(/[«»"':,()]/g, " ");
 export function matchesQuery(e: LageEvent, q: string): boolean {
   const toks = norm(q).split(/\s+/).filter(Boolean);
   if (!toks.length) return true;
-  const hay = norm(`${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")} ${e.nai ?? ""} ${e.desc ?? ""}`);
+  const hay = norm(`${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")} ${e.nai ?? ""} ${e.desc ?? ""} ${e.an ?? ""} ${e.quelle ?? ""} ${(e.orte ?? []).join(" ")} ${e.erfasstVon ?? ""}`);
   const words = hay.split(/\s+/).filter(Boolean);
   // «NAI 2», «Det 1»: Wortfolgen zusammen prüfen
   const joined = ` ${words.join(" ")} `;
@@ -56,19 +68,57 @@ export function matchesQuery(e: LageEvent, q: string): boolean {
   });
 }
 
+/** Suchtext ist eine laufende Nummer («54», «Nr 54», «nr. 12a») → Nummer klein geschrieben, sonst null */
+export function nrQuery(q: string): string | null {
+  const m = /^\s*(?:nr\.?\s*)?(\d{1,5}[a-z]?)\s*$/i.exec(q);
+  return m ? m[1]!.toLowerCase() : null;
+}
+
+/** Passt die Meldung zur Art im Filter? (Feind/Eigene/Unklar nur Meldungen; «gestrichen» prüft der Aufrufer) */
+function artMatches(e: LageEvent, art: Exclude<SearchArt, null>, o: { quality?: Map<string, EventQuality>; ex?: Pick<Exercise, "events"> }): boolean {
+  switch (art) {
+    case "einzeln": return o.quality?.get(e.id)?.status === "unbestaetigt";
+    case "feind": case "eigen": case "unklar": return artOf(e) === "meldung" && !e.hebtAuf && kindOfEvent(e) === art;
+    case "gestrichen": return !!e.deleted;
+    case "dringend": case "offen": {
+      const v = vermerkeOf(e, lvzIndex(o.ex?.events ?? []));
+      return art === "dringend" ? v.dringend : v.status === "offen";
+    }
+    default: return artOf(e) === art;
+  }
+}
+
 /**
  * Journal-Liste: nicht gelöscht, Lagezeit (≤ `to`), «Zeige letzte» (≥ `from`), Suche und Art; neueste zuerst.
  * `einzeln` = Sichtungen aus nur einer Quelle (Qualität «unbestätigt»).
+ * MVP 3: `gestrichene` = gestrichene Einträge an ihrer Zeit mitzeigen; Art «gestrichen» = nur diese. Eine Zahl allein
+ * sucht die laufende Nummer (`ex` nötig).
  */
-export function filterJournal(events: LageEvent[], o: { q?: string; art?: SearchArt; from?: string | null; to?: string | null; quality?: Map<string, EventQuality> }): LageEvent[] {
+export function filterJournal(events: LageEvent[], o: { q?: string; art?: SearchArt; from?: string | null; to?: string | null; quality?: Map<string, EventQuality>; gestrichene?: boolean; ex?: Pick<Exercise, "events"> }): LageEvent[] {
   const q = (o.q ?? "").trim();
+  const nr = nrQuery(q);
+  const ex = o.ex ?? { events };
+  const showDel = !!o.gestrichene || o.art === "gestrichen";
   // einmal sortieren je Ereignisliste (neueste zuerst), Filterwechsel filtern nur noch (800 Meldungen: kein Sortieren pro Klick)
   return sortedDesc(events)
-    .filter((e) => !e.deleted
+    .filter((e) => (showDel || !e.deleted)
       && (!o.to || e.t <= o.to)
       && (!o.from || e.t >= o.from)
-      && (!o.art || (o.art === "einzeln" ? o.quality?.get(e.id)?.status === "unbestaetigt" : kindOfEvent(e) === o.art))
-      && (!q || matchesQuery(e, q)));
+      && (!o.art || artMatches(e, o.art, { quality: o.quality, ex }))
+      && (!q || (nr ? nrMatches(e, nr, ex) : matchesQuery(e, q))));
+}
+
+/** Nummer «12» passt auf «12», «12a», «12b»; «12a» nur genau */
+function nrMatches(e: LageEvent, nr: string, ex: Pick<Exercise, "events">): boolean {
+  const l = nrLabel(e, ex).toLowerCase();
+  return l === nr || (/^\d+$/.test(nr) && l.replace(/[a-z]+$/, "") === nr);
+}
+
+/** Anzahl gestrichener Einträge (für «Gestrichene zeigen (n)»), im selben Zeitfenster wie die Liste */
+export function countGestrichene(events: LageEvent[], o: { from?: string | null; to?: string | null } = {}): number {
+  let n = 0;
+  for (const e of events) if (e.deleted && (!o.to || e.t <= o.to) && (!o.from || e.t >= o.from)) n++;
+  return n;
 }
 
 const SORTED = new WeakMap<LageEvent[], LageEvent[]>();

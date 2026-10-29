@@ -18,6 +18,8 @@
  */
 import type { Draft, DraftProblem } from "./journal";
 import { sameUnitName } from "./erkennung";
+import { ART_LABEL } from "./arten";
+import { catalogEntry } from "./catalog";
 import type { Area } from "./model";
 import type { RasterSheet } from "./raster";
 
@@ -179,19 +181,31 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
     stop.push(problemReason(p, o));
   }
 
-  const note = d.kindHint === "notiz";
+  // (MVP 3) Nicht-Meldung (Auftrag, Orientierung, Rückfrage, Vbk, Notiz): kein Zeichen, keine Verschiebung – Ort nie nötig
+  const art = d.art ?? (d.kindHint === "notiz" ? "notiz" : "meldung");
+  const note = art !== "meldung" || d.kindHint === "notiz";
+  const lift = !!d.hebtAuf;
+  if (note && (d.kindHint === "notiz" || d.artStark === false)) {
+    // schwacher Hinweis («… ?», «befohlen»): einmal fragen (Code `art-schwach`; MVP 1 hiess er `notiz`)
+    const w = ART_LABEL[art === "meldung" ? "notiz" : art];
+    check.push({ code: "art-schwach", text: `Als ${w} ohne Zeichen?`, hint: `Nochmals Enter trägt als ${w} ein. Ist es eine Lage: Feind, Eigene oder Unklar wählen.`, ask: `Als ${w} ohne Zeichen eintragen? Nochmals Enter.` });
+  }
   if (note) {
-    // Rückfrage / Auftrag / Frage: kein Zeichen, keine Verschiebung – Ort und Melder sind dann nicht nötig
-    check.push({ code: "notiz", text: "Rückfrage oder Auftrag? Als Notiz ohne Zeichen?", hint: "Nochmals Enter trägt als Notiz ein. Ist es eine Lage: Einordnung wählen.", ask: "Als Notiz ohne Zeichen eintragen? Nochmals Enter." });
-  } else if (!d.melder.trim()) {
+    if (art === "auftrag" && !d.an) check.push({ code: "an", text: "An wen? Trupp nennen, z. B. «Auftrag an H01».", hint: "Trupp im Text nennen oder so eintragen.", ask: "Ohne Empfänger eintragen? Nochmals Enter." });
+    if (art === "vbk" && !d.melder.trim()) check.push({ code: "melder", text: "Mit welchem Trupp? Trupp oben antippen.", hint: "Trupp oben antippen oder an den Anfang schreiben.", ask: "Ohne Trupp eintragen? Nochmals Enter." });
+  } else if (!d.melder.trim() && !(d.bezug && d.bezugArt === "antwort")) {
     check.push({ code: "melder", text: "Wer meldet? fehlt", hint: "Trupp oben antippen oder an den Anfang schreiben.", ask: "Ohne Trupp eintragen? Nochmals Enter." });
   }
+  if (d.bezugFehlt && d.bezugNr) {
+    check.push({ code: "bezug", token: d.bezugNr, text: `Nr ${d.bezugNr} gibt es nicht – ohne Bezug eintragen?`, hint: "Nummer prüfen (steht unter der Zeit in der Liste).", ask: "Ohne Bezug eintragen? Nochmals Enter." });
+  }
+  if (!note && !lift && d.hebtAufKandidaten) check.push(aufhebReason(d));
   // unbekannter Trupp, obwohl Trupps vorbereitet sind (nicht bei «H13» – das sperrt schon als Problem)
   const m = d.melder.trim();
   if (m && o.unitsPrepared && o.knownUnits && !o.knownUnits.some((u) => sameUnitName(u, m)) && !(d.problems ?? []).some((p) => p.kind === "melder")) {
     check.push({ code: "trupp-neu", token: m, suggest: m, text: `${m} ist kein Trupp dieser Übung – neu anlegen?`, hint: "Trupp im Text korrigieren oder neu anlegen.", ask: `${m} als neuen Trupp anlegen? Nochmals Enter.` });
   }
-  if (d.unknownWord && !note) {
+  if (d.unknownWord && !note && !lift) {
     const u = d.unknownWord;
     check.push({
       code: "was", token: u.token, ...(u.suggest ? { suggest: u.suggest } : {}),
@@ -203,8 +217,8 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
 
   const hasPlace = o.manualPos || !!o.hasPos || !!d.pos;
   const ortAsk = "Ohne Ort eintragen? Nochmals Enter.";
-  if (note) {
-    // Notiz: ohne Ort
+  if (note || lift) {
+    // Nicht-Meldung bzw. Aufhebung: ohne Ort
   } else if (!hasPlace && !pqOhneRaster && !stop.some((r) => r.problem === "ort" || r.problem === "orte")) {
     if (d.placeQuery && o.placePending) {
       check.push({ code: "ort-suche", text: `Ort «${d.placeQuery}» wird gesucht …`, token: d.placeQuery, hint: "Kurz warten, Planquadrat angeben oder Ort auf Karte setzen.", ask: ortAsk });
@@ -237,7 +251,49 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
     }
   }
 
+  // (MVP 3, E17) Tag folgt nicht der Uhr und heute ist kein Tag der Übung: nie still auf einen erfundenen Zeitpunkt
+  if (o.follow === false && o.days?.length && !d.dayFromText && !o.days.includes(localDayOf(o.now))) check.push(tagFremd(d, o));
+
   if (stop.length) return { level: "geht-nicht", reasons: [...stop, ...check] };
   if (check.length) return { level: "pruefen", reasons: check };
   return { level: "bereit", reasons: [] };
+}
+
+const dm = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}.`;
+
+/** «Heute (29.10.) ist kein Tag dieser Übung (T1 14.05.–T2 15.05.2030).» mit Vorschlag letzte Meldung + 1 min */
+function tagFremd(d: Draft, o: EntryStateOptions): EntryReason {
+  const days = o.days!;
+  const first = days[0]!, last = days[days.length - 1]!;
+  const range = days.length === 1 ? `T1 ${dm(first)}${first.slice(0, 4)}` : `T1 ${dm(first)}–T${days.length} ${dm(last)}${last.slice(0, 4)}`;
+  let suggest: string | undefined;
+  if (o.lastReport) {
+    const ms = Date.parse(o.lastReport) + 60000;
+    const x = new Date(ms);
+    const day = localDayOf(x);
+    const i = days.indexOf(day);
+    if (i >= 0) suggest = `T${i + 1} ${pad2(x.getHours())}${pad2(x.getMinutes())}`;
+  }
+  const ti = days.indexOf(d.day);
+  const jetzt = `${ti >= 0 ? `T${ti + 1}` : dm(d.day)} ${hhmm(d.t)}`;
+  return {
+    code: "tag-fremd", text: `Heute (${dm(localDayOf(o.now))}) ist kein Tag dieser Übung (${range}).`,
+    hint: `Tag und Zeit dazuschreiben, z. B. «${suggest ?? `T${days.length} 0700`}».`, ask: `Trotzdem auf ${jetzt} eintragen? Nochmals Enter.`,
+    ...(suggest ? { suggest } : {}),
+  };
+}
+
+/** «Keine aktive Sperre in AG13 gefunden – als normale Meldung eintragen?» bzw. «Zwei Sperren in AG13 – welche?» */
+function aufhebReason(d: Draft): EntryReason {
+  const c = catalogEntry(d.sym);
+  const wort = c?.noun ?? c?.name.replace(/\s*\(.*?\)\s*/g, " ").split(" / ")[0]!.trim() ?? "Sperre";
+  const ort = d.where?.label ?? d.cells?.[0] ?? d.nai ?? "";
+  const bei = ort ? ` in ${ort}` : "";
+  const n = d.hebtAufKandidaten?.length ?? 0;
+  const ask = "Als normale Meldung eintragen? Nochmals Enter.";
+  if (!n) {
+    const kein = c?.g === "m" ? "Kein aktiver" : c?.g === "n" ? "Kein aktives" : "Keine aktive";
+    return { code: "aufheben", text: `${kein} ${wort}${bei} gefunden – als normale Meldung eintragen?`, hint: "Ort prüfen oder an der Zeile «Mehr …» → «Aufgehoben (jetzt)».", ask };
+  }
+  return { code: "aufheben", text: `${n === 2 ? "Zwei" : n} ${c?.pl ?? wort}${bei} – welche?`, hint: "Die gemeinte Meldung wählen.", ask };
 }

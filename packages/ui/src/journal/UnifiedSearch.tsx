@@ -7,13 +7,17 @@
  * Ein Stichwort filtert schon beim Tippen («feind» ohne Enter); der Chip entsteht erst mit Leerschlag/Enter, damit
  * man weiterschreiben kann.
  *
+ * MVP 3: eine Zahl («54», «Nr 54», «12a») schlägt zuerst den Eintrag mit dieser laufenden Nummer vor («Nr 54 – 07:12 Feind
+ * 2 Kpz …»); Stichwörter «gestrichen», «dringend», «offen», «Auftrag», «Rückfrage», «Vbk» … werden zum Chip.
+ *
  * `PlaceSearch` (unten): dieselbe Suche nur für Orte (PQ, NAI, Ort, Koordinate, Trupp) – für den Erststart ohne Meldungen
  * und den Modus «Vorbereiten» (Raster anlegen: hinzoomen). Filtert keine Liste.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { dayLabel } from "../Timeline";
 import type { SearchArt, UnifiedSearchProps } from "../shell/contracts";
-import { ART_LABEL, matchesQuery, takeKeyword } from "./filter";
+import { artOf, artText, kindLabel, nrLabel, type SearchHit } from "@lage/core";
+import { ART_LABEL, matchesQuery, nrQuery, takeKeyword } from "./filter";
 import { registerUnified, useSearch, type Hit } from "./useSearch";
 import { hitText } from "./hitText";
 import "./journal.css";
@@ -53,7 +57,18 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
   const filtering = useMemo(() => !ortOnly && (!!art || !!takeKeyword(q, true).art
     || (q.length >= 2 && (ex.events ?? []).some((e) => !e.deleted && matchesQuery(e, q)))), [ortOnly, art, q, ex.events]);
   const { hits, loading, go } = useSearch(ex, map, q, open && q !== shown, !filtering);
-  const list = q.length >= 1 ? hits.slice(0, 8) : [];
+  /** laufende Nummer («54») → Eintrag vorschlagen (Kap. 1.1) */
+  const nrHits = useMemo((): Hit[] => {
+    const n = ortOnly ? null : nrQuery(q);
+    if (!n) return [];
+    const evs = ex.events ?? [];
+    return evs.filter((e) => !e.deleted && (nrLabel(e, ex).toLowerCase() === n || nrLabel(e, ex).toLowerCase().replace(/[a-z]+$/, "") === n)).slice(0, 3)
+      .map((e): SearchHit => ({
+        kind: "element", label: `Nr ${nrLabel(e, ex)}`, badge: "Nr", eventId: e.id, pos: e.pos, score: 100,
+        detail: `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 16)} ${artOf(e) === "meldung" ? kindLabel(e) : artText(e)} ${e.text}`.slice(0, 80),
+      }));
+  }, [q, ex, ortOnly]);
+  const list = q.length >= 1 ? [...nrHits, ...hits].slice(0, 8) : [];
   const showList = open && list.length > 0;
   /** letzte Meldung je Trupp (für «zuletzt 07:20 gemeldet») */
   const lastRep = useMemo(() => {

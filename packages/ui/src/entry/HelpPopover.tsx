@@ -1,5 +1,5 @@
 /**
- * Hilfe «?» im Meldungsfeld (Spez. MVP 1, Kap. 3.2/4.4): Popover unter dem Feld, 5 Beispiele als Knöpfe – antippen
+ * Hilfe «?» im Meldungsfeld (Spez. MVP 1, Kap. 3.2/4.4; MVP 3, Kap. 4): Popover unter dem Feld, 7 Beispiele als Knöpfe – antippen
  * setzt den Text ins Feld (trägt nicht ein). Esc/Klick daneben schliesst, Fokus zurück ins Feld.
  * Beispiele fiktiv, passend zum Beispiel Bern.
  */
@@ -11,6 +11,9 @@ export const HILFE_BEISPIELE: Array<[string, string]> = [
   ["H03 3 Pers unklar bei NAI 2", "unklar"],
   ["H01 Sperre AF13 auf Hauptstrasse", "Sperre auf der Strasse"],
   ["H05 Kontakt mit Gegner AP11", "Kontakt"],
+  // MVP 3 (Kap. 4 «Hilfe»)
+  ["Auftrag an H01: Beo NAI 1 bis 1200", "Auftrag (kein Zeichen)"],
+  ["H03 A: 1020 E: 3 Pers I: Rtg W O: AF8 C", "Meldung im AEIOU-Schema"],
 ];
 
 export function HelpPopover({ onPick, onClose, anchor, hasRaster }: {
@@ -38,7 +41,7 @@ export function HelpPopover({ onPick, onClose, anchor, hasRaster }: {
         ))}
       </ul>
       <p>Reihenfolge egal. Ohne Zeit gilt jetzt. Korrigieren: Zeile wählen → Korrigieren oder ↑.</p>
-      <p className="eb-help-f">«T2» = Übungstag 2 (Datum beim Zeigen auf die Zeit). «neu» = in den letzten 10 Minuten. «62 min» an einem Trupp = so lange keine Meldung. {hasRaster ? "" : "Planquadrate gehen erst mit Führungsraster (Vorbereiten)."}</p>
+      <p className="eb-help-f">«T2» = Übungstag 2 (Datum beim Zeigen auf die Zeit). Neu in deiner Schicht: seit deinem Kürzel bzw. der letzten Übergabe. «62 min» an einem Trupp = so lange keine Meldung. {hasRaster ? "" : "Planquadrate gehen erst mit Führungsraster (Vorbereiten)."}</p>
     </div>
   );
 }

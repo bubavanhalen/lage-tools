@@ -22,7 +22,10 @@ export function RedCard({ c, ex, t, sel, onOpen }: { c: RedCoa; ex: Exercise; t:
   );
 }
 
-/** Zeile eines Hinweises: Stufe als Zeichen (⚠ hoch, • mittel, i Normalbild), Klartext, Zeit; in Experte mit Code-Marke */
+/**
+ * Zeile eines Hinweises: Stufe als Zeichen (⚠ hoch, • mittel, i Normalbild), Klartext, Zeit; in Experte mit Code-Marke.
+ * MVP 3 (Kap. 3.12): gleiche Hinweise gebündelt (`bundleHints`) mit «· 14×» (aria «14 gleiche Hinweise»).
+ */
 export function RedHintRow({ h, ex, t, sel, experte, onOpen }: { h: Hint; ex: Exercise; t: string; sel: boolean; experte: boolean; onOpen: () => void }) {
   const over = isOver(h, t);
   const st = decisionOf(ex, h);
@@ -31,7 +34,8 @@ export function RedHintRow({ h, ex, t, sel, experte, onOpen }: { h: Hint; ex: Ex
     <li className={`red-hint l-${h.level}` + (sel ? " sel" : "") + (state ? " done" : "")} data-hint={h.id}>
       <button className="red-hint-btn" onClick={onOpen} aria-current={sel || undefined}>
         <span className="red-lvl" aria-hidden={h.level === "info" || undefined}>{h.level === "hoch" ? "⚠" : h.level === "info" ? "i" : "•"}</span>
-        <span className="red-hint-title">{h.level === "hoch" && <span className="sr">Wichtig: </span>}{hintLine(h)}</span>
+        <span className="red-hint-title">{h.level === "hoch" && <span className="sr">Wichtig: </span>}{hintLine(h)}
+          {h.bundled && h.bundled > 1 ? <span className="red-bund" aria-label={`${h.bundled} gleiche Hinweise`}> · {h.bundled}×</span> : null}</span>
         {experte && <span className="red-code" title="Regel – Erklärung unter «Woher kommt das?»">{h.rule}</span>}
         <span className="red-hint-time">{state ? <span className="red-state">{state}</span> : hhmm(h.t, ex.days, t)}</span>
       </button>

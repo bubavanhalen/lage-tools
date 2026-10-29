@@ -205,6 +205,7 @@ export function RedTabLabel({ badge }: { badge: RedBadge }) {
   return (
     <>
       <span className="red-tab-l">Was Rot vorhaben könnte</span>
+      <span className="red-tab-s" aria-hidden="true">Was Rot</span>
       {badge.n > 0 && <span key={pulse} className={"red-badge" + (pulse ? " pulse" : "")} aria-label={badge.aria}>{badge.text}</span>}
     </>
   );

@@ -97,3 +97,94 @@ describe("istDringend (Vorschlag)", () => {
     expect(istDringend("H03: 1 Fz in NAI 2 Rtg N", { eigenerMelder: true })).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Einsatz-Szenario des Prüfers (Spez. MVP 3, Kap. 8.1) ohne Browser: tippen → Entwurf/Zustand → eintragen → Lage.
+// Beispiel Bern (fiktiv), Uhr T2 07:30, Kürzel BSP. Budget: 0 falsche Zeichen, 0 verschobene Trupps ausser bei eigener Lage.
+import {
+  analyzeJournal, demoExercise, entryState, eventFromDraft, lageBlau, lastPosition, nrLabel, offenePunkte, parseMeldung, situationAt,
+  vermerkeOf, lvzIndex, type Draft, type EntryLevel, type Exercise,
+} from "../src";
+
+describe("Einsatz-Szenario des Prüfers (Kap. 8.1)", () => {
+  const now = new Date(2030, 4, 15, 7, 30);
+  const T = "2030-05-15T07:30";
+  const STANDORTE: Record<string, string> = { H01: "AC6 B", H02: "AL9 A", H03: "AP4 D", H04: "AF12 A", H05: "AQ11 C" };
+  interface Fall { text: string | ((m: Record<string, string>) => string); art: string; zustand: EntryLevel[]; zeichen: number | null; bleibt?: string[]; pruef?: (d: Draft, ex: Exercise, m: Record<string, string>, id: string) => void }
+  const FAELLE: Record<string, Fall> = {
+    "1": { text: "Wann: 0720 Wer: H03 Was: 3 Pers bewaffnet Wo: AF8", art: "meldung", zustand: ["bereit"], zeichen: 1,
+      pruef: (d) => { expect(d.t.slice(11)).toBe("07:20"); expect(d.felder?.schema).toBe("formular"); expect(d.cells).toEqual(["AF8"]); expect(d.kind).toBe("feind"); } },
+    "2": { text: "H03 A: 0721 E: 3 Pers bewaffnet I: Rtg W O: AF8 C U: beobachten weiter", art: "meldung", zustand: ["bereit"], zeichen: 1, bleibt: ["H03"],
+      pruef: (d) => { expect(d.felder?.schema).toBe("aeiou"); expect(d.melder).toBe("H03"); expect(d.cells).toEqual(["AF8 C"]); expect(d.dir).toBe(270); expect(d.sym).not.toBe("beo_stao"); expect(d.text).toContain("U: beobachten weiter"); } },
+    "2b": { text: "A: 0722 E: H03 I: 3 Pers bewaffnet Rtg W O: AF8 C U: beobachten weiter", art: "meldung", zustand: ["pruefen"], zeichen: null,
+      pruef: (d) => { expect(d.melder).toBe(""); expect(d.felder?.was).toBe("H03"); } },
+    "3": { text: "H03 meldet: um 0723 3 Pers bewaffnet in AF8", art: "meldung", zustand: ["bereit"], zeichen: 1, pruef: (d) => expect(d.t.slice(11)).toBe("07:23") },
+    "4": { text: "Kontakt! H02, Feuer aus AK9, 2 Schützen, wir halten", art: "meldung", zustand: ["bereit"], zeichen: 1, bleibt: ["H02"], pruef: (d) => expect(d.dringend).toBe(true) },
+    "5": { text: "H04 Rückfrage: Standort Det 2?", art: "rueckfrage", zustand: ["bereit"], zeichen: 0,
+      pruef: (d, ex, m, id) => { m.rueckfrage = nrLabel(ex.events!.find((e) => e.id === id)!, ex); expect(offenePunkte(ex, T).some((o) => o.art === "rueckfrage" && o.text.startsWith("von H04"))).toBe(true); } },
+    "6": { text: "Auftrag an H01: Beo NAI 1 bis 1200", art: "auftrag", zustand: ["bereit"], zeichen: 0, bleibt: ["H01"],
+      pruef: (d, ex) => { expect(d.t).toBe(T); expect(d).toMatchObject({ an: "H01", frist: "2030-05-15T12:00", orte: ["NAI 1"] }); expect(offenePunkte(ex, T).find((o) => o.art === "auftrag")?.text).toBe("an H01: Beo NAI 1 – bis 12:00"); } },
+    "7": { text: "H05 hat Stellungswechsel nach AQ12 befohlen erhalten", art: "auftrag", zustand: ["pruefen"], zeichen: 0, bleibt: ["H05"], pruef: (d) => expect(d.an).toBe("H05") },
+    "8": { text: "Quittung H02 Auftrag erhalten", art: "notiz", zustand: ["bereit"], zeichen: 0, pruef: (d) => { expect(d.bezugArt).toBe("quittung"); expect(d.melder).toBe("H02"); } },
+    "9": { text: "Bat: Feind Kp-Stärke erwartet aus Rtg Belp ab 2200", art: "orientierung", zustand: ["bereit"], zeichen: 0, pruef: (d) => { expect(d.quelle).toBe("Bat"); expect(d.t).toBe(T); expect(d.desc).toBeUndefined(); } },
+    "10": { text: "H05 1 Verwundeter, Sanität angefordert", art: "meldung", zustand: ["bereit"], zeichen: null, bleibt: ["H05"], pruef: (d) => { expect(d.kind).toBe("eigen"); expect(d.dringend).toBe(true); } },
+    "11": { text: "H03 wir weichen aus nach AG9", art: "meldung", zustand: ["bereit", "pruefen"], zeichen: null, pruef: (d) => expect(d.kind).not.toBe("feind") },
+    "12": { text: "H02 Vbk i.O.", art: "vbk", zustand: ["bereit"], zeichen: 0, bleibt: ["H02"], pruef: (d, ex, _m, id) => { expect(d.vbk).toBe("gut"); expect(artText(ex.events!.find((e) => e.id === id)!)).toBe("Verbindung H02 gut"); } },
+    "13": { text: "H03 keine Verbindung", art: "vbk", zustand: ["bereit"], zeichen: 0, pruef: (_d, ex) => expect(offenePunkte(ex, T).some((o) => o.text.startsWith("H03: keine Verbindung"))).toBe(true) },
+    "14": { text: (m) => `Antwort zu ${m.rueckfrage}: Det 2 in AJ8`, art: "meldung", zustand: ["bereit"], zeichen: 1,
+      pruef: (d, ex) => {
+        expect(d.bezugArt).toBe("antwort");
+        expect(offenePunkte(ex, T).some((o) => o.art === "rueckfrage")).toBe(false);
+        const rf = ex.events!.find((e) => e.id === d.bezug)!;
+        expect(vermerkeOf(rf, lvzIndex(ex.events!)).beantwortet).toBeTruthy();
+      } },
+    "15": { text: "H04 Sperre AG13 aufgehoben", art: "meldung", zustand: ["bereit"], zeichen: -1,
+      pruef: (d, ex) => {
+        const ziel = ex.events!.find((e) => e.id === d.hebtAuf)!;
+        expect(ziel.text).toContain("Sperre in AG13");
+        expect(d.pos).toBeUndefined();
+        // Rückblick vor der Aufhebung zeigt die Sperre
+        expect(situationAt(ex.events!, "2030-05-15T07:10").loose.some((e) => e.id === ziel.id)).toBe(true);
+        expect(situationAt(ex.events!, T).loose.some((e) => e.id === ziel.id)).toBe(false);
+      } },
+  };
+  const placeOf = (ex: Exercise, u: string) => lageBlau(ex, T).find((z) => z.trupp === u)?.ort;
+  const ex = demoExercise();
+  const merk: Record<string, string> = {};
+  let nr = 0;
+  // Reihenfolge wie in der Spez. («2b» nach «2»; Object.entries sortiert Zahl-Schlüssel vor)
+  const ORDER = ["1", "2", "2b", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"];
+  for (const k of ORDER) {
+    const f = FAELLE[k]!;
+    it(`#${k} ${typeof f.text === "string" ? f.text : "Antwort zu …"}`, () => {
+      const text = typeof f.text === "string" ? f.text : f.text(merk);
+      const events = ex.events!;
+      const d = parseMeldung(text, { sheets: ex.sheets, areas: ex.areas, units: ex.units, days: ex.days, day: ex.days[1]!, now, lastPos: (u, s) => lastPosition(events, s, u), events, ex });
+      const st = entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now, sheets: ex.sheets, areas: ex.areas, knownUnits: ex.units.blau, unitsPrepared: true, days: ex.days });
+      expect(d.art, "Art").toBe(f.art);
+      expect(f.zustand, `Zustand ${st.level}: ${st.reasons.map((r) => r.text).join(" | ")}`).toContain(st.level);
+      if (f.art !== "meldung") { expect(d.pos).toBeUndefined(); expect(d.unit).toBe(""); expect(d.cells).toBeUndefined(); expect(d.nai).toBeUndefined(); }
+      const vorher = situationAt(events, T);
+      const e = eventFromDraft(d, "dev-pruef", now, { nr: ++nr + 1000, kuerzel: "BSP" });
+      expect(e.erfasstVon).toBe("BSP");
+      ex.events = [...events, e];
+      const nachher = situationAt(ex.events, T);
+      const marker = (s: typeof vorher) => s.loose.length + s.units.length;
+      if (f.zeichen !== null) expect(marker(nachher) - marker(vorher), "Zeichen").toBe(f.zeichen === 1 && nachher.units.length === vorher.units.length && d.unit ? 0 : f.zeichen);
+      // keine Feind-/Unklar-Zeichen aus Nicht-Meldungen; Trupps bleiben (ausser eigene Lage)
+      if (f.art !== "meldung") expect(nachher.loose.some((x) => x.id === e.id) || nachher.units.some((u) => u.event.id === e.id)).toBe(false);
+      // #11 ist eigene Lage (H03 weicht aus nach AG9) – danach steht H03 dort
+      if (k === "11") STANDORTE.H03 = "AG9";
+      for (const u of [...(f.bleibt ?? []), ...(d.kind === "eigen" && d.unit ? [] : Object.keys(STANDORTE))]) {
+        expect(placeOf(ex, u), `${u} verschoben`).toBe(STANDORTE[u]);
+      }
+      f.pruef?.(d, ex, merk, e.id);
+    });
+  }
+  it("Lebenszeichen: Quittung und Vbk zählen für «still», Vbk «keine» nicht", () => {
+    const blau = lageBlau(ex, T);
+    expect(blau.find((z) => z.trupp === "H02")?.letzteVbk).toMatchObject({ ergebnis: "gut" });
+    expect(blau.find((z) => z.trupp === "H03")?.letzteVbk).toMatchObject({ ergebnis: "keine" });
+    expect(analyzeJournal(ex, { t: T }).hints.length).toBeGreaterThan(0);
+  });
+});
