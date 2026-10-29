@@ -293,7 +293,8 @@ export function Workspace({ product, tagline }: Props) {
     if (hintSel.unit) for (const e of ex?.events ?? []) if (e.side === "blau" && e.unit === hintSel.unit) ids.add(e.id);
     return ids;
   })();
-  const badge = redBadge(exLater, hints, tLater);
+  // Entscheide («Trifft nicht zu») sofort aus der aktuellen Übung, nur die Hinweise selbst sind verzögert gerechnet
+  const badge = redBadge(ex, hints, tLater);
   const showRed = () => { setModus("lage"); setSideView("rot"); };
 
   // Hindernisse, Checkpoint, IED … (und Meldungen «auf Hauptstrasse/Autobahn») ohne Ausrichtung nachträglich auf die
