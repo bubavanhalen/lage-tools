@@ -13,6 +13,9 @@
   font: 400 var(--fs-14) var(--f-body); color: var(--ink);
 }
 .us-field input::placeholder { color: var(--muted); }
+/* sichtbarer Ring am Feldrahmen (:focus-within); am Eingabefeld selbst eine transparente Kontur, die im
+   Kontrastmodus des Systems (forced-colors) sichtbar wird */
+.us-field input:focus-visible { outline: 2px solid transparent; outline-offset: 2px; }
 @media (pointer: coarse) { .us-field input { font-size: var(--fs-16); } }
 .us-field input::-webkit-search-cancel-button { display: none; }
 .us-chip, .us-x {

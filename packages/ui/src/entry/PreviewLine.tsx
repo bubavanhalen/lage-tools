@@ -12,7 +12,7 @@
  */
 import { createPortal } from "react-dom";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
-import { catalogEntry, describeTactical, nrLabel, type Draft, type Kind, type LageEvent } from "@lage/core";
+import { artOf, catalogEntry, describeTactical, nrLabel, type Draft, type Kind, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { LAGE_KARTE } from "../colors";
 import { useDraftMissing } from "../QualityMarks";
@@ -22,7 +22,7 @@ import { SymbolPicker, choiceSvg, pickerEntry, type SymbolChoice } from "../Symb
 import { dayLabel } from "../Timeline";
 import { KiMeldungSuggest, meldungUnklar } from "../ki/KiFeatures";
 import { ArtSwitch } from "./ArtSwitch";
-import { bezugLabel, dayTitle, felderText, genericWhat, missLabel, replaceToken } from "./labels";
+import { ART_NAME, bezugLabel, dayTitle, felderText, genericWhat, missLabel, replaceToken } from "./labels";
 import type { EntryDraft } from "./useEntryDraft";
 
 const KIND_WORD: Record<Kind, string> = { feind: "Feind", eigen: "Eigene", unklar: "Unklar" };
@@ -106,7 +106,9 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
   const zeitInhalt = note && draft.art === "orientierung" && !draft.timeFromText && /(?<![\p{L}\d])\d{1,2}[:.]?\d{2}(?![\p{L}\d])/u.test(draft.text);
   const generic = what ? null : genericWhat(d.choice?.key ?? draft.sym, kindNow === "eigen" ? "blau" : "rot", draft.unit || draft.melder);
   const whatText = what ?? generic ?? (pickerEntry(d.choice?.key ?? draft.sym)?.name ?? draft.sym) + (draft.count && draft.count > 1 ? ` ×${draft.count}` : "");
-  const kindBefore = korr && base ? (base.side === "blau" ? "eigen" : base.aff === "U" || base.aff === "N" ? "unklar" : "feind") as Kind : null;
+  const kindBefore = korr && base && artOf(base) === "meldung" ? (base.side === "blau" ? "eigen" : base.aff === "U" || base.aff === "N" ? "unklar" : "feind") as Kind : null;
+  /** Korrektur einer Nicht-Meldung zur Meldung: «(vorher Notiz)» statt «(vorher Eigene)» */
+  const artBefore = korr && base && artOf(base) !== "meldung" ? (artOf(base) === "vbk" ? "Verbindung" : ART_NAME[artOf(base) as Exclude<ReturnType<typeof artOf>, "meldung">]) : null;
   const placeChanged = korr && d.oldPlace !== null && (d.placeText || "ohne Ort") !== d.oldPlace;
   const ortProblem = state.reasons.some((x) => x.problem === "ort" || x.problem === "orte");
   const melderProblems = state.reasons.filter((x) => (x.problem === "melder" || x.code === "trupp-neu") && x.token);
@@ -221,6 +223,7 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
           <ArtSwitch art="meldung" kind={kindNow} neutral={d.symOverride?.aff === "N"} onKind={d.setKind} onArt={d.setArt}
             open={d.artMenu} setOpen={d.setArtMenu} onDone={() => d.inputRef.current?.focus()} />
           {kindBefore && kindBefore !== kindNow && <span className="eb-vorher">(vorher {KIND_WORD[kindBefore]})</span>}
+          {artBefore && <span className="eb-vorher">(vorher {artBefore})</span>}
         </div>
       </>}
       {lvl !== "geht-nicht" && !note && !lift && (

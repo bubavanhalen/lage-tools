@@ -7,7 +7,7 @@
  * und «Zur Meldung». Die Punkte sind `.jlist li` (zählen im Inventar nicht). «Offen» zeigt immer den Stand jetzt (LIVE).
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as RKeyboardEvent } from "react";
-import { type EntryArt, type Hint, type LageEvent, type OffenArt, type OffenItem } from "@lage/core";
+import { lvzIndex, vermerkeOf, type EntryArt, type Hint, type LageEvent, type OffenArt, type OffenItem } from "@lage/core";
 import type { OffenPanelProps } from "../shell/contracts";
 import { isOpen } from "../hintsData";
 import { setVermerkUndo } from "../journal/actions";
@@ -120,7 +120,8 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
         if (e) { setStatus(e, "erledigt"); p.onEvent(e.id); }
         return;
       case "dringend":
-        // kurz nach der Massnahme fragen (leer erlaubt); die nächste Übergabe zeigt sie
+        // kurz nach der Massnahme fragen (leer erlaubt), ausser sie ist schon vermerkt; die nächste Übergabe zeigt sie
+        if (e && vermerkeOf(e, lvzIndex(ex.events ?? [])).massnahme) { erledigt(it); return; }
         setAskM({ key: it.key, text: "" });
         return;
       default: erledigt(it);

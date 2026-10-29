@@ -24,8 +24,8 @@ export function blattLayout(paper: LagekarteDruck["paper"]): BlattLayout {
     const w = pw - RAND - lw - 4 - x, h = ph - RAND - FUSS - 2 - y;
     return { pw, ph, field: { x, y, w, h }, legend: { x: pw - RAND - lw, y, w: lw, h, band: false } };
   }
-  // Legende: drei Zeilen Zeichen und eine Zeile Erklärung (nie abgeschnitten, Prüfung N)
-  const pw = 297, ph = 210, lh = 18.5;
+  // Legende: vier Zeilen Zeichen und eine Zeile Erklärung (nie abgeschnitten, Prüfung N)
+  const pw = 297, ph = 210, lh = 21;
   const x = RAND + LAB_LEFT, y = RAND + KOPF + LAB_TOP;
   const w = pw - RAND - x, h = ph - RAND - FUSS - lh - 2 - y;
   return { pw, ph, field: { x, y, w, h }, legend: { x: RAND, y: y + h + 1.5, w: pw - 2 * RAND, h: lh, band: true } };
