@@ -101,20 +101,15 @@ describe("Farbvertrag theme.css", () => {
  */
 const BEKANNT: Record<string, number> = {
   "GeorefPane.tsx": 1,
-  "JournalPanel.tsx": 5,
-  "MapContextMenu.tsx": 1,
   "MapOverlays.tsx": 14,
-  "MapSearch.tsx": 2,
   "NaiPanel.tsx": 1,
   "PreviewShell.tsx": 2,
   "ShapeDraw.tsx": 1,
   "SymbolPicker.tsx": 1,
-  "Workspace.tsx": 2,
   "attachmentStore.ts": 2,
   "journalLayer.ts": 14,
   "mapoverlays.css": 6,
   "pdf.ts": 16,
-  "style.css": 11,
   "tiles.ts": 1,
 };
 

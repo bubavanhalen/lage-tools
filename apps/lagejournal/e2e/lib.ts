@@ -23,6 +23,8 @@ export interface OpenOptions {
   arbeitsweise?: { modus: "lage" | "vorbereiten"; experte: boolean };
   /** zusätzliches CSS vor dem ersten Zeichnen, z. B. «:root{--hit:48px}» */
   css?: string;
+  /** Offline-Status: Standard «bereit» über den Testhaken `window.__ltOfflineBereit`; «echt» = wirklich prüfen */
+  offline?: "bereit" | "echt";
 }
 
 export interface Session {

@@ -42,6 +42,18 @@ const spec: Spec = {
       }));
       out.push(await messen(h, "Experte (nur Bericht)", g, null, { query: "?beispiel", arbeitsweise: { modus: "lage", experte: true } }));
       out.push(await messen(h, "Vorbereiten (nur Bericht)", g, null, { query: "?beispiel", arbeitsweise: { modus: "vorbereiten", experte: false } }));
+      // Offline nicht bereit (ohne Testhaken: kein Service Worker, kein Kartenpaket) → Knopf im Kopf
+      out.push(await aufgabe("Offline nicht bereit – Knopf «beheben»", g, async (w) => {
+        const s = await h.open({ query: "?beispiel", geraet: g, uhr: UHR_T2_0730, offline: "echt" });
+        try {
+          const b = s.page.getByRole("button", { name: /Offline nicht bereit – beheben/ });
+          await b.waitFor({ timeout: 5000 });
+          await b.click();
+          w.vorbereiten = await s.page.getByText("Du bereitest vor.").count();
+          soll(w.vorbereiten === 1, "Knopf führt nicht zu Vorbereiten");
+          soll(await s.page.getByText(/Karte nicht gespeichert|App noch nicht offline geladen|Speicher nicht geschützt/).first().isVisible(), "Grund fehlt in Schritt 6");
+        } finally { await s.close(); }
+      }));
       // Feldgerät-Vorbereitung: --hit 48 px
       out.push(await aufgabe("Mit --hit: 48px kein Überlauf, nichts unter 48 px", g, async (w) => {
         const s = await h.open({ query: "?beispiel", geraet: g, uhr: UHR_T2_0730, css: ":root{--hit:48px !important}" });

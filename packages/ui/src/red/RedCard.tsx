@@ -30,7 +30,7 @@ export function RedHintRow({ h, ex, t, sel, experte, onOpen }: { h: Hint; ex: Ex
   return (
     <li className={`red-hint l-${h.level}` + (sel ? " sel" : "") + (state ? " done" : "")} data-hint={h.id}>
       <button className="red-hint-btn" onClick={onOpen} aria-current={sel || undefined}>
-        <span className="red-lvl" aria-hidden="true">{h.level === "hoch" ? "⚠" : h.level === "info" ? "i" : "•"}</span>
+        <span className="red-lvl" aria-hidden={h.level === "info" || undefined}>{h.level === "hoch" ? "⚠" : h.level === "info" ? "i" : "•"}</span>
         <span className="red-hint-title">{h.level === "hoch" && <span className="sr">Wichtig: </span>}{hintLine(h)}</span>
         {experte && <span className="red-code" title="Regel – Erklärung unter «Woher kommt das?»">{h.rule}</span>}
         <span className="red-hint-time">{state ? <span className="red-state">{state}</span> : hhmm(h.t, ex.days, t)}</span>

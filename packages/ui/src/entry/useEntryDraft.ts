@@ -14,7 +14,7 @@
  * Korrekturzustand überlebt Neuladen. Konflikt mit anderem Fenster (MVP 0): Revision beim Start merken, Band
  * «In einem anderen Fenster geändert/gelöscht – Trotzdem speichern / Verwerfen»; gelöschte Meldungen nicht korrigierbar.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
   catalogEntry, cellAtAny, cellBounds, clockDay, correctEvent, correctionSummary, entryState, findCells, isPlaceName,
@@ -146,7 +146,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const korrId = mode.art === "korrektur" ? mode.id : null;
   const base = korrId ? korr.current?.base ?? null : null;
   const cur = korrId ? events.find((e) => e.id === korrId) : undefined;
-  useEffect(() => { p.onCorrecting?.(korrId); }, [korrId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // synchron (vor dem Zeichnen): die Liste zeigt «wird korrigiert» nie einen Augenblick zu lang
+  useLayoutEffect(() => { p.onCorrecting?.(korrId); }, [korrId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const endKorr = useCallback((restore = true) => {
     const k = korr.current;

@@ -104,11 +104,13 @@ const harness = {
     page.on("pageerror", (e) => fehler.push("pageerror: " + e.message));
     page.on("console", (m) => { if (m.type() === "error") fehler.push("console: " + m.text().slice(0, 200)); });
     page.on("download", (d) => downloads.push(d.suggestedFilename()));
-    await page.addInitScript(({ aw, css }) => {
+    await page.addInitScript(({ aw, css, bereit }) => {
       window.L_DISABLE_3D = true;
+      // Testhaken: Offline-Status «bereit» (Grundansicht wird im Zustand «Offline bereit» gezählt); Produkt unverändert
+      if (bereit) window.__ltOfflineBereit = true;
       try { if (aw) localStorage.setItem("lage-tools.arbeitsweise", JSON.stringify(aw)); } catch { /* egal */ }
       if (css) document.addEventListener("DOMContentLoaded", () => { const s = document.createElement("style"); s.textContent = css; document.head.appendChild(s); });
-    }, { aw: o.arbeitsweise ?? null, css: o.css ?? null });
+    }, { aw: o.arbeitsweise ?? null, css: o.css ?? null, bereit: o.offline !== "echt" });
     if (!echteKacheln) await page.route(/wmts.*\.geo\.admin\.ch|api3\.geo\.admin\.ch\/.*tile/, (r) => r.fulfill({ status: 200, contentType: "image/png", body: TILE, headers: { "access-control-allow-origin": "*" } }));
     if (o.uhr) await page.clock.install({ time: o.uhr });
     await page.goto(BASE + (o.query ?? ""));

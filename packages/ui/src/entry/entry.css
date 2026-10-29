@@ -50,7 +50,9 @@
 .eb-hint { margin: 0; font-size: var(--fs-14); color: var(--muted); }
 .eb-keys { display: none; margin: 0; font-size: var(--fs-12); color: var(--muted); }
 @media (hover: hover) and (pointer: fine) {
-  .ebox .eb-fieldwrap:has(.eb-field:focus-visible) ~ .eb-keys { display: block; }
+  /* Platz immer reservieren: kein Springen des Layouts beim Verlassen des Felds (sonst geht ein Klick daneben) */
+  .eb-keys { display: block; visibility: hidden; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ebox .eb-fieldwrap:has(.eb-field:focus-visible) ~ .eb-keys { visibility: visible; }
 }
 .eb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .eb-info { margin: 0; font-size: var(--fs-14); color: var(--ink); padding: var(--sp-8) var(--sp-12); border-radius: var(--r-4); background: var(--bg); border: 1px solid var(--line-soft); }

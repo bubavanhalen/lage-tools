@@ -137,3 +137,12 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
 @media (max-width: 560px) {
   .hd-status { display: none; }
 }
+
+/* «Was Rot vorhaben könnte» in der Spalte: gleiche Kante wie Meldungsfeld, Umschalter und Liste (Spalten-Innenabstand) */
+.sh-redpanel { min-width: 0; }
+.sh-redpanel > .panel.red { padding: var(--sp-4) 0 var(--sp-16); }
+
+/* Rückgängig-Leisten (Journal, Raster/NAI, Übungen): unten in der linken Spalte, nie über Live-Band oder Rückblick-Leiste */
+@media (min-width: 861px) {
+  .app.shell .undobar.wsundo { left: var(--sp-16); right: auto; bottom: var(--sp-16); transform: none; width: calc(var(--spalte-w) - 2 * var(--sp-16)); min-width: 0; }
+}

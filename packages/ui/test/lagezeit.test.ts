@@ -47,6 +47,15 @@ describe("LageZeitCtl", () => {
     expect(calls.live).toEqual([["zeitablauf", true]]);
   });
 
+  it("Rückkehr genau nach 120 s, auch wenn die letzte Bedienung zwischen zwei Sekundentakten lag", () => {
+    const { ctl } = make();
+    ctl.lookBack("2030-05-15T06:25");
+    vi.advanceTimersByTime(400);
+    ctl.lookBack("2030-05-15T05:25"); // «−1 h» 0,4 s später
+    vi.advanceTimersByTime(120_000);
+    expect(ctl.zeit.kind).toBe("live");
+  });
+
   it("jede Bedienung setzt den Timer zurück", () => {
     const { ctl } = make();
     ctl.lookBack("2030-05-15T05:30");

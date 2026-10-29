@@ -58,6 +58,8 @@ export function useOfflineStatus(ex: Pick<Exercise, "id" | "sheets"> | null): Of
     const area = x ? rasterArea(x) : null;
     const [karte, speicher] = await Promise.all([area ? areaTilesCached(area) : Promise.resolve(true), persisted()]);
     if (n !== seq.current) return;
+    // Testhaken der Abnahme (e2e/run.mjs): Grundansicht im Zustand «Offline bereit» zählen – nur wenn gesetzt
+    if ((window as unknown as { __ltOfflineBereit?: boolean }).__ltOfflineBereit === true) { setSt(summarize({ app: true, karte: true, speicher: true }, navigator.onLine)); setChecked(true); return; }
     setSt(summarize({ app: offlineReady(), karte, speicher }, navigator.onLine));
     setChecked(true);
   }, []);

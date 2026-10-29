@@ -56,7 +56,6 @@ import { JournalPanel } from "./JournalPanel";
 import { situationLayer, whenNotDragging } from "./situationLayer";
 import { shapeLayer } from "./shapeLayer";
 import { EventBanner, Legend } from "./MapOverlays";
-import { MapSearch } from "./MapSearch";
 import { MapToolbar } from "./MapToolbar";
 import { MapContextMenu } from "./MapContextMenu";
 import { effectiveFlags, flagVariant, loadBasemap, loadFlags, saveBasemap, saveFlags, type FlagVariant, type LayerFlags } from "./layers";
@@ -79,7 +78,8 @@ import { useLageZeit, lastReportOf } from "./time/useLageZeit";
 import { RueckblickBanner } from "./time/RueckblickBanner";
 import { TimeBand } from "./time/TimeBand";
 import { RedPanel, RedTabLabel } from "./red/RedPanel";
-import { AppShell, LageColumn, SideSwitch, type SideView } from "./shell/AppShell";
+import { AppShell, SideSwitch, type SideView } from "./shell/AppShell";
+import { requestCorrection } from "./entry/useEntryDraft";
 import { Header, useSaveStatus } from "./shell/Header";
 import { MainMenu, APP_VERSION } from "./shell/MainMenu";
 import { ExerciseList } from "./shell/ExerciseList";
@@ -127,7 +127,8 @@ export function Workspace({ product, tagline }: Props) {
 
   const [reportAt, setReportAt] = useState<{ pos: LV95; n: number } | null>(null);
   const [present, setPresent] = useState(false);
-  const [editReq, setEditReq] = useState<{ id: string; n: number } | null>(null);
+  /** «Korrigieren» von der Karte, solange das Meldungsfeld noch nicht eingehängt ist (Modus Vorbereiten) */
+  const pendingCorr = useRef<string | null>(null);
   const [night, setNight] = useState(() => { try { return localStorage.getItem("lage-tools.night") === "1"; } catch { return false; } });
   useEffect(() => {
     try { localStorage.setItem("lage-tools.night", night ? "1" : "0"); } catch { /* egal */ }
@@ -459,7 +460,17 @@ export function Workspace({ product, tagline }: Props) {
     if (e && zeit.zeit.kind === "rueckblick" && e.t > zeit.zeit.t) zeit.lookBack(e.t);
     if (e) focusEvent(e);
   };
-  const correct = (id: string) => { setModus("lage"); setSideView("journal"); setEditReq({ id, n: Date.now() }); };
+  const correct = (id: string) => {
+    setSideView("journal");
+    if (lage && requestCorrection(id)) return;
+    pendingCorr.current = id;
+    setModus("lage");
+  };
+  useEffect(() => {
+    if (!lage || !pendingCorr.current) return;
+    const id = window.setTimeout(() => { if (pendingCorr.current && requestCorrection(pendingCorr.current)) pendingCorr.current = null; }, 0);
+    return () => window.clearTimeout(id);
+  });
 
   const exportJournal = async (kind: "csv" | "pdf") => {
     if (!ex) return;
@@ -615,22 +626,6 @@ export function Workspace({ product, tagline }: Props) {
   // Experte aus: Präsentation beenden
   useEffect(() => { if (!experte && present) togglePresent(false); }, [experte]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ctrl+K / «/» = Suche (vorläufig: Suchfeld der Liste; in Experte übernimmt die Kartensuche)
-  useEffect(() => {
-    if (experte) return;
-    const key = (e: KeyboardEvent) => {
-      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName));
-      if (!(((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k") || (e.key === "/" && !e.ctrlKey && !e.metaKey && !typing))) return;
-      const f = document.querySelector<HTMLInputElement>("[data-suche], input[aria-label='Journal durchsuchen']");
-      if (!f) return;
-      e.preventDefault();
-      setModus("lage"); setSideView("journal");
-      f.focus(); f.select();
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [experte]); // eslint-disable-line react-hooks/exhaustive-deps
-
   /** Meldung am Kartenpunkt (für «Korrigieren» im Kontextmenü): nächstes sichtbares Zeichen innerhalb 22 px */
   const eventNear = (_pos: LV95, pt: { x: number; y: number }) => {
     const map = sm.current?.map;
@@ -666,13 +661,6 @@ export function Workspace({ product, tagline }: Props) {
       onOpenChange={suspendMenu("menu")} />
   );
 
-  const journal = map ? (
-    <JournalPanel ex={ex} map={map} device={device} selected={selEvent}
-      win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => { zeit.setShowLast(null); zeit.setAb?.(null); }}
-      onSelect={selectEvent} reportAt={reportAt} editRequest={editReq}
-      onGoto={() => { setModus("vorbereiten"); setPrepStep(2); }} onDemo={loadDemo} update={update} say={say} onExport={exportJournal}
-      quality={quality} />
-  ) : <div className="panel"><p className="help">Karte wird geladen …</p></div>;
   const red = (
     <RedPanel ex={ex} t={tNow} from={winFrom} hints={hints} lage={lageRot}
       variant={experte ? "experte" : "basis"} selHint={selHint} selCoa={selCoa}
@@ -680,11 +668,18 @@ export function Workspace({ product, tagline }: Props) {
       onEvent={(id) => { setSideView("journal"); selectEvent(id); }} update={update}
       stand={zeit.zeit.kind === "rueckblick" ? zeit.zeit.t : null} />
   );
+  const journal = map ? (
+    <JournalPanel ex={ex} map={map} device={device} selected={selEvent} experte={experte} zeit={zeit}
+      win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => { zeit.setShowLast(null); zeit.setAb?.(null); }}
+      showLast={zeit.showLast} onSelect={selectEvent} reportAt={reportAt}
+      onCommitted={() => zeit.goLive("eintragen")}
+      onPrepare={() => { setModus("vorbereiten"); setPrepStep(2); }} onDemo={loadDemo} update={update} say={say} quality={quality}
+      between={<SideSwitch view={sideView} onView={setSideView} redLabel={<RedTabLabel badge={badge} />} />}
+      tab={hasEvents ? sideView : "journal"} rot={<div role="tabpanel" aria-label="Was Rot vorhaben könnte" className="sh-redpanel">{red}</div>} />
+  ) : <div className="panel"><p className="help">Karte wird geladen …</p></div>;
 
   const side = lage ? (
-    <LageColumn
-      switcher={hasEvents ? <SideSwitch view={sideView} onView={setSideView} redLabel={<RedTabLabel badge={badge} />} /> : undefined}
-      list={sideView === "rot" && hasEvents ? red : journal} />
+    journal
   ) : (
     <PrepareMode ex={ex} map={map} update={update} say={say} offerUndo={undo.offer} offline={offline}
       step={prepStep} onStep={setPrepStep} selSheet={selSheet} onSelectSheet={setSelSheet} selArea={selArea} onSelectArea={setSelArea}
@@ -724,12 +719,11 @@ export function Workspace({ product, tagline }: Props) {
                   flags={userFlags} onFlags={setUserFlags} onFitAll={() => fitAll(ex)} canFitAll={ex.sheets.length + ex.areas.length > 0}
                   online={ex.onlineDienste} net={offline.net}
                   showLast={lage ? zeit.showLast : undefined} onShowLast={lage ? zeit.setShowLast : undefined}
-                  onOpenChange={suspendMenu("anzeige")}
-                  lead={experte ? <MapSearch ex={ex} map={map} onSelectEvent={(id) => { setModus("lage"); setSideView("journal"); selectEvent(id); }} /> : undefined} />
+                  onOpenChange={suspendMenu("anzeige")} />
               </div>
               <EventBanner event={selEv} days={ex.days} onClose={() => setSelEvent(null)}
                 extra={(() => { if (!selEv?.attachments?.length) return null; const all = attachmentsOf(ex, selEv.attachments); const fotos = all.filter((a) => a.kind === "foto"); const memos = all.filter((a) => a.kind === "audio"); return <>{fotos.length ? <AttachmentChips list={fotos} size={22} /> : null}{memos.length ? <RowMemos list={memos} /> : null}</>; })()}
-                onEdit={present ? undefined : (e) => correct(e.id)} />
+                onEdit={present || (lage && sideView === "journal") ? undefined : (e) => correct(e.id)} />
               {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} from={winFrom} />}
               <MapContextMenu map={map} sheets={ex.sheets} eventNear={eventNear} onCorrect={present ? undefined : correct}
                 onReportHere={(pos) => { setModus("lage"); setSideView("journal"); setReportAt({ pos, n: Date.now() }); }} />

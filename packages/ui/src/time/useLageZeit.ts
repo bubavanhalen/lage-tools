@@ -49,6 +49,8 @@ export class LageZeitCtl {
   private lastInput: number;
   private keys = new Set<string>();
   private timer: ReturnType<typeof setInterval> | undefined;
+  /** genauer Ablauf (R1): unabhängig vom Sekundentakt, damit die Rückkehr nach exakt `timeout` s erfolgt */
+  private deadline: ReturnType<typeof setTimeout> | undefined;
   private readonly now: () => number;
   private readonly timeout: number;
   private readonly warn: number;
@@ -115,7 +117,7 @@ export class LageZeitCtl {
   /** Bedienung irgendwo in der App (R1) */
   touch = (): void => {
     this.lastInput = this.now();
-    if (this.zeit.kind === "rueckblick") this.publish();
+    if (this.zeit.kind === "rueckblick") { this.arm(); this.publish(); }
   };
 
   /** Seite wieder sichtbar: nach > Zeitablauf sofort LIVE (R4) */
@@ -146,6 +148,17 @@ export class LageZeitCtl {
   dispose(): void {
     if (this.timer !== undefined) clearInterval(this.timer);
     this.timer = undefined;
+    if (this.deadline !== undefined) clearTimeout(this.deadline);
+    this.deadline = undefined;
+  }
+
+  /** Ablauf genau auf `lastInput + timeout` stellen (nur wenn der Timer läuft) */
+  private arm(): void {
+    if (this.deadline !== undefined) clearTimeout(this.deadline);
+    this.deadline = undefined;
+    if (!this.active()) return;
+    const ms = Math.max(0, this.timeout * 1000 - (this.now() - this.lastInput));
+    this.deadline = setTimeout(() => { this.deadline = undefined; this.tick(); }, ms);
   }
 
   /** Timer läuft? (Rückblick, nicht abspielend, nichts ruht) */
@@ -156,6 +169,7 @@ export class LageZeitCtl {
   private sync(notify: boolean): void {
     if (this.active()) {
       if (this.timer === undefined) this.timer = setInterval(() => this.tick(), 1000);
+      this.arm();
     } else this.dispose();
     const r = this.shown();
     const changed = r !== this.remaining;
