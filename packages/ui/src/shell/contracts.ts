@@ -6,11 +6,15 @@
  * Kern-Verträge liegen in @lage/core: `EntryState`/`entryState` (entrystate.ts), `EventRevision`/`LageEvent.history`
  * (model.ts), `correctEvent` (journal.ts), `coaHeadline`/`indicatorSummary`/`windowText` (klartext.ts),
  * `Hint.headline?`/`Hint.todo?` (hints.ts), `RedCoa.headline?` (coa.ts).
+ *
+ * MVP 3 «LVZ-Betrieb» (Spez. MVP 3, Kap. 5.4): Abschnitte «MVP 3» unten; Kern-Verträge in arten.ts, felder.ts,
+ * nummer.ts, lvz.ts, schicht.ts, entscheide.ts (Entscheide des Kunden), demolang.ts.
  */
 import type L from "leaflet";
-import type { EventQuality, Exercise, Hint, Kind, LageEvent, LV95, RedCoa } from "@lage/core";
+import type { EntryArt, EventQuality, Exercise, Hint, Kind, LageEvent, LV95, OffenItem, RedCoa } from "@lage/core";
 import type { LayerFlags } from "../layers";
 import type { LageRotState } from "../lageRot";
+import type { Bounds, TileLayer } from "../tiles";
 import type { SwimTimelineProps } from "../SwimTimeline";
 
 export type { EntryState, EntryReason, EntryReasonCode, EntryLevel, EntryStateOptions, EventRevision } from "@lage/core";
@@ -23,8 +27,8 @@ export const ARBEITSWEISE_KEY = "lage-tools.arbeitsweise";
 export const ARBEITSWEISE_START: Arbeitsweise = { modus: "lage", experte: false };
 
 // ---------- Zeit (Paket C) ----------
-/** «Zeige letzte» in Minuten; null = alles. Nie gespeichert. */
-export type ShowLast = 30 | 60 | 120 | null;
+/** «Zeige letzte» in Minuten; null = alles. Nie gespeichert. (MVP 3: + 360 = 6 h, Standard ab 200 Meldungen) */
+export type ShowLast = 30 | 60 | 120 | 360 | null;
 export type LageZeit = { kind: "live" } | { kind: "rueckblick"; t: string; playing: boolean };
 export type GoLiveGrund = "knopf" | "taste" | "eintragen" | "zeitablauf" | "ende";
 export interface ZeitApi {
@@ -74,6 +78,10 @@ export interface EntryBoxProps {
   correct: { id: string; n: number } | null;
   /** «Meldung hier» aus dem Kontextmenü der Karte */
   reportAt: { pos: LV95; n: number } | null;
+  /** (MVP 3, C liefert) Kürzel/Schicht – Abfrage «Wer erfasst?» beim ersten Enter ohne Kürzel (Kap. 2.3) */
+  schicht?: SchichtApi;
+  /** (MVP 3, C liefert) nächste laufende Nummer: liest–erhöht–schreibt den Gerätezähler (`NR_KEY`) synchron, Kap. 3.3 */
+  onNr?(): number;
 }
 export type JournalEmpty = "erststart" | "suche" | "zeige-letzte" | "rueckblick" | null;
 export interface JournalListProps {
@@ -86,9 +94,19 @@ export interface JournalListProps {
   onDelete(id: string): void;
   quality?: Map<string, EventQuality>;
   empty: JournalEmpty;
+  /** (MVP 3, C liefert) für «Mehr …» an der gewählten Zeile (B hängt `LvzMenu` selbst ein) */
+  lvz?: Omit<LvzRowProps, "e" | "ex">;
+  /** (MVP 3) Trenner «Neu in deiner Schicht ↑ · seit 06:00 (BSP)»; null = keiner (Rückblick, Suche, ohne Kürzel) */
+  schichtSeit?: { seit: string; kuerzel: string } | null;
+  /** (MVP 3) gestrichene Einträge zeigen («Gestrichene zeigen (n)») */
+  gestrichene?: boolean;
+  onGestrichene?(on: boolean): void;
 }
-/** Suchfilter «Art»: Kind oder «einzeln» (= «nur 1 Trupp») */
-export type SearchArt = Kind | "einzeln" | null;
+/**
+ * Suchfilter «Art»: Kind oder «einzeln» (= «nur 1 Trupp»); MVP 3: «gestrichen», «dringend», «offen» und die
+ * Nicht-Meldungen (Auftrag, Orientierung, Rückfrage, Vbk, Notiz)
+ */
+export type SearchArt = Kind | "einzeln" | "gestrichen" | "dringend" | "offen" | Exclude<EntryArt, "meldung"> | null;
 export interface UnifiedSearchProps {
   ex: Exercise;
   map: L.Map;
@@ -162,4 +180,148 @@ export const TESTHAKEN = {
   zustand: "data-zustand",
   /** an `.app`: «live» | «rueckblick» */
   lagezeit: "data-lagezeit",
+  /** (MVP 3) an `.jl-row`: Art des Eintrags (`EntryArt`) */
+  art: "data-art",
+  /** (MVP 3) an `.jl-row`: Anzeige-Nummer («54», «12a») */
+  nr: "data-nr",
+  /** (MVP 3) Übergabe-Seite: `role="dialog"` mit diesem `aria-label` (uebergabe.spec.ts liest Text und Wörter darin) */
+  uebergabe: "Übergabe",
+  /** (MVP 3) Trenner «Neu in deiner Schicht ↑» in der Liste: Klasse (kein `li`, zählt nicht als Zeile) */
+  trenner: "jl-trenner",
 } as const;
+
+// =====================================================================================================================
+// MVP 3 «LVZ-Betrieb» (Spez. MVP 3, Kap. 5.4) – nur Ergänzungen
+// =====================================================================================================================
+
+/** Ansicht der Spalte: Umschalter `Journal | Offen n | Was Rot` (AppShell.tsx re-exportiert) */
+export type SideView = "journal" | "offen" | "rot";
+
+// ---------- Schicht und Kürzel (Paket C, Kap. 3.6) ----------
+/** `localStorage`-Schlüssel der Schicht dieses Geräts je Übung: `SchichtLokal` als JSON; Fenster gleichen über `storage` ab */
+export const SCHICHT_KEY = (exId: string): string => `lage-tools.schicht.${exId}`;
+export interface SchichtLokal {
+  kuerzel: string | null;
+  /** Beginn der eigenen Schicht (ISO UTC) */
+  seit: string | null;
+  /** ID des `SchichtWechsel` in `ex.schichten` */
+  wechselId: string | null;
+}
+/** `localStorage`-Schlüssel des Gerätezählers der laufenden Nummer je Übung (Zahl als Text, Kap. 3.3, nummer.ts) */
+export const NR_KEY = (exId: string): string => `lage-tools.nr.${exId}`;
+
+/** Kürzel prüfen und schreiben wie gespeichert: 2–6 Zeichen, Grossbuchstaben A–Z und Ziffern («mu» → «MU»), sonst null */
+export function kuerzelNorm(k: string): string | null {
+  const s = k.trim().toUpperCase();
+  return /^[A-Z0-9]{2,6}$/.test(s) ? s : null;
+}
+
+export interface SchichtApi {
+  kuerzel: string | null;
+  /** Beginn der eigenen Schicht (ISO UTC) */
+  seit: string | null;
+  /** Kürzel setzen = Schichtbeginn (neu: true) oder nur Schreibweise */
+  setKuerzel(k: string, o?: { neu?: boolean }): void;
+  /** Übergabe abschliessen: Wechsel in `ex.schichten`, Gerät übernimmt `an` */
+  uebergeben(von: string, an: string, stand: { offen: number; neu: number }): void;
+  /** Abfrage im Meldungsfeld in dieser Sitzung schon gezeigt */
+  gefragt: boolean;
+  setGefragt(): void;
+}
+
+// ---------- Zeile «Mehr …» (Paket B) ----------
+export interface LvzRowProps {
+  e: LageEvent;
+  ex: Exercise;
+  device: string;
+  kuerzel: string | null;
+  update(f: (x: Exercise) => Exercise): void;
+  /** «Antwort eintragen»: Text ins Meldungsfeld setzen */
+  onPrefill(text: string): void;
+}
+
+// ---------- Offen und Übergabe (Paket C) ----------
+export interface OffenPanelProps {
+  ex: Exercise;
+  items: OffenItem[];
+  hints: Hint[];
+  selected: string | null;
+  onSelect(key: string | null): void;
+  /** Zur Meldung (Journal, Zeile gewählt) */
+  onEvent(id: string): void;
+  /** Ort setzen */
+  onCorrect(id: string): void;
+  /** Was Rot, Detail */
+  onHint(id: string): void;
+  /** Antwort/Vbk eintragen */
+  onPrefill(text: string): void;
+  onUebergabe(): void;
+  update(f: (x: Exercise) => Exercise): void;
+  device: string;
+  kuerzel: string | null;
+  rueckblick: boolean;
+}
+export interface UebergabeProps {
+  ex: Exercise;
+  tLive: string;
+  hints: Hint[];
+  lage: LageRotState;
+  items: OffenItem[];
+  schicht: SchichtApi;
+  ki: boolean;
+  onClose(): void;
+  say(t: string): void;
+}
+
+// ---------- Drucken (Paket D) ----------
+export interface JournalDruck {
+  /** `from`/`to` ISO lokal (Lagezeit); Vorwahl: `journalDruckVorwahl` (@lage/core, Entscheid 4) */
+  umfang: { art: "schicht" | "tag" | "alles" | "zeitraum"; from: string | null; to: string };
+  anhang: { lageRot: boolean; hinweise: boolean; ohneGestrichene: boolean };
+  klassifizierung: string;
+  kuerzel: string | null;
+}
+export interface LagekarteDruck {
+  paper: "A4" | "A3";
+  ausschnitt: "karte" | "raster";
+  /** LV95 */
+  bounds: Bounds;
+  t: string;
+  from: string | null;
+  klassifizierung: string;
+  kuerzel: string | null;
+  onProgress?(p: number): void;
+}
+/** Abdeckung des Kachel-Caches (offline.ts: `tileCoverage(b, z, layer?)`, nur `caches.match`) */
+export interface TileCoverage { z: number; total: number; cached: number; share: number }
+export type TileCoverageFn = (b: Bounds, z: number, layer?: TileLayer) => Promise<TileCoverage>;
+
+/** Klassifizierung für Ausdrucke: Übung → erstes Raster → «INTERN» */
+export const klassifizierungOf = (ex: Pick<Exercise, "klassifizierung" | "sheets">): string => ex.klassifizierung ?? ex.sheets[0]?.classification ?? "INTERN";
+
+// ---------- Leistung (Paket D, Kap. 3.12) ----------
+/** Übung für den Web Worker: ohne Bilder und Anhänge (werden nicht kopiert) */
+export type AnalyseInput = Omit<Exercise, "overlays" | "attachments">;
+/** analyse.worker.ts: Auftrag (ein neuerer ersetzt ältere, `gen` zählt hoch) */
+export interface AnalyseAuftrag { gen: number; ex: AnalyseInput; t: string; from: string | null; conflictIds?: string[] }
+/** analyse.worker.ts: Ergebnis (gleiche Formen wie `useHints`/`useLageRot`/`offenePunkte`) */
+export interface AnalyseErgebnis { gen: number; hints: Hint[]; quality: Map<string, EventQuality>; all: Hint[]; lageRot: LageRotState; offen: OffenItem[] }
+
+/** Messpunkte `performance.mark(...)` (P1); `window.__ltPerf()` liefert die Abstände in ms */
+export const PERF_MARK = { enter: "lt:enter", zeile: "lt:zeile", bereit: "lt:bereit" } as const;
+export interface LtPerf {
+  /** Navigation → erste Liste und Feld bedienbar */
+  bereit?: number;
+  /** letztes Enter → neue Zeile im DOM */
+  enterZeile?: number;
+  /** alle Enter → Zeile seit dem Laden */
+  enterZeileAlle?: number[];
+}
+/** `window.__ltPdfInfo`: letztes erzeugtes PDF (nur lesen, auch im Produktivbau; keine Daten nach aussen) */
+export interface LtPdfInfo { seiten: number; format: "a4" | "a3"; quer: boolean; zeilen: string[] }
+declare global {
+  interface Window {
+    __ltPerf?: () => LtPerf;
+    __ltPdfInfo?: LtPdfInfo;
+  }
+}

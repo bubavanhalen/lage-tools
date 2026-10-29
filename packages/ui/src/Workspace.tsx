@@ -47,7 +47,7 @@ import {
 import { currentExerciseId, downloadText, getBlob, listExercises, onDbNotice, pickFile, safeFileName } from "./store";
 import { lastCurrent, openStored, peekStored, persister, requestPersist } from "./persist";
 import { useExerciseStore } from "./useExerciseStore";
-import { beispielAusUrl, beispielAusUrlEntfernen, beispielUebung } from "./beispiel";
+import { beispielAusUrl, beispielAusUrlEntfernen, beispielSchichtSetzen, beispielUebung } from "./beispiel";
 import { MergeBar, StatusBands, type MergeInfo } from "./SaveBand";
 import { useUndo } from "./undo";
 import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
@@ -199,10 +199,12 @@ export function Workspace({ product, tagline }: Props) {
   // Übung laden (mit Notfall-Puffer: was beim letzten Mal noch nicht in der Datenbank war)
   useEffect(() => {
     (async () => {
-      // Testzugang ?beispiel / ?beispiel=leer (beispiel.ts): ersetzt nur die Beispielübung, wie «Beispiel ansehen»
+      // Testzugang ?beispiel / ?beispiel=leer / ?beispiel=lang (beispiel.ts): ersetzt nur die Beispielübung, wie «Beispiel ansehen»
       const art = beispielAusUrl();
       if (art) {
         const b = beispielUebung(art);
+        // MVP 3: Schicht «BSP» auf diesem Gerät (leer: keine – dort fragt das Meldungsfeld); noch ohne Anzeige
+        beispielSchichtSetzen(art, b);
         void persister.writeAll(b, true);
         void requestPersist();
         setEx(b);
@@ -762,7 +764,7 @@ export function Workspace({ product, tagline }: Props) {
       onCommitted={(ids) => { mapNow.current = ids; zeit.goLive("eintragen"); }}
       onPrepare={() => { setModus("vorbereiten"); setPrepStep(2); }} onDemo={loadDemo} update={update} say={say} quality={quality}
       between={<SideSwitch view={sideView} onView={setSideView} redLabel={<RedTabLabel badge={badge} />} />}
-      tab={hasEvents ? sideView : "journal"} rot={<div role="tabpanel" aria-label="Was Rot vorhaben könnte" className="sh-redpanel">{red}</div>} />
+      tab={hasEvents && sideView !== "offen" ? sideView : "journal"} rot={<div role="tabpanel" aria-label="Was Rot vorhaben könnte" className="sh-redpanel">{red}</div>} />
   ) : <div className="panel"><p className="help">Karte wird geladen …</p></div>;
 
   const side = lage ? (

@@ -1,10 +1,12 @@
 /**
  * Inventar-Messung (Spez. MVP 1, Kap. 7.2): sichtbare Bedienelemente zählen (Zählregel siehe lib.ts
- * `inventarImBrowser`). Grenzen: Grundansicht ≤ 12, mit Vorschau ≤ 15, gewählte Zeile ≤ 14, Rückblick ≤ 18;
- * Experte und Vorbereiten nur berichten; mit `--hit: 48px` kein Überlauf und kein Element unter 48 px.
+ * `inventarImBrowser`). Grenzen: Grundansicht ≤ 12, mit Vorschau ≤ 15, gewählte Zeile ≤ 15 (MVP 3: + «Mehr …»),
+ * Rückblick ≤ 18; MVP 3 (Spez. MVP 3, Kap. 1.3): Grundansicht `?beispiel=lang` ≤ 13 (+ Chip «zeigt nur letzte 6 h»),
+ * Vorschau Nicht-Meldung ≤ 14. Experte und Vorbereiten nur berichten; mit `--hit: 48px` kein Überlauf und kein
+ * Element unter 48 px. Zustände, die es erst mit MVP 3 gibt (Offen, Kürzel-Abfrage, Gestrichene …): inventar3.spec.ts.
  * Ausgabe: e2e/out/inventar.json (Liste je Zustand mit Name und Grösse, vergleichbar mit einfachheit/d_inventar.json).
  */
-import { UHR_T2_0730, aufgabe, inventarImBrowser, soll, ueberlaufImBrowser, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
+import { UHR_T2_0730, UHR_T4_0730, aufgabe, inventarImBrowser, soll, ueberlaufImBrowser, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
 
 const zaehlen = (s: Session) => s.page.evaluate(inventarImBrowser);
 
@@ -34,7 +36,11 @@ const spec: Spec = {
       out.push(await messen(h, "Mit Vorschau", g, 15, { query: "?beispiel" }, async (s) => {
         await s.page.getByPlaceholder("Was wurde gemeldet?").fill("H04 2 Fz in AK7 Rtg N");
       }));
-      out.push(await messen(h, "Gewählte Zeile", g, 14, { query: "?beispiel" }, async (s) => {
+      out.push(await messen(h, "Vorschau Nicht-Meldung", g, 14, { query: "?beispiel" }, async (s) => {
+        await s.page.getByPlaceholder("Was wurde gemeldet?").fill("Auftrag an H01: Beo NAI 1 bis 1200");
+      }));
+      out.push(await messen(h, "Grundansicht lang", g, 13, { query: "?beispiel=lang", uhr: UHR_T4_0730 }, async (s) => { await s.page.waitForTimeout(1500); }));
+      out.push(await messen(h, "Gewählte Zeile", g, 15, { query: "?beispiel" }, async (s) => {
         await s.page.locator(".jlist li").first().click();
       }));
       out.push(await messen(h, "Rückblick", g, 18, { query: "?beispiel" }, async (s) => {

@@ -22,7 +22,13 @@ import type { Area } from "./model";
 import type { RasterSheet } from "./raster";
 
 export type EntryLevel = "bereit" | "pruefen" | "geht-nicht";
-export type EntryReasonCode = "melder" | "ort" | "ort-bei-trupp" | "zukunft" | "einordnung" | "ort-suche" | "ort-offline" | "kein-raster" | "problem" | "trupp-neu" | "notiz" | "was";
+export type EntryReasonCode = "melder" | "ort" | "ort-bei-trupp" | "zukunft" | "einordnung" | "ort-suche" | "ort-offline" | "kein-raster" | "problem" | "trupp-neu" | "notiz" | "was"
+  /**
+   * MVP 3 (Spez. MVP 3, Kap. 3.1; Paket A setzt um): `art-schwach` schwacher Art-Hinweis («Als Rückfrage ohne Zeichen?»,
+   * ersetzt `notiz`, das als Alias bleibt) · `an` Empfänger fehlt · `bezug` unbekannte Nummer · `aufheben` kein/mehrere
+   * Ziele · `tag-fremd` heute ist kein Tag der Übung (E17). Alle gelb.
+   */
+  | "art-schwach" | "an" | "bezug" | "aufheben" | "tag-fremd";
 
 export interface EntryReason {
   code: EntryReasonCode;
@@ -76,6 +82,10 @@ export interface EntryStateOptions {
   unitsPrepared?: boolean;
   /** Übungstage (ISO-Datum) – für den Tipp «T1 1535» bei einer Zeit in der Zukunft */
   days?: string[];
+  /** (MVP 3) Tag folgt der Uhr (`clockDay(...).follow`) – sonst ohne Tagesangabe `tag-fremd` (E17) */
+  follow?: boolean;
+  /** (MVP 3) Zeit der letzten Meldung (ISO lokal) – Vorschlag «Als T2 07:26 eintragen» (letzte + 1 min) */
+  lastReport?: string | null;
 }
 
 /** «AK7», «AK 77 C» – Planquadrat-ähnliche Textstelle */

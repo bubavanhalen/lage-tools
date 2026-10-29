@@ -1,4 +1,76 @@
-# MVP 1 «Lage führen»: Zuständigkeiten und Regeln
+# MVP 3 «LVZ-Betrieb»: Zuständigkeiten und Regeln
+
+Grundlage: Spezifikation MVP 3 (Kap. 5 Verträge, 6.2 Pakete, 8 Abnahme) und die Entscheide des Kunden vom 29.10.2026
+(Kap. 9, im Code `packages/core/src/entscheide.ts`). Phase 0 hat die Verträge gelegt; die Pakete A–D bauen parallel.
+Die Regeln für gemeinsame Dateien, Tokens und Hex-Farben aus MVP 1 (unten) gelten weiter.
+
+## Wer besitzt welche Dateien (Kap. 6.2)
+
+| Paket | Neu | Umbau (allein zuständig) |
+|---|---|---|
+| **A** Kern: Arten, Felder, LVZ, Nummern, Zusammenführen | – (Phase-0-Dateien ausbauen: `arten.ts`, `felder.ts`, `lvz.ts`, `nummer.ts`, `schicht.ts` + Tests) | nur `packages/core`: `journal.ts` (`parseMeldung` mit `readMeldeFelder` → `readArt`, `asNonLageDraft`, Zeitregel Nicht-Meldungen, Bezug/Aufheben über `ctx.events`, `situationAt` mit `liftMap`, `journalToCsv`, `situationIndex`), `model.ts`, `entrystate.ts`, `hints.ts`, `redforce.ts`/`coa.ts` (`isLage`), `sync.ts`, `exercise.ts`, `catalog.ts`, `funk.ts`, `erkennung.ts`, `entscheide.ts` |
+| **B** Eingabe und Journal-Liste | `entry/ArtSwitch.tsx`, `entry/KuerzelAsk.tsx`, `journal/LvzMenu.tsx`, `journal/lvz.css` | `entry/*` (PreviewLine, useEntryDraft, EntryBox, stateOptions, labels, entry.css), `journal/*` (JournalList, filter, actions, UnifiedSearch, journal.css), `JournalPanel.tsx`, `commit.ts`, `BatchReview.tsx`, `QualityMarks.tsx` |
+| **C** Offen, Übergabe, Hülle, Zeit | `lvzui/*` (OffenPanel, OffenTabLabel, UebergabeView, uebergabePdf, useSchicht, lvzui.css), `MergeNotice.tsx` | **`Workspace.tsx` (nur C)**, `shell/AppShell.tsx`, `shell/Header.tsx`, `shell/MainMenu.tsx`, `SaveBand.tsx`, `time/*` (useLageZeit, TimeBand), `MapToolbar.tsx`, `red/RedCard.tsx`, `ki/KiFeatures.tsx`, `prepare/PrepareMode.tsx`; e2e-Fälle nach Abschluss von `inventar3` nach `inventar.spec.ts` übernehmen |
+| **D** Druck und Leistung | `print/*` (lagekarte, LagekarteDialog, JournalDruckDialog, print.css), `analyse.worker.ts`, `perf.ts` | `journalpdf.ts`, `hintsExport.ts`, `lageRotExport.ts`, `pdfSafe.ts`, `offline.ts` (`tileCoverage`), `tiles.ts`, `hintsData.ts`, `lageRot.ts`, `situationLayer.ts`, `shapeLayer.ts`, `MapOverlays.tsx`, `persist.ts`, `store.ts`, `useExerciseStore.ts` |
+| **Koordinator** | – | `shell/contracts.ts`, `beispiel.ts`, `theme.css`, `colors.ts`, `apps/lagejournal/e2e/*`, `docs/KONZEPT.md` |
+
+Absprachen über `<scratchpad>/mvp3-notizen.md` (je Paket ein Abschnitt). Build-Ordner `<scratchpad>/mvp3-<paket>/site`,
+Ports A 9171, B 9172, C 9173, D 9174. B arbeitet gegen die Phase-0-Stände von `readArt`/`Draft`, D gegen `liftMap`,
+`isLage`, `nrLabel`, `artText` (liefern schon sinnvolle Werte). C verdrahtet `LvzMenu` nicht selbst – B hängt es in
+`JournalList` ein; C liefert `SchichtApi` und `onNr` an `EntryBox`/`JournalPanel` (`JournalListProps.lvz`).
+
+## Verträge (Phase 0)
+
+- **Kern** (`@lage/core`): `EntryArt`, `Stamp`, `LvzVermerke`, `MeldeFelder`, `SchichtWechsel`, neue optionale Felder an
+  `LageEvent`/`EventRevision`/`Exercise` (model.ts); `mergeEventPair`, `mergeLvz` (model.ts, `lvz` zählt nie als
+  Konflikt); `artOf`, `isLage`, `lebenszeichen`, `artText`, `readArt`, `istDringend` (arten.ts); `readMeldeFelder`,
+  `felderZuText` (felder.ts); `nextNr`, `nrLabel`, `findByNr`, `nrDoppelte`, `doppeltText` (nummer.ts); `setVermerk`,
+  `vermerkeOf`, `lvzIndex`, `liftMap`, `istAufhebbar`, `aufhebZiele`, `offenePunkte` (lvz.ts); `aktuelleSchicht`,
+  `schichtenIm`, `lageBlau`, `rapportZahlen`, `zaehleMeldungen` (schicht.ts); `demoLang` (demolang.ts);
+  `Draft.art/artFrom/…`, `JournalContext.art/events/ex`, `eventFromDraft(d, device, now, { nr, kuerzel })` (journal.ts);
+  neue `EntryReasonCode`s und `EntryStateOptions.follow/lastReport` (entrystate.ts); `MergeReport.doppelt` (sync.ts).
+- **UI** (`contracts.ts`, Abschnitt MVP 3): `ShowLast` + 360, `SideView` mit «offen», `SearchArt` erweitert,
+  `SchichtApi`, `SCHICHT_KEY`/`SchichtLokal`, `NR_KEY`, `kuerzelNorm`, `LvzRowProps`, `OffenPanelProps`,
+  `UebergabeProps`, `JournalDruck`, `LagekarteDruck`, `TileCoverage`, `klassifizierungOf`, Worker-Nachrichten
+  `AnalyseAuftrag`/`AnalyseErgebnis`, `PERF_MARK`, `LtPerf`, `LtPdfInfo` (`window.__ltPerf`, `window.__ltPdfInfo`).
+- Rückwärtskompatibel (Kap. 5.5, Test `packages/core/test/mvp3kompat.test.ts`): alles optional, `FILE_VERSION` 1,
+  nichts wird beim Öffnen geschrieben; Nicht-Meldungen tragen `notiz: true` und nie einen Ort.
+
+## Entscheide des Kunden (Kap. 9) – nur in `entscheide.ts` ändern
+
+1. **Laufende Nummer:** eine gemeinsame Folge, kein Gerätebuchstabe. Fenster teilen den Zähler (`NR_KEY`); nach Öffnen/
+   Zusammenführen weiter ab der höchsten bekannten Nummer. Gleiche Nummer von zwei Geräten offline **bleibt**; Anzeige
+   «12a/12b» (nach Eingang), Rückmeldung «2 Nummern doppelt – als 12a/12b gekennzeichnet». Alles in `nummer.ts`.
+2. **AEIOU-Feld E ist immer das Gesehene**, nie der Melder (Melder aus Trupp-Knopf, Text vor «A:», «Melder:»/«Von:»).
+3. **«Trupp still»** ab 60 min (`STILL_MIN`). 4. **Journal drucken:** Standard laufende Schicht, sonst ganzer Tag
+   (`journalDruckVorwahl`). 5. **Quittung** = Notiz mit Bezug, erledigt erst mit «ausgeführt»/Knopf.
+
+## Testhaken MVP 3 (stabil, nur lesen)
+
+| Haken | Wo (Paket) | Werte |
+|---|---|---|
+| `data-zaehl="art"` | Auswahl «Was ist es?» in der Vorschau (B) | ersetzt `einordnung` |
+| `data-art`, `data-nr` | `.jl-row` (B) | `EntryArt` · Anzeige-Nummer («54», «12a») |
+| `[role=dialog][aria-label="Übergabe"]` | Übergabe-Seite (C) | Text und Wörter werden darin gelesen |
+| Klasse `jl-trenner` | Trenner «Neu in deiner Schicht ↑» (B) | kein `li` |
+| `window.__ltPerf()` | `perf.ts` (D) | `LtPerf` |
+| `window.__ltPdfInfo` | letztes PDF (D, C für Übergabe-PDF) | `LtPdfInfo` |
+| Tab «Offen n» | Umschalter `role="tab"` (C) | Name beginnt mit «Offen» |
+| Feld «Kürzel» | Kürzel-Abfrage (B), `aria-label`/`label` «Kürzel» | Abfragetext «Wer erfasst?» |
+
+## Testzugang und Abnahme
+
+- `?beispiel` setzt zusätzlich die fiktive Schicht «BSP» seit T2 06:00 auf dem Gerät (`localStorage[SCHICHT_KEY]`,
+  `ex.schichten`), `?beispiel=leer` keine. **`?beispiel=lang`**: 800 Einträge über 4 Tage (T1 15.05.2030 06:00 –
+  T4 18.05.2030 07:30), alle Arten, 12 Übergaben, Schicht BSP seit T4 06:00; Uhr für Tests `UHR_T4_0730`.
+- Harness: `shot.js … --beispiel lang`.
+- `npm run e2e` führt alle `*.spec.ts` aus. Neu (dürfen bis Phase 2 rot sein): `arten`, `lvz`, `uebergabe`, `druck`,
+  `leistung`, `lang`, `inventar3`, `kontrast3`. Bestehende (`erstbenutzer`, `inventar`, `kontrast`) bleiben grün.
+  Einzeln: `npm run e2e -- --nur arten,lvz`.
+
+---
+
+# MVP 1 «Lage führen»: Zuständigkeiten und Regeln (abgeschlossen, Regeln gelten weiter)
 
 Grundlage: Spezifikation MVP 1, Kap. 6 (Pakete) und 7 (Abnahme). Phase 0 hat Verträge, Tokens, Testzugang und Abnahme-Gerüst gelegt. Die Pakete A–D bauen jetzt parallel.
 

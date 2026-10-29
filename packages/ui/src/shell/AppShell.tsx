@@ -63,7 +63,9 @@ export function LageColumn({ entry, switcher, list }: { entry?: ReactNode; switc
   );
 }
 
-export type SideView = "journal" | "rot";
+/** Ansicht der Spalte – Vertrag in contracts.ts (MVP 3: + «offen»; Umschalter dreiteilig baut Paket C) */
+export type { SideView } from "./contracts";
+import type { SideView } from "./contracts";
 
 export function SideSwitch({ view, onView, redLabel }: { view: SideView; onView: (v: SideView) => void; redLabel: ReactNode }) {
   return (

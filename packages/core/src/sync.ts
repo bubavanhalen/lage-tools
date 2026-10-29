@@ -8,9 +8,13 @@
  *   Zusammenführen nicht wieder auf.
  * - Entscheide zu Hinweisen: pro Hinweis der spätere Entscheid.
  * - Tage, Elemente, Orte: Vereinigung. Name und Einstellungen: lokal (fehlt lokal etwas, aus der anderen Fassung).
+ * - MVP 3: Schichten/Übergaben Vereinigung nach ID; Klassifizierung lokal; laufende Nummern ändern nie – doppelt
+ *   vergebene werden gemeldet (`MergeReport.doppelt`, Kennzeichnung «12a/12b» in nummer.ts).
  * «Ersetzen» (andere Fassung gilt ganz) ist bewusst kein Teil davon – nur auf ausdrücklichen Wunsch.
  */
 import { eventWins, mergeEventsDetailed, type Exercise, type HintDecision, type LageEvent } from "./model";
+import { doppeltText, neueDoppelte, type NrDoppelt } from "./nummer";
+import { mergeSchichten } from "./schicht";
 
 export interface MergeReport {
   /** Meldungen nur in der anderen Fassung */
@@ -39,6 +43,11 @@ export interface MergeReport {
   abweichend: number;
   /** die abweichenden Raster/Flächen/Bilder einzeln (zum Wählen «hiesige behalten / aus Datei übernehmen») */
   diffs: HullDiff[];
+  /**
+   * (MVP 3) Nummern, die durch dieses Zusammenführen doppelt sind (zwei Geräte offline, gleiche Nummer) – sie bleiben,
+   * die Anzeige kennzeichnet sie «12a/12b»; Text: `doppeltText` («2 Nummern doppelt – als 12a/12b gekennzeichnet»)
+   */
+  doppelt?: NrDoppelt[];
 }
 
 /** Teile der Hülle mit ID, die beim Zusammenführen einzeln gewählt werden können */
@@ -159,6 +168,8 @@ export function mergeHull(ours: Exercise, theirs: Exercise): { ex: Exercise; rep
   if (attachments.list.length) ex.attachments = attachments.list;
   if (dec.map) ex.hintDecisions = dec.map;
   if (marks) ex.removed = marks;
+  const schichten = mergeSchichten(ours.schichten, theirs.schichten);
+  if (schichten) ex.schichten = schichten;
   const diffs: HullDiff[] = [
     ...sheets.diffs.map(({ l, o }) => ({ kind: "sheets" as const, id: l.id, name: l.name, theirsName: o.name })),
     ...areas.diffs.map(({ l, o }) => ({ kind: "areas" as const, id: l.id, name: l.name, theirsName: o.name })),
@@ -215,7 +226,8 @@ export function mergeExercise(ours: Exercise, theirs: Exercise): { ex: Exercise;
   h.ex.events = ev.events;
   // Tage der Meldungen sicher dabei
   for (const e of ev.events) { const d = e.t.slice(0, 10); if (!h.ex.days.includes(d)) h.ex.days = [...h.ex.days, d].sort(); }
-  return { ex: h.ex, report: { ...h.report, neu: ev.neu, aktualisiert: ev.aktualisiert, unveraendert: ev.unveraendert, nurHier: ev.nurHier, conflicts: ev.conflicts, conflictIds: ev.conflictIds } };
+  const doppelt = neueDoppelte(ours, h.ex);
+  return { ex: h.ex, report: { ...h.report, neu: ev.neu, aktualisiert: ev.aktualisiert, unveraendert: ev.unveraendert, nurHier: ev.nurHier, conflicts: ev.conflicts, conflictIds: ev.conflictIds, ...(doppelt.length ? { doppelt } : {}) } };
 }
 
 /** «3 neu · 1 aktualisiert · 0 unverändert» (+ «1 Konflikt», «2 nur hier», «+1 NAI/Fläche» …) */
@@ -231,5 +243,6 @@ export function mergeReportText(r: MergeReport): string {
   if (r.decisions) plus.push(`${r.decisions} ${r.decisions === 1 ? "Entscheid" : "Entscheide"}`);
   if (plus.length) parts.push(`+ ${plus.join(", ")}`);
   if (r.abweichend) parts.push(`${r.abweichend} abweichend (hiesige Fassung behalten)`);
+  if (r.doppelt?.length) parts.push(doppeltText(r.doppelt));
   return parts.join(" · ");
 }

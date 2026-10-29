@@ -6,7 +6,7 @@
  */
 import { pointInRing, ringCentroid } from "./geo";
 import { findCoordinates, type LV95 } from "./lv95";
-import { newEventId, revisionOf, type Area, type LageEvent, type Place, type RoadHint, type Side } from "./model";
+import { newEventId, revisionOf, type Area, type EntryArt, type Exercise, type LageEvent, type MeldeFelder, type Place, type RoadHint, type Side } from "./model";
 import { boundsCenter, cellBounds, findCells, type RasterSheet } from "./raster";
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
@@ -36,6 +36,15 @@ export interface JournalContext {
   dayFromClock?: boolean;
   /** letzte bekannte Lage eines Elements */
   lastPos?: (unit: string, side: Side) => LV95 | undefined;
+  /**
+   * (MVP 3) erzwingt die Art (Auswahl «Was ist es?» in der Vorschau), gilt bis der Text gelöscht wird; «meldung» =
+   * Feind/Eigene/Unklar gewählt. Sonst entscheidet der Text (`readArt`, Paket A).
+   */
+  art?: EntryArt;
+  /** (MVP 3) bisherige Einträge – für «zu 42», «Antwort …» und «… aufgehoben» (Bezug/Ziel) */
+  events?: LageEvent[];
+  /** (MVP 3) Übung – für Nummern (`findByNr`) */
+  ex?: Pick<Exercise, "events">;
 }
 
 export type WhereKind = "koordinate" | "raster" | "nai" | "ort" | "zuletzt" | "melder" | "karte";
@@ -122,6 +131,33 @@ export interface Draft {
    * `suggest`/`suggestLabel` = nächster Katalogbegriff (nur Vorschlag). `entryState`: gelb, Code `was`.
    */
   unknownWord?: UnknownWord;
+
+  // ---- MVP 3 (Spez. MVP 3, Kap. 5.3) – `kindHint` bleibt (gesetzt, wenn art ≠ meldung und der Hinweis schwach ist) ----
+  /** Art des Eintrags; Phase 0: «meldung», bzw. «notiz» bei `kindHint`, bzw. die Vorgabe `JournalContext.art` */
+  art: EntryArt;
+  /** woher die Art: Text (starker Hinweis), Inhalt (schwacher Hinweis), Vorgabe (Auswahl), Standard (nichts erkannt) */
+  artFrom: "text" | "inhalt" | "vorgabe" | "standard";
+  /** starker Hinweis (grün) – sonst gelb «Als … ohne Zeichen?» */
+  artStark?: boolean;
+  /** Auftrag/Rückfrage: Empfänger; Orientierung: Absender; Auftrag: Frist (ISO lokal); Vbk: Ergebnis */
+  an?: string;
+  quelle?: string;
+  frist?: string;
+  vbk?: LageEvent["vbk"];
+  /** Bezug auf einen früheren Eintrag (ID), wie geschrieben (`bezugNr`), unbekannte Nummer (`bezugFehlt`) */
+  bezug?: string;
+  bezugArt?: LageEvent["bezugArt"];
+  bezugNr?: string;
+  bezugFehlt?: boolean;
+  /** «… aufgehoben»: Ziel (genau eines) bzw. Kandidaten (keines/mehrere → gelb) */
+  hebtAuf?: string;
+  hebtAufKandidaten?: string[];
+  /** genannte Orte einer Nicht-Meldung/Aufhebung (nur Text) */
+  orte?: string[];
+  /** AEIOU / Meldezettel, wie gelesen (felder.ts) */
+  felder?: MeldeFelder;
+  /** Vorschlag «dringend» aus dem Text (`istDringend`) */
+  dringend?: boolean;
 }
 
 /** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
@@ -280,7 +316,7 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const explicit = kind !== null;
   const shown = shownRest.trim();
   // Rückfrage / Auftrag / Frage: Vorschlag «Notiz ohne Zeichen» (nicht bei von Hand gewählter Einordnung)
-  const note = ctx.kind ? undefined : noteIntent(shown);
+  const note = ctx.kind || ctx.art ? undefined : noteIntent(shown);
   // «Rtg eigene Stellung»: Ziel einer Bewegung – weder Ort noch Zeichen, macht die Meldung nicht zur eigenen Lage
   const ownDir = ownDirection(rest);
   if (ownDir) rest = blank(rest, ownDir.span[0], ownDir.span[1]);
@@ -497,8 +533,15 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     ...(typed.changed ? { normalized: typed.text } : {}),
     ...(problems.length ? { problems } : {}),
     ...(unknown ? { unknownWord: unknown } : {}),
+    // MVP 3, Phase 0: Art nur aus Vorgabe bzw. MVP-1-Notizvorschlag (Paket A verdrahtet `readArt`/`readMeldeFelder`)
+    art: "meldung",
+    artFrom: ctx.art || ctx.kind ? "vorgabe" : "standard",
   };
-  return note ? asNoteDraft(out, note.to) : out;
+  if (ctx.art && ctx.art !== "meldung") {
+    const { kindHint: _k, ...d } = asNoteDraft(out);
+    return { ...d, art: ctx.art, artFrom: "vorgabe", artStark: true };
+  }
+  return note ? { ...asNoteDraft(out, note.to), art: "notiz", artFrom: "inhalt", artStark: false } : out;
 }
 
 /** Entwurf als Notiz ohne Zeichen (siehe `Draft.kindHint`): nichts auf der Karte, nichts verschoben */
@@ -676,8 +719,28 @@ export function journalToCsv(events: LageEvent[], days: string[], o: { gestriche
 /**
  * Neuer Journaleintrag aus einer erkannten Meldung. `now` = Eingang: `tReported` (lokal, Minute) und `createdAt`
  * (genauer Zeitpunkt, UTC) – getrennt von der Ereigniszeit `t` («1015 …» um 10:40 eingetragen: t 10:15, Eingang 10:40).
+ *
+ * MVP 3: `o.nr` = laufende Nummer (`nextNr`, setzt auch `von` = Gerät), `o.kuerzel` = «erfasst von». Nicht-Meldungen
+ * (`d.art ≠ meldung`) bekommen `art`, `notiz: true` und **nie** pos/unit/cells/nai/shape (Invariante E3).
  */
-export function eventFromDraft(d: Draft, device: string, now = new Date()): LageEvent {
+export function eventFromDraft(d: Draft, device: string, now = new Date(), o: { nr?: number; kuerzel?: string } = {}): LageEvent {
+  const art = d.art ?? (d.kindHint === "notiz" ? "notiz" : "meldung");
+  const ev = eventFromDraftBase(d, device, now);
+  const mvp3: Partial<LageEvent> = {
+    ...(o.nr !== undefined ? { nr: o.nr, von: device } : {}),
+    ...(o.kuerzel ? { erfasstVon: o.kuerzel } : {}),
+    ...(d.an ? { an: d.an } : {}), ...(d.quelle ? { quelle: d.quelle } : {}), ...(d.frist ? { frist: d.frist } : {}), ...(d.vbk ? { vbk: d.vbk } : {}),
+    ...(d.bezug ? { bezug: d.bezug, ...(d.bezugArt ? { bezugArt: d.bezugArt } : {}) } : {}),
+    ...(d.hebtAuf ? { hebtAuf: d.hebtAuf } : {}), ...(d.orte?.length ? { orte: [...d.orte] } : {}), ...(d.felder ? { felder: { ...d.felder } } : {}),
+    ...(d.dringend ? { lvz: { dringend: { v: true, at: now.toISOString(), device, ...(o.kuerzel ? { von: o.kuerzel } : {}) } } } : {}),
+  };
+  if (art === "meldung") return { ...ev, ...mvp3 };
+  // Nicht-Meldung: kein Zeichen, nichts auf der Karte; MVP-1-App zeigt sie als «Notiz»
+  const { pos: _p, cells: _c, nai: _n, shape: _s, where: _w, count: _k, dir: _d, label: _l, ...rest } = ev;
+  return { ...rest, ...mvp3, unit: "", art, notiz: true };
+}
+
+function eventFromDraftBase(d: Draft, device: string, now: Date): LageEvent {
   return {
     id: newEventId(now.getTime()),
     rev: 1,

@@ -33,3 +33,21 @@ describe("effectiveFlags (Kap. 3.7)", () => {
     expect(u.spuren).toBe(true);
   });
 });
+
+describe("MVP 3 Verträge (Kap. 5.4)", () => {
+  it("Kürzel 2–6 Zeichen, gross, A–Z/0–9", async () => {
+    const { kuerzelNorm } = await import("../src/shell/contracts");
+    expect(kuerzelNorm(" mu ")).toBe("MU");
+    expect(kuerzelNorm("BSP1")).toBe("BSP1");
+    expect(kuerzelNorm("M")).toBeNull();
+    expect(kuerzelNorm("ABCDEFG")).toBeNull();
+    expect(kuerzelNorm("M-U")).toBeNull();
+  });
+  it("Schlüssel und Klassifizierung", async () => {
+    const { NR_KEY, SCHICHT_KEY, klassifizierungOf } = await import("../src/shell/contracts");
+    expect(SCHICHT_KEY("ex-1")).toBe("lage-tools.schicht.ex-1");
+    expect(NR_KEY("ex-1")).toBe("lage-tools.nr.ex-1");
+    expect(klassifizierungOf({ sheets: [] })).toBe("INTERN");
+    expect(klassifizierungOf({ klassifizierung: "VERTRAULICH", sheets: [] })).toBe("VERTRAULICH");
+  });
+});

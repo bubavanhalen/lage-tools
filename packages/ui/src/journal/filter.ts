@@ -16,7 +16,12 @@ const KEYWORDS: Array<[RegExp, Exclude<SearchArt, null>]> = [
 ];
 
 /** Chip-Text zur Art */
-export const ART_LABEL: Record<Exclude<SearchArt, null>, string> = { feind: "Feind", eigen: "Eigene", unklar: "Unklar", einzeln: "nur 1 Trupp" };
+export const ART_LABEL: Record<Exclude<SearchArt, null>, string> = {
+  feind: "Feind", eigen: "Eigene", unklar: "Unklar", einzeln: "nur 1 Trupp",
+  // MVP 3 (Phase 0: nur Chip-Texte; Stichwörter und Filter baut Paket B)
+  gestrichen: "gestrichen", dringend: "dringend", offen: "offen",
+  auftrag: "Auftrag", orientierung: "Orientierung", rueckfrage: "Rückfrage", vbk: "Verbindung", notiz: "Notiz",
+};
 
 /**
  * Stichwort im Suchtext erkennen und herauslösen: «feind AK7» → { q: "AK7", art: "feind" }. Nur ganze Wörter;
