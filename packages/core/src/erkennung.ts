@@ -641,6 +641,7 @@ export function ownDirection(text: string): { span: [number, number]; label: str
 const NOTE_RE = new RegExp(`(?<![${L}])(rückfrage|rueckfrage|frage|auftrag\\s+(?:an|für)|befehl\\s+(?:an|für))(?![${L}])`, "iu");
 const NOTE_TO_RE = new RegExp(`(?<![${L}])(?:rückfrage|rueckfrage|anfrage|frage|auftrag|befehl)\\s+(?:an|für)\\s+(?:den\\s+|die\\s+)?([${L}]{1,6}\\.?\\s?\\d{0,3})(?![${L}\\d])`, "iu");
 
+/** @deprecated MVP 3: `readArt` (arten.ts) liest die Art; bleibt nur für ältere Aufrufer */
 export function noteIntent(text: string): { word: string; to?: string } | undefined {
   const t = text.trim();
   const m = NOTE_RE.exec(t);

@@ -88,7 +88,7 @@ export function SideSwitch({ view, onView, redLabel, offenLabel }: { view: SideV
     <div className="sw-box">
       <div className={offenLabel ? "sw2 sw3" : "sw2"} role="tablist" aria-label="Ansicht der Spalte" data-zaehl="umschalter" onKeyDown={onKey}>
         {tabs.map(([v, l]) => (
-          <button key={v} type="button" role="tab" data-view={v} aria-selected={view === v} tabIndex={view === v ? 0 : -1} onClick={() => onView(v)}>{l}</button>
+          <button key={v} type="button" role="tab" data-view={v} aria-selected={view === v} onClick={() => onView(v)}>{l}</button>
         ))}
       </div>
     </div>

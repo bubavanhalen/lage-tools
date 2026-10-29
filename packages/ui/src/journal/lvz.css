@@ -3,7 +3,7 @@
 
 /* ---------- Popover «Mehr …» ---------- */
 .lvzm {
-  position: fixed; z-index: 60; box-sizing: border-box; display: grid; gap: var(--sp-8);
+  position: fixed; z-index: 1200; box-sizing: border-box; display: grid; gap: var(--sp-8);
   padding: var(--sp-12); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-8);
   box-shadow: 0 8px 24px rgba(0, 0, 0, .22); font-size: var(--fs-14); max-height: calc(100vh - 16px); overflow: auto;
 }

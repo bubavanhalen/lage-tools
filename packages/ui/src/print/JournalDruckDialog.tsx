@@ -7,7 +7,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { aktuelleSchicht, journalDruckVorwahl, type Exercise, type Hint, type SchichtWechsel } from "@lage/core";
 import { Dialog } from "../shell/Dialog";
-import { klassifizierungOf, type JournalDruck, type SchichtApi } from "../shell/contracts";
+import { klassifizierungOf, type JournalDruck } from "../shell/contracts";
 import type { LageRotState } from "../lageRot";
 import { safeFileName } from "../store";
 import { datum, eintraegeIm, grenzen, parseTagZeit, schichtAm, tagKurz, tagZeitText, tz } from "./umfang";
@@ -17,9 +17,14 @@ export interface JournalDruckDialogProps {
   ex: Exercise;
   /** LIVE-Zeit (ISO lokal) – Ende von Schicht und «Tag (heute)» */
   tLive: string;
-  device: string;
-  /** Kürzel/Schicht dieses Geräts (C: `useSchicht`) */
-  schicht?: Pick<SchichtApi, "kuerzel" | "seit"> | null;
+  /** Kürzel der Schicht dieses Geräts («erstellt … von BSP») */
+  kuerzel?: string | null;
+  /** Beginn der eigenen Schicht (ISO UTC, `SchichtApi.seit`) – findet den Wechsel in `ex.schichten` */
+  schichtSeit?: string | null;
+  /** dieses Gerät (eigener Schichtwechsel hat Vorrang) */
+  device?: string;
+  /** Klassifizierung (Standard `klassifizierungOf(ex)`) */
+  klassifizierung?: string;
   /** Hinweise zu Rot (Anhang nur aus dem Zeitraum oder offen) */
   hints: Hint[];
   /** Lage Rot zur LIVE-Zeit (Anhang) */
@@ -33,8 +38,8 @@ export interface JournalDruckDialogProps {
 type Art = JournalDruck["umfang"]["art"];
 
 /** Schichtbeginn dieses Geräts als Wechsel (Lagezeit), sonst jüngster Wechsel der Übung bis jetzt */
-function eigeneSchicht(ex: Exercise, device: string, tLive: string, seit: string | null | undefined): SchichtWechsel | null {
-  const mine = aktuelleSchicht(ex, device);
+function eigeneSchicht(ex: Exercise, device: string | undefined, tLive: string, seit: string | null | undefined): SchichtWechsel | null {
+  const mine = device ? aktuelleSchicht(ex, device) : null;
   if (mine && mine.t <= tLive) return mine;
   if (seit) {
     const s = (ex.schichten ?? []).find((x) => x.at === seit);
@@ -43,9 +48,9 @@ function eigeneSchicht(ex: Exercise, device: string, tLive: string, seit: string
   return schichtAm(ex, tLive);
 }
 
-export function JournalDruckDialog({ ex, tLive, device, schicht, hints, lage, kiNote, onClose, say }: JournalDruckDialogProps) {
+export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, device, klassifizierung, hints, lage, kiNote, onClose, say }: JournalDruckDialogProps) {
   const name = useId();
-  const sch = useMemo(() => eigeneSchicht(ex, device, tLive, schicht?.seit), [ex, device, tLive, schicht?.seit]);
+  const sch = useMemo(() => eigeneSchicht(ex, device, tLive, schichtSeit), [ex, device, tLive, schichtSeit]);
   const hatUebergaben = (ex.schichten ?? []).some((s) => s.art === "uebergabe");
   const vorwahl = journalDruckVorwahl(hatUebergaben);
   const g = useMemo(() => grenzen(ex), [ex]);
@@ -73,8 +78,8 @@ export function JournalDruckDialog({ ex, tLive, device, schicht, hints, lage, ki
     }
   }, [art, sch, tag, tLive, g, ende, zeitraum]);
   const opts = useMemo((): JournalDruck | null => umfang && {
-    umfang, anhang, klassifizierung: klassifizierungOf(ex), kuerzel: schicht?.kuerzel ?? null,
-  }, [umfang, anhang, ex, schicht?.kuerzel]);
+    umfang, anhang, klassifizierung: klassifizierung ?? klassifizierungOf(ex), kuerzel,
+  }, [umfang, anhang, ex, kuerzel, klassifizierung]);
 
   const zahl = (from: string | null, to: string) => eintraegeIm(ex, { from, to }).filter((e) => !e.deleted).length;
   const n = (k: number) => `${k} ${k === 1 ? "Eintrag" : "Einträge"}`;

@@ -6,7 +6,7 @@
  * Uhr: T2 07:30 des Beispiels Bern (Tage 2030-05-14/15, siehe demoExercise) – die Spezifikation nennt 2026-05-15,
  * das Beispiel liegt aber im Jahr 2030.
  */
-import { Klm, UHR_T2_0730, antippen, antwortzeit, aufgabe, soll, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
+import { Klm, UHR_T2_0730, antippen, antwortzeit, aufgabe, menue, soll, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
 
 const feld = (s: Session) => s.page.getByPlaceholder("Was wurde gemeldet?");
 const zeilen = (s: Session) => s.page.locator(".jlist li");
@@ -32,6 +32,12 @@ async function geraetLauf(h: Harness, geraet: Geraet): Promise<TestResult[]> {
 
   // ---------- 1–3: leere Vorbereitung ----------
   let s = await h.open({ query: "?beispiel=leer", geraet, uhr: UHR_T2_0730 });
+  // MVP 3 (Kap. 2.3/3.6): Schichtbeginn mit Kürzel gehört nicht zu den Aufgaben – vorher über Menü «Kürzel ändern …»
+  // setzen (sonst fragt das erste Enter «Wer erfasst?»; geprüft in lvz.spec.ts Nr. 5 und inventar3.spec.ts)
+  await menue(s, /^Kürzel ändern/);
+  await s.page.getByRole("textbox", { name: "Kürzel", exact: true }).fill("ZZ");
+  await antippen(s, s.page.getByRole("button", { name: /^Neue Schicht beginnen/ }));
+  await s.page.waitForTimeout(200);
   out.push(await aufgabe("1 Erste Meldung", geraet, async (w) => {
     const k = new Klm();
     const vorher = await markerZahl(s);

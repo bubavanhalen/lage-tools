@@ -66,6 +66,8 @@ interface Props {
   lvz?: Omit<LvzRowProps, "e" | "ex">;
   /** Ansicht «Offen» (Panel von Paket C) bei `tab = "offen"` */
   offen?: ReactNode;
+  /** Trenner von aussen (C); fehlt → aus `schicht` (null = keiner). Bei aktiver Suche nie. */
+  schichtSeit?: { seit: string; kuerzel: string } | null;
 }
 
 export function JournalPanel(p: Props) {
@@ -91,7 +93,9 @@ export function JournalPanel(p: Props) {
   const nDel = useMemo(() => countGestrichene(events, { from: p.win?.from, to }), [events, p.win?.from, to]);
   const any = events.some((e) => !e.deleted);
   // Trenner «Neu in deiner Schicht ↑»: nicht im Rückblick, nicht bei aktiver Suche, ohne Kürzel keiner
-  const schichtSeit = !rueckblick && !q && !art && p.schicht?.kuerzel && p.schicht.seit ? { seit: p.schicht.seit, kuerzel: p.schicht.kuerzel } : null;
+  const schichtSeit = rueckblick || q || art ? null
+    : p.schichtSeit !== undefined ? p.schichtSeit
+    : p.schicht?.kuerzel && p.schicht.seit ? { seit: p.schicht.seit, kuerzel: p.schicht.kuerzel } : null;
   const lvz = useMemo<Omit<LvzRowProps, "e" | "ex">>(() => p.lvz ?? {
     device, kuerzel, update, onPrefill: (t: string) => { prefillEntry(t); },
   }, [p.lvz, device, kuerzel, update]);

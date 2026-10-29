@@ -55,3 +55,34 @@ describe("Zahlen für den Rapport", () => {
     expect(zaehleMeldungen(ex)).toBeGreaterThanOrEqual(200);
   });
 });
+
+// Paket A: Übergabe-Fragen F1–F3 aus Einträgen, wie das Meldungsfeld sie erzeugt (Kap. 8.3)
+import { eventFromDraft, parseMeldung, type Exercise } from "../src";
+
+describe("Lage Blau und Zahlen nach Einträgen aus 8.1 (#5, #6, #12, #4)", () => {
+  const ex: Exercise = demoExercise();
+  let s = 0;
+  for (const text of ["H04 Rückfrage: Standort Det 2?", "Auftrag an H01: Beo NAI 1 bis 1200", "H02 Vbk i.O.", "Kontakt! H02, Feuer aus AK9, 2 Schützen, wir halten"]) {
+    const now = new Date(2030, 4, 15, 7, 30, s++);
+    const d = parseMeldung(text, { sheets: ex.sheets, areas: ex.areas, units: ex.units, days: ex.days, day: ex.days[1]!, now, events: ex.events, ex });
+    ex.events = [...ex.events!, eventFromDraft(d, "dev-a", now, { nr: 100 + s, kuerzel: "BSP" })];
+  }
+  const z = lageBlau(ex, "2030-05-15T07:30");
+  const zeile = (u: string) => z.find((x) => x.trupp === u)!;
+  it("F1 Ort/seit, F2 letzte Vbk, F3 offener Auftrag; Rückfrage bei H04", () => {
+    expect(zeile("H03")).toMatchObject({ ort: "AP4 D", seit: "2030-05-14T18:45" });
+    expect(zeile("H02").letzteVbk).toEqual({ t: "2030-05-15T07:30", ergebnis: "gut" });
+    expect(zeile("H02").ort).toBe("AL9 A");
+    expect(zeile("H01").offen).toEqual([expect.objectContaining({ art: "auftrag", text: "an H01: Beo NAI 1 – bis 12:00", frist: "2030-05-15T12:00", ueberfaellig: false })]);
+    expect(zeile("H04").offen.map((o) => o.art)).toEqual(["rueckfrage"]);
+    expect(zeile("H04").letzteMeldung?.text).toBe("Rückfrage Standort Det 2?");
+  });
+  it("Zahlen: Aufträge/Rückfragen offen, Dringend aus «Kontakt!», Nicht-Meldungen nicht als «gesehen»", () => {
+    const r = rapportZahlen(ex, null, "2030-05-15T07:30");
+    expect(r.auftraege).toEqual({ total: 1, offen: 1 });
+    expect(r.rueckfragen).toEqual({ total: 1, offen: 1 });
+    expect(r.dringend).toEqual({ total: 1, offen: 1 });
+    expect(r.gesehen.feind + r.gesehen.unklar + r.gesehen.eigen).toBe(ex.events!.length - 3);
+    expect(zaehleMeldungen(ex)).toBe(ex.events!.length - 3);
+  });
+});

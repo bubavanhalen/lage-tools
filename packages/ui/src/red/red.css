@@ -12,6 +12,7 @@
 .red button:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
 
 /* Rückblick: «Stand 05:30» */
+.red-rechnet { margin: 0; padding: var(--sp-4) var(--sp-8); color: var(--muted); font-size: var(--fs-12); }
 .red-stand { padding: var(--sp-4) var(--sp-8); border-radius: var(--r-4); background: var(--rueckblick); color: var(--rueckblick-ink); font-weight: 600; }
 .red-lead, .red-note { color: var(--muted); }
 .red-empty { padding: var(--sp-12); border: 1px dashed var(--line); border-radius: var(--r-8); color: var(--muted); }

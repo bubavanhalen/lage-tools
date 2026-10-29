@@ -5,6 +5,7 @@
 import { indicatorSummary, type Exercise, type Hint, type RedCoa } from "@lage/core";
 import { decisionOf, hhmm, isOver } from "../hintsData";
 import { COA_KICKER, coaLine, coaWhen, hintLine } from "./redText";
+import "./redcard.css";
 
 /** Möglichkeit Rot als Karte: Einordnung, Zeitraum, Titel; die wahrscheinlichste zusätzlich mit Anzeichen */
 export function RedCard({ c, ex, t, sel, onOpen }: { c: RedCoa; ex: Exercise; t: string; sel: boolean; onOpen: () => void }) {
@@ -13,9 +14,10 @@ export function RedCard({ c, ex, t, sel, onOpen }: { c: RedCoa; ex: Exercise; t:
   return (
     <li className={`red-card k-${c.label}` + (sel ? " sel" : "")} data-coa={c.id}>
       <button className="red-card-btn" onClick={onOpen} aria-current={sel || undefined}>
+        {/* Titel zuerst im DOM (Vorlesen, Text der Zeile beginnt mit dem Titel), angezeigt unter der Einordnung (redcard.css) */}
+        <span className="red-card-title">{coaLine(c)}</span>
         <span className="red-kick">{COA_KICKER[c.label]}</span>
         {when && when.state !== "offen" && <span className={"red-when w-" + when.state}>{when.text}</span>}
-        <span className="red-card-title">{coaLine(c)}</span>
         {top && <span className="red-card-sum">{indicatorSummary(c)}</span>}
       </button>
     </li>
@@ -33,9 +35,9 @@ export function RedHintRow({ h, ex, t, sel, experte, onOpen }: { h: Hint; ex: Ex
   return (
     <li className={`red-hint l-${h.level}` + (sel ? " sel" : "") + (state ? " done" : "")} data-hint={h.id}>
       <button className="red-hint-btn" onClick={onOpen} aria-current={sel || undefined}>
+        <span className="red-hint-title">{hintLine(h)}{h.bundled && h.bundled > 1 ? <span className="red-bund" aria-label={`${h.bundled} gleiche Hinweise`}> · {h.bundled}×</span> : null}
+          {h.level === "hoch" && <span className="sr"> (wichtig)</span>}</span>
         <span className="red-lvl" aria-hidden={h.level === "info" || undefined}>{h.level === "hoch" ? "⚠" : h.level === "info" ? "i" : "•"}</span>
-        <span className="red-hint-title">{h.level === "hoch" && <span className="sr">Wichtig: </span>}{hintLine(h)}
-          {h.bundled && h.bundled > 1 ? <span className="red-bund" aria-label={`${h.bundled} gleiche Hinweise`}> · {h.bundled}×</span> : null}</span>
         {experte && <span className="red-code" title="Regel – Erklärung unter «Woher kommt das?»">{h.rule}</span>}
         <span className="red-hint-time">{state ? <span className="red-state">{state}</span> : hhmm(h.t, ex.days, t)}</span>
       </button>

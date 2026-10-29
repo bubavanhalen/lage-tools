@@ -17,7 +17,7 @@ import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
 import { addDays, compareEvents, localDay, localIso, nearestDay, offsetFor } from "./clock";
 import { autoShape, shapeCenter } from "./shapes";
-import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeMelder, normalizeTyped, noteIntent, observedOwn, ownDirection, partPlaces, pickTime, placeProblems, placeSpans, sameUnitName, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, unknownSubject, vagueAmount, type UnknownWord } from "./erkennung";
+import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeMelder, normalizeTyped, observedOwn, ownDirection, partPlaces, pickTime, placeProblems, placeSpans, sameUnitName, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, unknownSubject, vagueAmount, type UnknownWord } from "./erkennung";
 
 export interface JournalContext {
   sheets: RasterSheet[];
@@ -332,8 +332,8 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   }
   const explicit = kind !== null;
   const shown = shownRest.trim();
-  // (MVP 3) Rückfrage / Auftrag / Frage liest `readArt` in `parseMeldung`; hier nur noch für «unbekanntes Wort»
-  const note = ctx.kind || ctx.art ? undefined : noteIntent(shown);
+  // (MVP 3) Art liest `readArt` in `parseMeldung`; hier nur: bei Nicht-Meldung kein «unbekanntes Wort» suchen
+  const note = ctx.kind || ctx.art === "meldung" ? false : ctx.art ? true : readArt(shown, { blau: ctx.units.blau }).art !== "meldung";
   // «Rtg eigene Stellung»: Ziel einer Bewegung – weder Ort noch Zeichen, macht die Meldung nicht zur eigenen Lage
   const ownDir = ownDirection(rest);
   if (ownDir) rest = blank(rest, ownDir.span[0], ownDir.span[1]);

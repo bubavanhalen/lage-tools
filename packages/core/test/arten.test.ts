@@ -80,6 +80,13 @@ describe("readArt (Kap. 3.1, Fälle aus 8.1)", () => {
     expect(r("Antwort zu 57: Det 2 in AJ8")).toMatchObject({ art: "meldung", bezugNr: "57", bezugArt: "antwort" });
     expect(r("Antwort auf 12a: Det 1 AN6")).toMatchObject({ bezugNr: "12a" });
   });
+  it("Trupp vorne (Trupp-Knopf): «H04 Auftrag an H01 …», «H04 Bat: …», «H02 Notiz: …» bleiben erkannt", () => {
+    expect(r("H04 Auftrag an H01: Beo NAI 1 bis 1200")).toMatchObject({ art: "auftrag", stark: true, an: "H01", frist: "1200", rest: "Beo NAI 1 bis 1200" });
+    expect(r("H04 Bat: Feind erwartet ab 2200")).toMatchObject({ art: "orientierung", quelle: "Bat" });
+    expect(r("H02 Notiz: Akku gewechselt")).toMatchObject({ art: "notiz", rest: "Akku gewechselt" });
+    expect(r("0725 H02 Vbk i.O.")).toMatchObject({ art: "vbk", vbk: "gut" });
+    expect(r("T2 0725 Auftrag an H03: Beo NAI 2")).toMatchObject({ art: "auftrag", an: "H03" });
+  });
   it("gewöhnliche Meldungen bleiben Meldungen", () => {
     for (const t of ["H03: 1 Fz in NAI 2 Rtg N", "Kontakt! H02, Feuer aus AK9, 2 Schützen, wir halten", "H05 1 Verwundeter, Sanität angefordert", "H03 wir weichen aus nach AG9", "T2 0705 H04: gn Sperre in AG13"]) {
       expect(r(t).art, t).toBe("meldung");
@@ -165,7 +172,8 @@ describe("Einsatz-Szenario des Prüfers (Kap. 8.1)", () => {
       expect(f.zustand, `Zustand ${st.level}: ${st.reasons.map((r) => r.text).join(" | ")}`).toContain(st.level);
       if (f.art !== "meldung") { expect(d.pos).toBeUndefined(); expect(d.unit).toBe(""); expect(d.cells).toBeUndefined(); expect(d.nai).toBeUndefined(); }
       const vorher = situationAt(events, T);
-      const e = eventFromDraft(d, "dev-pruef", now, { nr: ++nr + 1000, kuerzel: "BSP" });
+      // Eingang je Fall eine Sekunde später (wie beim echten Tippen; gleiche Minute, Reihenfolge eindeutig)
+      const e = eventFromDraft(d, "dev-pruef", new Date(now.getTime() + ORDER.indexOf(k) * 1000), { nr: ++nr + 1000, kuerzel: "BSP" });
       expect(e.erfasstVon).toBe("BSP");
       ex.events = [...events, e];
       const nachher = situationAt(ex.events, T);

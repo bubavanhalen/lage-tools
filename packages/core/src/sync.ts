@@ -233,7 +233,8 @@ export function mergeExercise(ours: Exercise, theirs: Exercise): { ex: Exercise;
 /** «3 neu · 1 aktualisiert · 0 unverändert» (+ «1 Konflikt», «2 nur hier», «+1 NAI/Fläche» …) */
 export function mergeReportText(r: MergeReport): string {
   const parts = [`${r.neu} neu`, `${r.aktualisiert} aktualisiert`, `${r.unveraendert} unverändert`];
-  if (r.conflicts) parts.push(`${r.conflicts} ${r.conflicts === 1 ? "Konflikt" : "Konflikte"}`);
+  // MVP 3 (E18): Konflikte stehen als Punkt in «Offen»
+  if (r.conflicts) parts.push(`${r.conflicts} ${r.conflicts === 1 ? "Konflikt" : "Konflikte"} (in Offen)`);
   if (r.nurHier) parts.push(`${r.nurHier} nur hier`);
   const plus: string[] = [];
   if (r.sheets) plus.push(`${r.sheets} Raster`);

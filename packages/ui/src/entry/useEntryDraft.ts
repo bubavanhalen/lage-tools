@@ -113,6 +113,9 @@ export function prefillEntry(text: string): boolean {
   return true;
 }
 
+/** gleiches wie `prefillEntry` (Name, den Paket C verwendet) */
+export const requestPrefill = (text: string): boolean => prefillEntry(text);
+
 /** Messpunkt P1 «lt:enter» (Spez. 3.12) – nie ein Fehler, wenn die Messung fehlt */
 function markEnter(): void {
   try { performance.mark(PERF_MARK.enter); } catch { /* ohne Performance-API */ }

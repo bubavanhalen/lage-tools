@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { CoaIndicator, Hint, HintGroup, RedCoa } from "@lage/core";
 import { decide, GROUPS, groupOf, hhmm, isDone, isOpen, type DecisionState, type RedBadge } from "../hintsData";
 import { KiLageberichtButton } from "../ki/KiFeatures";
+import { useAnalyseLaeuft } from "../analyseClient";
 import { ForceTable } from "./ForceTable";
 import type { RedPanelProps } from "../shell/contracts";
 import { RedCard, RedHintRow } from "./RedCard";
@@ -23,6 +24,8 @@ const UNDO_MS = 8000;
 export function RedPanel(p: RedPanelProps) {
   const { ex, t, from, hints, lage, variant, selHint, selCoa, onSelectHint, onSelectCoa, onMapHint, onMapCoa, onEvent, update } = p;
   const experte = variant === "experte";
+  /** Hinweise werden im Worker gerechnet (MVP 3 P2): nach 300 ms ohne Ergebnis «wird berechnet …» */
+  const rechnet = useAnalyseLaeuft();
 
   // ---------- Detail: gewählter Hinweis vor gewählter Möglichkeit
   const hSel = selHint ? hints.find((h) => h.id === selHint) ?? lage.hints.find((h) => h.id === selHint) ?? null : null;
@@ -116,6 +119,7 @@ export function RedPanel(p: RedPanelProps) {
   return (
     <section className={"panel red" + (experte ? " experte" : "")} ref={root} aria-label="Was Rot vorhaben könnte" onKeyDown={onKey}>
       {p.stand && <p className="red-stand" role="status">Stand {hhmm(p.stand, ex.days)}</p>}
+      {rechnet && <p className="red-rechnet" role="status">wird berechnet …</p>}
       {showDetail && hSel ? (
         <RedHintDetail h={hSel} ex={ex} t={t} experte={experte} focus={fromList}
           backLabel={backCoa ? "Zurück zur Möglichkeit" : "Zurück zur Liste"} onBack={back}

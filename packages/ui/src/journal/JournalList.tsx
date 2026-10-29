@@ -20,7 +20,7 @@
  * Vorrat) stehen im DOM, gemessene Höhen werden gemerkt, Platzhalter oben/unten halten die Bildlaufleiste richtig.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
+import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, readArt, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { AttachmentChips } from "../Attachments";
 import { attachmentsOf } from "../attachmentStore";
@@ -71,6 +71,20 @@ export function displayText(e: Pick<LageEvent, "melder" | "text">): string {
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : e.text;
 }
 
+/**
+ * Text einer Nicht-Meldung ohne den Art-Hinweis, den die Art schon ausschreibt («Auftrag an H01: Beo NAI 1» →
+ * «Beo NAI 1» neben «✎ Auftrag an H01»). Vbk und Quittung behalten den Text (der Hinweis steht nicht vorne).
+ */
+export function nichtLageText(e: Pick<LageEvent, "melder" | "text" | "art" | "notiz" | "bezugArt">, blau: string[]): string {
+  const t = displayText(e);
+  const art = artOf(e);
+  if (art === "meldung" || art === "vbk" || e.bezugArt === "quittung") return t;
+  const tok = readArt(t, { blau }).token;
+  if (!tok || !t.toLowerCase().startsWith(tok.toLowerCase())) return t;
+  const rest = t.slice(tok.length).replace(/^[\s:,–-]+/, "");
+  return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : t;
+}
+
 function SymbolMini({ e }: { e: LageEvent }) {
   // gleiches Objekt behalten: React setzt innerHTML sonst bei jeder Darstellung neu
   const html = useMemo(() => ({ __html: iconSvg(e.sym, e.aff, 14, { sidc: e.sidc, status: e.status }).svg }), [e.sym, e.aff, e.sidc, e.status]);
@@ -109,9 +123,11 @@ interface RowProps {
   menu: boolean;
   onMenu(id: string, btn: HTMLElement): void;
   onRestore?(id: string): void;
+  /** eigene Trupps (für den Art-Hinweis im Text) – gleiches Array, solange sich die Trupps nicht ändern */
+  blau: string[];
 }
 
-const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open, onSelect, onCorrect, onDelete, onToggle, tab, spaeter, nr, artWort, vm, dringend, del, menu, onMenu, onRestore }: RowProps) {
+const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open, onSelect, onCorrect, onDelete, onToggle, tab, spaeter, nr, artWort, vm, dringend, del, menu, onMenu, onRestore, blau }: RowProps) {
   const form = formOf(e);
   const art = artOf(e);
   const lage = art === "meldung" && !e.hebtAuf;
@@ -140,7 +156,7 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open,
           <span className={`jl-kind k-${form}`}><span aria-hidden="true">{FORM_ZEICHEN[form]}</span> {word}</span>
           {who && <b className="jl-who">{who}</b>}
           {lage && <SymbolMini e={e} />}
-          <span className="jl-text">{displayText(e)}</span>
+          <span className="jl-text">{lage ? displayText(e) : nichtLageText(e, blau)}</span>
         </span>
         <span className="jl-l2">
           {del && <span className="jl-del">{del}</span>}
@@ -502,7 +518,7 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
                         nr={nrLabel(e, ex)} artWort={artOf(e) === "meldung" ? "" : artText(e)} vm={teile.map((x) => x.t).join(SEP)}
                         dringend={teile.some((x) => x.k === "dringend")}
                         del={e.deleted ? `gestrichen ${hm(e.updatedAt)}${e.geaendertVon ? ` von ${e.geaendertVon}` : ""}` : undefined}
-                        menu={menu?.id === e.id} onMenu={rowMenu} onRestore={p.onRestore ? rowRestore : undefined} />
+                        menu={menu?.id === e.id} onMenu={rowMenu} onRestore={p.onRestore ? rowRestore : undefined} blau={ex.units.blau} />
                     );
                   })}
                 </ol>

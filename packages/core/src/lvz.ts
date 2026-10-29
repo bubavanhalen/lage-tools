@@ -164,7 +164,11 @@ export const OFFEN_PRIO: Record<OffenArt | "auftrag-frist", number> = {
 const hhmm = (t: string) => t.slice(11, 16);
 const minutesBetween = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000));
 const ortText = (e: Pick<LageEvent, "where" | "cells" | "nai">) => e.where ?? e.cells?.[0] ?? e.nai ?? "";
-/** Inhalt ohne Art-Hinweis und ohne Frist («Auftrag an H01: Beo NAI 1 bis 1200» → «Beo NAI 1») */
+/** Inhalt ohne Art-Hinweis, Melder und Frist («Auftrag an H01: Beo NAI 1 bis 1200» → «Beo NAI 1», «H05: 2 Kpz AJ9» → «2 Kpz AJ9») */
+export function inhaltText(e: LageEvent, blau: string[] = []): string {
+  return inhalt(e, blau);
+}
+
 function inhalt(e: LageEvent, blau: string[]): string {
   let t = readArt(e.text, { blau }).rest.replace(/(?<![\p{L}\d])bis\s+\d{1,2}[:.]?\d{2}(?![\p{L}\d])/u, "").replace(/\s+/g, " ").trim();
   if (e.melder) t = t.replace(new RegExp(`^${e.melder}\\s*[:,]?\\s*`), "");

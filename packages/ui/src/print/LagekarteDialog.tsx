@@ -21,16 +21,18 @@ export interface LagekarteDialogProps {
   t: string;
   /** Anfang «Zeige letzte» bzw. Zeitfenster (ISO lokal), null = alle */
   from: string | null;
-  /** LIVE (sonst Rückblick) */
-  live: boolean;
+  /** LIVE (sonst Rückblick); fehlt = ohne Angabe */
+  live?: boolean;
   kuerzel: string | null;
+  /** Klassifizierung (Standard `klassifizierungOf(ex)`) */
+  klassifizierung?: string;
   onClose(): void;
   say(t: string): void;
 }
 
 const prozent = (x: number) => `${Math.max(1, Math.round(x * 100))} %`;
 
-export function LagekarteDialog({ ex, map, t, from, live, kuerzel, onClose, say }: LagekarteDialogProps) {
+export function LagekarteDialog({ ex, map, t, from, live, kuerzel, klassifizierung, onClose, say }: LagekarteDialogProps) {
   const name = useId();
   const raster = useMemo(() => rasterBounds(ex), [ex]);
   const [paper, setPaper] = useState<LagekarteDruck["paper"]>("A4");
@@ -78,7 +80,7 @@ export function LagekarteDialog({ ex, map, t, from, live, kuerzel, onClose, say 
     abort.current = ac;
     try {
       const r = await lagekartePdf(ex, {
-        paper, ausschnitt, bounds, t, from, klassifizierung: klassifizierungOf(ex), kuerzel,
+        paper, ausschnitt, bounds, t, from, klassifizierung: klassifizierung ?? klassifizierungOf(ex), kuerzel,
         onProgress: (p) => setProgress(p), signal: ac.signal, plan: plan ?? undefined,
       });
       if (ac.signal.aborted) return;
@@ -117,7 +119,7 @@ export function LagekarteDialog({ ex, map, t, from, live, kuerzel, onClose, say 
         </fieldset>
         <div className="pr-group">
           <span className="pr-key">Stand</span>
-          <p className="pr-info">{tagKurz(t, ex.days)} {datum(t)} {t.slice(11, 16)} ({live ? "LIVE" : "Rückblick"}) · zeigt Meldungen: {fenster} <span className="pr-muted">(folgt «Zeige letzte»)</span></p>
+          <p className="pr-info">{tagKurz(t, ex.days)} {datum(t)} {t.slice(11, 16)} {live === undefined ? "" : live ? "(LIVE) " : "(Rückblick) "}· zeigt Meldungen: {fenster} <span className="pr-muted">(folgt «Zeige letzte»)</span></p>
         </div>
         <div className="pr-group">
           <span className="pr-key">Karte</span>

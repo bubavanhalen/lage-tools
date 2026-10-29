@@ -45,7 +45,9 @@ export function LvzMenu(p: LvzRowProps & {
   const [massnahme, setMassnahme] = useState(v.massnahme ?? "");
   const [an, setAn] = useState(v.weiter?.an ?? "");
   const [um, setUm] = useState(v.weiter?.um?.slice(11, 16) ?? "");
-  const [pos, setPos] = useState<CSSProperties | null>(null);
+  const [pos, setPosRaw] = useState<CSSProperties | null>(null);
+  /** nur bei echter Änderung setzen (sonst zeichnet die Lage-Messung endlos neu) */
+  const setPos = useCallback((n: CSSProperties) => setPosRaw((o) => (o && o.left === n.left && o.top === n.top && o.width === n.width ? o : n)), []);
   // Werte von aussen (anderes Fenster, Rückgängig) übernehmen, solange das Feld nicht bearbeitet wird
   useEffect(() => { if (document.activeElement?.id !== `${id}-m`) setMassnahme(v.massnahme ?? ""); }, [v.massnahme, id]);
   useEffect(() => { const a = document.activeElement?.id; if (a !== `${id}-an` && a !== `${id}-um`) { setAn(v.weiter?.an ?? ""); setUm(v.weiter?.um?.slice(11, 16) ?? ""); } }, [v.weiter?.an, v.weiter?.um, id]);
@@ -69,7 +71,7 @@ export function LvzMenu(p: LvzRowProps & {
       const top = below + h <= vh - 8 ? below : Math.max(8, b.top - h - 6);
       setPos({ left: Math.max(8, col.left), top, width: Math.min(col.width, vw - 16) });
     }
-  }, [p.anchor]);
+  }, [p.anchor, setPos]);
   useLayoutEffect(() => { place(); });
   useEffect(() => {
     const on = () => place();

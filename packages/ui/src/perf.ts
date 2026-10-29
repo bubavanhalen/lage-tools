@@ -42,12 +42,24 @@ export function perfMark(name: MarkName): void {
 
 const marks = (n: string): number[] => store[n] ?? [];
 
+/**
+ * Beginn der Navigation auf der Zeitachse von `performance.now`: normal 0. Unter einer Test-Uhr läuft `now` ab deren
+ * Installation über Seitenwechsel weiter – dann gilt der Zeitpunkt des ersten Skripts im Kopf (`__ltNav0`, index.html).
+ */
+function nav0(): number {
+  try {
+    const fake = typeof performance.getEntriesByType !== "function" || performance.getEntriesByType("navigation").length === 0;
+    const n = (window as unknown as { __ltNav0?: number }).__ltNav0;
+    return fake && typeof n === "number" ? n : 0;
+  } catch { return 0; }
+}
+
 /** Abstände der Messpunkte (ms, gerundet auf 0.1) */
 export function ltPerf(): LtPerf {
   const r = (x: number) => Math.round(x * 10) / 10;
   const out: LtPerf = {};
   const b = marks(PERF_MARK.bereit);
-  if (b.length) out.bereit = r(b[0]!);
+  if (b.length) out.bereit = r(b[0]! - nav0());
   const en = marks(PERF_MARK.enter), ze = marks(PERF_MARK.zeile);
   const alle: number[] = [];
   for (let i = 0; i < en.length; i++) {

@@ -7,7 +7,8 @@
  * Der Abgleich selbst steht ohne React in `applySync` (mit fake-indexeddb getestet).
  */
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { mergeEvents, mergeHull, type Exercise } from "@lage/core";
+import { maxNr, mergeEvents, mergeHull, type Exercise } from "@lage/core";
+import { NR_KEY } from "./shell/contracts";
 import { listExercises } from "./store";
 import { hasPending, noteForeign, onSync, openStored, persister, readChanges, requestPersist, setLatest, type SyncMsg } from "./persist";
 
@@ -27,6 +28,20 @@ export interface SyncDeps {
   setEx: Dispatch<SetStateAction<Exercise | null>>;
   setSaved: (l: Array<{ id: string; name: string }>) => void;
   say: (t: string) => void;
+}
+
+/**
+ * Gerätezähler der laufenden Nummer (`NR_KEY`) auf die höchste bekannte Nummer der Übung heben (Entscheid 1, Spez.
+ * MVP 3 Kap. 3.3): nach Abgleich mit anderen Fenstern bzw. Zusammenführen einer Datei zählt das Gerät dort weiter.
+ * Nummern werden nie geändert (keine Umnummerierung); nur der Zähler steigt, nie sinkt er.
+ */
+export function hebeNrZaehler(ex: Pick<Exercise, "id" | "events">): void {
+  try {
+    const k = NR_KEY(ex.id);
+    const cur = Number(localStorage.getItem(k)) || 0;
+    const m = maxNr(ex);
+    if (m > cur) localStorage.setItem(k, String(m));
+  } catch { /* Speicher gesperrt – nextNr nimmt ohnehin die höchste bekannte Nummer */ }
 }
 
 /** Nachricht eines anderen Fensters verarbeiten: nachlesen, einmischen, nichts überschreiben */
@@ -53,6 +68,7 @@ export async function applySync(m: SyncMsg, d: SyncDeps): Promise<void> {
       if (!x || x.id !== m.ex) return x;
       let out: Exercise = events.length ? { ...x, events: mergeEvents(x.events ?? [], events) } : x;
       if (takeHull) out = pending ? { ...mergeHull(out, { ...(takeHull.ex as Exercise), events: [] }).ex, events: out.events } : { ...(takeHull.ex as Exercise), events: out.events };
+      if (events.length) hebeNrZaehler(out);
       return out;
     });
   } catch { /* Speicher nicht verfügbar – nächstes Mal */ }
@@ -65,7 +81,12 @@ export function connectPersister({ setEx, setSaved }: Pick<SyncDeps, "setEx" | "
   // gleichzeitig in zwei Fenstern geändert: zusammengeführte Hülle übernehmen (nichts verlieren, Löschmarken gelten)
   persister.onMergedHull = (id, hull) => setEx((x) => (x && x.id === id ? { ...mergeHull(x, { ...(hull as Exercise), events: [] }).ex, events: x.events } : x));
   // in der Datenbank lag eine neuere Fassung (anderes Fenster): übernehmen
-  persister.onNewer = (id, evs) => setEx((x) => (x && x.id === id ? { ...x, events: mergeEvents(x.events ?? [], evs) } : x));
+  persister.onNewer = (id, evs) => setEx((x) => {
+    if (!x || x.id !== id) return x;
+    const out = { ...x, events: mergeEvents(x.events ?? [], evs) };
+    hebeNrZaehler(out);
+    return out;
+  });
   return () => { persister.onSaved = null; persister.onMergedHull = null; persister.onNewer = null; };
 }
 

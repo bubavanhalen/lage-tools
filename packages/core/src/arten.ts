@@ -141,12 +141,14 @@ const cut = (text: string, m: RegExpExecArray) => (text.slice(0, m.index) + " " 
 export function readArt(text: string, o: { blau: string[] }): ArtLesung {
   const t = text.trim().replace(LEAD_TIME_RE, "");
   const lead = String.raw`^(?:(${EL})\s*[:,]?\s+)?`;
+  const L0 = String.raw`^(?:${EL}\s*[:,]?\s+)?`;
   const bez = bezugOf(t);
 
   // ---- Auftrag
-  let m = re(String.raw`^(?:auftrag|befehl)\s+(?:an|für)\s+(${EL})(?!${L})\s*[:,]?`).exec(t);
+  // L0: optional ein Element davor («H04 Auftrag an H01 …» – Trupp-Knopf setzt den Trupp vorne ein)
+  let m = re(String.raw`${L0}(?:auftrag|befehl)\s+(?:an|für)\s+(${EL})(?!${L})\s*[:,]?`).exec(t);
   if (m) return { art: "auftrag", stark: true, token: m[0].trim(), an: unitName(m[1]!, o.blau), ...fristOf(t), rest: cut(t, m) };
-  m = re(String.raw`^auftrag\s*:`).exec(t);
+  m = re(String.raw`${L0}auftrag\s*:`).exec(t);
   if (m) return { art: "auftrag", stark: true, token: m[0].trim(), ...fristOf(t), rest: cut(t, m) };
   m = re(String.raw`^(${EL})\s+erhält\s+(?:den\s+|einen\s+)?auftrag(?!${L})\s*[:,]?`).exec(t);
   if (m) return { art: "auftrag", stark: true, token: m[0].trim(), an: unitName(m[1]!, o.blau), ...fristOf(t), rest: cut(t, m) };
@@ -169,15 +171,15 @@ export function readArt(text: string, o: { blau: string[] }): ArtLesung {
   if (m) return { art: "rueckfrage", stark: false, token: m[0].trim(), rest: t };
 
   // ---- Orientierung (von oben)
-  m = re(String.raw`^(bat|kp|kdt|s2|rgt|ori|orientierung)\s*:`).exec(t);
+  m = re(String.raw`${L0}(bat|kp|kdt|s2|rgt|ori|orientierung)\s*:`).exec(t);
   if (m) {
     const q = m[1]!.toLowerCase();
     const quelle = q === "ori" || q === "orientierung" ? undefined : q === "s2" ? "S2" : q[0]!.toUpperCase() + q.slice(1);
     return { art: "orientierung", stark: true, token: m[0].trim(), ...(quelle ? { quelle } : {}), rest: cut(t, m) };
   }
-  m = re(String.raw`^orientierung\s+(?:von\s+)?(${EL})(?!${L})\s*[:,]?`).exec(t);
+  m = re(String.raw`${L0}orientierung\s+(?:von\s+)?(${EL})(?!${L})\s*[:,]?`).exec(t);
   if (m) return { art: "orientierung", stark: true, token: m[0].trim(), quelle: unitName(m[1]!, o.blau), rest: cut(t, m) };
-  m = re(String.raw`^info\s+(bat|kp)(?!${L})\s*[:,]?`).exec(t);
+  m = re(String.raw`${L0}info\s+(bat|kp)(?!${L})\s*[:,]?`).exec(t);
   if (m) return { art: "orientierung", stark: true, token: m[0].trim(), quelle: m[1]![0]!.toUpperCase() + m[1]!.slice(1).toLowerCase(), rest: cut(t, m) };
 
   // ---- Verbindungskontrolle
@@ -192,7 +194,7 @@ export function readArt(text: string, o: { blau: string[] }): ArtLesung {
   }
 
   // ---- Notiz (Quittung: Annahme A2, `QUITTUNG_ART`)
-  m = re(String.raw`^(?:notiz|nb|bem)\s*:`).exec(t);
+  m = re(String.raw`${L0}(?:notiz|nb|bem)\s*:`).exec(t);
   if (m) return { art: "notiz", stark: true, token: m[0].trim(), ...bez, rest: cut(t, m) };
   m = re(String.raw`(?<!${L})quittung(?!${L})`).exec(t);
   if (m) return { art: QUITTUNG_ART, stark: true, token: m[0], bezugArt: "quittung", ...bez, rest: cut(t, m) };

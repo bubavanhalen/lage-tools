@@ -153,7 +153,7 @@ const bernCtx = (ex: Exercise, hhmm: string, o: Partial<JournalContext> = {}): J
 });
 const add = (ex: Exercise, text: string, hhmm: string, o: Partial<JournalContext> = {}) => {
   const d = parseMeldung(text, bernCtx(ex, hhmm, o));
-  const e = eventFromDraft(d, "dev-a", new Date(2030, 4, 15, +hhmm.slice(0, 2), +hhmm.slice(2)), { nr: (ex.events?.length ?? 0) + 1, kuerzel: "BSP" });
+  const e = eventFromDraft(d, "dev-a", new Date(2030, 4, 15, +hhmm.slice(0, 2), +hhmm.slice(2), (ex.events?.length ?? 0) % 60), { nr: (ex.events?.length ?? 0) + 1, kuerzel: "BSP" });
   ex.events = [...(ex.events ?? []), e];
   return { d, e };
 };

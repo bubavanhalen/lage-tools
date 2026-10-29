@@ -8,12 +8,12 @@
  *
  * Phase 0: erste, getestete Umsetzung; Paket A baut aus (Kurztexte, Ort-Seit-Regel), Paket C zeigt an.
  */
-import { artOf, isLage, lebenszeichen } from "./arten";
+import { ART_LABEL, artOf, isLage, lebenszeichen } from "./arten";
 import { compareEvents } from "./clock";
 import { STILL_MIN } from "./entscheide";
 import type { Hint } from "./hints";
 import { placeLabel, situationAt, unitKey } from "./journal";
-import { lvzIndex, offenePunkte, vermerkeOf } from "./lvz";
+import { inhaltText, lvzIndex, offenePunkte, vermerkeOf } from "./lvz";
 import type { Exercise, LageEvent, SchichtWechsel } from "./model";
 import { nrLabel } from "./nummer";
 
@@ -58,7 +58,8 @@ export function lageBlau(ex: Exercise, t: string): LageBlauZeile[] {
   const events = (ex.events ?? []).filter((e) => !e.deleted && e.t <= t).sort(compareEvents);
   const sit = situationAt(events, t);
   const offen = offenePunkte(ex, t);
-  return (ex.units?.blau ?? []).map((trupp) => {
+  const blau = ex.units?.blau ?? [];
+  return blau.map((trupp) => {
     const st = sit.units.find((u) => u.key === unitKey("blau", trupp));
     // seit: erste Meldung der letzten ununterbrochenen Folge am aktuellen Standort
     let seit: string | null = null;
@@ -77,7 +78,7 @@ export function lageBlau(ex: Exercise, t: string): LageBlauZeile[] {
       trupp,
       ort: st ? placeLabel(st.event) || null : null,
       seit,
-      ...(last ? { letzteMeldung: { t: last.t, text: last.text, nr: nrLabel(last, ex) } } : {}),
+      ...(last ? { letzteMeldung: { t: last.t, text: artOf(last) === "meldung" ? inhaltText(last, blau) : `${ART_LABEL[artOf(last)]} ${inhaltText(last, blau)}`, nr: nrLabel(last, ex) } } : {}),
       ...(vbk ? { letzteVbk: { t: vbk.t, ergebnis: vbk.vbk! } } : {}),
       stillMin: last ? minutesBetween(last.t, t) : null,
       offen: offen
