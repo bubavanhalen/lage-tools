@@ -18,9 +18,13 @@ import type { EntryBoxProps } from "../shell/contracts";
 import { HelpPopover } from "./HelpPopover";
 import { KuerzelAsk } from "./KuerzelAsk";
 import { PreviewLine } from "./PreviewLine";
+import { knopfText } from "./labels";
 import { TruppChips } from "./TruppChips";
 import { lastMelder, truppOrder, useEntryDraft, wideScreen } from "./useEntryDraft";
 import "./entry.css";
+
+/** Finger-Bedienung (Tablet): «Nochmals Enter» heisst dort wie der Knopf */
+const grob = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
 
 /**
  * Vorschau entkoppelt vom Tippen: das Feld zeigt jeden Buchstaben sofort, die Vorschau zeichnet React mit
@@ -91,7 +95,7 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
 
   const lvl = state?.level ?? null;
   const asked = lvl === "pruefen" && d.armed === d.text;
-  const stateText = !state ? "" : lvl === "bereit" ? "Bereit" : asked ? state.reasons[0]?.ask ?? "" : `${lvl === "pruefen" ? "Bitte prüfen" : "Geht nicht"}: ${state.reasons[0]?.text ?? ""}`;
+  const stateText = !state ? "" : lvl === "bereit" ? "Bereit" : asked ? knopfText(state.reasons[0]?.ask ?? "", { coarse: grob(), korr }) : `${lvl === "pruefen" ? "Bitte prüfen" : "Geht nicht"}: ${state.reasons[0]?.text ?? ""}`;
   const live = useLiveText(stateText, d.announce);
   const info = rueckblickInfo(props.zeit);
   const blocked = lvl === "geht-nicht";

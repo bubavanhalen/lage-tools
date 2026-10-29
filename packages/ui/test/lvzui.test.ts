@@ -50,10 +50,19 @@ describe("Übergabe-Inhalt (Kap. 2.7, 3.8)", () => {
     const ex2: Exercise = { ...ex, events: [...(ex.events ?? []), o("o1", "2030-05-14T19:00", "Bat: alt"), o("o2", "2030-05-14T20:00", "Bat: Lagerapport 1800 im KP"),
       o("o3", "2030-05-15T03:00", "Kp: Feind Kp-Stärke ab 2200"), o("o4", "2030-05-15T05:00", "Bat: neu")] };
     const d2 = uebergabeDaten({ ex: ex2, tLive: t, hints: [], lage: LEER_ROT, items: [], kuerzel: "BSP", seit: "2030-05-15T04:00:00.000Z", seitT: "2030-05-15T06:00" });
-    expect(d2.vonOben.map((z) => z.key)).toEqual(["o4", "o3", "o2"]);
+    // Fix 3: «Lagerapport 1800» (T1 20:00 erfasst) ist vorbei – steht nicht vor gültigen, «alt» (ohne Termin) rückt nach
+    expect(d2.vonOben.map((z) => z.key)).toEqual(["o4", "o3", "o1"]);
     // Zeit eines anderen Tages mit Tageskürzel
-    expect(d2.vonOben[2]!.t).toBe("T1 20:00");
+    expect(d2.vonOben[2]!.t).toBe("T1 19:00");
     expect(d2.vonOben[0]!.t).toBe("05:00");
+  });
+  it("Von oben (gültig): Abgelaufenes «· vorbei» und nach unten, nie als gültig (Fix 3)", () => {
+    const o = (id: string, t: string, text: string) => ({ id, rev: 1, device: "d", updatedAt: "2030-05-15T06:00:00.000Z", t, side: "blau" as const, unit: "", text,
+      sym: "einheit", aff: "F" as const, source: { kind: "text" as const }, confirmed: true, art: "orientierung" as const, notiz: true, quelle: "Bat" });
+    const ex2: Exercise = { ...ex, events: [o("p1", "2030-05-15T06:30", "Bat: Lagerapport 0700 im KP"), o("p2", "2030-05-15T06:40", "Kdt: ab sofort Funkstille bis 0715"),
+      o("p3", "2030-05-15T06:50", "Bat: Feind erwartet ab 0900")] };
+    const d2 = uebergabeDaten({ ex: ex2, tLive: t, hints: [], lage: LEER_ROT, items: [], kuerzel: "BSP", seit: "2030-05-15T04:00:00.000Z", seitT: "2030-05-15T06:00" });
+    expect(d2.vonOben.map((z) => [z.key, z.meta])).toEqual([["p3", ""], ["p2", "vorbei (07:15)"], ["p1", "vorbei (07:00)"]]);
   });
   it("Zahlen: Schicht und ganze Übung", () => {
     expect(d.zahlen.map((z) => z[0])).toEqual(["Einträge", "Feind / Unklar / Eigene gesehen", "Aufträge (offen)", "Rückfragen (offen)", "Dringend (offen)", "Korrigiert / gestrichen", "Hinweise zu Rot offen / erledigt"]);

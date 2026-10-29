@@ -129,3 +129,15 @@ function sortedDesc(events: LageEvent[]): LageEvent[] {
   if (!s) { s = [...events].sort((a, b) => compareEvents(b, a)); SORTED.set(events, s); }
   return s;
 }
+
+const WECHSEL_WORTE = ["schichtwechsel", "wechsel", "übergabe", "uebergabe", "schicht"];
+/**
+ * Suche nach den Zeilen «Schichtwechsel 07:30 BSP → MU» (MVP 3 Fix 3): beginnt mit «Schichtwechsel», «Wechsel»,
+ * «Übergabe», «Schicht» oder ist deren Anfang («Schichtw», ab 4 Zeichen), bzw. genau ein Kürzel eines Wechsels.
+ */
+export function wechselSuche(q: string, ws: Array<{ an: string; von?: string }> = []): boolean {
+  const s = q.trim().toLowerCase();
+  if (!s) return false;
+  if (WECHSEL_WORTE.some((w) => s.startsWith(w) || (s.length >= 4 && w.startsWith(s)))) return true;
+  return ws.some((w) => s === w.an.toLowerCase() || s === (w.von ?? "").toLowerCase());
+}

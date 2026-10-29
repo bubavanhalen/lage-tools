@@ -65,7 +65,9 @@ async function geraetLauf(h: Harness, geraet: Geraet): Promise<TestResult[]> {
     await eintragen(s, k);
     await s.page.waitForTimeout(300);
     soll((await anzahl(s)) === n0, "1. Enter hat ohne Trupp eingetragen");
-    soll(await s.page.getByText(/Nochmals Enter/).first().isVisible(), "Text «Nochmals Enter» fehlt");
+    // Tablet: Text wie der Knopf («Nochmals «Trotzdem eintragen» tippen», Fix 3), Laptop «Nochmals Enter»
+    const nochmals = geraet === "tablet" ? /Nochmals «Trotzdem eintragen»/ : /Nochmals Enter/;
+    soll(await s.page.getByText(nochmals).first().isVisible(), `Text ${nochmals} fehlt`);
     k.entscheid();
     await antippen(s, knopf(s, "H02")); k.zeigen();
     soll(await zustand(s).getAttribute("data-zustand") === "bereit", "nach Chip nicht «bereit»");

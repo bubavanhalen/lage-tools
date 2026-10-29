@@ -269,7 +269,17 @@ export async function eintragenText(s: Session, text: string, o: { zweimal?: boo
     else await feldVon(s).press("Enter");
   };
   await enter();
-  if (zustand === "pruefen" || o.zweimal) { await s.page.waitForTimeout(120); if ((await zeilenVon(s).count()) === n0) await enter(); }
+  if (zustand === "pruefen" || o.zweimal) {
+    // gelb: erst weiter, wenn das Feld gefragt hat («Trotzdem eintragen») – auf dem Tablet dauert der erste Tipp länger
+    // (Tastatur, Fokus); fester Wartewert war unstabil (e2e arten 2b, Prüfung review4)
+    const gefragt = async () => (await zeilenVon(s).count()) > n0 || (await knopfVon(s, /^Trotzdem eintragen/).count()) > 0
+      || (await s.page.locator(".eb-state.asked").count()) > 0;
+    await antwortzeit(gefragt, 1500);
+    for (let i = 0; i < 2 && (await zeilenVon(s).count()) === n0; i++) {
+      await enter();
+      await antwortzeit(async () => (await zeilenVon(s).count()) > n0, 1200);
+    }
+  }
   await antwortzeit(async () => (await zeilenVon(s).count()) > n0, 2000);
   return { zustand, zeilen: await zeilenVon(s).count() };
 }

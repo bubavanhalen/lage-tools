@@ -33,10 +33,67 @@ export function lebenszeichen(e: LageEvent): string | null {
     case "meldung": return m;
     case "rueckfrage": return m;
     case "vbk": return e.vbk === "keine" ? null : m;
-    // Quittung; Antwort (Entscheid MVP 3 Nachbesserung: übernimmt den Trupp der Rückfrage = Lebenszeichen)
-    case "notiz": return e.bezugArt === "quittung" || e.bezugArt === "antwort" ? m : null;
+    case "notiz":
+      if (e.bezugArt === "quittung") return m;
+      // Antwort: nur eine Antwort **vom** Trupp ist ein Lebenszeichen («H05 Antwort …», Rückfrage ging an den Trupp);
+      // eine Antwort **an** den Trupp (Rückfrage kam vom Trupp, «Antwort an H02») nicht (MVP 3 Fix 3)
+      if (e.bezugArt === "antwort") return e.an && sameName(e.an, m) ? null : m;
+      return null;
     default: return null;
   }
+}
+
+const sameName = (a: string, b: string) => a.replace(/[\s.]/g, "").replace(/(\D)0+(\d)/g, "$1$2").toLowerCase() === b.replace(/[\s.]/g, "").replace(/(\D)0+(\d)/g, "$1$2").toLowerCase();
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Unscharfe Schlüsselwörter (MVP 3 Fix 3): «Auftarg», «antwrt», «aufgehobn», «Auftr.» … werden erkannt, aber **immer nur
+// gelb** («Auftrag gemeint? «Auftarg»») – ein unsicheres Wort setzt nie still ein Zeichen und verschiebt nie einen Trupp.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** ae/oe/ue → ä/ö/ü, klein, ohne Punkt am Ende («geraeumt» = «geräumt», «Auftr.» → «auftr») */
+export function normWort(w: string): string {
+  return w.toLowerCase().replace(/\.$/, "").replace(/ae/g, "ä").replace(/oe/g, "ö").replace(/ue/g, "ü");
+}
+
+/** Editierdistanz mit Vertauschung zweier Nachbarn (OSA): «auftarg» ↔ «auftrag» = 1 */
+export function editDistanz(a: string, b: string, max = 3): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array<number>(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0]![j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(d[i - 1]![j]! + 1, d[i]![j - 1]! + 1, d[i - 1]![j - 1]! + c);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, d[i - 2]![j - 2]! + 1);
+      d[i]![j] = v;
+    }
+  }
+  return d[a.length]![b.length]!;
+}
+
+/**
+ * Wörter, die einem Schlüsselwort nahe sind, aber etwas anderes heissen – nie unscharf lesen («aufgebaut» ist das
+ * Gegenteil von «abgebaut», «abgebogen» ist eine Bewegung).
+ */
+const ECHTE_WOERTER = new Set(["aufgebaut", "angebaut", "ausgebaut", "eingebaut", "umgebaut", "aufgezogen", "abgebogen", "ausgezogen", "angezogen", "eingezogen",
+  "umgezogen", "aufgeboten", "aufgehalten", "abgeholt", "geräuschlos", "gesäumt", "geträumt", "entfernen", "entfernung", "entfernte", "entfernter", "entferntes",
+  "antrag", "anträge", "vortrag", "beitrag", "betrag", "abtrag"]);
+
+/**
+ * Unscharfer Treffer eines Worts auf eines der Schlüsselwörter `keys` (klein, mit Umlauten): Editierdistanz ≤ 1 bei
+ * 5–7 Zeichen, ≤ 2 ab 8 Zeichen («aufgehobn», «Auftarg», «antwrt», «gerämt»); Abkürzung = Anfang eines Schlüsselworts
+ * mit mindestens `prefix` Zeichen («Auftr», «Antw», «aufgeh.»). Ein genauer Treffer ist kein unscharfer (null).
+ */
+export function unscharfTreffer(word: string, keys: readonly string[], o: { prefix?: number } = {}): string | null {
+  const w = normWort(word);
+  if (!/^[\p{L}]+$/u.test(w) || keys.includes(w) || ECHTE_WOERTER.has(w)) return null;
+  const pre = o.prefix ?? 5;
+  for (const k of keys) if (w.length >= pre && w.length < k.length && k.startsWith(w)) return k;
+  if (w.length < 5) return null;
+  const max = w.length >= 8 ? 2 : 1;
+  let best: string | null = null, bd = max + 1;
+  for (const k of keys) { const dd = editDistanz(w, k, max); if (dd < bd) { bd = dd; best = k; } }
+  return bd <= max ? best : null;
 }
 
 export const ART_LABEL: Record<EntryArt, string> = {
@@ -88,6 +145,13 @@ export interface ArtLesung {
   bezugArt?: LageEvent["bezugArt"];
   /** Textstelle des Bezugs («Antwort zu 57», «zu 42») – parseMeldung liest die Meldung ohne sie */
   bezugToken?: string;
+  /** Bezug steht ganz am Anfang (nach dem Melder): «zu 57: ja» */
+  bezugAnfang?: boolean;
+  /**
+   * (MVP 3 Fix 3) Art nur aus einem unscharfen Schlüsselwort («Auftarg», «antwrt», «Batt») – Textstelle wie geschrieben;
+   * dann ist `stark` false (immer gelb «Auftrag gemeint? «Auftarg»»).
+   */
+  unscharf?: string;
   /** Text ohne Art-Hinweis (für die weitere Erkennung) */
   rest: string;
 }
@@ -116,10 +180,19 @@ const BEZUG_RES = [
   re(String.raw`^(?:(?:${EL})\s*[:,]?\s+)?(?:zu|bezug|nr\.?)\s*${NRW}`),
   re(String.raw`(?<!${L})(?:zu|bezug)\s+${NRW}\s*:`),
 ];
-/** «Antwort: …», «H05 Antwort: …», «Antwort an H02: …» (Empfänger in Gruppe 1) */
-const ANTWORT_RE = re(String.raw`^(?:(?:${EL})\s*[:,]?\s+)?antwort(?:\s+an\s+(${EL}))?(?!${L})\s*[:,]?`);
-/** Absender von oben am Anfang (Entscheid: mit oder ohne Doppelpunkt): «Bat …», «Kp: …», «Kdt …», «Rgt …», «Br …» */
-const OBEN_RE = re(String.raw`^(bat|kp|kdt|rgt|br)\.?(?!${L})\s*[:,]?\s*(?=\S)`);
+/** erstes Wort (nach einem Element): «H04 antwortet: …» → Element «H04», Wort «antwortet» */
+const KOPF_RE = re(String.raw`^(?:(${EL})\s*[:,]?\s+)?([\p{L}]+\.?)(?![\p{L}\d])`);
+/** «Antwort», «antwortet», «antworten» (genau) */
+const ANTWORT_WORT_RE = /^antwort(?:e|et|en)?$/iu;
+/**
+ * Absender von oben am Anfang (Entscheid: mit oder ohne Doppelpunkt): «Bat …», «Kp: …», «Kdt …», «Rgt …», «Br …»; dazu
+ * die richtigen Abkürzungen «Btl» (= Bat) und «Kdo» (MVP 3 Fix 3)
+ */
+const OBEN_RE = re(String.raw`^(bat|btl|kp|kdt|kdo|rgt|br)\.?(?!${L})\s*[:,]?\s*(?=\S)`);
+/** Absender von oben, nur unscharf erkannt (gelb): «Batt …» (Bat? Batterie?) */
+const OBEN_UNSCHARF_RE = re(String.raw`^(batt|bttl|batl|bataillion|batallion|bataillon)\.?(?!${L})\s*[:,]?\s*(?=\S)`);
+/** «Btl» → «Bat», «Kdo» → «Kdo» */
+const quelleOf = (q: string) => (q === "btl" || q.startsWith("bat") || q === "bttl" ? "Bat" : q === "s2" ? "S2" : q[0]!.toUpperCase() + q.slice(1));
 /** Trupp-ähnliche Empfänger für «Auftrag H02 …» ohne «an» (nicht Kp/Bat/LVZ) */
 const TRUPP = String.raw`(?:H\d{1,3}|Det\.?\s?\d{1,2}|Zug\s?\d{1,2}|Gr\.?\s?\d{1,2}|Trp\.?\s?\d{1,2}|Pat\.?\s?\d{1,2})`;
 /**
@@ -153,6 +226,8 @@ function bezugOf(text: string): { bezugNr?: string; bezugToken?: string } {
   return {};
 }
 
+/** Text ohne die Stelle [a, b) (Satzzeichen am Anfang weg) */
+const cutAt = (text: string, a: number, b: number) => (text.slice(0, a) + " " + text.slice(b)).replace(/\s+/g, " ").replace(/^[\s,:;–-]+/, "").trim();
 const cut = (text: string, m: RegExpExecArray) => (text.slice(0, m.index) + " " + text.slice(m.index + m[0].length)).replace(/\s+/g, " ").replace(/^[\s,:;–-]+/, "").trim();
 
 /**
@@ -177,6 +252,17 @@ export function readArt(text: string, o: { blau: string[] }): ArtLesung {
   if (m) return { art: "auftrag", stark: true, token: m[0].trim(), ...fristOf(t), rest: cut(t, m) };
   m = re(String.raw`^(${EL})\s+erhält\s+(?:den\s+|einen\s+)?auftrag(?!${L})\s*[:,]?`).exec(t);
   if (m) return { art: "auftrag", stark: true, token: m[0].trim(), an: unitName(m[1]!, o.blau), ...fristOf(t), rest: cut(t, m) };
+  // unscharf («Auftarg an H03: …», «Auftr an H01», «Aufrag H02 …»): Auftrag, aber immer gelb – verschiebt nie einen Trupp
+  const kopf = KOPF_RE.exec(t);
+  if (kopf && unscharfTreffer(kopf[2]!, ["auftrag"])) {
+    const after = t.slice(kopf[0].length);
+    const mm = re(String.raw`^\s+(?:an|für)\s+(${EL})(?!${L})\s*[:,]?`).exec(after) ?? re(String.raw`^\s+(${TRUPP})(?!${L})\s*[:,]?`).exec(after) ?? /^\s*:/.exec(after);
+    const end = kopf[0].length + (mm?.[0].length ?? 0);
+    return {
+      art: "auftrag", stark: false, unscharf: kopf[2]!, token: t.slice(0, end).trim(), ...(mm?.[1] ? { an: unitName(mm[1], o.blau) } : {}), ...fristOf(t),
+      rest: cutAt(t, 0, end),
+    };
+  }
   // ausgeführt / erledigt bleibt Meldung (setzt später den Bezug auf den offenen Auftrag dieses Trupps)
   m = re(String.raw`(?<!${L})auftrag\s+(?:ausgeführt|erledigt|erfüllt)(?!${L})`).exec(t);
   if (m) return { art: "meldung", stark: true, token: m[0], bezugArt: "ausgefuehrt", ...bez, rest: t };
@@ -196,17 +282,24 @@ export function readArt(text: string, o: { blau: string[] }): ArtLesung {
   if (m) return { art: "rueckfrage", stark: false, token: m[0].trim(), rest: t };
 
   // ---- Orientierung (von oben)
-  m = re(String.raw`${L0}(bat|kp|kdt|s2|rgt|ori|orientierung)\s*:`).exec(t);
+  m = re(String.raw`${L0}(bat|btl|kp|kdt|kdo|s2|rgt|ori|orientierung)\s*:`).exec(t);
   if (m) {
     const q = m[1]!.toLowerCase();
-    const quelle = q === "ori" || q === "orientierung" ? undefined : q === "s2" ? "S2" : q[0]!.toUpperCase() + q.slice(1);
+    const quelle = q === "ori" || q === "orientierung" ? undefined : quelleOf(q);
     return { art: "orientierung", stark: true, token: m[0].trim(), ...(quelle ? { quelle } : {}), rest: cut(t, m) };
   }
   // «Bat Lagerapport 1800», «Kp Verpflegung 1200» (ohne Doppelpunkt, ganz am Anfang bzw. nach der Zeit)
   m = OBEN_RE.exec(t);
-  // ohne Doppelpunkt nicht vor einer Truppengattung/einem Gefechtsstand: «Kp Gfs», «Kp Pz», «Kp Inf» = Stufe (Sichtung)
-  if (m && !/[:,]/.test(m[0]) && stufeVor(/^[\p{L}][\p{L}\d-]*/u.exec(t.slice(m[0].length))?.[0] ?? "")) m = null;
-  if (m) { const q = m[1]!.toLowerCase(); return { art: "orientierung", stark: true, token: m[0].trim(), quelle: q[0]!.toUpperCase() + q.slice(1), rest: cut(t, m) }; }
+  // ohne Doppelpunkt nicht vor einer Truppengattung/einem Gefechtsstand: «Kp Gfs», «Kp Pz», «Kp Inf», «Kdo Po» = Stufe/Zeichen
+  const nach = (mm: RegExpExecArray | null) => (mm ? /^[\p{L}][\p{L}\d-]*/u.exec(t.slice(mm[0].length))?.[0] ?? "" : "");
+  if (m && !/[:,]/.test(m[0]) && (stufeVor(nach(m)) || (/^kdo$/i.test(m[1]!) && /^(po|pos|posten|stao)$/i.test(nach(m))))) m = null;
+  if (m) return { art: "orientierung", stark: true, token: m[0].trim(), quelle: quelleOf(m[1]!.toLowerCase()), rest: cut(t, m) };
+  // unscharf «Batt: …» (Bat? Batterie?): Orientierung, aber gelb
+  m = OBEN_UNSCHARF_RE.exec(t);
+  if (m && !/^bataillon$/i.test(m[1]!) && !(!/[:,]/.test(m[0]) && stufeVor(nach(m)))) {
+    return { art: "orientierung", stark: false, unscharf: m[1]!, token: m[0].trim(), quelle: "Bat", rest: cut(t, m) };
+  }
+  if (m) return { art: "orientierung", stark: true, token: m[0].trim(), quelle: "Bat", rest: cut(t, m) };
   m = re(String.raw`${L0}orientierung\s+(?:von\s+)?(${EL})(?!${L})\s*[:,]?`).exec(t);
   if (m) return { art: "orientierung", stark: true, token: m[0].trim(), quelle: unitName(m[1]!, o.blau), rest: cut(t, m) };
   m = re(String.raw`${L0}info\s+(bat|kp)(?!${L})\s*[:,]?`).exec(t);
@@ -233,10 +326,24 @@ export function readArt(text: string, o: { blau: string[] }): ArtLesung {
   // ---- Antwort (Entscheid MVP 3 Nachbesserung): standardmässig Notiz mit Bezug – kein Zeichen, keine Feind-Zählung. Eine
   // Meldung wird sie nur, wenn Feind/Eigene/Unklar gewählt ist (`ctx.art = "meldung"`). Mit Nummer «Antwort zu 57: …»,
   // ohne Nummer «H04 Antwort: …» / «Antwort an H02: …» (→ jüngste offene Rückfrage des Trupps)
-  const an0 = ANTWORT_RE.exec(t);
-  if (an0) {
-    const tok = bez.bezugNr ? bez : { bezugToken: an0[0].trim().replace(new RegExp(String.raw`^${EL}\s*[:,]?\s*`, "iu"), "") };
-    return { art: "notiz", stark: true, token: an0[0].trim(), bezugArt: "antwort", ...tok, ...(an0[1] ? { an: unitName(an0[1], o.blau) } : {}), rest: cut(t, an0).replace(bez.bezugToken ? new RegExp(String.raw`^(?:zu|auf)\s+(?:nr\.?\s*)?\d{1,4}[a-z]?\s*[:,]?\s*`, "iu") : /^$/, "").trim() };
+  // «antwortet», «Antwort 57: …» (Nummer mit Doppelpunkt); unscharf «Antw», «antwrt» (MVP 3 Fix 3): ebenso, aber gelb
+  const k2 = KOPF_RE.exec(t);
+  const aWort = k2?.[2] ?? "";
+  const aUnscharf = k2 && !ANTWORT_WORT_RE.test(aWort) ? unscharfTreffer(aWort, ["antwort", "antwortet"], { prefix: 4 }) : null;
+  if (k2 && (ANTWORT_WORT_RE.test(aWort) || aUnscharf)) {
+    const start = k2[0].length - aWort.length;
+    let pos = k2[0].length;
+    const anM = re(String.raw`^\s+an\s+(${EL})(?!${L})`).exec(t.slice(pos));
+    if (anM) pos += anM[0].length;
+    const nrM = re(String.raw`^\s*[:,]?\s+(?:(?:zu|auf)\s+${NRW}|(?:nr\.?\s*)?(\d{1,4}[a-z]?)(?=\s*:))`).exec(t.slice(pos));
+    if (nrM) pos += nrM[0].length;
+    const span = t.slice(start, pos).trim();
+    pos += /^\s*[:,]?/.exec(t.slice(pos))![0].length;
+    const tok = nrM ? { bezugNr: (nrM[1] ?? nrM[2])!.toLowerCase(), bezugToken: span } : bez.bezugNr ? bez : { bezugToken: span };
+    return {
+      art: "notiz", stark: !aUnscharf, ...(aUnscharf ? { unscharf: aWort } : {}), token: t.slice(0, pos).trim(), bezugArt: "antwort", ...tok,
+      ...(anM ? { an: unitName(anM[1]!, o.blau) } : {}), rest: t.slice(pos).replace(/^[\s,:;–-]+/, "").trim(),
+    };
   }
   // «… Antwort zu 57 …» mitten im Text: ebenso Notiz mit Bezug
   if (bez.bezugToken && /^antwort/i.test(bez.bezugToken)) return { art: "notiz", stark: true, token: bez.bezugToken, bezugArt: "antwort", ...bez, rest: t.replace(bez.bezugToken, " ").replace(/\s+/g, " ").replace(/^[\s,:;–-]+/, "").trim() };
@@ -248,16 +355,22 @@ export function readArt(text: string, o: { blau: string[] }): ArtLesung {
 
   // ---- Meldung (mit Verweis «zu 42: …», «Nr 42 …», «Rückfrage zu 57» mitten im Text)
   const antwort = bez.bezugToken && /^(?:rückfrage|rueckfrage)/i.test(bez.bezugToken);
-  return { art: "meldung", stark: true, ...bez, ...(bez.bezugNr ? { bezugArt: antwort ? "antwort" : "verweis" } : {}), rest: t };
+  // «zu 57: …» ganz am Anfang (nach dem Melder): parseMeldung liest das als Antwort, wenn Nr 57 eine Rückfrage ist
+  const anfang = !!bez.bezugToken && t.slice(re(L0).exec(t)![0].length).toLowerCase().startsWith(bez.bezugToken.toLowerCase());
+  return { art: "meldung", stark: true, ...bez, ...(bez.bezugNr ? { bezugArt: antwort ? "antwort" : "verweis" } : {}), ...(anfang ? { bezugAnfang: true } : {}), rest: t };
 }
 
+/** «ab sofort», «per sofort», «sofort melden» sind keine Dringlichkeit des Eintrags (MVP 3 Fix 3: «Kdt: ab sofort Funkstille») */
+const SOFORT_NICHT_RE = re(String.raw`(?<!${L})(?:(?:ab|per)\s+sofort|sofort\s+(?:zu\s+)?melden)(?!${L})`, "giu");
 const DRINGEND_RE = re(String.raw`(?<!${L})(dringend|sofort|eilt)(?!${L})|!!|(?<!${L})kontakt\s*!|(?<!${L})feuer\s+(?:auf|aus)(?!${L})|(?<!${L})san(?:ität)?\s+(?:angefordert|benötigt)(?!${L})`);
 const VERLETZT_RE = re(String.raw`(?<!${L})(verwundet\p{L}*|verletzt\p{L}*|tot|tote[nr]?)(?!${L})`);
 
 /**
  * Dringend vorbelegen (nur Vorschlag, Kap. 3.1): «dringend», «sofort», «eilt», «!!», «Kontakt!», «Feuer auf/aus»,
- * «San angefordert»; «verwundet/verletzt/tot» nur mit eigenem Melder.
+ * «San angefordert»; «verwundet/verletzt/tot» nur mit eigenem Melder. Nicht: «ab sofort», «per sofort», «sofort melden»
+ * (Orientierung/Auftrag ab einem Zeitpunkt bzw. Anweisung, MVP 3 Fix 3).
  */
 export function istDringend(text: string, o: { eigenerMelder: boolean }): boolean {
-  return DRINGEND_RE.test(text) || (o.eigenerMelder && VERLETZT_RE.test(text));
+  const t = text.replace(SOFORT_NICHT_RE, " ");
+  return DRINGEND_RE.test(t) || (o.eigenerMelder && VERLETZT_RE.test(t));
 }

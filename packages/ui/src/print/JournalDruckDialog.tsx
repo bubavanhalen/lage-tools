@@ -59,7 +59,7 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
   const g = useMemo(() => grenzen(ex), [ex]);
   const heute = ex.days.includes(tLive.slice(0, 10)) ? tLive.slice(0, 10) : g.to.slice(0, 10);
   const letzte = useMemo(() => letzteSchicht(ex, tLive), [ex, tLive]);
-  const zahl0 = (from: string, to: string) => eintraegeIm(ex, { from, to }).filter((e) => !e.deleted).length;
+  const zahl0 = (from: string, to: string) => eintraegeIm(ex, { from, to, ...(sch ? { at: { von: sch.at } } : {}) }).filter((e) => !e.deleted).length;
   // Entscheid 4: laufende Schicht; ist sie noch leer (eben übernommen), die letzte Schicht – nie ein leeres Journal
   const [art, setArt] = useState<Art>(() => vorwahl === "schicht" && !sch ? "tag"
     : vorwahl === "schicht" && sch && letzte && zahl0(sch.t, tLive) === 0 ? "letzte" : vorwahl);
@@ -78,8 +78,8 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
   }, [von, bis, ex.days, tLive]);
   const umfang = useMemo((): JournalDruck["umfang"] | null => {
     switch (art) {
-      case "schicht": return sch ? { art, from: sch.t, to: tLive } : null;
-      case "letzte": return letzte ? { art: "schicht", from: letzte.from, to: letzte.to, ...(letzte.kuerzel ? { kuerzel: letzte.kuerzel } : {}) } : null;
+      case "schicht": return sch ? { art, from: sch.t, to: tLive, at: { von: sch.at } } : null;
+      case "letzte": return letzte ? { art: "schicht", from: letzte.from, to: letzte.to, at: letzte.at, ...(letzte.kuerzel ? { kuerzel: letzte.kuerzel } : {}) } : null;
       case "tag": return { art, from: `${tag}T00:00`, to: tag === tLive.slice(0, 10) ? tLive : `${tag}T23:59` };
       case "alles": return { art, from: g.from, to: ende };
       default: return zeitraum ? { art, ...zeitraum } : null;
@@ -89,7 +89,8 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
     umfang, anhang, klassifizierung: klassifizierung ?? klassifizierungOf(ex), kuerzel,
   }, [umfang, anhang, ex, kuerzel, klassifizierung]);
 
-  const zahl = (from: string | null, to: string) => eintraegeIm(ex, { from, to }).filter((e) => !e.deleted).length;
+  // Schicht-Zählung: dieselbe Regel wie Übergabe und CSV (`schichtEintraege`: erfasst ab Schichtbeginn bis zum Wechsel)
+  const zahl = (from: string | null, to: string, at?: { von: string | null; bis?: string | null }) => eintraegeIm(ex, { from, to, ...(at ? { at } : {}) }).filter((e) => !e.deleted).length;
   const n = (k: number) => `${k} ${k === 1 ? "Eintrag" : "Einträge"}`;
   const tagTo = (d: string) => (d === tLive.slice(0, 10) ? tLive : `${d}T23:59`);
 
@@ -119,7 +120,7 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
       a.download = `Lagejournal_${safeFileName(ex.name)}_${safeFileName(teil)}.pdf`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      say(`Journal als PDF erstellt (${n(zahl(opts.umfang.from, opts.umfang.to))})`);
+      say(`Journal als PDF erstellt (${n(zahl(opts.umfang.from, opts.umfang.to, opts.umfang.at))})`);
       onClose();
     } catch (e) {
       setFehler(`PDF konnte nicht erstellt werden: ${(e as Error).message}.`);
@@ -137,12 +138,12 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
           <div className="pr-opts">
             {sch && (
               <label className="pr-opt"><input {...radio("schicht")} />
-                Diese Schicht – seit {tz(sch.t, ex.days)} ({sch.an}), {n(zahl(sch.t, tLive))}
+                Diese Schicht – seit {tz(sch.t, ex.days)} ({sch.an}), {n(zahl(sch.t, tLive, { von: sch.at }))}
               </label>
             )}
             {letzte && (
               <label className="pr-opt"><input {...radio("letzte")} />
-                Letzte Schicht – {letzte.kuerzel || "–"} {spanne(letzte.from, letzte.to, ex.days)}, {n(zahl(letzte.from, letzte.to))}
+                Letzte Schicht – {letzte.kuerzel || "–"} {spanne(letzte.from, letzte.to, ex.days)}, {n(zahl(letzte.from, letzte.to, letzte.at))}
               </label>
             )}
             <span className="pr-opt">

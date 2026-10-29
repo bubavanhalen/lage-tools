@@ -22,7 +22,7 @@ import { SymbolPicker, choiceSvg, pickerEntry, type SymbolChoice } from "../Symb
 import { dayLabel } from "../Timeline";
 import { KiMeldungSuggest, meldungUnklar } from "../ki/KiFeatures";
 import { ArtSwitch } from "./ArtSwitch";
-import { ART_NAME, bezugLabel, dayTitle, felderText, genericWhat, missLabel, replaceToken } from "./labels";
+import { ART_NAME, bezugLabel, dayTitle, felderText, genericWhat, knopfText, missLabel, replaceToken } from "./labels";
 import type { EntryDraft } from "./useEntryDraft";
 
 const KIND_WORD: Record<Kind, string> = { feind: "Feind", eigen: "Eigene", unklar: "Unklar" };
@@ -43,7 +43,8 @@ function artVerstanden(d: Draft): string {
     case "orientierung": return d.quelle ? `Orientierung von ${d.quelle}` : "Orientierung";
     case "rueckfrage": return d.an ? `Rückfrage an ${d.an}` : d.melder ? `Rückfrage von ${d.melder}` : "Rückfrage";
     case "vbk": return `Verbindung ${d.melder || "?"}${d.vbk ? ` · ${d.vbk === "keine" ? "keine – kommt in Offen" : d.vbk}` : ""}`;
-    case "notiz": return d.bezugArt === "quittung" ? `Quittung${d.melder ? ` von ${d.melder}` : ""}` : "Notiz";
+    case "notiz": return d.bezugArt === "quittung" ? `Quittung${d.melder ? ` von ${d.melder}` : ""}`
+      : d.bezugArt === "antwort" ? (d.an ? `Antwort an ${d.an}` : d.melder ? `Antwort von ${d.melder}` : "Antwort") : "Notiz";
     default: return d.melder ? `${d.melder} meldet` : "";
   }
 }
@@ -129,6 +130,8 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
     requestAnimationFrame(() => { const t = d.inputRef.current; if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(next.length, next.length); } });
   };
   const verb = korr ? "speichert die Korrektur" : coarse() ? "Senden-Taste trägt ein" : "Enter trägt ein";
+  /** Tablet: Text passend zum Knopf («Trotzdem eintragen» statt «Nochmals Enter») */
+  const kt = (s: string) => knopfText(s, { coarse: coarse(), korr });
   const fehlt = note ? [] : missing.filter((m) => m !== "Melder" && m !== "Ort").map(missLabel);
   const shapeColor = kindNow === "eigen" ? LAGE_KARTE.eigen : kindNow === "feind" ? LAGE_KARTE.feind : LAGE_KARTE.unklar;
   const shapeEvent: Pick<LageEvent, "sym" | "pos" | "cells" | "nai" | "where" | "angle" | "dir"> = {
@@ -140,10 +143,10 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
       <div className={`eb-state s-${lvl}${asked ? " asked" : ""}`}>
         {lvl === "bereit" && <p className="eb-state-h"><span aria-hidden="true">✓ </span>Bereit – {korr ? "Enter speichert die Korrektur" : verb}</p>}
         {lvl === "pruefen" && r0 && (asked
-          ? <p className="eb-state-h"><span aria-hidden="true">⚠ </span>{r0.ask ?? "Trotzdem eintragen? Nochmals Enter."}</p>
+          ? <p className="eb-state-h"><span aria-hidden="true">⚠ </span>{kt(r0.ask ?? "Trotzdem eintragen? Nochmals Enter.")}</p>
           : <>
             <p className="eb-state-h"><span aria-hidden="true">⚠ </span>Bitte prüfen: {r0.text}{more > 0 && <span className="eb-more"> +{more}</span>}</p>
-            {r0.hint && <p className="eb-state-t">{r0.hint}</p>}
+            {r0.hint && <p className="eb-state-t">{kt(r0.hint)}</p>}
           </>)}
         {lvl === "geht-nicht" && r0 && <>
           <p className="eb-state-h"><span aria-hidden="true">⛔ </span>Geht nicht: {r0.text}</p>

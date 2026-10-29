@@ -138,11 +138,12 @@ describe("Einsatz-Szenario des Prüfers (Kap. 8.1)", () => {
     "11": { text: "H03 wir weichen aus nach AG9", art: "meldung", zustand: ["bereit", "pruefen"], zeichen: null, pruef: (d) => expect(d.kind).not.toBe("feind") },
     "12": { text: "H02 Vbk i.O.", art: "vbk", zustand: ["bereit"], zeichen: 0, bleibt: ["H02"], pruef: (d, ex, _m, id) => { expect(d.vbk).toBe("gut"); expect(artText(ex.events!.find((e) => e.id === id)!)).toBe("Verbindung H02 gut"); } },
     "13": { text: "H03 keine Verbindung", art: "vbk", zustand: ["bereit"], zeichen: 0, pruef: (_d, ex) => expect(offenePunkte(ex, T).some((o) => o.text.startsWith("H03: keine Verbindung"))).toBe(true) },
-    // Entscheid MVP 3 Nachbesserung: Antwort = Notiz mit Bezug (kein Zeichen), übernimmt den Trupp der Rückfrage
+    // Entscheid MVP 3 Nachbesserung: Antwort = Notiz mit Bezug (kein Zeichen); die Rückfrage kam von H04 → das LVZ
+    // antwortet H04 (an H04, kein Melder, kein Lebenszeichen – MVP 3 Fix 3)
     "14": { text: (m) => `Antwort zu ${m.rueckfrage}: Det 2 in AJ8`, art: "notiz", zustand: ["bereit"], zeichen: 0,
       pruef: (d, ex) => {
         expect(d.bezugArt).toBe("antwort");
-        expect(d.melder).toBe("H04");
+        expect(d).toMatchObject({ melder: "", an: "H04" });
         expect(offenePunkte(ex, T).some((o) => o.art === "rueckfrage")).toBe(false);
         const rf = ex.events!.find((e) => e.id === d.bezug)!;
         expect(vermerkeOf(rf, lvzIndex(ex.events!)).beantwortet).toBeTruthy();

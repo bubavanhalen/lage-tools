@@ -624,7 +624,7 @@ export function Workspace({ product, tagline }: Props) {
 
   const exportJournal = async (kind: "csv" | "pdf") => {
     if (!ex) return;
-    if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days), "text/csv;charset=utf-8"); return; }
+    if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days, { schichten: ex.schichten }), "text/csv;charset=utf-8"); return; }
     try {
       const { journalPdf } = await import("./journalpdf");
       const a = document.createElement("a");

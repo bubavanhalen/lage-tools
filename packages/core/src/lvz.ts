@@ -165,13 +165,18 @@ const hhmm = (t: string) => t.slice(11, 16);
 const minutesBetween = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000));
 /** Ort in Worten; früherer Ersatzort «letzter Standort» (vor der Nachbesserung gespeichert) zählt nicht als Ort */
 const ortText = (e: Pick<LageEvent, "where" | "cells" | "nai">) => (e.where && !/^letzter Standort$/i.test(e.where) ? e.where : undefined) ?? e.cells?.[0] ?? e.nai ?? "";
-/** Inhalt ohne Art-Hinweis, Melder und Frist («Auftrag an H01: Beo NAI 1 bis 1200» → «Beo NAI 1», «H05: 2 Kpz AJ9» → «2 Kpz AJ9») */
+/**
+ * Inhalt ohne Art-Hinweis, Melder und Frist («Auftrag an H01: Beo NAI 1 bis 1200» → «Beo NAI 1», «H05: 2 Kpz AJ9» → «2 Kpz AJ9»).
+ * Die Frist fällt nur bei Aufträgen weg (steht dort als «– bis 12:00»); «Kdt: Funkstille bis 1100» bleibt ganz (Fix 3).
+ */
 export function inhaltText(e: LageEvent, blau: string[] = []): string {
   return inhalt(e, blau);
 }
 
 function inhalt(e: LageEvent, blau: string[]): string {
-  let t = readArt(e.text, { blau }).rest.replace(/(?<![\p{L}\d])bis\s+\d{1,2}[:.]?\d{2}(?![\p{L}\d])/u, "").replace(/\s+/g, " ").trim();
+  let t = readArt(e.text, { blau }).rest;
+  if (artOf(e) === "auftrag" && e.frist) t = t.replace(/(?<![\p{L}\d])bis\s+\d{1,2}[:.]?\d{2}(?![\p{L}\d])/u, "");
+  t = t.replace(/\s+/g, " ").trim();
   if (e.melder) t = t.replace(new RegExp(`^${e.melder}\\s*[:,]?\\s*`), "");
   return t || e.text;
 }

@@ -16,6 +16,8 @@ import { isErsatzOrt, placeLabel, situationAt, unitKey } from "./journal";
 import { inhaltText, lvzIndex, offenePunkte, vermerkeOf } from "./lvz";
 import type { Exercise, LageEvent, SchichtWechsel } from "./model";
 import { nrLabel } from "./nummer";
+import { schichtEintraege } from "./schichtwahl";
+export { erfasstUm, schichtEintraege, schichtZuordnung } from "./schichtwahl";
 
 /** laufende Schicht dieses Geräts: jüngster Wechsel (`at`) mit `device` – oder null */
 export function aktuelleSchicht(ex: Pick<Exercise, "schichten">, device: string): SchichtWechsel | null {
@@ -106,19 +108,58 @@ export interface VonObenZeile {
   quelle: string;
   /** Inhalt ohne Art-Hinweis («Lagerapport 1800 im KP») */
   text: string;
+  /** Termin bzw. Ende aus dem Text (ISO lokal): «Lagerapport 1000» → 10:00, «Funkstille bis 0800» → 08:00; «ab 2200» hat keines */
+  termin?: string;
+  /** Termin liegt vor `t` – abgelaufen, nicht mehr gültig (MVP 3 Fix 3) */
+  vorbei?: boolean;
+}
+
+/** Zeiten im Inhalt: «bis 0800» (Ende), «1000», «um 1200», «neu 0800» (Termin); «ab/seit/von 2200» (Beginn, kein Ende) */
+const TERMIN_RE = /(?<![\p{L}\d:.])(?:(ab|seit|von|bis|um|neu|auf)\s+)?([01]?\d|2[0-3])[:.h]?([0-5]\d)(?:\s*uhr)?(?![\d'’:.]?\d)/giu;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Termin bzw. Ende einer Orientierung (ISO lokal) oder null: das späteste «bis …», sonst die späteste Zeit ohne «ab/seit/
+ * von». Tag = Tag der Orientierung; liegt die Zeit mehr als 6 h vor der Orientierung, ist der nächste Tag gemeint
+ * («2200 Bat: Lagerapport 0700» → 07:00 am Folgetag).
+ */
+export function terminOf(e: Pick<LageEvent, "t">, text: string): string | null {
+  const base = Date.parse(e.t.slice(0, 16));
+  const abs = (min: number) => {
+    let ms = Date.parse(`${e.t.slice(0, 10)}T${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`);
+    if (ms < base - 6 * 3600000) ms += 86400000;
+    return ms;
+  };
+  const bis: number[] = [], plain: number[] = [];
+  for (const m of text.matchAll(TERMIN_RE)) {
+    const w = (m[1] ?? "").toLowerCase();
+    const ms = abs(+m[2]! * 60 + +m[3]!);
+    if (w === "bis") bis.push(ms);
+    else if (w !== "ab" && w !== "seit" && w !== "von") plain.push(ms);
+  }
+  const list = bis.length ? bis : plain;
+  if (!list.length) return null;
+  const d = new Date(Math.max(...list));
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 /**
  * «Von oben (gültig)» für die Übergabe (Entscheid MVP 3 Nachbesserung): die letzten `n` Orientierungen mit Lagezeit ≤ `t`,
  * nicht gestrichen, jüngste zuerst – **unabhängig von der Schicht** (Befehle von oben gehen nie im Abschnitt «Neu» unter).
+ * MVP 3 Fix 3: eine Orientierung mit vergangenem Termin («Lagerapport 1000» um 10:10) ist `vorbei` und steht nach den
+ * gültigen – sie füllt nur freie Plätze und nie vor einer gültigen.
  */
 export function vonOben(ex: Pick<Exercise, "events" | "units">, t: string, n = 3): VonObenZeile[] {
   const blau = ex.units?.blau ?? [];
-  return (ex.events ?? [])
+  const alle = (ex.events ?? [])
     .filter((e) => !e.deleted && artOf(e) === "orientierung" && e.t.slice(0, 16) <= t.slice(0, 16))
     .sort((a, b) => compareEvents(b, a))
-    .slice(0, n)
-    .map((e) => ({ id: e.id, nr: nrLabel(e, ex), t: e.t, quelle: e.quelle ?? "", text: inhaltText(e, blau) }));
+    .map((e): VonObenZeile => {
+      const text = inhaltText(e, blau);
+      const termin = terminOf(e, text);
+      return { id: e.id, nr: nrLabel(e, ex), t: e.t, quelle: e.quelle ?? "", text, ...(termin ? { termin, vorbei: termin <= t.slice(0, 16) } : {}) };
+    });
+  return [...alle.filter((z) => !z.vorbei), ...alle.filter((z) => z.vorbei)].slice(0, n);
 }
 
 /**
@@ -157,7 +198,7 @@ export interface RapportZahlen {
 export function rapportZahlen(ex: Exercise, from: string | null, to: string, hints?: Hint[]): RapportZahlen {
   const all = ex.events ?? [];
   const idx = lvzIndex(all);
-  const inRange = all.filter((e) => e.t <= to && (!from || (e.createdAt ?? e.updatedAt) >= from));
+  const inRange = schichtEintraege(ex, { at: from }, to, { gestrichene: true });
   const z: RapportZahlen = {
     eintraege: 0, gesehen: { feind: 0, unklar: 0, eigen: 0 }, auftraege: { total: 0, offen: 0 }, rueckfragen: { total: 0, offen: 0 },
     dringend: { total: 0, offen: 0 }, korrigiert: 0, gestrichen: 0,

@@ -93,8 +93,10 @@ const S: Schritt[] = [
   { text: "Vbk H05 laut und klar", art: "vbk", zustand: ["bereit"], zeichen: "nein" },
   { text: "Funkcheck", art: "vbk", zustand: ["pruefen"], zeichen: "nein" },
   // H1/M4: Antwort = Notiz mit Bezug, übernimmt den Trupp der Rückfrage
-  { text: (n) => `Antwort zu ${n["rf-ag13"]}: Sperre AG13 noch besetzt, 2 Pers`, art: "notiz", zustand: ["bereit"], zeichen: "nein", ff: 2,
-    pruef: (d) => { expect(d).toMatchObject({ bezugArt: "antwort", melder: "H04", an: "H04" }); expect(d.bezug).toBeTruthy(); } },
+  // Fix 3: «2 Pers» an der Sperre = Sichtung in der Antwort → gelb «als Meldung eintragen?»; 2. Enter = Antwort ohne Zeichen.
+  // Die Rückfrage kam von H04 → Antwort an H04 (kein Melder, kein Lebenszeichen)
+  { text: (n) => `Antwort zu ${n["rf-ag13"]}: Sperre AG13 noch besetzt, 2 Pers`, art: "notiz", zustand: ["pruefen"], zeichen: "nein", ff: 2,
+    pruef: (d) => { expect(d).toMatchObject({ bezugArt: "antwort", melder: "", an: "H04", sichtung: true }); expect(d.bezug).toBeTruthy(); } },
   { text: "H02 Antwort: 3 Fz bestätigt", art: "notiz", zustand: ["bereit"], zeichen: "nein",
     pruef: (d, ex, e) => { expect(d.bezugArt).toBe("antwort"); expect(nrLabel(ex.events!.find((x) => x.id === d.bezug)!, ex)).toBeTruthy(); expect(artText(e!)).toBe("Antwort von H02"); } },
   // N: Ort nur AR11 (nicht «AR11 · AR1»)
@@ -242,13 +244,13 @@ describe("Antwort (Einsatz H1/M4, Übergabe M2)", () => {
       const n = nrLabel(rf, ex);
       const { d, st } = lies(ex, `Antwort zu ${n}: ja, weiter beobachten bis 1000`, at("0730"), art ? { art } : {});
       expect(st.level).toBe("bereit");
-      expect(d).toMatchObject({ art: "notiz", bezug: rf.id, bezugArt: "antwort", melder: "H04", an: "H04", t: "2030-05-15T07:30" });
+      expect(d).toMatchObject({ art: "notiz", bezug: rf.id, bezugArt: "antwort", melder: "", an: "H04", t: "2030-05-15T07:30" });
       const e = trage(ex, d, at("0730"));
       expect(artText(e)).toBe("Antwort an H04");
       expect(zeichnet(ex, e.id, "2030-05-15T07:30")).toBe(false);
       expect(offenePunkte(ex, "2030-05-15T07:30").some((o) => o.eventId === e.id || o.eventId === rf.id)).toBe(false);
-      // Lebenszeichen (Entscheid)
-      expect(lebenszeichen(e)).toBe("H04");
+      // Fix 3: Antwort **an** den Trupp (er hat gefragt) ist kein Lebenszeichen
+      expect(lebenszeichen(e)).toBeNull();
     }
   });
   it("«Antwort zu 802: Det 1 zuletzt AP10 um 0607» – Zeit im Inhalt, kein Feind-Zeichen; «Antwort zu 13: hinfällig» nicht in Offen", () => {
@@ -461,5 +463,181 @@ describe("keine Regression im Beispiel Bern", () => {
     const { hints } = analyzeJournal(ex, { t });
     expect(hints.length).toBe(22);
     expect(computeRedCoas(ex, { t, hints })).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 3 MVP 3 Fix 3 – Satz-Läufer der Nachprüfung (review4/eigen: 34 eigene Sätze in Varianten + Übergabe-Sätze), in der
+// Reihenfolge des Läufers (je Satz +1 min ab T2 07:30, gelb = 2. Enter, mehrere Ziele = erstes gewählt). Budget: 0 still
+// falsch – kein neues Zeichen, kein Trupp verschoben, unscharfe Wörter nie grün.
+// ---------------------------------------------------------------------------------------------------------------------
+
+type Satz = [text: string, art: EntryArt, level: EntryLevel, aufheben: boolean, pruef?: (d: Draft, st: EntryState, e: LageEvent | null, nr: (e?: string) => string) => void];
+const unscharf = (wort: string, token: string) => (d: Draft, st: EntryState) => {
+  expect(d.unscharf).toEqual({ wort, token });
+  expect(st.reasons[0]).toMatchObject({ code: "unscharf", text: `${wort} gemeint? «${token}»` });
+};
+const bezug = (n: string, o: Partial<Draft> = {}) => (d: Draft, _st: EntryState, e: LageEvent | null, nr: (e?: string) => string) => {
+  expect(d.bezugArt).toBe("antwort");
+  expect(nr(d.bezug)).toBe(n);
+  expect(d).toMatchObject(o);
+  if (e) expect(lebenszeichen(e)).toBe(o.melder || null);
+};
+
+const EIGEN: Satz[] = [
+  ["H04 Rückfrage: Sperre AG13 noch besetzt?", "rueckfrage", "bereit", false],
+  ["Rückfrage an H02: Anzahl Fz bestätigen", "rueckfrage", "bereit", false],
+  ["Antwort zu 58 2 Fz bestätigt", "notiz", "bereit", false, bezug("58", { melder: "H02" })],
+  ["antwrt zu 57: ja noch besetzt", "notiz", "pruefen", false, (d, st, e, nr) => { unscharf("Antwort", "antwrt")(d, st); bezug("57", { melder: "", an: "H04" })(d, st, e, nr); }],
+  ["H03 Antwort 3 Pers AN7", "notiz", "pruefen", false, (d, st) => { expect(d.sichtung).toBe(true); expect(st.reasons[0]).toMatchObject({ code: "sichtung", text: "Sichtung in der Antwort – als Meldung eintragen?" }); }],
+  ["Antwort an H02: weiter beobachten", "notiz", "bereit", false, (d, _st, e) => { expect(d).toMatchObject({ an: "H02", melder: "" }); expect(lebenszeichen(e!)).toBeNull(); }],
+  ["0731 Antwort zu 57: Sperre noch besetzt", "notiz", "bereit", false, (d) => expect(d.t).toBe("2030-05-15T07:31")],
+  ["Antwort zu 57: Sperre noch besetzt seit 0700", "notiz", "bereit", false, (d) => expect(d.t).toBe("2030-05-15T07:38")],
+  ["H04 Sperre AG13 aufgehobn", "meldung", "pruefen", true, unscharf("Aufheben", "aufgehobn")],
+  // Sperre 51 ist schon aufgehoben → kein Ziel → Notiz (nie ein neues Zeichen)
+  ["Sperre AG13 frei", "notiz", "pruefen", false, (d) => expect(d.notizGrund).toBe("kein-ziel")],
+  ["H05 IED AF13 weg", "meldung", "bereit", true],
+  ["H04 Checkpoint AG14 abgezogen", "notiz", "pruefen", false],
+  ["H02 Feind abgezogen aus AK9", "notiz", "pruefen", false, (d) => expect(d.notizGrund).toBe("weg")],
+  ["Bat Feind erwartet ab 0900 aus Rtg Belp", "orientierung", "bereit", false, (d) => expect(d.quelle).toBe("Bat")],
+  ["0740 Kp: Verpflegung 1200", "orientierung", "bereit", false, (d) => expect(d.t).toBe("2030-05-15T07:40")],
+  ["Kp Verpflegung verschoben auf 1300", "orientierung", "bereit", false],
+  ["Bat: H02 verschiebt nach AL9", "orientierung", "bereit", false],
+  ["Rgt Lage unverändert, 0900 Rapport", "orientierung", "bereit", false, (d) => expect(d.quelle).toBe("Rgt")],
+  ["Auftrag an H01 Beo NAI 3 bis 0830", "auftrag", "bereit", false, (d) => expect(d.frist).toBe("2030-05-15T08:30")],
+  ["Auftrag an H05: um 0800 Stao AQ12 beziehen", "auftrag", "bereit", false],
+  ["Auftarg an H03: Beo NAI 2", "auftrag", "pruefen", false, (d, st) => { unscharf("Auftrag", "Auftarg")(d, st); expect(d.an).toBe("H03"); }],
+  ["0745 Auftrag an H04: Sperre AG13 beobachten", "auftrag", "bereit", false, (d) => expect(d.t).toBe("2030-05-15T07:45")],
+  ["Auftrag an H02: Beo AK9, Meldung um 0815", "auftrag", "bereit", false],
+  ["H02 Rückfrage wo ist H03", "rueckfrage", "bereit", false],
+  ["Rückfrage an H04 Sperre AG13 noch besetzt", "rueckfrage", "bereit", false],
+  ["Bat orientiert: Nachbar rechts Kp 61/3 in AT5", "orientierung", "bereit", false],
+];
+const EIGEN2: Satz[] = [
+  ["H04 Rückfrage: Sperre AG13 noch besetzt?", "rueckfrage", "bereit", false],
+  // «geraeumt» = «geräumt» (Umlaut ausgeschrieben, genau)
+  ["H04 Sperre AG13 geraeumt", "meldung", "bereit", true],
+  ["H05 IED AF13 aufgehben", "meldung", "pruefen", true, unscharf("Aufheben", "aufgehben")],
+  ["Antw zu 57: ja", "notiz", "pruefen", false, (d, st, e, nr) => { unscharf("Antwort", "Antw")(d, st); bezug("57", { melder: "", an: "H04" })(d, st, e, nr); }],
+  ["Antwort 57: ja besetzt", "notiz", "bereit", false, bezug("57", { melder: "", an: "H04" })],
+  // Rückfrage 57 ist beantwortet: Antwort ohne Bezug, aber nie ein zweites Zeichen
+  ["H04 antwortet: Sperre AG13 besetzt", "notiz", "bereit", false, (d, _st, e) => { expect(d).toMatchObject({ bezugArt: "antwort", melder: "H04" }); expect(lebenszeichen(e!)).toBe("H04"); }],
+  ["zu 57: ja noch besetzt", "notiz", "bereit", false, bezug("57", { melder: "", an: "H04" })],
+  ["Auftrag an H02 verschieben nach AL11", "auftrag", "bereit", false],
+  ["Auftr an H01: Beo NAI 1", "auftrag", "pruefen", false, (d, st) => { unscharf("Auftrag", "Auftr")(d, st); expect(d.an).toBe("H01"); }],
+  ["Batt: Lagerapport 1800", "orientierung", "pruefen", false, (d, st) => { unscharf("Orientierung von Bat", "Batt")(d, st); expect(d.t).toBe("2030-05-15T07:40"); }],
+  ["bat lagerapport 1800", "orientierung", "bereit", false],
+];
+const UEB: Satz[] = [
+  ["H04 Rückfrage: Sperre AG13 noch besetzt?", "rueckfrage", "bereit", false],
+  ["Rückfrage an H02: Anzahl Fz bestätigen", "rueckfrage", "bereit", false],
+  ["Auftrag an H04: Beo NAI 3 bis 0900", "auftrag", "bereit", false],
+  ["Bat Lagerapport 1800", "orientierung", "bereit", false],
+  ["0725 Bat: Lagerapport 1700", "orientierung", "bereit", false, (d) => expect(d.t).toBe("2030-05-15T07:25")],
+  ["0726 Bat Lagerapport neu 0800 im KP", "orientierung", "bereit", false],
+  // ohne Quelle: rot «08:00 liegt in der Zukunft» (Ausweg «Was ist es?» → Orientierung) – nie still falsch
+  ["Lagerapport neu 0800 im KP", "meldung", "geht-nicht", false],
+  ["Antwort zu 57: Det 1 zuletzt AP10 um 0607", "notiz", "bereit", false, bezug("57", { melder: "", an: "H04" })],
+  ["Antwort zu 57: hinfällig", "notiz", "bereit", false],
+  ["H04 quittiert Auftrag 59", "notiz", "bereit", false, (d) => expect(d.bezugArt).toBe("quittung")],
+  ["Auftrag H02 Beo NAI 1", "auftrag", "bereit", false, (d) => expect(d.an).toBe("H02")],
+  // nicht dringend: «ab sofort» ist kein Notfall
+  ["Kdt: ab sofort Funkstille bis 0800", "orientierung", "bereit", false, (d) => { expect(d.quelle).toBe("Kdt"); expect(d.dringend).toBeUndefined(); }],
+];
+
+describe("Satz-Läufer der Nachprüfung (review4, MVP 3 Fix 3): 0 still falsch", () => {
+  for (const [name, saetze] of [["eigen", EIGEN], ["eigen2", EIGEN2], ["ueb", UEB]] as const) {
+    describe(name, () => {
+      const ex = demoExercise();
+      const STAO: Record<string, string> = { H01: "AC6 B", H02: "AL9 A", H03: "AP4 D", H04: "AF12 A", H05: "AQ11 C" };
+      let clock = at("0730").getTime();
+      let n = 57;
+      const nr = (id?: string) => { const z = id ? ex.events!.find((x) => x.id === id) : undefined; return z ? nrLabel(z, ex) : ""; };
+      for (const [text, art, level, aufheben, pruef] of saetze) {
+        it(text, () => {
+          clock += 60000;
+          const now = new Date(clock);
+          const t = iso(now);
+          let { d, st } = lies(ex, text, now);
+          const d0 = d, st0 = st;
+          expect(d.art, "Art").toBe(art);
+          expect(st.level, st.reasons.map((r) => r.text).join(" | ")).toBe(level);
+          // unscharf erkannt ist nie grün
+          if (d.unscharf) expect(st.level).not.toBe("bereit");
+          if (st.level === "geht-nicht" && d.hebtAufKandidaten?.length) d = aufhebDraft(d, ex.events!.find((x) => x.id === d.hebtAufKandidaten![0])!);
+          let e: LageEvent | null = null;
+          const vorher = situationAt(ex.events!, t).loose.length;
+          if (st.level !== "geht-nicht" || d !== d0) {
+            e = eventFromDraft(d, "dev-pruef", now, { nr: n++, kuerzel: "BSP" });
+            ex.events = [...ex.events!, e];
+            expect(zeichnet(ex, e.id, t), "neues Zeichen").toBe(false);
+            expect(!!e.hebtAuf, "Aufhebung").toBe(aufheben);
+            if (aufheben) expect(situationAt(ex.events!, t).loose.length).toBe(vorher - 1);
+          }
+          for (const [u, o] of Object.entries(STAO)) expect(ort(ex, u, t), `${u} verschoben`).toBe(o);
+          pruef?.(d0, st0, e, nr);
+        });
+      }
+    });
+  }
+  it("Lebenszeichen: Antwort an den Trupp setzt «still» nicht zurück, Antwort vom Trupp schon", () => {
+    const ex = demoExercise();
+    const rf1 = trage(ex, lies(ex, "H01 Rückfrage: Ablösung wann?", at("0600")).d, at("0600"));
+    const rf3 = trage(ex, lies(ex, "Rückfrage an H03: Det 1 wo?", at("0601")).d, at("0601"));
+    const still = (u: string) => lageBlau(ex, "2030-05-15T07:30").find((z) => z.trupp === u)!.stillMin;
+    const vor1 = still("H01");
+    const a1 = trage(ex, lies(ex, `Antwort zu ${nrLabel(rf1, ex)}: um 1200`, at("0725")).d, at("0725"));
+    expect(a1).toMatchObject({ bezug: rf1.id, an: "H01" });
+    expect(still("H01")).toBe(vor1);
+    trage(ex, lies(ex, "Antwort an H01: Ablösung 1300", at("0726")).d, at("0726"));
+    expect(still("H01")).toBe(vor1);
+    const a3 = trage(ex, lies(ex, `Antwort zu ${nrLabel(rf3, ex)}: Det 1 in AP10`, at("0727")).d, at("0727"));
+    expect(a3).toMatchObject({ bezug: rf3.id, melder: "H03" });
+    expect(still("H03")).toBe(3);
+  });
+  it("unscharf nie grün, genau bleibt grün; echte Wörter («aufgebaut», «abgebogen», «entfernen sich») sind nie unscharf", () => {
+    const ex = demoExercise();
+    const G: Array<[string, Partial<Draft>, EntryLevel]> = [
+      ["H04 Sperre AG13 aufgeh.", { hebtAuf: ex.events!.find((e) => e.sym === "sperre" && e.cells?.includes("AG13"))!.id, unscharf: { wort: "Aufheben", token: "aufgeh." } }, "pruefen"],
+      ["H05 IED AF13 gerämt", { unscharf: { wort: "Aufheben", token: "gerämt" } }, "pruefen"],
+      ["Aufrag an H01: Beo NAI 1", { art: "auftrag", an: "H01", unscharf: { wort: "Auftrag", token: "Aufrag" } }, "pruefen"],
+      ["Auftrg H02 Beo NAI 1", { art: "auftrag", an: "H02" }, "pruefen"],
+      ["Auftr. an H05: Stao AQ12 beziehen", { art: "auftrag", an: "H05" }, "pruefen"],
+      ["H02 antwortet: 3 Fz", { art: "notiz", bezugArt: "antwort", melder: "H02" }, "bereit"],
+      ["Btl: Lagerapport 1800", { art: "orientierung", quelle: "Bat" }, "bereit"],
+      ["Kdo Funkstille bis 0800", { art: "orientierung", quelle: "Kdo" }, "bereit"],
+      ["Kdo Po AG11", { art: "meldung", sym: "kdo_po" }, "pruefen"],
+      ["H02 2 Fz abgebogen Rtg N AK9", { art: "meldung", count: 2 }, "bereit"],
+      ["H04 3 Pers haben Sperre aufgebaut AG12", { art: "meldung" }, "bereit"],
+      ["H03 2 Pers entfernen sich Rtg S AN7", { art: "meldung", count: 2 }, "bereit"],
+      // «frei» ohne Gesehenes verschiebt den Trupp nicht: Notiz (gelb «Kein Zeichen?»)
+      ["H01 Strasse AC6 frei", { art: "notiz", notizGrund: "weg" }, "pruefen"],
+      ["Auftrag an H02: bei Kontakt sofort melden", { art: "auftrag" }, "bereit"],
+    ];
+    for (const [s, soll, lvl] of G) {
+      const { d, st } = lies(ex, s, at("0730"));
+      expect(d, s).toMatchObject(soll);
+      expect(st.level, `${s}: ${st.reasons.map((r) => r.text).join(" | ")}`).toBe(lvl);
+      if (lvl === "bereit") expect(d.unscharf, s).toBeUndefined();
+    }
+    expect(lies(ex, "Auftrag an H02: bei Kontakt sofort melden", at("0730")).d.dringend).toBeUndefined();
+    expect(lies(ex, "Auftrag an H02: sofort verschieben nach AL11", at("0730")).d.dringend).toBe(true);
+    expect(lies(ex, "Kontakt! H03 sofort San AN7", at("0730")).d.dringend).toBe(true);
+    // Ausweg: «H03 Antwort 3 Pers AN7» als Feind → Meldung mit Ort und Melder
+    const f = lies(ex, "H03 Antwort 3 Pers AN7", at("0730"), { art: "meldung", kind: "feind" }).d;
+    expect(f).toMatchObject({ art: "meldung", melder: "H03", cells: ["AN7"], count: 3 });
+    expect(f.sichtung).toBeUndefined();
+  });
+  it("Übergabe-Daten: «Von oben» kennzeichnet Abgelaufenes (Lagerapport 1000 um 10:10)", () => {
+    const ex = demoExercise();
+    trage(ex, lies(ex, "Bat: Lagerapport 1000 im KP Bat", at("0830")).d, at("0830"));
+    trage(ex, lies(ex, "Bat: Nachbar Kp 61/2 links", at("0847")).d, at("0847"));
+    trage(ex, lies(ex, "Bat: Feind 40 Pers erwartet ab 0900", at("0851")).d, at("0851"));
+    trage(ex, lies(ex, "Kdt: ab sofort Funkstille bis 1100", at("0900")).d, at("0900"));
+    const v = vonOben(ex, "2030-05-15T10:10");
+    expect(v.map((z) => [z.text, z.vorbei ?? false])).toEqual([["ab sofort Funkstille bis 1100", false], ["Feind 40 Pers erwartet ab 0900", false], ["Nachbar Kp 61/2 links", false]]);
+    const v4 = vonOben(ex, "2030-05-15T10:10", 4);
+    expect(v4[3]).toMatchObject({ text: "Lagerapport 1000 im KP Bat", termin: "2030-05-15T10:00", vorbei: true });
+    expect(vonOben(ex, "2030-05-15T09:30", 4).every((z) => !z.vorbei)).toBe(true);
   });
 });

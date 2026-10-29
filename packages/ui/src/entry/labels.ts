@@ -204,3 +204,13 @@ export function korrekturText(before: LageEvent, after: LageEvent): string {
   const teile = s.split(" · ").filter((x) => x !== `${kb} → ${ka}` && x !== `${wb} → ${wa}` && x !== "Text geändert" && x !== "Zeichen geändert");
   return [`${wb} → ${wa}`, ...teile].slice(0, 2).join(" · ");
 }
+
+/**
+ * Tablet (Finger): «Nochmals Enter» heisst dort wie der Knopf – «Trotzdem eintragen» bzw. in der Korrektur «Korrektur
+ * speichern» (MVP 3 Fix 3). Auf dem Laptop bleibt der Text, wie er ist.
+ */
+export function knopfText(s: string, o: { coarse: boolean; korr?: boolean }): string {
+  if (!o.coarse) return s;
+  const k = o.korr ? "Korrektur speichern" : "Trotzdem eintragen";
+  return s.replace(/Nochmals Enter\./g, `Nochmals «${k}» tippen.`).replace(/Nochmals Enter/g, `«${k}»`);
+}

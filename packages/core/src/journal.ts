@@ -7,7 +7,7 @@
 import { pointInRing, ringCentroid } from "./geo";
 import { findCoordinates, type LV95 } from "./lv95";
 import { newEventId, revisionOf, type Area, type EntryArt, type Exercise, type LageEvent, type MeldeFelder, type Place, type RoadHint, type Side } from "./model";
-import { ART_LABEL, artOf, artText, isLage, istDringend, readArt, type ArtLesung } from "./arten";
+import { ART_LABEL, artOf, artText, isLage, istDringend, readArt, unscharfTreffer, type ArtLesung } from "./arten";
 import { readMeldeFelder, felderZuText } from "./felder";
 import { aufhebZiele, istAufhebbar, liftMap, lvzIndex, vermerkeOf } from "./lvz";
 import { findByNr, nrLabel } from "./nummer";
@@ -16,6 +16,7 @@ import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalW
 import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
 import { addDays, compareEvents, localDay, localIso, nearestDay, offsetFor } from "./clock";
+import { schichtZuordnung } from "./schichtwahl";
 import { autoShape, shapeCenter } from "./shapes";
 import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeMelder, normalizeTyped, observedOwn, ownDirection, partPlaces, pickTime, placeProblems, placeSpans, sameUnitName, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, unknownSubject, vagueAmount, type UnknownWord } from "./erkennung";
 
@@ -167,6 +168,17 @@ export interface Draft {
    * ohne aktives Ziel (Aufheben zeichnet nie), «weg» = «Feind weg aus AK9» ohne Gesehenes («Kein Zeichen?»).
    */
   notizGrund?: "kein-ziel" | "weg";
+  /**
+   * (MVP 3 Fix 3) Art bzw. Aufheben nur aus einem unscharfen Wort gelesen («Auftarg», «antwrt», «Batt», «aufgehobn»):
+   * `wort` = gemeinte Sache in Klartext («Auftrag», «Antwort», «Orientierung von Bat», «Aufheben»), `token` wie getippt.
+   * `entryState`: immer gelb «Auftrag gemeint? «Auftarg»» – nie grün ein Zeichen, nie eine Trupp-Verschiebung.
+   */
+  unscharf?: { wort: string; token: string };
+  /**
+   * (MVP 3 Fix 3) Antwort mit Sichtung und Ort («H03 Antwort 3 Pers AN7»): gelb «Sichtung in der Antwort – als Meldung
+   * eintragen?» (Ausweg Feind/Eigene/Unklar wählen); 2. Enter trägt die Antwort ohne Zeichen ein.
+   */
+  sichtung?: boolean;
 }
 
 /** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
@@ -592,14 +604,30 @@ function lastPlaceLabel(ctx: JournalContext, side: Side, unit: string, pos: LV95
 const BEM_RE = /(?<=^|\s)(?:bem|bemerkung|umwelt)\s*:.*$/isu;
 /** Tag und Zeit am Anfang («T2 0725 », «07:25 ») */
 const LEAD_DT_RE = /^(?:T\s?\d(?!\d)[\s,:]*)?(?:(?:[01]?\d|2[0-3])[:.h]?[0-5]\d(?:\s*uhr)?(?![\d'’])[\s,:]*)?/i;
+/** Schlüsselwörter für unscharfes Aufheben (MVP 3 Fix 3: «aufgehobn», «aufgehben», «aufgeh.», «gerämt») */
+const AUFHEB_KEYS = ["aufgehoben", "abgebaut", "entfernt", "geräumt", "freigegeben", "abgezogen", "verschwunden"] as const;
+/** ae/oe/ue → ä/ö/ü («geraeumt» = «geräumt», genau) */
+const umlaute = (s: string) => s.replace(/ae/g, "ä").replace(/oe/g, "ö").replace(/ue/g, "ü").replace(/Ae/g, "Ä").replace(/Oe/g, "Ö").replace(/Ue/g, "Ü");
 /** «aufgehoben», «abgebaut», «geräumt», «frei», «abgezogen» … (Kap. 3.5, Entscheid MVP 3 Nachbesserung) */
 const AUFHEB_RE = /(?<![\p{L}\d])(aufgehoben|abgebaut|entfernt|geräumt|wieder\s+frei|frei|freigegeben|abgezogen|verschwunden|nicht\s+mehr\s+(?:da|vorhanden|besetzt))(?![\p{L}\d])/iu;
 /** «weg» als Adverb (klein, nicht «auf dem Weg», «Weg versperrt») */
 const WEG_RE = /(?<![\p{L}\d])(?<!(?:der|den|dem|des|ein|einen|im|am|auf|vom|zum|über)\s)weg(?![\p{L}\d])/u;
 /** «weg», «abgezogen», «nicht mehr da»: ohne Gesehenes kein Zeichen («Feind weg aus AK9») */
 const WEG_ART_RE = /(?<![\p{L}\d])(abgezogen|verschwunden|nicht\s+mehr\s+(?:da|vorhanden))(?![\p{L}\d])/iu;
-const aufhebWort = (text: string): "aufheben" | "weg" | null =>
-  WEG_RE.test(text) || WEG_ART_RE.test(text) ? "weg" : AUFHEB_RE.test(text) ? "aufheben" : null;
+/**
+ * Aufheben-Wort im Text: genau («aufgehoben», «geraeumt», «frei», «weg» …) oder unscharf (`unscharf` = Wort wie getippt,
+ * `key` = gemeintes Wort) – unscharf ist immer nur gelb (MVP 3 Fix 3).
+ */
+function aufhebWort(text: string): { wort: "aufheben" | "weg"; unscharf?: string; key?: string } | null {
+  const t = umlaute(text);
+  if (WEG_RE.test(t) || WEG_ART_RE.test(t)) return { wort: "weg" };
+  if (AUFHEB_RE.test(t)) return { wort: "aufheben" };
+  for (const w of text.match(/[\p{L}]+\.?/gu) ?? []) {
+    const k = unscharfTreffer(w, AUFHEB_KEYS, { prefix: 6 });
+    if (k) return { wort: k === "abgezogen" || k === "verschwunden" ? "weg" : "aufheben", unscharf: w, key: k };
+  }
+  return null;
+}
 
 const DAY_MIN = 1440;
 
@@ -617,7 +645,17 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const raw = input.trim();
   const felder = readMeldeFelder(raw, { blau }) ?? undefined;
   const les = felder ? felderZuText(felder) : raw.replace(BEM_RE, "").trim() || raw;
-  const lesung: ArtLesung = readArt(les, { blau });
+  let lesung: ArtLesung = readArt(les, { blau });
+  const events = ctx.events ?? ctx.ex?.events;
+  // «zu 57: ja noch besetzt» am Anfang: Antwort mit Bezug, wenn Nr 57 eine Rückfrage ist (MVP 3 Fix 3)
+  if (lesung.art === "meldung" && lesung.bezugArt === "verweis" && lesung.bezugAnfang && lesung.bezugNr && lesung.bezugToken && /^zu\s/i.test(lesung.bezugToken) && events) {
+    const z = findByNr(ctx.ex ?? { events }, lesung.bezugNr);
+    if (z && artOf(z) === "rueckfrage") {
+      const i = les.toLowerCase().indexOf(lesung.bezugToken.toLowerCase());
+      const rest = les.slice(i + lesung.bezugToken.length).replace(/^[\s,:;–-]+/, "").trim();
+      lesung = { ...lesung, art: "notiz", stark: true, token: les.slice(0, i + lesung.bezugToken.length).trim(), bezugArt: "antwort", rest };
+    }
+  }
   let art: EntryArt = "meldung";
   let artFrom: Draft["artFrom"] = "standard";
   let artStark = true;
@@ -637,15 +675,30 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   else if (ohnePraefix || ohneBezug !== les) d = { ...d, text: raw.replace(LEAD_DT_RE, "").trim() || raw };
   else if (les !== raw && !core.d.normalized) d = { ...d, text: `${d.text} ${raw.slice(les.length).trim()}`.trim() };
   if (felder) d = felderOrt(d, felder, ctx);
-  const events = ctx.events ?? ctx.ex?.events;
+  if (lesung.unscharf && artFrom !== "vorgabe" && art !== "meldung") {
+    const wort = art === "auftrag" ? "Auftrag" : art === "orientierung" ? `Orientierung von ${lesung.quelle ?? "oben"}` : art === "notiz" && lesung.bezugArt === "antwort" ? "Antwort" : ART_LABEL[art];
+    d = { ...d, unscharf: { wort, token: lesung.unscharf } };
+  }
   if (art !== "meldung") {
     d = asNonLageDraft(d, lesung, core, ctx);
     // Zeit nach dem Absender («Kp 1200 Verpflegung») ist Inhalt: Text wieder mit der Zeit
     if (core.lead && !d.timeFromText && !felder) d = { ...d, text: raw.replace(LEAD_DT_RE, "").trim() || raw };
+    // Antwort mit Sichtung und Ort («H03 Antwort 3 Pers AN7»): nie still ohne Zeichen – gelb, Ausweg Feind/Eigene/Unklar
+    if (art === "notiz" && d.bezugArt === "antwort" && artFrom !== "vorgabe" && !felder && lesung.rest) {
+      const s = parseCore(lesung.rest, ctx).d;
+      const ort = !!s.cells?.length || !!s.nai || (!!s.where && s.where.kind !== "zuletzt" && s.where.kind !== "melder");
+      if (s.count !== undefined && s.count > 0 && ort) d = { ...d, sichtung: true };
+    }
   } else d = meldungBezug(d, lesung, ctx, events);
   // Aufheben (Entscheid): erzeugt nie ein neues Zeichen – ein Ziel → Aufhebung, mehrere → Wahl, keines → Notiz
   const wort = art === "meldung" && events && !d.bezug ? aufhebWort(ohnePraefix || ohneBezug) : null;
-  if (wort) d = aufhebLesen(d, events!, { wort, vorgabe: artFrom === "vorgabe", core, ctx });
+  if (wort) {
+    const d0 = d;
+    d = aufhebLesen(d, events!, { wort: wort.wort, vorgabe: artFrom === "vorgabe", core, ctx });
+    // unscharf («aufgehobn»): immer gelb, sobald das Wort etwas ändert (Aufhebung, Wahl, Notiz) – nie still aufheben; bleibt
+    // es eine gewöhnliche Meldung («2 Pers entfernen sich»), zählt das Wort nicht
+    if (wort.unscharf && artFrom !== "vorgabe" && d !== d0) d = { ...d, unscharf: { wort: wort.wort === "weg" ? wort.key![0]!.toUpperCase() + wort.key!.slice(1) : "Aufheben", token: wort.unscharf } };
+  }
   const melderEigen = !!d.melder && blau.some((u) => sameUnitName(u, d.melder));
   if (istDringend(les, { eigenerMelder: melderEigen })) d = { ...d, dringend: true };
   if (art !== "meldung" && !artStark) d = { ...d, kindHint: "notiz" };
@@ -728,9 +781,10 @@ function meldungBezug(d: Draft, l: ArtLesung, ctx: JournalContext, events: LageE
 }
 
 /**
- * Antwort: Bezug auf die Rückfrage (Nummer oder jüngste offene des Trupps); ohne genannten Trupp übernimmt sie den
- * Trupp der Rückfrage (Entscheid, Lebenszeichen). Hat der Trupp gefragt («Rückfrage von H04»), antwortet das LVZ ihm:
- * `an` = H04. «Antwort an H02»: H02 ist Empfänger, nicht Melder.
+ * Antwort: Bezug auf die Rückfrage (Nummer oder jüngste offene des Trupps). Ohne genannten Trupp: ging die Rückfrage an
+ * den Trupp («Rückfrage an H02»), kommt die Antwort von ihm (Melder H02, Lebenszeichen); hat der Trupp gefragt
+ * («H04 Rückfrage …»), antwortet das LVZ ihm: `an` = H04, kein Melder (kein Lebenszeichen, MVP 3 Fix 3).
+ * «Antwort an H02»: H02 ist Empfänger, nicht Melder.
  */
 function antwortBezug(d: Draft, l: ArtLesung, ctx: JournalContext, events: LageEvent[] | undefined): Draft {
   let melder = d.melder;
@@ -739,9 +793,11 @@ function antwortBezug(d: Draft, l: ArtLesung, ctx: JournalContext, events: LageE
   let out: Draft = { ...r, melder };
   const z = out.bezug ? events?.find((e) => e.id === out.bezug) : undefined;
   if (z && artOf(z) === "rueckfrage" && !melder) {
-    const wer = z.an ?? z.melder ?? "";
-    if (wer) out = { ...out, melder: wer, ...(!z.an && z.melder && !out.an ? { an: z.melder } : {}) };
-    if (wer && out.kind === "eigen" && out.art === "meldung" && !out.unit) out = { ...out, unit: wer };
+    // Rückfrage ging an den Trupp → die Antwort kommt von ihm (Melder, Lebenszeichen); Rückfrage kam vom Trupp → das LVZ
+    // antwortet ihm (`an`, kein Lebenszeichen, MVP 3 Fix 3)
+    if (z.an && !l.an) out = { ...out, melder: z.an };
+    else if (!z.an && z.melder) out = { ...out, melder: "", ...(!out.an ? { an: z.melder } : {}) };
+    if (out.melder && out.kind === "eigen" && out.art === "meldung" && !out.unit) out = { ...out, unit: out.melder };
   }
   return out;
 }
@@ -809,8 +865,11 @@ function aufhebLesen(d: Draft, events: LageEvent[], o: { wort: "aufheben" | "weg
     if (ziele.length > 1 || o.vorgabe) return { ...d, hebtAufKandidaten: ziele.map((e) => e.id) };
     return alsNotiz(d, "kein-ziel", o.core, o.ctx);
   }
-  const gesehen = !!d.unit || d.count !== undefined || d.sym !== "einheit" || !!d.unknownWord || (!!d.desc && /\d/.test(d.desc));
-  if (o.wort === "weg" && !gesehen && !o.vorgabe) return alsNotiz(d, "weg", o.core, o.ctx);
+  // Gesehenes: Element (nicht nur der Melder selbst), Anzahl, Zeichen, unbekanntes Wort. «H01 Strasse AC6 frei» ist keine
+  // eigene Lage (verschiebt H01 nicht) – ohne Gesehenes wird es Notiz (gelb «Kein Zeichen?»), wie «Feind weg aus AK9»
+  const nurMelder = d.kind === "eigen" && !!d.melder && sameUnitName(d.unit, d.melder);
+  const gesehen = (!!d.unit && !nurMelder) || d.count !== undefined || d.sym !== "einheit" || !!d.unknownWord || (!!d.desc && /\d/.test(d.desc));
+  if (!gesehen && !o.vorgabe) return alsNotiz(d, "weg", o.core, o.ctx);
   return d;
 }
 
@@ -1039,9 +1098,11 @@ export function historyText(e: Pick<LageEvent, "history">): string {
  * neue Spalten **hinten** (bestehende Auswertungen per Spaltenname bleiben): Nr · Eingang · An/Quelle · Erfasst von ·
  * Dringend · Stand (offen/erledigt/quittiert/beantwortet/aufgehoben) · Massnahme · Weitergemeldet · Bezug · Hebt auf.
  */
-export function journalToCsv(events: LageEvent[], days: string[], o: { gestrichen?: boolean } = {}): string {
+export function journalToCsv(events: LageEvent[], days: string[], o: { gestrichen?: boolean; schichten?: Exercise["schichten"] } = {}): string {
   const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Status", "Fassungen", "Form",
-    "Nr", "Eingang", "An/Quelle", "Erfasst von", "Dringend", "Stand", "Massnahme", "Weitergemeldet", "Bezug", "Hebt auf"];
+    "Nr", "Eingang", "An/Quelle", "Erfasst von", "Dringend", "Stand", "Massnahme", "Weitergemeldet", "Bezug", "Hebt auf", "Schicht"];
+  // Spalte «Schicht»: dieselbe Zuordnung wie Übergabe und Druck (`schichtEintraege`: erfasst ab Schichtbeginn bis zum Wechsel)
+  const schichtVon = schichtZuordnung({ schichten: o.schichten });
   const ex = { events };
   const idx = lvzIndex(events);
   const byId = new Map(events.map((e) => [e.id, e]));
@@ -1057,9 +1118,10 @@ export function journalToCsv(events: LageEvent[], days: string[], o: { gestriche
       v.aufgehoben ? `aufgehoben ${v.aufgehoben.t.slice(11, 16)} (Nr ${nrOfId(v.aufgehoben.id)})` : "",
     ].filter(Boolean).join(", ");
     return [tagOf(e.t), e.t.slice(11, 16), e.art || e.notiz ? artText(e) : kindLabel(e), e.unit, e.melder ?? "", e.text, e.sym, e.where ?? (e.orte ?? []).join(" "), (e.cells ?? []).join(" "), e.nai ?? "",
-      e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", `${journalStatus(e)}${e.deleted && e.geaendertVon ? ` ${e.geaendertVon}` : ""}`, historyText(e), shapeCsv(e),
+      // «gestrichen 08:12 BSP» (Zeit des Streichens = letzte Änderung)
+      e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", `${journalStatus(e)}${e.deleted ? ` ${localHhmm(e.updatedAt)}` : ""}${e.deleted && e.geaendertVon ? ` ${e.geaendertVon}` : ""}`, historyText(e), shapeCsv(e),
       nrLabel(e, ex), eingang, e.an ?? e.quelle ?? "", e.erfasstVon ?? "", v.dringend ? "dringend" : "", stand, v.massnahme ?? "",
-      v.weiter ? `${v.weiter.an} ${v.weiter.um.slice(11, 16)}` : "", nrOfId(e.bezug), nrOfId(e.hebtAuf)];
+      v.weiter ? `${v.weiter.an} ${v.weiter.um.slice(11, 16)}` : "", nrOfId(e.bezug), nrOfId(e.hebtAuf), schichtVon(e)?.an ?? ""];
   });
   return "\uFEFF" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
 }

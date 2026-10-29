@@ -5,7 +5,7 @@
  * Lage Rot höchstens zwei Möglichkeiten.
  */
 import {
-  artOf, catalogEntry, coaHeadline, letzteRotAktivitaet, placeLabel, vonOben, kurzText, compareEvents, istStill, isLage, lageBlau, lvzIndex, nrLabel, rapportZahlen, vermerkeOf,
+  artOf, catalogEntry, coaHeadline, letzteRotAktivitaet, placeLabel, schichtEintraege, vonOben, kurzText, compareEvents, istStill, isLage, lageBlau, lvzIndex, nrLabel, rapportZahlen, vermerkeOf,
   type Exercise, type Hint, type LageEvent, type OffenItem, type RapportZahlen,
 } from "@lage/core";
 import type { LageRotState } from "../lageRot";
@@ -68,11 +68,12 @@ export function neuSeit(ex: Pick<Exercise, "schichten">, seit: string | null): {
   const last = [...(ex.schichten ?? [])].sort((a, b) => (a.at < b.at ? -1 : 1)).pop();
   return last ? { at: last.at, t: last.t } : null;
 }
-const erfasst = (e: LageEvent) => e.createdAt ?? e.updatedAt;
-
-/** Einträge seit `at` (ISO UTC, erfasst), Lagezeit ≤ t, nicht gestrichen */
+/**
+ * Einträge seit `at` (ISO UTC, erfasst), Lagezeit ≤ t, nicht gestrichen – dieselbe Regel wie Druck und CSV
+ * (`schichtEintraege`, MVP 3 Fix 3)
+ */
 export function neueEintraege(ex: Exercise, at: string | null, t: string): LageEvent[] {
-  return (ex.events ?? []).filter((e) => !e.deleted && e.t.slice(0, 16) <= t && (!at || erfasst(e) >= at));
+  return schichtEintraege(ex, { at }, t);
 }
 
 export interface UebergabeInput {
@@ -173,7 +174,9 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
   const byId = new Map((ex.events ?? []).map((e) => [e.id, e]));
   const oben = vonOben(ex, t, VON_OBEN_MAX).map((z): UebergabeZeileNeu => {
     const e = byId.get(z.id);
-    return { key: z.id, t: zeitKurz(z.t, t, days), nr: z.nr, bang: !!e && vermerkeOf(e, idx).dringend, text: kurz(`${z.quelle ? `${z.quelle}: ` : ""}${z.text}`, 140), meta: e ? status(e) : "" };
+    // Fix 3: Abgelaufenes nie als gültig – «Lagerapport 1000 im KP · vorbei (10:00)»
+    const meta = [z.vorbei && z.termin ? `vorbei (${zeitKurz(z.termin, t, days)})` : "", e ? status(e) : ""].filter(Boolean).join(" · ");
+    return { key: z.id, t: zeitKurz(z.t, t, days), nr: z.nr, bang: !!e && vermerkeOf(e, idx).dringend, text: kurz(`${z.quelle ? `${z.quelle}: ` : ""}${z.text}`, 140), meta };
   });
 
   // 5 Zahlen

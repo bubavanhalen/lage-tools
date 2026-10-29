@@ -277,7 +277,11 @@ export interface UebergabeProps {
 export interface JournalDruck {
   /** `from`/`to` ISO lokal (Lagezeit); Vorwahl: `journalDruckVorwahl` (@lage/core, Entscheid 4) */
   /** `kuerzel`: Schicht mit festem Kürzel («Letzte Schicht BSP», sonst das Kürzel des Wechsels bis `to`) */
-  umfang: { art: "schicht" | "tag" | "alles" | "zeitraum"; from: string | null; to: string; kuerzel?: string };
+  /**
+   * `at` (nur Schicht, MVP 3 Fix 3): Einträge nach Erfassung wählen – ab Schichtbeginn `von` bis vor dem Wechsel `bis`
+   * (ISO UTC), wie Übergabe und CSV (`schichtEintraege`); `from`/`to` bleiben für Kopf und Anhänge
+   */
+  umfang: { art: "schicht" | "tag" | "alles" | "zeitraum"; from: string | null; to: string; kuerzel?: string; at?: { von: string | null; bis?: string | null } };
   anhang: { lageRot: boolean; hinweise: boolean; ohneGestrichene: boolean };
   klassifizierung: string;
   kuerzel: string | null;

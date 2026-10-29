@@ -3,7 +3,7 @@
  * Zeitspannen «T2 06:00–07:31», Einträge im Umfang, Kopftext, Eingabe «T2 0731». Rein, ohne jsPDF (der Dialog lädt
  * jsPDF erst beim Erstellen).
  */
-import { compareEvents, schichtenIm, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
+import { compareEvents, schichtEintraege, schichtenIm, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
 import type { JournalDruck } from "../shell/contracts";
 
 const WOCHENTAG = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
@@ -62,8 +62,12 @@ export function umfangText(ex: Exercise, u: JournalUmfang): string {
   }
 }
 
-/** Einträge im Umfang (Lagezeit `from ≤ t ≤ to`), chronologisch */
-export function eintraegeIm(ex: Exercise, u: Pick<JournalUmfang, "from" | "to">, ohneGestrichene = false): LageEvent[] {
+/**
+ * Einträge im Umfang, chronologisch: Lagezeit `from ≤ t ≤ to`; bei einer Schicht mit `at` nach Erfassung
+ * (`schichtEintraege` – gleich wie Übergabe und CSV, MVP 3 Fix 3)
+ */
+export function eintraegeIm(ex: Exercise, u: Pick<JournalUmfang, "from" | "to" | "at">, ohneGestrichene = false): LageEvent[] {
+  if (u.at) return schichtEintraege(ex, { at: u.at.von, bis: u.at.bis ?? null }, u.to, { gestrichene: !ohneGestrichene }).sort(compareEvents);
   return (ex.events ?? [])
     .filter((e) => (!u.from || e.t.slice(0, 16) >= u.from) && e.t.slice(0, 16) <= u.to && !(ohneGestrichene && e.deleted))
     .sort(compareEvents);
@@ -99,11 +103,12 @@ export function druckVorladen(): void {
  * Letzte abgeschlossene Schicht bis `to` (Prüfung Übergabe M1): vom Wechsel davor bis zur jüngsten Übergabe, Kürzel der
  * Person, die übergeben hat. null ohne Übergabe.
  */
-export function letzteSchicht(ex: Exercise, to: string): { from: string; to: string; kuerzel: string } | null {
+export function letzteSchicht(ex: Exercise, to: string): { from: string; to: string; kuerzel: string; at: { von: string | null; bis: string } } | null {
   const ws = schichtenIm(ex, null, to);
   let i = ws.length - 1;
   while (i >= 0 && ws[i]!.art !== "uebergabe") i--;
   if (i < 0) return null;
   const w = ws[i]!, prev = ws[i - 1];
-  return { from: prev?.t ?? grenzen(ex).from, to: w.t, kuerzel: w.von ?? prev?.an ?? "" };
+  // erfasst ab dem Wechsel davor bis vor der Übergabe (gleiche Regel wie die Übergabe selbst)
+  return { from: prev?.t ?? grenzen(ex).from, to: w.t, kuerzel: w.von ?? prev?.an ?? "", at: { von: prev?.at ?? null, bis: w.at } };
 }

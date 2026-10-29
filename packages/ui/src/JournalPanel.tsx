@@ -16,7 +16,7 @@ import type { EventQuality, Exercise, LV95 } from "@lage/core";
 import { EntryBox } from "./entry/EntryBox";
 import { prefillEntry, requestCorrection } from "./entry/useEntryDraft";
 import { deleteEvent, restoreEvent } from "./journal/actions";
-import { countGestrichene, filterJournal } from "./journal/filter";
+import { countGestrichene, filterJournal, wechselSuche } from "./journal/filter";
 import { JournalList } from "./journal/JournalList";
 import { UnifiedSearch } from "./journal/UnifiedSearch";
 import { dayLabel, isoLocal } from "./Timeline";
@@ -106,9 +106,10 @@ export function JournalPanel(p: Props) {
     const ws = (ex.schichten ?? []).filter((w) => w.art === "uebergabe" && (!to || w.t <= to.slice(0, 16)) && (!p.win?.from || w.t >= p.win.from.slice(0, 16)));
     if (art) return [];
     if (!q) return ws;
-    const qq = q.toLowerCase();
-    return /^(übergabe|uebergabe|schichtwechsel|wechsel|schicht)/.test(qq) || ws.some((w) => qq === w.an.toLowerCase() || qq === (w.von ?? "").toLowerCase())
-      ? ws.filter((w) => /^(übergabe|uebergabe|schichtwechsel|wechsel|schicht)/.test(qq) || qq === w.an.toLowerCase() || qq === (w.von ?? "").toLowerCase()) : [];
+    const qq = q.trim().toLowerCase();
+    // «Schichtwechsel», «Schichtw», «Übergabe», «Schichtwechsel 07:30 BSP → MU» (Vorschlag) bzw. ein Kürzel
+    if (wechselSuche(q)) return ws;
+    return ws.filter((w) => qq === w.an.toLowerCase() || qq === (w.von ?? "").toLowerCase());
   }, [ex.schichten, to, p.win?.from, q, art]);
   const empty: JournalEmpty = list.length || wechsel.length ? null : !any ? "erststart" : q || art ? "suche" : rueckblick ? "rueckblick" : p.win ? "zeige-letzte" : null;
 

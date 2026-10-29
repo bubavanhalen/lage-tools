@@ -100,7 +100,7 @@ function vermerkeText(e: LageEvent, ex: Exercise, byId: Map<string, LageEvent>, 
 }
 
 /** Zeilen des Journal-PDF im Umfang (rein): Tageszeilen und Einträge, chronologisch */
-export function journalPdfRows(ex: Exercise, umfang: Pick<JournalUmfang, "from" | "to">, o: { ohneGestrichene?: boolean } = {}): JournalPdfRow[] {
+export function journalPdfRows(ex: Exercise, umfang: Pick<JournalUmfang, "from" | "to" | "at">, o: { ohneGestrichene?: boolean } = {}): JournalPdfRow[] {
   const all = ex.events ?? [];
   const idx = lvzIndex(all);
   const byId = new Map(all.map((e) => [e.id, e]));

@@ -296,7 +296,7 @@ describe("Offen-Texte und CSV", () => {
     const rows = journalToCsv(ex.events!, ex.days).replace(/^﻿/, "").split("\r\n").map((r) => r.split(";"));
     const head = rows[0]!;
     expect(head.slice(0, 15).join(";")).toBe("Tag;Zeit;Art;Element;Melder;Meldung;Zeichen;Ort;Planquadrat;NAI;E;N;Status;Fassungen;Form");
-    expect(head.slice(15)).toEqual(["Nr", "Eingang", "An/Quelle", "Erfasst von", "Dringend", "Stand", "Massnahme", "Weitergemeldet", "Bezug", "Hebt auf"]);
+    expect(head.slice(15)).toEqual(["Nr", "Eingang", "An/Quelle", "Erfasst von", "Dringend", "Stand", "Massnahme", "Weitergemeldet", "Bezug", "Hebt auf", "Schicht"]);
     const col = (r: string[], n: string) => r[head.indexOf(n)];
     const rfRow = rows.find((r) => col(r, "Meldung") === "H04 Rückfrage: Standort Det 2?")!;
     expect(col(rfRow, "Art")).toBe("Rückfrage von H04");

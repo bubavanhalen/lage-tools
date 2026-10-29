@@ -12,7 +12,21 @@ import type { UebergabeDaten, UebergabeZeileNeu } from "./uebergabeDaten";
 
 const W = 210, H = 297, M = 14, FUSS = 284;
 /** Schriftstufen: Text (pt), Zeilenhöhe (mm), Abschnittstitel (pt) */
-const STUFEN = [{ fs: 10, lh: 4.4, h: 11.5 }, { fs: 9, lh: 4.0, h: 10.5 }, { fs: 8.5, lh: 3.75, h: 10 }];
+const STUFEN = [{ fs: 10, lh: 4.4, h: 11.5 }, { fs: 9, lh: 4.0, h: 10.5 }, { fs: 8.5, lh: 3.75, h: 10 }, { fs: 8, lh: 3.55, h: 9.5 }];
+/**
+ * Kürzen, wenn auch 8 pt nicht auf eine Seite passt (MVP 3 Fix 3: Visum nie allein auf Seite 2): «Neu» und «Offen»
+ * schrittweise auf weniger Zeilen, der Rest steht als «+n weitere» da (vollständig im Journal bzw. in «Offen»).
+ */
+const KUERZEN: Array<{ neu: number; offen: number }> = [{ neu: 8, offen: 10 }, { neu: 5, offen: 8 }, { neu: 3, offen: 6 }, { neu: 0, offen: 4 }];
+
+/** Übergabe mit höchstens `k.neu` Zeilen «Neu» und `k.offen` Zeilen «Offen» (Rest als «+n weitere») */
+function gekuerzt(d: UebergabeDaten, k: { neu: number; offen: number }): UebergabeDaten {
+  const neu = d.neu.zeilen.slice(0, k.neu), offen = d.offen.slice(0, k.offen);
+  return {
+    ...d, offen, offenWeitere: d.offenWeitere + d.offen.length - offen.length,
+    neu: { ...d.neu, zeilen: neu, weitere: d.neu.weitere + d.neu.zeilen.length - neu.length },
+  };
+}
 const GRAU = 95;
 
 function zeichne(d: UebergabeDaten, visum: { von: string; an: string; um: string }, st: (typeof STUFEN)[number]): { doc: jsPDF; zeilen: string[] } {
@@ -110,15 +124,18 @@ function zeichne(d: UebergabeDaten, visum: { von: string; an: string; um: string
   luecke();
 
   titel(`5 ${d.neu.titel}`);
-  if (!d.neu.zeilen.length) absatz("Noch nichts Neues in dieser Schicht.");
+  if (!d.neu.zeilen.length && !d.neu.weitere) absatz("Noch nichts Neues in dieser Schicht.");
   for (const z of d.neu.zeilen) zeileNeu(z);
   if (d.neu.weitere) absatz(`+${d.neu.weitere} weitere im Journal`);
   luecke();
 
+  // «Zahlen» und «Visum» zusammen halten: passt beides nicht mehr, beginnen beide auf der neuen Seite (Visum nie allein)
+  platz(LH * (d.zahlen.length + 4) + 28);
   titel("6 Zahlen für den Rapport");
   tabelle([{ h: "", w: 74 }, { h: "Schicht", w: 32 }, { h: "ganze Übung", w: 32 }], d.zahlen.map((r) => [...r]), false);
 
-  // 7 Visum mit Strich zum Unterschreiben
+  // 7 Visum mit Strich zum Unterschreiben – nie allein auf einer Seite: passt es nicht mehr, kommt die Tabelle «Zahlen»
+  // mit (uebergabePdf kürzt vorher, damit alles auf eine Seite passt)
   platz(30);
   titel("7 Visum");
   y += 4;
@@ -142,10 +159,24 @@ function zeichne(d: UebergabeDaten, visum: { von: string; an: string; um: string
   return { doc, zeilen };
 }
 
+/** Seitenwahl (rein, für Tests): grösste Schrift, die auf eine Seite passt; sonst 8 pt und «Neu»/«Offen» gekürzt */
+export function uebergabePdfDoc(d: UebergabeDaten, visum: { von: string; an: string; um: string }): { doc: jsPDF; zeilen: string[]; fs: number; gekuerzt: boolean } {
+  for (const st of STUFEN) {
+    const r = zeichne(d, visum, st);
+    if (r.doc.getNumberOfPages() === 1) return { ...r, fs: st.fs, gekuerzt: false };
+  }
+  const st = STUFEN[STUFEN.length - 1]!;
+  let r = zeichne(d, visum, st);
+  for (const k of KUERZEN) {
+    r = zeichne(gekuerzt(d, k), visum, st);
+    if (r.doc.getNumberOfPages() === 1) break;
+  }
+  return { ...r, fs: st.fs, gekuerzt: true };
+}
+
 export function uebergabePdf(d: UebergabeDaten, visum: { von: string; an: string; um: string }): Blob {
-  // grösste Schrift, die auf eine Seite passt (sonst die kleinste Stufe, höchstens zwei Seiten)
-  let r = zeichne(d, visum, STUFEN[0]!);
-  for (let i = 1; i < STUFEN.length && r.doc.getNumberOfPages() > 1; i++) r = zeichne(d, visum, STUFEN[i]!);
+  // grösste Schrift, die auf eine Seite passt; sonst 8 pt und gekürzt (eine Seite, Visum nie allein auf Seite 2)
+  const r = uebergabePdfDoc(d, visum);
   // Testhaken (perf.ts); sammelt `safePdf` keine Zeilen, die eigenen
   const info = pdfInfo(r.doc, "a4", false);
   if (!info.zeilen.length) { info.zeilen = r.zeilen; window.__ltPdfInfo = info; }
