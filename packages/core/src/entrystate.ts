@@ -185,7 +185,8 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
   const art = d.art ?? (d.kindHint === "notiz" ? "notiz" : "meldung");
   const note = art !== "meldung" || d.kindHint === "notiz";
   const lift = !!d.hebtAuf;
-  if (note && (d.kindHint === "notiz" || d.artStark === false)) {
+  if (note && d.notizGrund) check.push(notizGrundReason(d));
+  else if (note && (d.kindHint === "notiz" || d.artStark === false)) {
     // schwacher Hinweis («… ?», «befohlen»): einmal fragen (Code `art-schwach`; MVP 1 hiess er `notiz`)
     const w = ART_LABEL[art === "meldung" ? "notiz" : art];
     check.push({ code: "art-schwach", text: `Als ${w} ohne Zeichen?`, hint: `Nochmals Enter trägt als ${w} ein. Ist es eine Lage: Feind, Eigene oder Unklar wählen.`, ask: `Als ${w} ohne Zeichen eintragen? Nochmals Enter.` });
@@ -199,7 +200,8 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
   if (d.bezugFehlt && d.bezugNr) {
     check.push({ code: "bezug", token: d.bezugNr, text: `Nr ${d.bezugNr} gibt es nicht – ohne Bezug eintragen?`, hint: "Nummer prüfen (steht unter der Zeit in der Liste).", ask: "Ohne Bezug eintragen? Nochmals Enter." });
   }
-  if (!note && !lift && d.hebtAufKandidaten) check.push(aufhebReason(d));
+  // Aufheben zeichnet nie neu (Entscheid): mehrere Ziele → rot, bis eines gewählt ist; keines bei gewählter Einordnung → rot
+  if (!note && !lift && d.hebtAufKandidaten) stop.push(aufhebReason(d));
   // unbekannter Trupp, obwohl Trupps vorbereitet sind (nicht bei «H13» – das sperrt schon als Problem)
   const m = d.melder.trim();
   if (m && o.unitsPrepared && o.knownUnits && !o.knownUnits.some((u) => sameUnitName(u, m)) && !(d.problems ?? []).some((p) => p.kind === "melder")) {
@@ -283,17 +285,28 @@ function tagFremd(d: Draft, o: EntryStateOptions): EntryReason {
   };
 }
 
-/** «Keine aktive Sperre in AG13 gefunden – als normale Meldung eintragen?» bzw. «Zwei Sperren in AG13 – welche?» */
+/**
+ * Aufheben mit mehreren Zielen: «Zwei Sperren in AG13 – welche?» (rot, bis gewählt). Ohne Ziel bei gewählter
+ * Einordnung: «Keine aktive Sperre in AA1 – Aufheben zeichnet nie.» (rot). Aufheben erzeugt nie ein neues Zeichen.
+ */
 function aufhebReason(d: Draft): EntryReason {
   const c = catalogEntry(d.sym);
   const wort = c?.noun ?? c?.name.replace(/\s*\(.*?\)\s*/g, " ").split(" / ")[0]!.trim() ?? "Sperre";
   const ort = d.where?.label ?? d.cells?.[0] ?? d.nai ?? "";
   const bei = ort ? ` in ${ort}` : "";
   const n = d.hebtAufKandidaten?.length ?? 0;
-  const ask = "Als normale Meldung eintragen? Nochmals Enter.";
   if (!n) {
     const kein = c?.g === "m" ? "Kein aktiver" : c?.g === "n" ? "Kein aktives" : "Keine aktive";
-    return { code: "aufheben", text: `${kein} ${wort}${bei} gefunden – als normale Meldung eintragen?`, hint: "Ort prüfen oder an der Zeile «Mehr …» → «Aufgehoben (jetzt)».", ask };
+    return { code: "aufheben", text: `${kein} ${wort}${bei} – Aufheben zeichnet nie ein neues Zeichen.`, hint: "Ort prüfen, «Notiz» wählen oder das Wort «aufgehoben» aus dem Text nehmen." };
   }
-  return { code: "aufheben", text: `${n === 2 ? "Zwei" : n} ${c?.pl ?? wort}${bei} – welche?`, hint: "Die gemeinte Meldung wählen.", ask };
+  return { code: "aufheben", text: `${n === 2 ? "Zwei" : n} ${c?.pl ?? wort}${bei} – welche aufheben?`, hint: "Die gemeinte Meldung unten wählen." };
+}
+
+/** Meldung wurde Notiz (gelb): «Kein Ziel gefunden – als Notiz eintragen?» bzw. «Kein Zeichen? – als Notiz eintragen?» */
+function notizGrundReason(d: Draft): EntryReason {
+  const ask = "Als Notiz ohne Zeichen eintragen? Nochmals Enter.";
+  if (d.notizGrund === "kein-ziel") {
+    return { code: "aufheben", text: "Kein Ziel gefunden – als Notiz eintragen?", hint: "Ort prüfen oder an der gemeinten Zeile «Mehr …» → «Aufgehoben (jetzt)». Nochmals Enter trägt als Notiz ein.", ask };
+  }
+  return { code: "aufheben", text: "Kein Zeichen? – als Notiz eintragen?", hint: "Nochmals Enter trägt als Notiz ein. Ist es eine Lage: Feind, Eigene oder Unklar wählen.", ask };
 }

@@ -2,7 +2,7 @@
  * Lagebild-Modell für Karte und Legende: was ist zum Zeitpunkt `t` sichtbar, wie kräftig, mit welchem Zusatz.
  * Reine Berechnung (ohne Leaflet), damit Karte und Legende garantiert dasselbe zeigen.
  */
-import { CATALOG, catalogEntry, ECHELONS, kindLabel, situationAt, SYMBOLS, symbolDef, unitKey, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status } from "@lage/core";
+import { artOf, artText, CATALOG, catalogEntry, ECHELONS, kindLabel, situationAt, SYMBOLS, symbolDef, unitKey, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status } from "@lage/core";
 import { isAnticipated, sidcAffiliation } from "@lage/map";
 import type { LayerFlags } from "./layers";
 import { roadMark, type RoadMark } from "./roadmark";
@@ -99,9 +99,13 @@ export const STALE_MIN = 60;
 export const kindOf = (e: Pick<LageEvent, "side" | "aff">): ItemKind =>
   e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : e.aff === "U" ? "unklar" : e.aff === "N" ? "neutral" : "feind";
 
-/** Bezeichnung der Art: wie `kindLabel`, aber neutral (Zugehörigkeit N) heisst «Neutral», nicht «Feind» */
-export const kindText = (e: Pick<LageEvent, "side" | "aff">): string =>
-  e.side !== "blau" && e.side !== "ul" && e.aff === "N" ? "Neutral" : kindLabel(e);
+/**
+ * Bezeichnung der Art: wie `kindLabel`, aber neutral (Zugehörigkeit N) heisst «Neutral», nicht «Feind»; Nicht-Meldungen
+ * (Auftrag, Rückfrage, Vbk …, z. B. letztes Lebenszeichen eines Trupps) mit ihrer Art statt «Notiz»
+ */
+export const kindText = (e: Pick<LageEvent, "side" | "aff"> & Partial<LageEvent>): string =>
+  (e.art || e.notiz) && artOf(e as LageEvent) !== "meldung" ? artText(e as LageEvent)
+    : e.side !== "blau" && e.side !== "ul" && e.aff === "N" ? "Neutral" : kindLabel(e);
 
 const minutesBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 60000);
 

@@ -353,3 +353,5 @@
 .mo-winhint > span { flex: 1; min-width: 0; }
 .mo-winhint .tnum { font-family: var(--f-mono); font-weight: 600; }
 .mo-winhint button { flex: none; min-height: var(--hit); padding: 2px var(--sp-12); font-size: var(--fs-14); border: 1px solid var(--line); border-radius: var(--r-4); }
+/* Nicht-Meldung im Kartenband: Art in Tinte mit Form (✎ ⇄), kein Zeichen */
+.mo-art { font-weight: 600; white-space: nowrap; color: var(--ink); }

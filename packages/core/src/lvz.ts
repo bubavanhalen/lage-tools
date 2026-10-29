@@ -163,7 +163,8 @@ export const OFFEN_PRIO: Record<OffenArt | "auftrag-frist", number> = {
 
 const hhmm = (t: string) => t.slice(11, 16);
 const minutesBetween = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000));
-const ortText = (e: Pick<LageEvent, "where" | "cells" | "nai">) => e.where ?? e.cells?.[0] ?? e.nai ?? "";
+/** Ort in Worten; früherer Ersatzort «letzter Standort» (vor der Nachbesserung gespeichert) zählt nicht als Ort */
+const ortText = (e: Pick<LageEvent, "where" | "cells" | "nai">) => (e.where && !/^letzter Standort$/i.test(e.where) ? e.where : undefined) ?? e.cells?.[0] ?? e.nai ?? "";
 /** Inhalt ohne Art-Hinweis, Melder und Frist («Auftrag an H01: Beo NAI 1 bis 1200» → «Beo NAI 1», «H05: 2 Kpz AJ9» → «2 Kpz AJ9») */
 export function inhaltText(e: LageEvent, blau: string[] = []): string {
   return inhalt(e, blau);
@@ -182,8 +183,10 @@ function inhalt(e: LageEvent, blau: string[]): string {
 export function kurzText(e: LageEvent, blau: string[] = []): string {
   const base = inhalt(e, blau);
   const ort = ortText(e) || (e.orte ?? [])[0] || "";
-  const extra = [e.melder && !base.includes(e.melder) ? e.melder : "", ort && !base.includes(ort) ? ort : ""].filter(Boolean);
-  return `${artText(e)} ${base}${extra.length ? ` (${extra.join(", ")})` : ""}`.replace(/\s+/g, " ").trim();
+  const art = artText(e);
+  // Melder nicht doppelt («Antwort von H05 Mun genug», nicht «… (H05)»)
+  const extra = [e.melder && !base.includes(e.melder) && !art.includes(e.melder) ? e.melder : "", ort && !base.includes(ort) ? ort : ""].filter(Boolean);
+  return `${art} ${base}${extra.length ? ` (${extra.join(", ")})` : ""}`.replace(/\s+/g, " ").trim();
 }
 
 /**

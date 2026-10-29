@@ -76,8 +76,8 @@ describe("readArt (Kap. 3.1, Fälle aus 8.1)", () => {
     expect(r("Quittung H02 Auftrag erhalten")).toMatchObject({ art: "notiz", bezugArt: "quittung" });
     expect(r("Quittung 42")).toMatchObject({ art: "notiz", bezugArt: "quittung", bezugNr: "42" });
   });
-  it("Antwort mit Bezug bleibt Meldung (auch doppelte Nummer «12a»)", () => {
-    expect(r("Antwort zu 57: Det 2 in AJ8")).toMatchObject({ art: "meldung", bezugNr: "57", bezugArt: "antwort" });
+  it("Antwort mit Bezug ist Notiz (Entscheid MVP 3 Nachbesserung; auch doppelte Nummer «12a»)", () => {
+    expect(r("Antwort zu 57: Det 2 in AJ8")).toMatchObject({ art: "notiz", bezugNr: "57", bezugArt: "antwort" });
     expect(r("Antwort auf 12a: Det 1 AN6")).toMatchObject({ bezugNr: "12a" });
   });
   it("Trupp vorne (Trupp-Knopf): «H04 Auftrag an H01 …», «H04 Bat: …», «H02 Notiz: …» bleiben erkannt", () => {
@@ -138,9 +138,11 @@ describe("Einsatz-Szenario des Prüfers (Kap. 8.1)", () => {
     "11": { text: "H03 wir weichen aus nach AG9", art: "meldung", zustand: ["bereit", "pruefen"], zeichen: null, pruef: (d) => expect(d.kind).not.toBe("feind") },
     "12": { text: "H02 Vbk i.O.", art: "vbk", zustand: ["bereit"], zeichen: 0, bleibt: ["H02"], pruef: (d, ex, _m, id) => { expect(d.vbk).toBe("gut"); expect(artText(ex.events!.find((e) => e.id === id)!)).toBe("Verbindung H02 gut"); } },
     "13": { text: "H03 keine Verbindung", art: "vbk", zustand: ["bereit"], zeichen: 0, pruef: (_d, ex) => expect(offenePunkte(ex, T).some((o) => o.text.startsWith("H03: keine Verbindung"))).toBe(true) },
-    "14": { text: (m) => `Antwort zu ${m.rueckfrage}: Det 2 in AJ8`, art: "meldung", zustand: ["bereit"], zeichen: 1,
+    // Entscheid MVP 3 Nachbesserung: Antwort = Notiz mit Bezug (kein Zeichen), übernimmt den Trupp der Rückfrage
+    "14": { text: (m) => `Antwort zu ${m.rueckfrage}: Det 2 in AJ8`, art: "notiz", zustand: ["bereit"], zeichen: 0,
       pruef: (d, ex) => {
         expect(d.bezugArt).toBe("antwort");
+        expect(d.melder).toBe("H04");
         expect(offenePunkte(ex, T).some((o) => o.art === "rueckfrage")).toBe(false);
         const rf = ex.events!.find((e) => e.id === d.bezug)!;
         expect(vermerkeOf(rf, lvzIndex(ex.events!)).beantwortet).toBeTruthy();

@@ -122,13 +122,13 @@ async function geraetLauf(h: Harness, geraet: Geraet): Promise<TestResult[]> {
     Object.assign(w, k.werte());
     soll(k.aktionen <= 5 && k.sekunden <= 45, `Budget: ${k.aktionen} Aktionen, KLM ${k.sekunden.toFixed(1)} s`);
   }));
-  out.push(await aufgabe("5 Löschen und zurückholen", geraet, async (w) => {
+  out.push(await aufgabe("5 Streichen und zurückholen", geraet, async (w) => {
     const k = new Klm();
     const z = zeilen(s).first();
     const text = await z.innerText();
     const n0 = await anzahl(s);
     await antippen(s, z); k.zeigen();
-    await antippen(s, knopf(s, "Löschen")); k.zeigen();
+    await antippen(s, knopf(s, "Streichen")); k.zeigen();
     soll((await anzahl(s)) === n0 - 1, "Zeile nicht weg");
     await antippen(s, knopf(s, "Rückgängig")); k.zeigen();
     await s.page.waitForTimeout(200);

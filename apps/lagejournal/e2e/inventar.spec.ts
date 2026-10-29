@@ -114,7 +114,7 @@ const spec: Spec = {
       out.push(await messen3(h, "Offen, Punkt gewählt", g, 15, { query: "?beispiel" }, offenGewaehlt));
       out.push(await messen3(h, "Gestrichene gezeigt", g, 13, { query: "?beispiel" }, async (s) => {
         await zeilenVon(s).first().click();
-        await knopfVon(s, "Löschen").click();
+        await knopfVon(s, "Streichen").click();
         await s.page.waitForTimeout(9000);
         await s.page.getByRole("button", { name: /Gestrichene zeigen/ }).or(s.page.getByRole("link", { name: /Gestrichene zeigen/ })).first().click();
       }));

@@ -12,7 +12,7 @@ import { ART_LABEL, artOf, isLage, lebenszeichen } from "./arten";
 import { compareEvents } from "./clock";
 import { STILL_MIN } from "./entscheide";
 import type { Hint } from "./hints";
-import { placeLabel, situationAt, unitKey } from "./journal";
+import { isErsatzOrt, placeLabel, situationAt, unitKey } from "./journal";
 import { inhaltText, lvzIndex, offenePunkte, vermerkeOf } from "./lvz";
 import type { Exercise, LageEvent, SchichtWechsel } from "./model";
 import { nrLabel } from "./nummer";
@@ -61,14 +61,18 @@ export function lageBlau(ex: Exercise, t: string): LageBlauZeile[] {
   const blau = ex.units?.blau ?? [];
   return blau.map((trupp) => {
     const st = sit.units.find((u) => u.key === unitKey("blau", trupp));
-    // seit: erste Meldung der letzten ununterbrochenen Folge am aktuellen Standort
+    // seit: erste Meldung der letzten ununterbrochenen Folge am aktuellen Standort; Ort: jüngste Meldung dieser Folge
+    // mit einem genannten Ort (nie der frühere Ersatzort «letzter Standort» – Standort bleibt, Entscheid)
     let seit: string | null = null;
+    let ort: string | null = null;
     if (st) {
       for (const e of events) {
         if (e.side !== "blau" || !e.pos || unitKey("blau", e.unit) !== st.key || !isLage(e)) continue;
         const same = e.pos.e === st.pos.e && e.pos.n === st.pos.n;
-        if (!same) seit = null;
-        else seit ??= e.t;
+        if (!same) { seit = null; ort = null; continue; }
+        seit ??= e.t;
+        const l = placeLabel(e);
+        if (l && !isErsatzOrt(l)) ort = l;
       }
     }
     const signs = events.filter((e) => lebenszeichen(e) === trupp);
@@ -76,9 +80,9 @@ export function lageBlau(ex: Exercise, t: string): LageBlauZeile[] {
     const vbk = events.filter((e) => artOf(e) === "vbk" && e.melder === trupp && e.vbk).pop();
     return {
       trupp,
-      ort: st ? placeLabel(st.event) || null : null,
+      ort: st ? ort ?? (isErsatzOrt(placeLabel(st.event)) ? null : placeLabel(st.event) || null) : null,
       seit,
-      ...(last ? { letzteMeldung: { t: last.t, text: artOf(last) === "meldung" ? inhaltText(last, blau) : `${ART_LABEL[artOf(last)]} ${inhaltText(last, blau)}`, nr: nrLabel(last, ex) } } : {}),
+      ...(last ? { letzteMeldung: { t: last.t, text: artOf(last) === "meldung" ? inhaltText(last, blau) : `${last.bezugArt === "antwort" ? "Antwort" : ART_LABEL[artOf(last)]} ${inhaltText(last, blau)}`, nr: nrLabel(last, ex) } } : {}),
       ...(vbk ? { letzteVbk: { t: vbk.t, ergebnis: vbk.vbk! } } : {}),
       stillMin: last ? minutesBetween(last.t, t) : null,
       offen: offen
@@ -90,6 +94,45 @@ export function lageBlau(ex: Exercise, t: string): LageBlauZeile[] {
         }),
     };
   });
+}
+
+export interface VonObenZeile {
+  id: string;
+  /** laufende Nummer («57», «12a») */
+  nr: string;
+  /** Lagezeit (ISO lokal) */
+  t: string;
+  /** Absender («Bat», «Kp», «Kdt» …), leer wenn keiner genannt */
+  quelle: string;
+  /** Inhalt ohne Art-Hinweis («Lagerapport 1800 im KP») */
+  text: string;
+}
+
+/**
+ * «Von oben (gültig)» für die Übergabe (Entscheid MVP 3 Nachbesserung): die letzten `n` Orientierungen mit Lagezeit ≤ `t`,
+ * nicht gestrichen, jüngste zuerst – **unabhängig von der Schicht** (Befehle von oben gehen nie im Abschnitt «Neu» unter).
+ */
+export function vonOben(ex: Pick<Exercise, "events" | "units">, t: string, n = 3): VonObenZeile[] {
+  const blau = ex.units?.blau ?? [];
+  return (ex.events ?? [])
+    .filter((e) => !e.deleted && artOf(e) === "orientierung" && e.t.slice(0, 16) <= t.slice(0, 16))
+    .sort((a, b) => compareEvents(b, a))
+    .slice(0, n)
+    .map((e) => ({ id: e.id, nr: nrLabel(e, ex), t: e.t, quelle: e.quelle ?? "", text: inhaltText(e, blau) }));
+}
+
+/**
+ * Letzte Rot-Aktivität für «Lage Rot» der Übergabe (Prüfung Übergabe, Frage 2): jüngste Lage-Meldung der Seite Rot (Feind
+ * oder Unklar, mit oder ohne bekanntes Element, z. B. «Drohne über NAI 3») mit Lagezeit ≤ `t` – keine Aufhebung, nicht
+ * gestrichen. null, wenn Rot noch nie gesehen wurde.
+ */
+export function letzteRotAktivitaet(ex: Pick<Exercise, "events">, t: string): LageEvent | null {
+  let best: LageEvent | null = null;
+  for (const e of ex.events ?? []) {
+    if (!isLage(e) || e.side !== "rot" || e.t.slice(0, 16) > t.slice(0, 16)) continue;
+    if (!best || compareEvents(e, best) > 0) best = e;
+  }
+  return best;
 }
 
 /** «still» nach Entscheid 3 (Minuten), für Anzeige «62 min still» */

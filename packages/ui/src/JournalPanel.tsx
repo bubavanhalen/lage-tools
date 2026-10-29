@@ -68,6 +68,8 @@ interface Props {
   offen?: ReactNode;
   /** Trenner von aussen (C); fehlt → aus `schicht` (null = keiner). Bei aktiver Suche nie. */
   schichtSeit?: { seit: string; kuerzel: string } | null;
+  /** «Zur Meldung» (Offen): blendet die Suche den Eintrag aus, Suche leeren */
+  reveal?: { id: string; n: number } | null;
 }
 
 export function JournalPanel(p: Props) {
@@ -99,7 +101,16 @@ export function JournalPanel(p: Props) {
   const lvz = useMemo<Omit<LvzRowProps, "e" | "ex">>(() => p.lvz ?? {
     device, kuerzel, update, onPrefill: (t: string) => { prefillEntry(t); },
   }, [p.lvz, device, kuerzel, update]);
-  const empty: JournalEmpty = list.length ? null : !any ? "erststart" : q || art ? "suche" : rueckblick ? "rueckblick" : p.win ? "zeige-letzte" : null;
+  /** Übergaben als Zeile im Journal: im gezeigten Zeitraum; bei Suche nur, wenn nach «Übergabe»/«Schichtwechsel» gesucht wird */
+  const wechsel = useMemo(() => {
+    const ws = (ex.schichten ?? []).filter((w) => w.art === "uebergabe" && (!to || w.t <= to.slice(0, 16)) && (!p.win?.from || w.t >= p.win.from.slice(0, 16)));
+    if (art) return [];
+    if (!q) return ws;
+    const qq = q.toLowerCase();
+    return /^(übergabe|uebergabe|schichtwechsel|wechsel|schicht)/.test(qq) || ws.some((w) => qq === w.an.toLowerCase() || qq === (w.von ?? "").toLowerCase())
+      ? ws.filter((w) => /^(übergabe|uebergabe|schichtwechsel|wechsel|schicht)/.test(qq) || qq === w.an.toLowerCase() || qq === (w.von ?? "").toLowerCase()) : [];
+  }, [ex.schichten, to, p.win?.from, q, art]);
+  const empty: JournalEmpty = list.length || wechsel.length ? null : !any ? "erststart" : q || art ? "suche" : rueckblick ? "rueckblick" : p.win ? "zeige-letzte" : null;
 
   /** zuletzt eingetragene Zeilen: bei aktivem Suchfilter sagen, wenn sie dadurch ausgeblendet sind (Filter bleibt, Klartext) */
   const [justIds, setJustIds] = useState<string[]>([]);
@@ -111,6 +122,10 @@ export function JournalPanel(p: Props) {
   }, [onSelect, p.onCommitted]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => setJustIds([]), [q, art]);
   useEffect(() => { if (!justIds.length) return; const t = window.setTimeout(() => setJustIds([]), 15000); return () => window.clearTimeout(t); }, [justIds]);
+  useEffect(() => {
+    const id = p.reveal?.id;
+    if (id && (q || art) && !list.some((e) => e.id === id)) setResetSearch((n) => n + 1);
+  }, [p.reveal?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const hiddenNew = (q || art) && justIds.length > 0
     && justIds.some((id) => events.some((e) => e.id === id && !e.deleted) && !list.some((e) => e.id === id));
 
@@ -137,7 +152,7 @@ export function JournalPanel(p: Props) {
             onCorrect={(id) => { if (!requestCorrection(id)) setOwnReq({ id, n: Date.now() }); }}
             onDelete={(id) => { deleteEvent(update, ex, id, device, kuerzel); if (selected === id && !gestrichene) onSelect(null); }}
             onRestore={(id) => restoreEvent(update, ex, id, device, kuerzel)}
-            gestrichene={gestrichene} onGestrichene={setGestrichene} gestricheneN={nDel} schichtSeit={schichtSeit} lvz={lvz} onNr={p.onNr}
+            gestrichene={gestrichene} onGestrichene={setGestrichene} gestricheneN={nDel} schichtSeit={schichtSeit} lvz={lvz} onNr={p.onNr} wechsel={wechsel}
             correcting={correcting} zeit={zeit} query={q} showLast={p.showLast ?? null} stand={rueckblick ? zeit.tNow : null}
             onClearSearch={() => setResetSearch((n) => n + 1)} onShowAll={p.onWinClear}
             onPrepare={p.onPrepare ?? (p.onGoto ? () => p.onGoto!("raster") : undefined)} onDemo={p.onDemo} />

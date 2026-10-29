@@ -51,7 +51,8 @@ export function takeKeyword(text: string, complete = true): { q: string; art: Se
 }
 
 const PQ_LIKE = /^[a-z]{1,2}\d{1,3}$/i;
-const norm = (s: string) => s.toLowerCase().replace(/[«»"':,()]/g, " ");
+/** Satzzeichen trennen Wörter («Standort Det 2?» findet «Det 2»; Punkt nur am Wortende, «2.5» bleibt) */
+const norm = (s: string) => s.toLowerCase().replace(/[«»"':,()?!;]/g, " ").replace(/\.(?=\s|$)/g, " ");
 
 /** Passt die Meldung zum Suchtext? Jedes Wort muss als Wortanfang vorkommen; Planquadrate («AK7») genau. */
 export function matchesQuery(e: LageEvent, q: string): boolean {

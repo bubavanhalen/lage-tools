@@ -9,7 +9,7 @@ import { buildEvent, correctionPatch, isLageDraft, takeNr } from "../src/commit"
 import { countGestrichene, filterJournal, nrQuery, takeKeyword } from "../src/journal/filter";
 import { aufhebJetztEvent, aufhebText, jetztT, mapEvent, restoreEvent, setVermerkUndo, vermerkText } from "../src/journal/actions";
 import { runUndo, clearUndo } from "../src/journal/journalUndo";
-import { eingangText, nichtLageText, felderText, formOf, hm, vermerkTeile } from "../src/entry/labels";
+import { eingangText, nichtLageText, felderText, formOf, hm, vermerkTeile, zeitKurz, textMitTag, korrekturText } from "../src/entry/labels";
 import { NR_KEY } from "../src/shell/contracts";
 
 const ex0 = demoExercise();
@@ -110,7 +110,9 @@ describe("Zeile (Kap. 2.1, 4): Form, Vermerke, Eingang, Text", () => {
     const blau = ex0.units.blau;
     expect(nichtLageText({ text: "Auftrag an H01: Beo NAI 1 bis 1200", art: "auftrag" }, blau)).toBe("Beo NAI 1 bis 1200");
     expect(nichtLageText({ text: "H04 Rückfrage: Standort Det 2?", melder: "H04", art: "rueckfrage" }, blau)).toBe("Standort Det 2?");
-    expect(nichtLageText({ text: "H02 Vbk i.O.", melder: "H02", art: "vbk" }, blau)).toBe("Vbk i.O.");
+    expect(nichtLageText({ text: "H02 Vbk i.O.", melder: "H02", art: "vbk" }, blau)).toBe("");
+    expect(nichtLageText({ text: "H03 keine Verbindung", melder: "H03", art: "vbk" }, blau)).toBe("");
+    expect(nichtLageText({ text: "H02 Vbk gut, Standort AK7", melder: "H02", art: "vbk" }, blau)).toBe("Vbk gut, Standort AK7");
     expect(nichtLageText({ text: "Quittung H02 Auftrag erhalten", art: "notiz", bezugArt: "quittung" }, blau)).toBe("Quittung H02 Auftrag erhalten");
   });
 });
@@ -247,5 +249,29 @@ describe("Vermerke und Zurückholen mit Rückgängig (Kap. 2.4, 3.4)", () => {
     mapEvent(x, evs[0]!.id, (e) => ({ ...e, text: "neu" }));
     expect(x.events![0]!.text).toBe("neu");
     expect(x.events![1]).toBe(before[1]);
+  });
+});
+
+
+describe("Nachbesserung MVP 3 (UI)", () => {
+  const days = ["2030-05-14", "2030-05-15"];
+  it("Zeiten anderer Tage mit Tageskürzel (M3)", () => {
+    expect(zeitKurz("2030-05-15T07:06", "2030-05-15T08:00", days)).toBe("07:06");
+    expect(zeitKurz("2030-05-14T07:06", "2030-05-15T08:00", days)).toBe("T1 07:06");
+    expect(zeitKurz("2030-05-13T07:06", "2030-05-15T08:00", days)).toBe("13.05. 07:06");
+    expect(textMitTag("H01 seit 900 min ohne Meldung (letzte 17:29 AK7)", "2030-05-14T17:29", "2030-05-15T08:00", days)).toBe("H01 seit 900 min ohne Meldung (letzte T1 17:29 AK7)");
+  });
+  it("Rückgängig-Text der Korrektur nennt die Art (Feind → Rückfrage)", () => {
+    const e = { id: "a", rev: 1, device: "d", updatedAt: "x", t: "2030-05-15T07:00", side: "rot" as const, unit: "", text: "H04 Standort Det 2", sym: "einheit", aff: "H" as const, source: { kind: "text" as const }, confirmed: true, melder: "H04" };
+    expect(korrekturText(e, { ...e, art: "rueckfrage", notiz: true, side: "blau", aff: "F" })).toBe("Feind → Rückfrage");
+  });
+});
+
+describe("Suche: Satzzeichen trennen (Übergabe M4)", () => {
+  it("«Standort Det 2» findet «Rückfrage: Standort Det 2?»", () => {
+    const ex = demoExercise();
+    const e: LageEvent = { id: "rf", rev: 1, device: "d", updatedAt: "2030-05-15T05:00:00.000Z", t: "2030-05-15T07:00", side: "blau", unit: "", text: "H04 Rückfrage: Standort Det 2?", sym: "einheit", aff: "F", source: { kind: "text" }, confirmed: true, art: "rueckfrage", notiz: true, melder: "H04" };
+    const r = filterJournal([...(ex.events ?? []), e], { q: "Standort Det 2", ex });
+    expect(r.map((x) => x.id)).toContain("rf");
   });
 });

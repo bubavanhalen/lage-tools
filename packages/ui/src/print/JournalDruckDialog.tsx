@@ -10,7 +10,7 @@ import { Dialog } from "../shell/Dialog";
 import { klassifizierungOf, type JournalDruck } from "../shell/contracts";
 import type { LageRotState } from "../lageRot";
 import { safeFileName } from "../store";
-import { datum, druckVorladen, eintraegeIm, grenzen, parseTagZeit, schichtAm, tagKurz, tagZeitText, tz } from "./umfang";
+import { datum, druckVorladen, eintraegeIm, grenzen, letzteSchicht, parseTagZeit, schichtAm, spanne, tagKurz, tagZeitText, tz } from "./umfang";
 import "./print.css";
 
 druckVorladen();
@@ -37,7 +37,8 @@ export interface JournalDruckDialogProps {
   say(t: string): void;
 }
 
-type Art = JournalDruck["umfang"]["art"];
+/** Umfang im Dialog: dazu «letzte» = letzte abgeschlossene Schicht (gedruckt als Schicht mit deren Kürzel) */
+type Art = JournalDruck["umfang"]["art"] | "letzte";
 
 /** Schichtbeginn dieses Geräts als Wechsel (Lagezeit), sonst jüngster Wechsel der Übung bis jetzt */
 function eigeneSchicht(ex: Exercise, device: string | undefined, tLive: string, seit: string | null | undefined): SchichtWechsel | null {
@@ -57,7 +58,11 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
   const vorwahl = journalDruckVorwahl(hatUebergaben);
   const g = useMemo(() => grenzen(ex), [ex]);
   const heute = ex.days.includes(tLive.slice(0, 10)) ? tLive.slice(0, 10) : g.to.slice(0, 10);
-  const [art, setArt] = useState<Art>(vorwahl === "schicht" && !sch ? "tag" : vorwahl);
+  const letzte = useMemo(() => letzteSchicht(ex, tLive), [ex, tLive]);
+  const zahl0 = (from: string, to: string) => eintraegeIm(ex, { from, to }).filter((e) => !e.deleted).length;
+  // Entscheid 4: laufende Schicht; ist sie noch leer (eben übernommen), die letzte Schicht – nie ein leeres Journal
+  const [art, setArt] = useState<Art>(() => vorwahl === "schicht" && !sch ? "tag"
+    : vorwahl === "schicht" && sch && letzte && zahl0(sch.t, tLive) === 0 ? "letzte" : vorwahl);
   const [tag, setTag] = useState(heute);
   const [von, setVon] = useState(tagZeitText(`${heute}T00:00`, ex.days));
   const [bis, setBis] = useState(tagZeitText(tLive, ex.days));
@@ -74,11 +79,12 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
   const umfang = useMemo((): JournalDruck["umfang"] | null => {
     switch (art) {
       case "schicht": return sch ? { art, from: sch.t, to: tLive } : null;
+      case "letzte": return letzte ? { art: "schicht", from: letzte.from, to: letzte.to, ...(letzte.kuerzel ? { kuerzel: letzte.kuerzel } : {}) } : null;
       case "tag": return { art, from: `${tag}T00:00`, to: tag === tLive.slice(0, 10) ? tLive : `${tag}T23:59` };
       case "alles": return { art, from: g.from, to: ende };
       default: return zeitraum ? { art, ...zeitraum } : null;
     }
-  }, [art, sch, tag, tLive, g, ende, zeitraum]);
+  }, [art, sch, letzte, tag, tLive, g, ende, zeitraum]);
   const opts = useMemo((): JournalDruck | null => umfang && {
     umfang, anhang, klassifizierung: klassifizierung ?? klassifizierungOf(ex), kuerzel,
   }, [umfang, anhang, ex, kuerzel, klassifizierung]);
@@ -109,7 +115,7 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
       const blob = journalPdf(ex, opts, { hints, lageRot: lage ? { lage, t: tLive } : undefined, kiNote });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      const teil = opts.umfang.art === "schicht" ? `Schicht_${sch?.an ?? ""}` : opts.umfang.art === "tag" ? tagKurz(opts.umfang.from!, ex.days) : opts.umfang.art === "alles" ? "ganz" : "Zeitraum";
+      const teil = art === "letzte" ? `Schicht_${letzte?.kuerzel ?? ""}` : opts.umfang.art === "schicht" ? `Schicht_${sch?.an ?? ""}` : opts.umfang.art === "tag" ? tagKurz(opts.umfang.from!, ex.days) : opts.umfang.art === "alles" ? "ganz" : "Zeitraum";
       a.download = `Lagejournal_${safeFileName(ex.name)}_${safeFileName(teil)}.pdf`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(a.href), 60000);
@@ -132,6 +138,11 @@ export function JournalDruckDialog({ ex, tLive, kuerzel = null, schichtSeit, dev
             {sch && (
               <label className="pr-opt"><input {...radio("schicht")} />
                 Diese Schicht – seit {tz(sch.t, ex.days)} ({sch.an}), {n(zahl(sch.t, tLive))}
+              </label>
+            )}
+            {letzte && (
+              <label className="pr-opt"><input {...radio("letzte")} />
+                Letzte Schicht – {letzte.kuerzel || "–"} {spanne(letzte.from, letzte.to, ex.days)}, {n(zahl(letzte.from, letzte.to))}
               </label>
             )}
             <span className="pr-opt">

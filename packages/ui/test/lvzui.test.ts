@@ -40,7 +40,20 @@ describe("Übergabe-Inhalt (Kap. 2.7, 3.8)", () => {
   it("Neu: höchstens 12 Zeilen, Rest als «weitere»", () => {
     expect(d.neu.zeilen.length).toBeLessThanOrEqual(NEU_MAX);
     expect(d.neu.weitere).toBe(Math.max(0, d.neu.total - NEU_MAX));
-    expect(d.neu.titel).toMatch(/^Neu seit der letzten Übergabe \(T2 06:00\) – \d+ Einträge$/);
+    // Schicht nur mit dem Kürzel begonnen: «Neu in dieser Schicht» (nicht «seit der letzten Übergabe»)
+    expect(d.neu.titel).toMatch(/^Neu in dieser Schicht \(seit T2 06:00\) – \d+ Einträge$/);
+    expect(d.neu.zeilen.every((z) => z.nr && !z.text.startsWith(z.nr))).toBe(true);
+  });
+  it("Von oben (gültig): letzte 3 Orientierungen, jüngste zuerst, unabhängig von der Schicht", () => {
+    const o = (id: string, t: string, text: string) => ({ id, rev: 1, device: "d", updatedAt: "2030-05-14T16:00:00.000Z", t, side: "blau" as const, unit: "", text,
+      sym: "einheit", aff: "F" as const, source: { kind: "text" as const }, confirmed: true, art: "orientierung" as const, notiz: true, quelle: "Bat" });
+    const ex2: Exercise = { ...ex, events: [...(ex.events ?? []), o("o1", "2030-05-14T19:00", "Bat: alt"), o("o2", "2030-05-14T20:00", "Bat: Lagerapport 1800 im KP"),
+      o("o3", "2030-05-15T03:00", "Kp: Feind Kp-Stärke ab 2200"), o("o4", "2030-05-15T05:00", "Bat: neu")] };
+    const d2 = uebergabeDaten({ ex: ex2, tLive: t, hints: [], lage: LEER_ROT, items: [], kuerzel: "BSP", seit: "2030-05-15T04:00:00.000Z", seitT: "2030-05-15T06:00" });
+    expect(d2.vonOben.map((z) => z.key)).toEqual(["o4", "o3", "o2"]);
+    // Zeit eines anderen Tages mit Tageskürzel
+    expect(d2.vonOben[2]!.t).toBe("T1 20:00");
+    expect(d2.vonOben[0]!.t).toBe("05:00");
   });
   it("Zahlen: Schicht und ganze Übung", () => {
     expect(d.zahlen.map((z) => z[0])).toEqual(["Einträge", "Feind / Unklar / Eigene gesehen", "Aufträge (offen)", "Rückfragen (offen)", "Dringend (offen)", "Korrigiert / gestrichen", "Hinweise zu Rot offen / erledigt"]);

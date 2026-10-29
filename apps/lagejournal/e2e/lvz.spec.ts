@@ -168,7 +168,7 @@ const spec: Spec = {
       try {
         const text = (await zeilenVon(s).first().innerText()).split("\n").find((l) => l.length > 8) ?? "";
         await zeilenVon(s).first().click();
-        await knopfVon(s, "Löschen").click();
+        await knopfVon(s, "Streichen").click();
         await s.page.waitForTimeout(9000);
         let aktionen = 0;
         await s.page.getByRole("button", { name: /Gestrichene zeigen \(1\)/ }).or(s.page.getByRole("link", { name: /Gestrichene zeigen \(1\)/ })).first().click(); aktionen++;

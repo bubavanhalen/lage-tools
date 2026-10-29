@@ -276,7 +276,8 @@ export interface UebergabeProps {
 // ---------- Drucken (Paket D) ----------
 export interface JournalDruck {
   /** `from`/`to` ISO lokal (Lagezeit); Vorwahl: `journalDruckVorwahl` (@lage/core, Entscheid 4) */
-  umfang: { art: "schicht" | "tag" | "alles" | "zeitraum"; from: string | null; to: string };
+  /** `kuerzel`: Schicht mit festem Kürzel («Letzte Schicht BSP», sonst das Kürzel des Wechsels bis `to`) */
+  umfang: { art: "schicht" | "tag" | "alles" | "zeitraum"; from: string | null; to: string; kuerzel?: string };
   anhang: { lageRot: boolean; hinweise: boolean; ohneGestrichene: boolean };
   klassifizierung: string;
   kuerzel: string | null;

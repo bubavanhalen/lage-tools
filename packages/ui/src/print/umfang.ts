@@ -53,8 +53,8 @@ export function umfangText(ex: Exercise, u: JournalUmfang): string {
   const from = u.from ?? grenzen(ex).from;
   switch (u.art) {
     case "schicht": {
-      const s = schichtAm(ex, u.to);
-      return `Schicht${s ? ` ${s.an}` : ""} ${spanne(from, u.to, ex.days)}`;
+      const k = u.kuerzel ?? schichtAm(ex, u.to)?.an;
+      return `Schicht${k ? ` ${k}` : ""} ${spanne(from, u.to, ex.days)}`;
     }
     case "tag": return `Tag ${tagZeile(from, ex.days)}`;
     case "alles": return `ganze Übung ${spanne(from, u.to, ex.days)}`;
@@ -93,4 +93,17 @@ export function druckVorladen(): void {
   const go = () => { void import("../journalpdf").catch(() => { vorgeladen = false; }); };
   const idle = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
   window.setTimeout(() => (idle ? idle(go, { timeout: 600 }) : go()), 700);
+}
+
+/**
+ * Letzte abgeschlossene Schicht bis `to` (Prüfung Übergabe M1): vom Wechsel davor bis zur jüngsten Übergabe, Kürzel der
+ * Person, die übergeben hat. null ohne Übergabe.
+ */
+export function letzteSchicht(ex: Exercise, to: string): { from: string; to: string; kuerzel: string } | null {
+  const ws = schichtenIm(ex, null, to);
+  let i = ws.length - 1;
+  while (i >= 0 && ws[i]!.art !== "uebergabe") i--;
+  if (i < 0) return null;
+  const w = ws[i]!, prev = ws[i - 1];
+  return { from: prev?.t ?? grenzen(ex).from, to: w.t, kuerzel: w.von ?? prev?.an ?? "" };
 }

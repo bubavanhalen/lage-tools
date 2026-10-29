@@ -5,18 +5,23 @@
  * Lage Rot höchstens zwei Möglichkeiten.
  */
 import {
-  artOf, coaHeadline, kurzText, compareEvents, istStill, isLage, lageBlau, lvzIndex, nrLabel, rapportZahlen, vermerkeOf,
+  artOf, catalogEntry, coaHeadline, letzteRotAktivitaet, placeLabel, vonOben, kurzText, compareEvents, istStill, isLage, lageBlau, lvzIndex, nrLabel, rapportZahlen, vermerkeOf,
   type Exercise, type Hint, type LageEvent, type OffenItem, type RapportZahlen,
 } from "@lage/core";
 import type { LageRotState } from "../lageRot";
 import { coaWhen } from "../red/redText";
 import { klassifizierungOf } from "../shell/contracts";
+import { hm, textMitTag, zeitKurz } from "../entry/labels";
 
 export const NEU_MAX = 12;
 export const OFFEN_MAX = 12;
+/** «Von oben (gültig)»: so viele Orientierungen */
+export const VON_OBEN_MAX = 3;
 
 export interface UebergabeZeileBlau { trupp: string; ort: string; seit: string; letzte: string; vbk: string; offen: string; still: string | null }
 export interface UebergabeZeileOffen { key: string; mark: string; t: string; nr: string; text: string; meta: string }
+/** Zeile «Neu» bzw. «Von oben»: Zeit (mit Tag, wenn nicht heute) · Nr (gedämpft) · Text · Status */
+export interface UebergabeZeileNeu { key: string; t: string; nr: string; bang: boolean; text: string; meta: string }
 export interface UebergabeDaten {
   titel: string;
   klass: string;
@@ -25,11 +30,13 @@ export interface UebergabeDaten {
   /** «Schicht BSP seit T2 06:00 (1 h 30 min) · 18 Einträge in der Schicht» */
   schichtZeile: string;
   blau: UebergabeZeileBlau[];
-  rot: { gesehen: string | null; zuletzt: string | null; moeglich: string[] };
+  rot: { gesehen: string | null; zuletzt: string | null; aktivitaet: string | null; moeglich: string[] };
+  /** «Von oben (gültig)»: die letzten Orientierungen (Bat, Kp …), unabhängig von der Schicht, jüngste zuerst */
+  vonOben: UebergabeZeileNeu[];
   offen: UebergabeZeileOffen[];
   offenTotal: number;
   offenWeitere: number;
-  neu: { titel: string; zeilen: string[]; weitere: number; total: number };
+  neu: { titel: string; zeilen: UebergabeZeileNeu[]; weitere: number; total: number };
   zahlen: Array<[string, string, string]>;
   /** Kürzel, das übergibt (vorbelegt) */
   von: string | null;
@@ -89,8 +96,8 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     trupp: z.trupp,
     ort: z.ort ?? "–",
     seit: z.seit ? tagZeit(z.seit, days) : "–",
-    letzte: z.letzteMeldung ? `${hhmm(z.letzteMeldung.t)} ${kurz(ohneMelder({ melder: z.trupp, text: z.letzteMeldung.text }), 38)}` : "–",
-    vbk: z.letzteVbk ? `${hhmm(z.letzteVbk.t)} ${z.letzteVbk.ergebnis}` : "–",
+    letzte: z.letzteMeldung ? `${zeitKurz(z.letzteMeldung.t, t, days)} ${kurz(ohneMelder({ melder: z.trupp, text: z.letzteMeldung.text }), 38)}` : "–",
+    vbk: z.letzteVbk ? `${zeitKurz(z.letzteVbk.t, t, days)} ${z.letzteVbk.ergebnis}` : "–",
     offen: z.offen.map((o) => `${o.art === "auftrag" ? "Auftrag" : "Rückfrage"} ${o.nr}${o.ueberfaellig ? " ⚠" : ""}`).join(", "),
     still: istStill(z) ? `${z.stillMin} min still` : null,
   }));
@@ -113,6 +120,14 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     const wann = e.t.slice(0, 10) === t.slice(0, 10) ? hhmm(e.t) : tagZeit(e.t, days);
     return `${e.unit}${ort ? ` ${ort}` : ""} (${wann}${ns ? `, seit ${ns >= 60 ? `${Math.floor(ns / 60)} h` : `${ns} min`} nicht mehr` : ""})`;
   });
+  // letzte Rot-Aktivität (auch ohne Element, z. B. Drohne), wenn sie nicht schon unter «Zuletzt gesehen» steht
+  const akt = letzteRotAktivitaet(ex, t);
+  const aktNeu = akt && !(akt.unit && lastRed.get(akt.unit)?.id === akt.id && zuletzt.length);
+  const aktivitaet = akt && aktNeu ? (() => {
+    const was = akt.desc || catalogEntry(akt.sym)?.name || kurz(kurzText(akt, ex.units?.blau ?? []), 40);
+    const ort = placeLabel(akt);
+    return `Zuletzt Rot-Aktivität: ${zeitKurz(akt.t, t, days)} ${was}${ort ? ` ${ort}` : ""}${akt.melder ? ` (von ${akt.melder})` : ""}`;
+  })() : null;
   const moeglich = lage.coas.filter((c) => c.label !== "weitere").slice(0, 2).map((c) => {
     const w = coaWhen(c, ex, t);
     return `${c.label === "wahrscheinlichste" ? "Am wahrscheinlichsten" : "Am gefährlichsten"}: ${coaHeadline(c)}${w && w.state !== "offen" ? ` – ${w.text}` : ""}`;
@@ -120,7 +135,7 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
 
   // 3 Offene Punkte
   const offen = items.slice(0, OFFEN_MAX).map((it): UebergabeZeileOffen => ({
-    key: it.key, mark: MARK[it.art], t: it.art === "still" ? "" : hhmm(it.t), nr: it.nr ?? "", text: it.text,
+    key: it.key, mark: MARK[it.art], t: it.art === "still" ? "" : zeitKurz(it.t, t, days), nr: it.nr ?? "", text: textMitTag(it.text, it.t, t, days),
     meta: it.art === "auftrag" ? (it.ueberfaellig ? "⚠ Frist vorbei" : `seit ${dauerText(it.seitMin)}`) : it.art === "rueckfrage" ? `seit ${dauerText(it.seitMin)}` : "",
   }));
 
@@ -135,10 +150,31 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
   };
   const sorted = [...neuList].sort((a, b) => rang(a) - rang(b) || (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
   const blauNamen = ex.units?.blau ?? [];
-  const neuZeilen = sorted.slice(0, NEU_MAX).map((e) => `${hhmm(e.t)} ${nrLabel(e, ex)} ${vermerkeOf(e, idx).dringend ? "! " : ""}${kurz(kurzText(e, blauNamen), 90)}`);
-  const neuTitel = neuAb
-    ? `Neu seit der letzten Übergabe (${tagZeit(neuAb.t ?? i.seitT ?? t, days)}) – ${neuList.length} ${neuList.length === 1 ? "Eintrag" : "Einträge"}`
-    : `Neu (noch keine Übergabe) – ${neuList.length} ${neuList.length === 1 ? "Eintrag" : "Einträge"}`;
+  /** Status eines dringenden Eintrags in «Neu» (Prüfung M5): «erledigt 07:40 · Massnahme: …» bzw. «offen» */
+  const status = (e: LageEvent): string => {
+    const v = vermerkeOf(e, idx);
+    if (!v.dringend) return "";
+    const teile = [v.status === "erledigt" ? `erledigt${v.erledigtUm ? ` ${hm(v.erledigtUm)}` : ""}` : "offen"];
+    if (v.massnahme) teile.push(`Massnahme: ${v.massnahme}`);
+    return teile.join(" · ");
+  };
+  const zeile = (e: LageEvent, n = 90): UebergabeZeileNeu => ({
+    key: e.id, t: zeitKurz(e.t, t, days), nr: nrLabel(e, ex), bang: vermerkeOf(e, idx).dringend, text: kurz(kurzText(e, blauNamen), n), meta: status(e),
+  });
+  const neuZeilen = sorted.slice(0, NEU_MAX).map((e) => zeile(e));
+  const n = `${neuList.length} ${neuList.length === 1 ? "Eintrag" : "Einträge"}`;
+  // eigene Schicht nur mit dem Kürzel begonnen (keine Übergabe): «Neu in dieser Schicht»
+  const eigenerBeginn = i.seit ? (ex.schichten ?? []).find((w) => w.at === i.seit) : undefined;
+  const neuTitel = !neuAb ? `Neu (noch keine Übergabe) – ${n}`
+    : eigenerBeginn && eigenerBeginn.art === "beginn" ? `Neu in dieser Schicht (seit ${tagZeit(eigenerBeginn.t ?? i.seitT ?? t, days)}) – ${n}`
+    : `Neu seit der letzten Übergabe (${tagZeit(neuAb.t ?? i.seitT ?? t, days)}) – ${n}`;
+
+  // Von oben (gültig): die letzten Orientierungen, unabhängig von der Schicht
+  const byId = new Map((ex.events ?? []).map((e) => [e.id, e]));
+  const oben = vonOben(ex, t, VON_OBEN_MAX).map((z): UebergabeZeileNeu => {
+    const e = byId.get(z.id);
+    return { key: z.id, t: zeitKurz(z.t, t, days), nr: z.nr, bang: !!e && vermerkeOf(e, idx).dringend, text: kurz(`${z.quelle ? `${z.quelle}: ` : ""}${z.text}`, 140), meta: e ? status(e) : "" };
+  });
 
   // 5 Zahlen
   const zs = rapportZahlen(ex, neuAb?.at ?? null, t, i.hints);
@@ -156,7 +192,8 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
 
   return {
     titel: ex.name, klass: klassifizierungOf(ex), stand: standText(t, days), schichtZeile, blau,
-    rot: { gesehen, zuletzt: zuletzt.length ? `Zuletzt gesehen: ${zuletzt.join(" · ")}` : null, moeglich },
+    rot: { gesehen, zuletzt: zuletzt.length ? `Zuletzt gesehen: ${zuletzt.join(" · ")}` : null, aktivitaet, moeglich },
+    vonOben: oben,
     offen, offenTotal: items.length, offenWeitere: Math.max(0, items.length - OFFEN_MAX),
     neu: { titel: neuTitel, zeilen: neuZeilen, weitere: Math.max(0, neuList.length - NEU_MAX), total: neuList.length },
     zahlen, von: i.kuerzel,

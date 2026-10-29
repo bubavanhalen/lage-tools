@@ -43,7 +43,7 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
   if (!list.length) return;
   safePdf(doc); // «N↔S» → «N–S», «→» → «nach» (Standardschrift nur WinAnsi)
   const k = !!nur;
-  const W = 210, M = 12, LH = k ? 3.3 : 3.6;
+  const W = 210, M = 12, LH = k ? 3.5 : 3.7;
   const cols = [{ h: "Tag", w: 10 }, { h: "Zeit", w: 12 }, { h: "Stufe", w: 15 }, { h: "Regel", w: 12 }, { h: "Hinweis / Begründung / Auslöser", w: 103 }, { h: "Entscheid", w: 34 }];
   let y = 0;
   let voll = false;
@@ -51,12 +51,15 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
     if (k && y > 0) { voll = true; return; }
     doc.addPage(); page++;
     doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(0);
-    doc.text(`Anhang: Hinweise zu Rot – ${ex.name}`, M, 14);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    // Titel links (darf umbrechen), Vermerk darunter – nie übereinander (Prüfung N)
+    const titel = doc.splitTextToSize(`Anhang: Hinweise zu Rot – ${ex.name}`, W - 2 * M - 22) as string[];
+    doc.text(titel, M, 14);
+    const unten = 14 + (titel.length - 1) * 5.4;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
     doc.text(classification, W - M, 10, { align: "right" });
-    doc.text("Hinweise, keine Fakten – Entscheid durch Zfhr", W - M, 14, { align: "right" });
-    if (nur) doc.text("nur Hinweise aus dem Zeitraum des Journals und noch offene", M, 19);
-    y = 24;
+    const verm = doc.splitTextToSize(`Hinweise, keine Fakten – Entscheid durch Zfhr${nur ? " · nur Hinweise aus dem Zeitraum des Journals und noch offene" : ""}`, W - 2 * M) as string[];
+    doc.text(verm, M, unten + 5.5);
+    y = unten + 11 + (verm.length - 1) * 3.8;
     doc.setFillColor(29, 29, 29); doc.rect(M, y - 4, W - 2 * M, 6, "F");
     doc.setTextColor(255); doc.setFont("helvetica", "bold");
     let x = M + 1;
@@ -65,7 +68,7 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
     y += 5;
   };
   header();
-  if (k) doc.setFontSize(7.5);
+  doc.setFontSize(k ? 8 : 8.5);
   const all = rows(ex, list);
   const layoutRow = (r: (typeof all)[number]) => {
     const titel = r.bundled > 1 ? `${r.titel} · ${r.bundled}×` : r.titel;
@@ -103,7 +106,7 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
     shown++;
   }
   if (shown < all.length) {
-    doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80);
+    doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(80);
     doc.text(`+ ${all.length - shown} weitere (ältere bzw. erledigte) Hinweise – vollständig als Tabelle «Hinweise» (CSV) oder in der App`, M, y + 2);
     doc.setFont("helvetica", "normal"); doc.setTextColor(0);
   }

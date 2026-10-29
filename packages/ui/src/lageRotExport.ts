@@ -98,7 +98,7 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
   const r = lageRotRows(ex, lage, t);
   if (!r.coas.length && !r.kraefte.length && !r.weg.length) return page;
   const k = !!o.kompakt;
-  const W = 210, M = 12, LH = k ? 3.3 : 3.8, FS = k ? 7.5 : 8.5, TS = k ? 9 : 10;
+  const W = 210, M = 12, LH = k ? 3.5 : 3.8, FS = k ? 8 : 8.5, TS = k ? 9 : 10;
   /** kompakt: Seite voll – Rest weglassen */
   let voll = false;
   let y = 0;
@@ -142,7 +142,7 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
     if (!need(h)) return;
     const top = y - 3.6;
     if (coa.label !== "weitere") { doc.setFillColor(253, 232, 235); doc.rect(M, top, W - 2 * M, titleLines.length * 4.4 + 1.6, "F"); }
-    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(150, 30, 35);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(150, 30, 35);
     doc.text(doc.splitTextToSize(COA_KICKER[coa.label], 30) as string[], M + 1.5, y);
     doc.setTextColor(0); doc.setFontSize(TS);
     doc.text(titleLines, M + 34, y);
@@ -150,7 +150,7 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
     if (c.zeitraumKurz) doc.text(txt(c.zeitraumKurz), W - M - 1.5, y, { align: "right" });
     y += titleLines.length * 4.4 + 1.2;
     for (const [key, ls] of wrapped) {
-      doc.setTextColor(90); doc.setFontSize(7.5); doc.text(key.toUpperCase(), M + 1.5, y);
+      doc.setTextColor(90); doc.setFontSize(8); doc.text(key.toUpperCase(), M + 1.5, y);
       doc.setTextColor(0); doc.setFontSize(FS); doc.text(ls, M + 34, y);
       y += ls.length * LH + 1;
     }
@@ -163,7 +163,7 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
   const cols = lage.spec
     ? (win ? [{ h: "", w: 36 }, { h: "erkannt", w: 48 }, { h: "im Fenster", w: 38 }, { h: "erwartet", w: 26 }, { h: "Stand", w: 38 }] : [{ h: "", w: 40 }, { h: "erkannt", w: 62 }, { h: "erwartet", w: 34 }, { h: "Stand", w: 50 }])
     : (win ? [{ h: "", w: 40 }, { h: "erkannt", w: 73 }, { h: "im Fenster", w: 73 }] : [{ h: "", w: 40 }, { h: "erkannt", w: 146 }]);
-  doc.setFontSize(7.5); doc.setTextColor(90);
+  doc.setFontSize(8); doc.setTextColor(90);
   let x = M + 1.5;
   if (!voll) for (const c of cols) { doc.text(c.h.toUpperCase(), x, y); x += c.w; }
   doc.setTextColor(0); doc.setFontSize(FS);
@@ -192,7 +192,7 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
     y += l.length * LH + 1;
   }
   if (voll) {
-    doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80);
+    doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(80);
     doc.text("gekürzt auf eine Seite – vollständig in der App unter «Was Rot vorhaben könnte»", M, 287);
     doc.setFont("helvetica", "normal"); doc.setTextColor(0);
   }

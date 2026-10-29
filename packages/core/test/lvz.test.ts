@@ -191,21 +191,24 @@ describe("Hinweise: nur Lage, Lebenszeichen, Nachlauf bei Aufhebung", () => {
 });
 
 describe("Aufheben über parseMeldung und Knopf", () => {
-  it("keine aktive Sperre am Ort → gelb «Keine aktive Sperre in AA1 gefunden …», normale Meldung", () => {
+  it("keine aktive Sperre am Ort → gelb «Kein Ziel gefunden – als Notiz eintragen?», Notiz ohne Zeichen (Entscheid)", () => {
     const ex = demoExercise();
     const d = parseMeldung("H04 Sperre AA1 aufgehoben", bernCtx(ex, "0730"));
     expect(d.hebtAuf).toBeUndefined();
-    expect(d.hebtAufKandidaten).toEqual([]);
+    expect(d).toMatchObject({ art: "notiz", notizGrund: "kein-ziel", artStark: false });
+    expect(d.pos).toBeUndefined();
     const st = entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now: new Date(2030, 4, 15, 7, 30) });
-    expect(st.reasons.find((r) => r.code === "aufheben")?.text).toBe("Keine aktive Sperre in AA1 gefunden – als normale Meldung eintragen?");
+    expect(st.level).toBe("pruefen");
+    expect(st.reasons.find((r) => r.code === "aufheben")?.text).toBe("Kein Ziel gefunden – als Notiz eintragen?");
   });
-  it("zwei Sperren am Ort → gelb «Zwei Sperren in AG13 – welche?»; Wahl mit aufhebDraft", () => {
+  it("zwei Sperren am Ort → rot «Zwei Sperren in AG13 – welche aufheben?» bis gewählt; Wahl mit aufhebDraft", () => {
     const ex = demoExercise();
     add(ex, "T2 0715 H04: 2. Sperre in AG13", "0715");
     const d = parseMeldung("H04 Sperre AG13 aufgehoben", bernCtx(ex, "0730"));
     expect(d.hebtAufKandidaten).toHaveLength(2);
     const st = entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now: new Date(2030, 4, 15, 7, 30) });
-    expect(st.reasons.find((r) => r.code === "aufheben")?.text).toBe("Zwei Sperren in AG13 – welche?");
+    expect(st.level).toBe("geht-nicht");
+    expect(st.reasons.find((r) => r.code === "aufheben")?.text).toBe("Zwei Sperren in AG13 – welche aufheben?");
     const ziel = ex.events!.find((e) => e.id === d.hebtAufKandidaten![1])!;
     const w = aufhebDraft(d, ziel);
     expect(w).toMatchObject({ hebtAuf: ziel.id, unit: "", sym: "einheit", desc: "Sperre aufgehoben" });
@@ -231,7 +234,7 @@ describe("Bezüge über die Nummer", () => {
   it("«Antwort zu 99» ohne Nr 99 → gelb «Nr 99 gibt es nicht – ohne Bezug eintragen?»", () => {
     const ex = demoExercise();
     const d = parseMeldung("Antwort zu 99: Det 2 in AJ8", bernCtx(ex, "0730"));
-    expect(d).toMatchObject({ bezugNr: "99", bezugFehlt: true, art: "meldung" });
+    expect(d).toMatchObject({ bezugNr: "99", bezugFehlt: true, art: "notiz" });
     expect(d.text).toBe("Antwort zu 99: Det 2 in AJ8");
     const st = entryState(d, { hasRaster: true, online: false, placePending: false, manualPos: false, now: new Date(2030, 4, 15, 7, 30) });
     expect(st.reasons.find((r) => r.code === "bezug")?.text).toBe("Nr 99 gibt es nicht – ohne Bezug eintragen?");

@@ -45,7 +45,7 @@ describe("Suche: Stichwörter und Text (Kap. 3.4)", () => {
     expect(filterJournal(evs, { q: "H07" })).toHaveLength(0);
   });
   it("Leiste beim Löschen", () => {
-    expect(deletedLabel(e0720)).toBe("Meldung 07:20 H03 gelöscht");
+    expect(deletedLabel(e0720)).toBe("Gestrichen: 07:20 H03");
   });
   it("Vorschlag Trupp ohne Hover lesbar: «H03 – zuletzt 07:20 gemeldet · Standort …»", () => {
     const h = { kind: "element" as const, label: "H03", badge: "Eigene", detail: "zuletzt T1 18:45 · AP4 D", side: "blau" as const };

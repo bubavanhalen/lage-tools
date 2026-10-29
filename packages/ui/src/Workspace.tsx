@@ -35,6 +35,7 @@ import {
   type RedCoa,
   newEventId,
   localIso,
+  type EntryArt,
 } from "@lage/core";
 import {
   AffineImageLayer,
@@ -101,10 +102,12 @@ import { UebergabeView } from "./lvzui/UebergabeView";
 import { KuerzelDialog } from "./lvzui/KuerzelDialog";
 import { KiNotizCtx } from "./ki/KiFeatures";
 import { prefillEntry } from "./entry/useEntryDraft";
+import { HILFE_ANDERE, HILFE_BEISPIELE } from "./entry/HelpPopover";
 import { takeNr } from "./commit";
 import { perfMark } from "./perf";
 import { klassifizierungOf } from "./shell/contracts";
 import { cloneForUpdate } from "./lvzui/clone";
+import { ladeLetzteUebergabe, ladeUebergabePdf, letzteUebergabeText, onLetzteUebergabe } from "./lvzui/letzteUebergabe";
 import { JournalDruckDialog } from "./print/JournalDruckDialog";
 import { LagekarteDialog } from "./print/LagekarteDialog";
 
@@ -141,9 +144,13 @@ interface Props {
 
 type DialogKind = "uebungen" | "hilfe" | "ueber" | "sprache" | "kuerzel" | "uebergabe" | "journaldruck" | "lagekarte" | null;
 
-/** Text ins Meldungsfeld (Offen: «Antwort eintragen», «Vbk eintragen»); Rückfall über das Feld selbst */
-function prefill(text: string): void {
-  if (prefillEntry(text)) return;
+/**
+ * Text ins Meldungsfeld (Offen: «Antwort eintragen», «Vbk eintragen»); Rückfall über das Feld selbst.
+ * «Antwort zu 82: » ist ohne Vorgabe eine Notiz mit Bezug (Kern); Feind/Eigene/Unklar nur von Hand in «Was ist es?».
+ */
+function prefill(text: string, art?: EntryArt): void {
+  // «Antwort zu 82: » liest der Kern selbst als Notiz mit Bezug (Antwort); eine Vorgabe nur, wenn ausdrücklich verlangt
+  if (prefillEntry(text, art ? { art } : undefined)) return;
   const f = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Was wurde gemeldet?"], input[placeholder="Was wurde gemeldet?"]');
   if (!f) return;
   const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(f), "value")?.set;
@@ -163,7 +170,9 @@ export function Workspace({ product, tagline }: Props) {
   const { aw, setModus, setExperte } = useArbeitsweise();
   const experte = aw.experte;
   const lage = aw.modus === "lage";
-  const [sideView, setSideView] = useState<SideView>("journal");
+  const [sideView, setSideViewRaw] = useState<SideView>("journal");
+  /** Wechsel nach «Offen»: Auswahl der Meldung (Kartenband) aufheben – Liste und Karte widersprechen sich sonst (M2) */
+  const setSideView = useCallback((v: SideView) => { setSideViewRaw(v); if (v === "offen") setSelEvent(null); }, []);
   const [prepStep, setPrepStep] = useState<PrepStep | null>(null);
   // ---------- Ebenen und Grundkarte, getrennt für Basis und Experte (pro Gerät)
   const fv: FlagVariant = flagVariant(experte);
@@ -581,6 +590,26 @@ export function Workspace({ product, tagline }: Props) {
   };
   const selectEventRef = useRef(selectEvent);
   selectEventRef.current = selectEvent;
+  /** «Zur Meldung» (Offen): liegt sie vor «Zeige letzte», alles zeigen; Suche, die sie ausblendet, leeren; Fokus auf die Zeile */
+  const [reveal, setReveal] = useState<{ id: string; n: number } | null>(null);
+  const zurMeldung = (id: string) => {
+    const e = (ex?.events ?? []).find((x) => x.id === id);
+    if (e && winFrom && e.t.slice(0, 16) < winFrom) {
+      zeit.setShowLast(null); zeit.setAb?.(null);
+      say("«Zeige letzte» aufgehoben – alles sichtbar");
+    }
+    setSideView("journal");
+    selectEvent(id);
+    setReveal({ id, n: Date.now() });
+    // Fokus auf die Zeile, sobald sie gezeichnet ist (nie auf BODY)
+    let n = 0;
+    const tryFocus = () => {
+      const li = document.querySelector<HTMLElement>(`.jl li[data-id="${CSS.escape(id)}"]`);
+      if (li) { li.focus({ preventScroll: true }); li.scrollIntoView({ block: "nearest" }); return; }
+      if (++n < 30) window.setTimeout(tryFocus, 50);
+    };
+    window.setTimeout(tryFocus, 0);
+  };
   const correct = (id: string) => {
     setSideView("journal");
     if (lage && requestCorrection(id)) return;
@@ -669,6 +698,9 @@ export function Workspace({ product, tagline }: Props) {
   const onNr = useCallback(() => takeNr(exRef.current ?? { id: "", events: [] }), []);
   const lvzRow = useMemo(() => ({ device, kuerzel: schicht.kuerzel, update, onPrefill: prefill }), [device, schicht.kuerzel, update]);
   const openUebergabe = useCallback(() => { zeit.goLive("knopf"); setDialog("uebergabe"); }, [zeit.goLive]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** «Letzte Übergabe als PDF» (Menü): nach dem Abschliessen auf diesem Gerät gemerkt */
+  const [letzteUeb, setLetzteUeb] = useState(() => (ex ? ladeLetzteUebergabe(ex.id) : null));
+  useEffect(() => { setLetzteUeb(ex ? ladeLetzteUebergabe(ex.id) : null); return onLetzteUebergabe(() => setLetzteUeb(exRef.current ? ladeLetzteUebergabe(exRef.current.id) : null)); }, [ex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // Taste U (ausserhalb von Eingabefeldern, ohne Ctrl/Alt/⌘): Übergabe
   useEffect(() => {
     const key = (ev: KeyboardEvent) => {
@@ -853,6 +885,8 @@ export function Workspace({ product, tagline }: Props) {
       onSaveFile={() => void saveFile()} onOpenFile={() => void openFile()} onCsv={() => void exportJournal("csv")}
       onPdf={() => setDialog("journaldruck")} onLagekarte={() => setDialog("lagekarte")}
       onUebergabe={openUebergabe} onKuerzel={() => setDialog("kuerzel")}
+      onLetzteUebergabe={letzteUeb ? () => { void ladeUebergabePdf(ex.name, letzteUeb).catch((e) => say("PDF konnte nicht erstellt werden: " + (e as Error).message + ".")); } : undefined}
+      letzteUebergabeNote={letzteUeb ? letzteUebergabeText(letzteUeb) : null}
       schichtNote={schicht.kuerzel ? `Schicht ${schicht.kuerzel}${seitText(schicht.seitT) ? ` seit ${seitText(schicht.seitT)}` : ""}` : "Kürzel fehlt"}
       night={night} onNight={setNight} onPresent={() => togglePresent(true)}
       onSpeech={() => setDialog("sprache")} onHintsCsv={exportHints} onHelp={() => setDialog("hilfe")} onAbout={() => setDialog("ueber")}
@@ -868,7 +902,7 @@ export function Workspace({ product, tagline }: Props) {
   );
   const offenPanel = (
     <OffenPanel ex={ex} items={offenItems} hints={allHints} selected={selOffen} onSelect={setSelOffen} tLive={zeit.tLive}
-      onEvent={(id) => { setSideView("journal"); selectEvent(id); }}
+      onEvent={zurMeldung}
       onCorrect={(id) => correct(id)}
       onHint={(id) => { setSideView("rot"); setSelHint(id); const h = hints.find((x) => x.id === id); if (h) focusHint(h); }}
       onPrefill={prefill} onUebergabe={openUebergabe} update={update} device={device} kuerzel={schicht.kuerzel}
@@ -879,7 +913,7 @@ export function Workspace({ product, tagline }: Props) {
   const journal = map ? (
     <JournalPanel {...mvp3} ex={ex} map={map} device={device} selected={selEvent} experte={experte} zeit={zeit}
       win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => { zeit.setShowLast(null); zeit.setAb?.(null); }}
-      showLast={zeit.showLast} onSelect={selectEvent} reportAt={reportAt}
+      showLast={zeit.showLast} onSelect={selectEvent} reportAt={reportAt} reveal={reveal}
       onCommitted={(ids) => { mapNow.current = ids; zeit.goLive("eintragen"); }}
       onPrepare={() => { setModus("vorbereiten"); setPrepStep(2); }} onDemo={loadDemo} update={update} say={say} quality={quality}
       between={<>
@@ -999,15 +1033,7 @@ function WorkspaceMenu(p: Omit<Parameters<typeof MainMenu>[0], "onKi">) {
 }
 
 /** Hilfe: Beispiele (Kap. 4.4, fiktiv, passen zum Beispiel Bern) und Tastenkürzel */
-const BEISPIELE: Array<[string, string]> = [
-  ["H04 2 Fz in AK7 Rtg N", "Fahrzeuge gesehen"],
-  ["1015 H02 Beo Stao bezogen AJ9", "eigener Trupp"],
-  ["H03 3 Pers unklar bei NAI 2", "unklar"],
-  ["H01 Sperre AF13 auf Hauptstrasse", "Sperre auf der Strasse"],
-  ["H05 Kontakt mit Gegner AP11", "Kontakt"],
-  ["Auftrag an H01: Beo NAI 1 bis 1200", "Auftrag (kein Zeichen)"],
-  ["H03 A: 1020 E: 3 Pers I: Rtg W O: AF8 C", "Meldung im AEIOU-Schema"],
-];
+const BEISPIELE: Array<[string, string]> = [...HILFE_BEISPIELE, ...HILFE_ANDERE];
 function HelpDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Beispiele und Tastenkürzel" onClose={onClose}>
@@ -1025,7 +1051,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
         <dt><kbd>Ctrl+K</kbd></dt><dd>suchen</dd>
         <dt><kbd>L</kbd></dt><dd>zurück zu LIVE</dd>
         <dt><kbd>U</kbd></dt><dd>Übergabe</dd>
-        <dt><kbd>Ctrl+Z</kbd></dt><dd>Löschen rückgängig machen</dd>
+        <dt><kbd>Ctrl+Z</kbd></dt><dd>Streichen, Korrektur, Vermerk rückgängig machen</dd>
       </dl>
     </Dialog>
   );

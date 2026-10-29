@@ -1,8 +1,8 @@
 /**
  * Journal-Liste (Spez. MVP 1, Kap. 2.1, 3.4): neueste zuerst, Stundenköpfe «T2 07:00», je Zeile Zeit · Form + Art
  * (◆ Feind, ● Eigene, ■ Unklar, ▲ Neutral) · Text, darunter «von H05 · AP11 · von 2 Trupps gesehen · korrigiert
- * 07:34 · neu». Klick/Enter = wählen; gewählte Zeile zeigt «Korrigieren» und «Löschen» (Text, 44 px); ↑/↓ wechseln,
- * Entf löscht. «korrigiert 07:34» öffnet die früheren Fassungen. Die Zeile in Korrektur ist dunkel gerahmt.
+ * 07:34 · neu». Klick/Enter = wählen; gewählte Zeile zeigt «Korrigieren», «Mehr …» und «Streichen» (Text, 44 px);
+ * ↑/↓ wechseln, Entf streicht. «korrigiert 07:34» öffnet die früheren Fassungen. Die Zeile in Korrektur ist dunkel gerahmt.
  * Leerzustände Kap. 4.5. Struktur: `.jlist` mit `li` je Meldung (Stundenköpfe stehen ausserhalb, nicht als `li`).
  * Vertrag `JournalListProps`; Ergänzungen (optional) unten.
  *
@@ -20,7 +20,7 @@
  * Vorrat) stehen im DOM, gemessene Höhen werden gemerkt, Platzhalter oben/unten halten die Bildlaufleiste richtig.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
+import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, type EventQuality, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { AttachmentChips } from "../Attachments";
 import { attachmentsOf } from "../attachmentStore";
@@ -56,6 +56,8 @@ export interface JournalListExtra {
   onRestore?(id: string): void;
   /** (MVP 3) laufende Nummer für «Aufgehoben (jetzt)» */
   onNr?(): number;
+  /** Übergaben als Zeile «Schichtwechsel 06:45 BSP → WMA» an ihrer Zeit (Prüfung Übergabe M1); fehlt → keine */
+  wechsel?: SchichtWechsel[];
 }
 
 const WORT: Partial<Record<ZeilenForm, string>> = { feind: "Feind", eigen: "Eigene", unklar: "Unklar", neutral: "Neutral", aufheb: "Aufhebung" };
@@ -168,9 +170,9 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open,
         ) : (
           <span className="jl-acts">
             <button type="button" className="jl-btn" onClick={() => onCorrect(e.id)}>Korrigieren</button>
-            {/* «Löschen» zuletzt: ein Tipp in die Mitte der Zeile trifft nie den löschenden Knopf */}
+            {/* Tablet: Lücke in der Mitte (CSS), «Streichen» ganz rechts – ein Tipp in die Mitte der Zeile trifft keinen Knopf */}
             <button type="button" className="jl-btn" aria-haspopup="dialog" aria-expanded={menu} onClick={(ev) => onMenu(e.id, ev.currentTarget)}>Mehr …</button>
-            <button type="button" className="jl-btn" onClick={() => onDelete(e.id)}>Löschen</button>
+            <button type="button" className="jl-btn" onClick={() => onDelete(e.id)}>Streichen</button>
           </span>
         ))}
       </span>
@@ -185,7 +187,10 @@ const VORRAT = 900;
 /** geschätzte Höhen, bis gemessen */
 const H_HEAD = 34, H_ROW = 62;
 
-type Item = { k: "h"; key: string; head: string } | { k: "r"; key: string; e: LageEvent } | { k: "t"; key: string; text: string };
+type Item = { k: "h"; key: string; head: string } | { k: "r"; key: string; e: LageEvent } | { k: "t"; key: string; text: string } | { k: "w"; key: string; text: string };
+
+/** «Schichtwechsel 06:45 BSP → WMA (Übergabe)» */
+export const wechselText = (w: Pick<SchichtWechsel, "t" | "von" | "an">) => `Schichtwechsel ${w.t.slice(11, 16)} ${w.von ?? "–"} → ${w.an} (Übergabe)`;
 const H_TRENNER = 34;
 
 const FOCUSABLE = "button, a[href], input, select, textarea, audio[controls], [tabindex]";
@@ -244,14 +249,36 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     if (seit) { lastNew = -1; events.forEach((e, i) => { if ((e.createdAt ?? e.updatedAt) >= seit.seit) lastNew = i; }); }
     const trenner: Item | null = seit ? { k: "t", key: "trenner", text: `Neu in deiner Schicht ↑ · seit ${hm(seit.seit)} (${seit.kuerzel})` } : null;
     if (trenner && lastNew === -1) out.push(trenner);
+    // Übergaben (neueste zuerst) an ihrer Lagezeit zwischen den Einträgen
+    const ws = [...(p.wechsel ?? [])].filter((w) => w.art === "uebergabe").sort((a, b) => (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
+    let wi = 0;
+    const head = (t: string) => {
+      const h = t.slice(0, 13);
+      if (h !== k) { k = h; out.push({ k: "h", key: "h:" + h, head: `${dayLabel(t, ex.days)} ${t.slice(11, 13)}:00` }); }
+    };
+    /** Wechsel über dem Eintrag `e`: später, oder gleiche Minute und nach dem Erfassen von `e` */
+    const ueber = (w: SchichtWechsel, e: LageEvent | null) => {
+      if (!e) return true;
+      const wt = w.t.slice(0, 16), et = e.t.slice(0, 16);
+      return wt > et || (wt === et && w.at >= (e.createdAt ?? e.updatedAt));
+    };
+    const wechselBis = (e: LageEvent | null) => {
+      while (wi < ws.length && ueber(ws[wi]!, e)) {
+        const w = ws[wi++]!;
+        head(w.t);
+        out.push({ k: "w", key: "w:" + w.id, text: wechselText(w) });
+      }
+    };
     events.forEach((e, i) => {
-      const h = e.t.slice(0, 13);
-      if (h !== k) { k = h; out.push({ k: "h", key: "h:" + h, head: `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 13)}:00` }); }
+      wechselBis(e);
+      head(e.t);
       out.push({ k: "r", key: e.id, e });
       if (trenner && i === lastNew) out.push(trenner);
     });
+    // ältere Übergaben nur, solange sie im gezeigten Zeitraum liegen (nach dem ältesten Eintrag nicht mehr)
+    if (!events.length) wechselBis(null);
     return out;
-  }, [events, ex.days, seit?.seit, seit?.kuerzel]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [events, ex.days, seit?.seit, seit?.kuerzel, p.wechsel]); // eslint-disable-line react-hooks/exhaustive-deps
   const idx = useMemo(() => lvzIndex(all), [all]);
   const virt = events.length >= VIRT_AB;
   const index = useMemo(() => new Map(events.map((e, i) => [e.id, i])), [events]);
@@ -263,7 +290,7 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
   const offs = useMemo(() => {
     const o = new Array<number>(items.length + 1);
     o[0] = 0;
-    for (let i = 0; i < items.length; i++) { const it = items[i]!; o[i + 1] = o[i]! + (heights.current.get(it.key) ?? (it.k === "h" ? H_HEAD : it.k === "t" ? H_TRENNER : H_ROW)); }
+    for (let i = 0; i < items.length; i++) { const it = items[i]!; o[i + 1] = o[i]! + (heights.current.get(it.key) ?? (it.k === "h" ? H_HEAD : it.k === "t" || it.k === "w" ? H_TRENNER : H_ROW)); }
     return o;
   }, [items, measured]); // eslint-disable-line react-hooks/exhaustive-deps
   const [range, setRange] = useState<[number, number]>([0, 40]);
@@ -426,7 +453,7 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     <LvzMenu e={menuEv} ex={ex} {...p.lvz} anchor={menu.btn} onNr={p.onNr} onClose={() => setMenu(null)} />
   ) : null;
 
-  if (!events.length) {
+  if (!events.length && !items.length) {
     return (
       <div className="jl" ref={box}>
         {strip}
@@ -466,12 +493,12 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
 
   // gezeichnete Teile zu Stundengruppen zusammenfassen (Kopf nur, wenn er selbst im Fenster liegt)
   // Trenner teilt eine Stundengruppe in zwei `ol` (er selbst ist kein `li`)
-  type Part = { ol: LageEvent[] } | { trenner: string };
+  type Part = { ol: LageEvent[] } | { trenner: string; wechsel?: boolean; key: string };
   const groups: Array<{ key: string; head?: string; parts: Part[] }> = [];
   const lastOl = (g: { parts: Part[] }) => { const l = g.parts[g.parts.length - 1]; if (l && "ol" in l) return l.ol; const n: LageEvent[] = []; g.parts.push({ ol: n }); return n; };
   for (const it of shown) {
     if (it.k === "h") groups.push({ key: it.key, head: it.head, parts: [] });
-    else if (it.k === "t") { if (!groups.length) groups.push({ key: "t:oben", parts: [] }); groups[groups.length - 1]!.parts.push({ trenner: it.text }); }
+    else if (it.k === "t" || it.k === "w") { if (!groups.length) groups.push({ key: "t:oben", parts: [] }); groups[groups.length - 1]!.parts.push({ trenner: it.text, wechsel: it.k === "w", key: it.key }); }
     else if (groups.length) lastOl(groups[groups.length - 1]!).push(it.e);
     // Fenster beginnt mitten in einer Stunde: gleicher Schlüssel wie mit Kopf (sonst baut React die Zeilen neu – Fokus weg)
     else groups.push({ key: "h:" + it.e.t.slice(0, 13), parts: [{ ol: [it.e] }] });
@@ -487,7 +514,9 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
           <section key={g.key} className="jl-group" aria-label={g.head}>
             {g.head && <h4 className="jl-head mono" title={dayTitle(g.key.slice(2), ex.days)} {...vk(g.key)}>{g.head}</h4>}
             {g.parts.map((part, pi) => "trenner" in part
-              ? <div key={`t${pi}`} className="jl-trenner" role="separator" aria-label={part.trenner} {...vk("trenner")}>{part.trenner}</div>
+              ? part.wechsel
+                ? <div key={`w${pi}`} className="jl-wechsel" role="separator" aria-label={part.trenner} {...vk(part.key)}><span aria-hidden="true">⇅ </span>{part.trenner}</div>
+                : <div key={`t${pi}`} className="jl-trenner" role="separator" aria-label={part.trenner} {...vk("trenner")}>{part.trenner}</div>
               : (
                 <ol key={`o${pi}`} className="jlist">
                   {part.ol.map((e) => {

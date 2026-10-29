@@ -157,7 +157,8 @@ export function visumZeilen(ex: Exercise, from: string, to: string): string[] {
 
 // ---------- Layout
 
-const W = 210, M = 10, FS = 7.5, LH = 3.4, TOP = 25, BOTTOM = 284;
+/** Schrift nie unter 8 pt (Prüfung N) */
+const W = 210, M = 10, FS = 8, LH = 3.6, BOTTOM = 284;
 const FILL: Record<NonNullable<JournalPdfFill>, [number, number, number]> = { feind: [253, 232, 235], unklar: [252, 244, 214], eigen: [232, 240, 252] };
 
 export interface JournalPdfExtra {
@@ -181,12 +182,15 @@ function layout(ex: Exercise, o: JournalDruck, extra: JournalPdfExtra): jsPDF {
   let y = 0;
   const header = () => {
     doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(0);
-    doc.text(doc.splitTextToSize(`Lagejournal – ${ex.name} · ${kopf}`, W - 2 * M - 40) as string[], M, 12);
+    // Titel darf umbrechen: Tageszeile und Tabellenkopf rücken darunter (nie überlappt, Prüfung N)
+    const titel = doc.splitTextToSize(`Lagejournal – ${ex.name} · ${kopf}`, W - 2 * M - 46) as string[];
+    doc.text(titel, M, 12);
+    const unten = 12 + (titel.length - 1) * 4.6;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8);
     doc.text(o.klassifizierung, W - M, 9, { align: "right" });
     doc.text(erstellt, W - M, 13, { align: "right" });
-    if (ex.days.length) doc.text(ex.days.map((d, i) => `T${i + 1} = ${datum(d)}`).join(" · "), M, 20);
-    y = TOP;
+    if (ex.days.length) doc.text(doc.splitTextToSize(ex.days.map((d, i) => `T${i + 1} = ${datum(d)}`).join(" · "), W - 2 * M) as string[], M, unten + 6);
+    y = unten + 13;
     doc.setFillColor(29, 29, 29); doc.rect(M, y - 3.4, W - 2 * M, 4.8, "F");
     doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(FS);
     let x = M + 0.8;
@@ -209,7 +213,7 @@ function layout(ex: Exercise, o: JournalDruck, extra: JournalPdfExtra): jsPDF {
     }
     doc.setFont("helvetica", r.dringend ? "bold" : "normal");
     const lines = r.cells.map((c, i) => doc.splitTextToSize(c, JOURNAL_COLS[i]!.w - 1.4) as string[]);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(FS - 0.8);
+    doc.setFont("helvetica", "italic"); doc.setFontSize(FS);
     const verm = r.vermerke.length ? doc.splitTextToSize(r.vermerke.join(" · "), JOURNAL_COLS[5].w - 1.4) as string[] : [];
     doc.setFontSize(FS);
     const n = Math.max(...lines.map((l, i) => l.length + (i === 5 ? verm.length : 0)), 1);
@@ -227,7 +231,7 @@ function layout(ex: Exercise, o: JournalDruck, extra: JournalPdfExtra): jsPDF {
         l.forEach((ln, k) => { const w = doc.getTextWidth(ln); doc.line(x, y + k * LH - 0.9, x + w, y + k * LH - 0.9); });
       }
       if (i === 5 && verm.length) {
-        doc.setFont("helvetica", "italic"); doc.setFontSize(FS - 0.8); doc.setTextColor(r.gestrichen ? 120 : 60);
+        doc.setFont("helvetica", "italic"); doc.setFontSize(FS); doc.setTextColor(r.gestrichen ? 120 : 60);
         doc.text(verm, x, y + l.length * LH);
         doc.setFontSize(FS); doc.setTextColor(r.gestrichen ? 120 : 0);
       }
@@ -248,7 +252,7 @@ function layout(ex: Exercise, o: JournalDruck, extra: JournalPdfExtra): jsPDF {
   if (y + need > BOTTOM) newPage();
   y += 3;
   kl.forEach((l, i) => {
-    doc.setFont("helvetica", tail[i]!.italic ? "italic" : "normal"); doc.setFontSize(7.5); doc.setTextColor(80);
+    doc.setFont("helvetica", tail[i]!.italic ? "italic" : "normal"); doc.setFontSize(8); doc.setTextColor(80);
     doc.text(l, M, y + 2); y += l.length * 3.6 + 3;
   });
   doc.setFont("helvetica", "normal"); doc.setTextColor(0); doc.setFontSize(9);

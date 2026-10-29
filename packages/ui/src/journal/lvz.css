@@ -30,7 +30,9 @@
 }
 .lvzm-in.mono { font-family: var(--f-mono); }
 .lvzm-an { flex: 1 1 5em; }
-.lvzm-um { flex: 0 0 5.5em; }
+.lvzm-um { flex: 0 0 7.5em; }
+/* Platzhalter klar als Beispiel (grau, kursiv, «z. B.»), nie wie ein Wert */
+.lvzm-in::placeholder { color: var(--muted); font-style: italic; opacity: 1; }
 .lvzm-in:focus-visible, .lvzm-btn:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
 .lvzm-btns { display: flex; flex-wrap: wrap; gap: var(--sp-8); }
 .lvzm-btn {
@@ -83,3 +85,11 @@
 /* drei Knöpfe an der gewählten Zeile: nie umbrechen (Tablet 384 px) */
 .jl-acts .jl-btn { white-space: nowrap; }
 @media (pointer: coarse), (max-width: 1100px) { .jl-acts .jl-btn { padding: 0 var(--sp-12); } }
+/* Tablet/Touch: «Korrigieren» links, «Mehr …» und «Streichen» rechts – in der Mitte der Zeile liegt kein Knopf */
+@media (pointer: coarse) { .jl-row .jl-acts .jl-btn:first-child:not(:only-child) { margin-right: auto; } }
+
+/* Zeile «Schichtwechsel 06:45 BSP → WMA (Übergabe)» an ihrer Zeit – kein li, zählt nicht als Zeile */
+.jl-wechsel {
+  margin: var(--sp-4) 0; padding: var(--sp-4) var(--sp-8); border-left: 3px solid var(--ink); background: var(--surface);
+  font-size: var(--fs-12); font-weight: 600; color: var(--ink);
+}

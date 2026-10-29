@@ -3,7 +3,8 @@
  * Legende (unten links, aus dem tatsächlich Sichtbaren gebaut, einklappbar).
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { type Area, type LageEvent } from "@lage/core";
+import { artOf, artText, type Area, type LageEvent } from "@lage/core";
+import { FORM_ZEICHEN, formOf, nichtLageText } from "./entry/labels";
 import { iconSvg } from "@lage/map";
 import type { LayerFlags } from "./layers";
 import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
@@ -84,6 +85,22 @@ export function EventBanner({ event, days, onClose, onEdit, extra }: EventBanner
   }, [event, onClose]);
 
   if (!event) return null;
+  // Nicht-Meldung (Auftrag, Rückfrage, Vbk, Orientierung, Notiz): Art im Klartext mit Form, kein Zeichen, kein Ort (M2)
+  if (artOf(event) !== "meldung") {
+    const form = formOf(event);
+    return (
+      <div ref={ref} className="mo-banner" role="status" aria-label="Gewählter Eintrag"
+        style={{ maxWidth: place.maxW, top: place.top !== undefined ? `calc(${place.top}px + var(--rb-oben, 0px))` : undefined, maxHeight: place.maxH }}>
+        <span className="mo-time tnum">{(days.length ? dayLabel(event.t, days) + " " : "") + event.t.slice(11, 16)}</span>
+        <span className="mo-art"><span aria-hidden="true">{FORM_ZEICHEN[form]} </span>{artText(event)}</span>
+        <span className="mo-msg">{nichtLageText(event, [])}</span>
+        <span className="mo-via">kein Ort auf der Karte</span>
+        {extra}
+        {onEdit && <button className="mo-btn" onClick={() => onEdit(event)} aria-label="Diesen Eintrag korrigieren">Korrigieren</button>}
+        <button className="mo-x" onClick={onClose} aria-label="Auswahl aufheben" title="Schliessen (Esc)">×</button>
+      </div>
+    );
+  }
   const kind = kindOf(event);
   const time = (days.length ? dayLabel(event.t, days) + " " : "") + event.t.slice(11, 16);
   const where = event.cells?.length ? event.cells.join(" · ") : event.where ?? "";

@@ -84,11 +84,25 @@ export function SideSwitch({ view, onView, redLabel, offenLabel }: { view: SideV
     onView(n);
     window.setTimeout(() => box.querySelector<HTMLElement>(`[data-view="${n}"]`)?.focus(), 0);
   };
+  /**
+   * Tablet hoch / Handy (Prüfung M5): liegt der Umschalter nach dem Tipp in der unteren Bildhälfte, steht der Inhalt
+   * unter dem Rand – dann den Umschalter an den oberen Rand holen, damit die Wirkung sichtbar ist.
+   */
+  const click = (v: SideView, btn: HTMLElement) => {
+    onView(v);
+    window.setTimeout(() => {
+      const box = btn.closest<HTMLElement>(".sw-box");
+      if (!box) return;
+      const r = box.getBoundingClientRect();
+      if (r.top > window.innerHeight * 0.45) box.scrollIntoView({ block: "start" });
+    }, 0);
+  };
   return (
     <div className="sw-box">
       <div className={offenLabel ? "sw2 sw3" : "sw2"} role="tablist" aria-label="Ansicht der Spalte" data-zaehl="umschalter" onKeyDown={onKey}>
         {tabs.map(([v, l]) => (
-          <button key={v} type="button" role="tab" data-view={v} aria-selected={view === v} onClick={() => onView(v)}>{l}</button>
+          // ein Tab-Stopp für den Umschalter (←/→ wechseln)
+          <button key={v} type="button" role="tab" data-view={v} aria-selected={view === v} tabIndex={view === v ? 0 : -1} onClick={(e) => click(v, e.currentTarget)}>{l}</button>
         ))}
       </div>
     </div>

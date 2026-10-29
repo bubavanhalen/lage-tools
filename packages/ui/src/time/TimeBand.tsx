@@ -41,10 +41,12 @@ export function TimeBand({ ex, zeit, experte, lastReport, swim }: TimeBandProps)
 export function ShowLastChip({ zeit }: { zeit: TimeBandProps["zeit"] }) {
   if (!zeit.showLast && !zeit.ab) return null;
   const text = zeit.showLast ? `zeigt nur letzte ${showLastLabel(zeit.showLast)}` : `zeigt nur ab ${zeit.ab!.slice(11, 16)}`;
+  // schmal (Tablet quer): kurzer Text, damit weder Chip noch «letzte 07:29» abgeschnitten werden
+  const kurz = zeit.showLast ? `nur letzte ${showLastLabel(zeit.showLast)}` : `nur ab ${zeit.ab!.slice(11, 16)}`;
   return (
     <button type="button" className="tb-chip" onClick={() => { zeit.setShowLast(null); zeit.setAb?.(null); }}
       aria-label={`${text} – alles zeigen`}>
-      {text} <span aria-hidden="true">✕</span>
+      <span className="tb-long">{text}</span><span className="tb-short">{kurz}</span> <span aria-hidden="true">✕</span>
     </button>
   );
 }

@@ -31,6 +31,9 @@ export interface MainMenuProps {
   onUebergabe?: () => void;
   onKuerzel?: () => void;
   schichtNote?: string | null;
+  /** «Letzte Übergabe als PDF» (nach dem Abschliessen, Hinweis «06:45 BSP → WMA») */
+  onLetzteUebergabe?: () => void;
+  letzteUebergabeNote?: string | null;
   night: boolean;
   onNight(on: boolean): void;
   /** nur Experte */
@@ -109,6 +112,7 @@ export function MainMenu(p: MainMenuProps) {
           {(p.onUebergabe || p.onKuerzel) && (
             <Group title="Lage">
               {p.onUebergabe && <Item onClick={act(p.onUebergabe)}>Übergabe …</Item>}
+              {p.onLetzteUebergabe && <Item onClick={act(p.onLetzteUebergabe)}>Letzte Übergabe als PDF{p.letzteUebergabeNote && <span className="mm-note">{p.letzteUebergabeNote}</span>}</Item>}
               {p.onKuerzel && <Item onClick={act(p.onKuerzel)}>Kürzel ändern …{p.schichtNote && <span className="mm-note">{p.schichtNote}</span>}</Item>}
             </Group>
           )}

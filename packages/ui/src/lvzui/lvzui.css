@@ -133,3 +133,20 @@
 .kz-acts { display: flex; gap: var(--sp-8); flex-wrap: wrap; margin-top: var(--sp-8); }
 .kz-acts .ueb-primary:not(:disabled) { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .kz-acts button:disabled { color: var(--muted); cursor: not-allowed; }
+
+/* «Dringend» erledigen: kurze Frage nach der Massnahme (Prüfung M5) */
+.of-ask { display: flex; flex-direction: column; gap: var(--sp-4); margin-top: var(--sp-4); }
+.of-ask-l { font-size: var(--fs-14); font-weight: 600; color: var(--ink); }
+.of-ask-opt { font-weight: 400; color: var(--muted); }
+.of-ask-in {
+  min-height: var(--hit); box-sizing: border-box; padding: 0 var(--sp-8); font: 400 var(--fs-14) var(--f-body);
+  color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-4);
+}
+.of-ask-in::placeholder { color: var(--muted); font-style: italic; opacity: 1; }
+.of-ask-in:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
+@media (pointer: coarse) { .of-ask-in { font-size: var(--fs-16); } }
+.ueb-bang { background: var(--warn-bg); color: var(--ink); border-radius: var(--r-4); padding: 0 3px; }
+.ueb-foot .ueb-letzte { margin-right: auto; }
+/* «Ersetzen durch Datei …» weit weg von «OK» (ganz links), nie aus Versehen getroffen */
+.mn-acts .mn-link { margin-right: auto; }
+.mn-acts { gap: var(--sp-24); }

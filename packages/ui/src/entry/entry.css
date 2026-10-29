@@ -69,8 +69,10 @@
   position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px);
   border: 1px solid var(--line); border-radius: var(--r-8); background: var(--surface); padding: var(--sp-12);
   box-shadow: 0 6px 18px rgba(0, 0, 0, .18); font-size: var(--fs-14); display: grid; gap: var(--sp-8);
+  max-height: min(72vh, 680px); overflow-y: auto; overscroll-behavior: contain;
 }
 .eb-help p { margin: 0; }
+.eb-help .eb-help-g { font-size: var(--fs-12); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: var(--sp-4); }
 .eb-help .eb-help-h { font-weight: 600; }
 .eb-help .eb-help-f { color: var(--muted); font-size: var(--fs-12); }
 .eb-help ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-4); }

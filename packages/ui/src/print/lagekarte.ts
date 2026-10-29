@@ -375,7 +375,8 @@ async function legende(doc: jsPDF, lay: BlattLayout, items: SituationItem[], are
     seen.add(k);
     syms.push(it);
   }
-  const max = paper === "A3" ? 40 : 13;
+  // A4: 3 Zeilen × 5 Spalten inkl. Grundformen, NAI, Raster
+  const max = paper === "A3" ? 40 : 9;
   for (const it of syms.slice(0, Math.min(16, max))) {
     entries.push({
       label: it.name + (AFF_SUFFIX[it.aff] ?? ""),
@@ -397,18 +398,21 @@ async function legende(doc: jsPDF, lay: BlattLayout, items: SituationItem[], are
   const extra = [items.some((i) => i.kind !== "eigen") ? "Zeit am Zeichen = Meldung" : "", ohnePlatz ? `${ohnePlatz} Zeichen ohne Beschriftung (kein Platz) – Zeiten im Journal` : ""].filter(Boolean).join(" · ");
   doc.setTextColor(0);
   if (Lg.band) {
-    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5);
-    doc.text("Legende", Lg.x, Lg.y + 3.2);
-    const cols = 6, cw = (Lg.w - 18) / cols, rh = 4.3;
-    doc.setFont("helvetica", "normal"); doc.setFontSize(6.5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
+    doc.text("Legende", Lg.x, Lg.y + 3.4);
+    const cols = 5, cw = (Lg.w - 18) / cols, rh = 4.4;
+    let rows = 0;
     for (let i = 0; i < entries.length && i < cols * 3; i++) {
-      const cx = Lg.x + 18 + (i % cols) * cw, cy = Lg.y + 3.2 + Math.floor(i / cols) * rh;
+      const cx = Lg.x + 18 + (i % cols) * cw, cy = Lg.y + 3.4 + Math.floor(i / cols) * rh;
+      rows = Math.floor(i / cols) + 1;
       await entries[i]!.draw(cx, cy);
-      doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(0);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(0);
       doc.text(doc.splitTextToSize(entries[i]!.label, cw - 7)[0] as string, cx + 6, cy);
     }
-    const tail = [rest > 0 ? `+ ${rest} weitere Zeichen` : "", extra].filter(Boolean).join(" · ");
-    if (tail) { doc.setFontSize(5.5); doc.setTextColor(80); doc.text((doc.splitTextToSize(tail, 17) as string[]).slice(0, 3), Lg.x, Lg.y + 3.2 + rh * 0.8); doc.setTextColor(0); }
+    const weg = Math.max(0, entries.length - cols * 3);
+    const tail = [rest + weg > 0 ? `+ ${rest + weg} weitere Zeichen` : "", extra].filter(Boolean).join(" · ");
+    // Erklärung als eigene Zeile über die ganze Breite (vorher in schmaler Spalte abgeschnitten)
+    if (tail) { doc.setFontSize(7.5); doc.setTextColor(70); doc.text((doc.splitTextToSize(tail, Lg.w - 18) as string[])[0]!, Lg.x + 18, Lg.y + 3.4 + rows * rh); doc.setTextColor(0); }
   } else {
     doc.setDrawColor(0); doc.setLineWidth(0.3); doc.rect(Lg.x, Lg.y, Lg.w, Lg.h, "S");
     doc.setFont("helvetica", "bold"); doc.setFontSize(9);

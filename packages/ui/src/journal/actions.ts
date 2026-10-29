@@ -26,13 +26,13 @@ export function mapEvent(x: Exercise, id: string, f: (e: LageEvent) => LageEvent
   return x;
 }
 
-/** «Meldung 07:20 H03 gelöscht» */
+/** «Gestrichen: 07:20 H03» (Leiste «Gestrichen: … · Rückgängig», gleiches Wort wie «Gestrichene zeigen») */
 export function deletedLabel(e: Pick<LageEvent, "t" | "melder" | "unit">): string {
   const who = e.melder || e.unit;
-  return `Meldung ${e.t.slice(11, 16)}${who ? ` ${who}` : ""} gelöscht`;
+  return `Gestrichen: ${e.t.slice(11, 16)}${who ? ` ${who}` : ""}`;
 }
 
-/** Meldung löschen (streichen), Leiste «Meldung 07:20 H03 gelöscht · Rückgängig» (8 s, Ctrl+Z); `kuerzel` → «gestrichen … von BSP» */
+/** Eintrag streichen, Leiste «Gestrichen: 07:20 H03 · Rückgängig» (8 s, Ctrl+Z); `kuerzel` → «gestrichen … von BSP» */
 export function deleteEvent(update: Update, ex: Exercise, id: string, device: string, kuerzel?: string | null): void {
   const e = (ex.events ?? []).find((x) => x.id === id);
   if (!e || e.deleted) return;

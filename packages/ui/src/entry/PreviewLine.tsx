@@ -189,6 +189,14 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
           ))}
         </div>
       )}
+      {lvl === "geht-nicht" && !lift && liftKand.length === 0 && (
+        // Ausweg auf eine andere Art bleibt sichtbar («Bat Lagerapport 1800» → Orientierung: Zeiten sind dann Inhalt)
+        <div className="eb-row eb-symrow">
+          <ArtSwitch art={note ? draft.art : "meldung"} kind={note ? null : kindNow} neutral={d.symOverride?.aff === "N"} onKind={d.setKind} onArt={d.setArt}
+            open={d.artMenu} setOpen={d.setArtMenu} onDone={() => d.inputRef.current?.focus()} />
+          <span className="eb-note">{note ? "kein Zeichen, nichts auf der Karte" : "keine Meldung? Art hier wählen"}</span>
+        </div>
+      )}
       {lvl !== "geht-nicht" && note && <>
         <div className="eb-row eb-symrow">
           <ArtSwitch art={draft.art} kind={null} onKind={d.setKind} onArt={d.setArt} open={d.artMenu} setOpen={d.setArtMenu} onDone={() => d.inputRef.current?.focus()} />

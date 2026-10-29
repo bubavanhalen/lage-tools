@@ -80,9 +80,15 @@ export function LvzMenu(p: LvzRowProps & {
     return () => { window.removeEventListener("resize", on); document.removeEventListener("scroll", on, true); };
   }, [place]);
 
-  // Fokus hinein, Esc und Klick daneben schliessen
+  // Fokus hinein – erst, wenn das Popover sichtbar steht (vorher `visibility:hidden`: focus() bliebe wirkungslos und der
+  // Fokus auf «Mehr …»); Esc und Klick daneben schliessen
+  const focused = useRef(false);
   useEffect(() => {
+    if (!pos || focused.current) return;
+    focused.current = true;
     box.current?.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true });
+  }, [pos]);
+  useEffect(() => {
     const down = (ev: PointerEvent) => { const t = ev.target as Node; if (!box.current?.contains(t) && !p.anchor?.contains(t)) { flush.current(); close(false); } };
     document.addEventListener("pointerdown", down, true);
     return () => document.removeEventListener("pointerdown", down, true);
@@ -120,7 +126,18 @@ export function LvzMenu(p: LvzRowProps & {
   return createPortal(
     <div ref={box} className="lvzm" role="dialog" aria-label={`Mehr zu Nr ${nr}`} style={pos ?? { visibility: "hidden" }}
       onClick={(ev) => ev.stopPropagation()}
-      onKeyDown={(ev) => { ev.stopPropagation(); if (ev.key === "Escape") { ev.preventDefault(); flush.current(); close(); } }}>
+      onKeyDown={(ev) => {
+        ev.stopPropagation();
+        if (ev.key === "Escape") { ev.preventDefault(); flush.current(); close(); return; }
+        // Fokus bleibt im Popover (Tab am Ende → erstes Feld, Shift+Tab am Anfang → letztes)
+        if (ev.key === "Tab") {
+          const f = [...(box.current?.querySelectorAll<HTMLElement>("input:not([disabled]), button:not([disabled])") ?? [])];
+          if (!f.length) return;
+          const i = f.indexOf(document.activeElement as HTMLElement);
+          if (ev.shiftKey && i <= 0) { ev.preventDefault(); f[f.length - 1]!.focus(); }
+          else if (!ev.shiftKey && (i === f.length - 1 || i < 0)) { ev.preventDefault(); f[0]!.focus(); }
+        }
+      }}>
       <label className="lvzm-check">
         <input type="checkbox" checked={v.dringend} onChange={(ev) => setVermerkUndo(update, ex, e.id, "dringend", ev.target.checked, o)} />
         <span className="lvzm-box" aria-hidden="true" />
@@ -142,10 +159,10 @@ export function LvzMenu(p: LvzRowProps & {
       </div>
       <div className="lvzm-row lvzm-weiter">
         <label htmlFor={`${id}-an`}>Weitergemeldet an</label>
-        <input id={`${id}-an`} className="lvzm-in lvzm-an" value={an} onChange={(ev) => setAn(ev.target.value)} onBlur={saveWeiter} onKeyDown={enter(saveWeiter)} placeholder="Bat" autoComplete="off" />
+        <input id={`${id}-an`} className="lvzm-in lvzm-an" value={an} onChange={(ev) => setAn(ev.target.value)} onBlur={saveWeiter} onKeyDown={enter(saveWeiter)} placeholder="z. B. Bat" autoComplete="off" />
         <label htmlFor={`${id}-um`}>um</label>
         <input id={`${id}-um`} className="lvzm-in lvzm-um mono" value={um} onChange={(ev) => setUm(ev.target.value)} onBlur={saveWeiter} onKeyDown={enter(saveWeiter)}
-          placeholder="0715" inputMode="numeric" autoComplete="off" maxLength={5} />
+          placeholder="z. B. 0715" inputMode="numeric" autoComplete="off" maxLength={5} />
       </div>
       <div className="lvzm-btns">
         {JETZT_AN.map((z) => <button key={z} type="button" className="lvzm-btn" onClick={() => jetztAn(z)}>jetzt an {z}</button>)}

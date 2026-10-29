@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
-  artOf, aufhebDraft, catalogEntry, cellAtAny, cellBounds, clockDay, correctEvent, correctionSummary, entryState, findCells, isPlaceName,
+  artOf, aufhebDraft, catalogEntry, isLage, cellAtAny, cellBounds, clockDay, correctEvent, entryState, findCells, isPlaceName,
   lastPosition, normalizeMelder, onlineAllowed, parseMeldung, placeLabel, sheetBounds, undoCorrection,
   type Attachment, type Bounds, type Draft, type EntryArt, type EntryState, type Exercise, type Kind, type LageEvent, type LV95, type Side,
 } from "@lage/core";
@@ -42,7 +42,7 @@ import { kindOfEvent } from "../journal/filter";
 import { offerUndo } from "../journal/journalUndo";
 import { kuerzelNorm, PERF_MARK, type EntryBoxProps } from "../shell/contracts";
 import type { NichtMeldung } from "./ArtSwitch";
-import { ART_NAME } from "./labels";
+import { ART_NAME, korrekturText } from "./labels";
 import { entryOptions, lastReportOf } from "./stateOptions";
 import { withTrupp } from "./trupp";
 
@@ -106,10 +106,11 @@ export function requestCorrection(id: string): boolean {
  * Text ins Meldungsfeld setzen (MVP 3: «Antwort eintragen» → «Antwort zu 57: », «Vbk eintragen» → «H03 Vbk »), Fokus
  * ans Ende. Ein angefangener Text wird nicht überschrieben, sondern dahinter gesetzt. false = kein Feld eingehängt.
  */
-let prefillHandler: ((text: string) => void) | null = null;
-export function prefillEntry(text: string): boolean {
+let prefillHandler: ((text: string, o?: { art?: EntryArt }) => void) | null = null;
+/** `o.art`: Art vorwählen («Antwort eintragen» → Notiz mit Bezug; der Bediener kann in «Was ist es?» umstellen) */
+export function prefillEntry(text: string, o?: { art?: EntryArt }): boolean {
   if (!prefillHandler) return false;
-  prefillHandler(text);
+  prefillHandler(text, o);
   return true;
 }
 
@@ -236,18 +237,20 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const startRef = useRef(startKorr);
   startRef.current = startKorr;
   useEffect(() => { const h = (id: string) => startRef.current(id); korrHandler = h; return () => { if (korrHandler === h) korrHandler = null; }; }, []);
-  const prefillRef = useRef<(t: string) => void>(() => {});
-  prefillRef.current = (t: string) => {
+  const prefillRef = useRef<(t: string, o?: { art?: EntryArt }) => void>(() => {});
+  prefillRef.current = (t: string, o?: { art?: EntryArt }) => {
     if (korr.current) endKorr(true);
     const cur = (inputRef.current?.value ?? "").trim();
     const next = t;
     setText(next);
+    // neue Vorgabe gilt (eine Wahl zum ersetzten Text nicht)
+    setKindOverride(null); setSymOverride(null); setArtOverride(o?.art ?? null);
     // nichts geht verloren: ein angefangener Text kommt mit Rückgängig zurück
     if (cur && cur !== t.trim()) offerUndo("Angefangene Meldung ersetzt", () => { setTextState(cur); fitInput(); inputRef.current?.focus(); });
     fitInput();
     requestAnimationFrame(() => { const el = inputRef.current; if (el) { el.focus({ preventScroll: true }); el.setSelectionRange(next.length, next.length); el.closest(".ebox")?.scrollIntoView({ block: "nearest" }); } });
   };
-  useEffect(() => { const h = (t: string) => prefillRef.current(t); prefillHandler = h; return () => { if (prefillHandler === h) prefillHandler = null; }; }, []);
+  useEffect(() => { const h = (t: string, o?: { art?: EntryArt }) => prefillRef.current(t, o); prefillHandler = h; return () => { if (prefillHandler === h) prefillHandler = null; }; }, []);
 
   // Korrekturzustand nach Neuladen / Übungswechsel
   useEffect(() => {
@@ -305,7 +308,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
 
   const textChanged = !!base && normText(text) !== normText(base.text);
   /** Korrektur: Ort der Meldung bleibt (Text unverändert oder nennt keinen eigenen Ort) */
-  const keepPlace = !!base && !manualPos && (!textChanged || (!placeFromText(draft) && !draft?.placeQuery && !(draft?.problems ?? []).some((x) => x.kind === "ort" || x.kind === "orte")));
+  // Basis ohne Ort (Nicht-Meldung, Aufhebung) → nach Wechsel auf Feind/Eigene/Unklar gilt der neu gelesene Ort (Einsatz H3)
+  const keepPlace = !!base && isLage(base) && !base.hebtAuf && !manualPos && (!textChanged || (!placeFromText(draft) && !draft?.placeQuery && !(draft?.problems ?? []).some((x) => x.kind === "ort" || x.kind === "orte")));
   /** Korrektur: Zeichen/Einordnung bleiben (Text unverändert, nichts von Hand gewählt) */
   const keepSymbol = !!base && !textChanged && !symOverride && !kindOverride && !artOverride;
 
@@ -494,7 +498,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
       if (hold.ev) rememberUnits(x, hold.ev);
       return x;
     });
-    const summary = correctionSummary(before, { ...before, ...patch } as LageEvent);
+    const summary = korrekturText(before, { ...before, ...patch } as LageEvent);
     offerUndo(`Korrigiert: ${summary}`, () => update((x) => { x.events = (x.events ?? []).map((y) => (y.id === id ? undoCorrection(y, before, device) : y)); return x; }));
     if (restoreDeleted) tell("Meldung wiederhergestellt (war in einem anderen Fenster gelöscht) – mit dieser Korrektur gespeichert.");
     kiTaken.current = false;
