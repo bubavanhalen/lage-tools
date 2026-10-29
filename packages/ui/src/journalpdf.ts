@@ -6,6 +6,7 @@ import { compareEvents, historyText, journalStatus, kindLabel, type Exercise, ty
 import { appendHintsPdf } from "./hintsExport";
 import type { LageRotState } from "./lageRot";
 import { appendLageRotPdf, pdfPageNumbers } from "./lageRotExport";
+import { safePdf } from "./pdfSafe";
 
 /**
  * `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite); `lageRot`: Lage Rot zur Lagezeit `t` davor;
@@ -15,7 +16,7 @@ import { appendLageRotPdf, pdfPageNumbers } from "./lageRotExport";
  * korrigierte tragen «korrigiert 07:34» und die früheren Fassungen.
  */
 export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint[], lageRot?: { lage: LageRotState; t: string }, kiNote?: string | null): Blob {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = safePdf(new jsPDF({ unit: "mm", format: "a4" })); // Klartext statt Pfeile: Standardschrift kann nur WinAnsi
   const W = 210, M = 12;
   const cols = [
     { h: "Tag", w: 10 }, { h: "Zeit", w: 12 }, { h: "Art", w: 14 }, { h: "Melder", w: 18 }, { h: "Element", w: 18 }, { h: "Meldung", w: 80 }, { h: "Ort", w: 34 },

@@ -155,3 +155,12 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
 @media (min-width: 861px) {
   .app.shell .undobar.wsundo { left: var(--sp-16); right: auto; bottom: var(--sp-16); transform: none; width: calc(var(--spalte-w) - 2 * var(--sp-16)); min-width: 0; }
 }
+
+/* Meldungen der Hülle («Eingetragen – Ansicht wieder LIVE» u. a.): über dem Live-Band, nie über der LIVE-Uhr;
+   breit: mittig über der Karte statt über Spalte und Uhr */
+.app.shell .toast:not(.dbblocked) { bottom: calc(var(--band-h) + var(--sp-16)); }
+@media (min-width: 861px) {
+  .app.shell:not(.present) .toast:not(.dbblocked) {
+    left: calc(var(--spalte-w) + (100vw - var(--spalte-w)) / 2); max-width: calc(100vw - var(--spalte-w) - 2 * var(--sp-16));
+  }
+}

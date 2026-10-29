@@ -3,8 +3,8 @@
  * der zuletzt meldende Trupp nur mit Rahmen hervorgehoben, nie umsortiert) und «+». Ein Chip setzt
  * den Trupp **als Text** an den Anfang des Meldungsfelds (der Text bleibt einzige Wahrheit). Gewählt = erkannter
  * Trupp (dunkler Rahmen). «+» öffnet ein Feld «Name des Trupps, z. B. H06»: Enter nimmt ihn auf und wählt ihn, Esc
- * bricht ab. Tablet: Reihe scrollt waagrecht, «+ Trupp» steht ausserhalb der scrollenden Reihe und ist ohne Wischen
- * erreichbar. Zählt im Inventar als ein Element (`data-zaehl="trupps"`).
+ * bricht ab. Kein waagrechtes Scrollen: Die Knöpfe brechen auf eine weitere Zeile um (alle ganz sichtbar und treffbar,
+ * ≥ 44 px, nichts überdeckt); schmale Chips, damit fünf Trupps und «+» auch auf dem Tablet in eine Zeile passen. Zählt im Inventar als ein Element (`data-zaehl="trupps"`).
  */
 import { useRef, useState } from "react";
 

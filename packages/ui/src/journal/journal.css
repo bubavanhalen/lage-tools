@@ -63,6 +63,8 @@
 .jl-warn { color: var(--warn-sym); font-weight: 600; }
 .jl-neu { font-weight: 600; color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 0 6px; }
 .jl-korr { font-weight: 600; color: var(--ink); }
+/* bestätigte Zukunftszeit: steht oben in der Liste, erscheint erst ab dieser Zeit auf der Karte */
+.jl-spaeter { font-weight: 600; color: var(--ink); border: 1px dashed var(--ink); border-radius: var(--r-pill); padding: 0 6px; }
 .jl-ki { display: inline-flex; gap: 2px; align-items: center; }
 .jl-hist {
   border: 0; background: transparent; padding: 0; min-height: 0; font: inherit; font-size: var(--fs-12); color: var(--ink);
@@ -91,3 +93,7 @@
 /* Rückgängig: Leiste unten (Grundlage .undobar/.wsundo aus style.css/persist.css) */
 .undobar.jundo { background: var(--ink); color: var(--surface); }
 .undobar.jundo button { min-height: var(--hit); color: var(--surface); background: transparent; border: 1px solid var(--line); border-radius: var(--r-4); }
+
+/* eigene neue Meldung durch den Suchfilter ausgeblendet: sagen, Filter löschen anbieten */
+.jp-hidden { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); margin: var(--sp-8) 0 0; padding: var(--sp-8) var(--sp-12);
+  border: 1px solid var(--line); border-left: 4px solid var(--ink); border-radius: var(--r-4); background: var(--surface); font-size: var(--fs-14); font-weight: 600; color: var(--ink); }

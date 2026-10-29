@@ -78,7 +78,9 @@ const coarse = () => typeof window !== "undefined" && !!window.matchMedia?.("(po
 type RowLevel = EntryState["level"];
 /** Ausweg ohne Bedienelemente des Meldungsfelds (keine Trupp-Knöpfe, keine Karte im Dialog) */
 const batchHint = (h: string) => h.replace(/^Trupp oben antippen oder an den Anfang schreiben\.$/, "Trupp an den Anfang schreiben, z. B. H04.")
-  .replace(/ oder Ort auf Karte setzen/g, "");
+  .replace(/ oder Ort auf Karte setzen/g, "").replace(/Nochmals Enter/g, "Nochmals «Übernehmen»");
+/** Frage des Felds («… eintragen? Nochmals Enter.») in der Sprache der Übersicht: hier bedient man «Übernehmen» */
+const batchAsk = (a: string) => a.replace(/ eintragen\?/g, " übernehmen?").replace(/Nochmals Enter\./g, "Nochmals «Übernehmen».");
 const LEVEL_TEXT: Record<RowLevel, string> = { bereit: "Bereit", pruefen: "Bitte prüfen", "geht-nicht": "Geht nicht" };
 
 /** Zustand einer Zeile: `entryState` wie im Feld; KI-Zeilen mit unsicheren Teilen sind mindestens gelb */
@@ -260,7 +262,7 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
                     {st && lvl && (
                       <div className={`br-st s-${lvl}${asked ? " asked" : ""}`} role={lvl === "bereit" ? undefined : "note"}>
                         {lvl === "bereit" ? <p className="br-st-h"><span aria-hidden="true">✓ </span>Bereit</p>
-                          : asked ? <p className="br-st-h"><span aria-hidden="true">⚠ </span>{r0?.ask ?? "Trotzdem übernehmen? Nochmals «Übernehmen»."}</p>
+                          : asked ? <p className="br-st-h"><span aria-hidden="true">⚠ </span>{r0?.ask ? batchAsk(r0.ask) : "Trotzdem übernehmen? Nochmals «Übernehmen»."}</p>
                           : <>
                             <p className="br-st-h"><span aria-hidden="true">{lvl === "pruefen" ? "⚠ " : "⛔ "}</span>{LEVEL_TEXT[lvl]}: {r0?.text}{st.reasons.length > 1 && <span className="br-more"> +{st.reasons.length - 1}</span>}</p>
                             {r0?.hint && <p className="br-st-t">{batchHint(r0.hint)}</p>}

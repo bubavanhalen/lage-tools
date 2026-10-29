@@ -22,15 +22,17 @@
 }
 
 /* «Wer meldet?» */
-.eb-trupps { min-width: 0; display: flex; gap: var(--sp-8); align-items: center; }
-.eb-trupps-row { display: flex; gap: var(--sp-8); overflow-x: auto; scrollbar-width: thin; padding: 3px 3px 3px 0; flex: 0 1 auto; min-width: 0; }
-/* «+» bleibt neben der scrollenden Reihe sichtbar (Tablet quer ohne Wischen erreichbar) */
+/* Kein Scrollen, nichts überdeckt: Chips und «+» liegen in einem umbrechenden Fluss (Reihe = display: contents) */
+.eb-trupps { min-width: 0; display: flex; flex-wrap: wrap; gap: var(--sp-8); align-items: center; padding: 3px 0; }
+.eb-trupps-row { display: contents; }
 .eb-trupps > .eb-chip-plus, .eb-trupps > .eb-chip-add { flex: none; }
-.ebox .eb-chip { font-family: var(--f-mono); font-weight: 500; flex: none; padding: 0 var(--sp-12); }
-.ebox .eb-chip[aria-pressed="true"] { border: 2px solid var(--sel); font-weight: 600; background: var(--bg); }
+.eb-trupps > .eb-chip-add { max-width: 100%; }
+/* schmal (bleibt ≥ var(--hit)): fünf Trupps und «+» passen auch auf dem Tablet (Schrift 16 px) in eine Zeile */
+.ebox .eb-chip { font-family: var(--f-mono); font-weight: 500; flex: none; padding: 0 var(--sp-8); }
+.ebox .eb-chip[aria-pressed="true"] { border: 2px solid var(--sel); font-weight: 600; background: var(--bg); padding: 0 calc(var(--sp-8) - 1px); }
 /* zuletzt gemeldet: nur Rahmen (gestrichelt), Platz bleibt fest */
-.ebox .eb-chip.is-last:not([aria-pressed="true"]) { border: 2px dashed var(--ink); padding: 0 calc(var(--sp-12) - 1px); }
-.ebox .eb-chip-plus { font-family: var(--f-body); }
+.ebox .eb-chip.is-last:not([aria-pressed="true"]) { border: 2px dashed var(--ink); padding: 0 calc(var(--sp-8) - 1px); }
+.ebox .eb-chip-plus { font-family: var(--f-body); padding: 0 var(--sp-12); }
 .eb-chip-add {
   flex: none; min-height: var(--hit); width: 220px; font: 400 var(--fs-16) var(--f-mono); color: var(--ink);
   background: var(--surface); border: 2px solid var(--ink); border-radius: var(--r-4); padding: 0 var(--sp-8);

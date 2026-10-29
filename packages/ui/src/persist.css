@@ -13,13 +13,19 @@
 .savefail button { background: var(--paper); color: var(--rot); border-color: var(--paper); font-weight: 600; }
 .savefail .savefail-x { background: transparent; color: var(--paper); border-color: transparent; font-size: 18px; padding: 0 6px; line-height: 1; }
 
-/* Ergebnis «Öffnen»: Band im Fluss unter dem Kopf (verdeckt nichts), verschwindet nach 8 s selbst (SaveBand.tsx) */
+/* Ergebnis «Öffnen»/«Zusammenführen» (verschwindet nach 8 s selbst, SaveBand.tsx): schwebt oben über der Karte
+   zwischen Zoom und «Anzeige» – kein Layoutsprung beim Erscheinen und Verschwinden, Spalte und Meldungsfeld bleiben stehen */
+.sh-bands { position: relative; }
 .mergebar {
+  position: absolute; z-index: 1100; top: var(--sp-8); left: calc(var(--spalte-w) + 64px); right: 128px;
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-8) var(--sp-16);
   max-height: 40vh; overflow: auto;
-  padding: var(--sp-8) var(--sp-16);
+  padding: var(--sp-8) var(--sp-16); border-radius: var(--r-8); box-shadow: 0 4px 16px color-mix(in srgb, var(--ink) 30%, transparent);
   background: var(--ink); color: var(--surface); font-size: var(--fs-14);
 }
+.app.shell.present .mergebar { left: 64px; }
+@media (max-width: 860px) { .mergebar { left: 64px; } }
+@media (max-width: 560px) { .mergebar { left: var(--sp-8); right: var(--sp-8); } }
 .mergebar button { min-height: var(--hit); }
 .mergeconf { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4) var(--sp-12); }
 .mergebar.konflikt { box-shadow: inset 4px 0 0 var(--rueckblick); }

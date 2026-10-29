@@ -5,7 +5,7 @@
  * `between` = Platz zwischen Meldungsfeld und Liste für den Umschalter «Journal | Was Rot vorhaben könnte» (Paket A);
  * `tab = "rot"` zeigt statt Suche und Liste `rot` (Panel von Paket D).
  */
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import L from "leaflet";
 import type { EventQuality, Exercise, LV95 } from "@lage/core";
 import { EntryBox } from "./entry/EntryBox";
@@ -72,11 +72,18 @@ export function JournalPanel(p: Props) {
   const any = events.some((e) => !e.deleted);
   const empty: JournalEmpty = list.length ? null : !any ? "erststart" : q || art ? "suche" : rueckblick ? "rueckblick" : p.win ? "zeige-letzte" : null;
 
+  /** zuletzt eingetragene Zeilen: bei aktivem Suchfilter sagen, wenn sie dadurch ausgeblendet sind (Filter bleibt, Klartext) */
+  const [justIds, setJustIds] = useState<string[]>([]);
   const onCommitted = useCallback((ids: string[]) => {
     const last = ids[ids.length - 1];
     if (last) onSelect(last);
+    setJustIds(ids);
     p.onCommitted?.(ids);
   }, [onSelect, p.onCommitted]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setJustIds([]), [q, art]);
+  useEffect(() => { if (!justIds.length) return; const t = window.setTimeout(() => setJustIds([]), 15000); return () => window.clearTimeout(t); }, [justIds]);
+  const hiddenNew = (q || art) && justIds.length > 0
+    && justIds.some((id) => events.some((e) => e.id === id && !e.deleted) && !list.some((e) => e.id === id));
 
   return (
     <div className="panel journal jpanel">
@@ -90,6 +97,12 @@ export function JournalPanel(p: Props) {
           <UnifiedSearch ex={ex} map={map} today={dayLabel(zeit.tNow, ex.days)} reset={resetSearch} variant={any ? "journal" : "ort"}
             onQuery={(qq, a) => { setQ(qq); setArt(a); }}
             onPickEvent={(id) => onSelect(id)} />
+          {hiddenNew && (
+            <p className="jp-hidden" role="status">
+              <span>Eingetragen – durch Suchfilter ausgeblendet</span>
+              <button type="button" className="jl-btn" onClick={() => { setResetSearch((n) => n + 1); setJustIds([]); }}>Filter löschen</button>
+            </p>
+          )}
           <JournalList ex={ex} events={list} selected={selected} onSelect={(id) => onSelect(id)} quality={quality} empty={empty}
             onCorrect={(id) => { if (!requestCorrection(id)) setOwnReq({ id, n: Date.now() }); }}
             onDelete={(id) => { deleteEvent(update, ex, id, device); if (selected === id) onSelect(null); }}

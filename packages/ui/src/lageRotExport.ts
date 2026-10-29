@@ -5,6 +5,7 @@
 import type { jsPDF } from "jspdf";
 import { indicatorSummary, type Exercise } from "@lage/core";
 import { COA_KICKER, coaLine, indicatorGroups, indicatorLine } from "./red/redText";
+import { safePdf, winAnsi } from "./pdfSafe";
 import {
   COA_LABEL, countLabel, durLabel, expectedLabel, foundLabel, indSign, inWindowLabel, rowName, shownIndicators, STATE_LABEL, windowLabel,
   type LageRotState,
@@ -30,14 +31,10 @@ export function pdfPageNumbers(doc: jsPDF): void {
 /**
  * Text für die PDF-Standardschrift (Helvetica, WinAnsi): Zeichen ohne Glyphe ersetzen, sonst stehen dort kaputte
  * Zeichen («4 von 5 ' erfüllt»). Codes in Klammern («(D1)», «(C6)») entfernen – im Ausdruck nur Klartext.
+ * Pfeile und Zeichen als Text («→» = «nach», «↔» = «–»): `winAnsi` (pdfSafe.ts).
  */
 export function pdfText(s: string): string {
-  return s
-    .replace(/\s*\((?:[A-E][1-9]|[A-E][1-9]\/[A-E][1-9])\)/g, "")
-    .replace(/✓/g, "+").replace(/○/g, "o").replace(/✗/g, "x").replace(/⚠\s*/g, "! ").replace(/⛔\s*/g, "")
-    .replace(/↔/g, "<->").replace(/→/g, "->").replace(/←/g, "<-").replace(/[◆■●▲]\s*/g, "")
-    .replace(/(\d)\s*′/g, "$1 min").replace(/′/g, "'").replace(/≈/g, "ca. ").replace(/≥/g, ">=").replace(/≤/g, "<=")
-    .replace(/[‹›]/g, "'").replace(/\u202F|\u2009/g, " ");
+  return winAnsi(s.replace(/\s*\((?:[A-E][1-9]|[A-E][1-9]\/[A-E][1-9])\)/g, ""));
 }
 
 /** Zeilen für Export (CSV/PDF) */
@@ -88,6 +85,7 @@ export function lageRotCsv(ex: Exercise, lage: LageRotState, t: string): string 
 
 /** Anhang «Lage Rot» (neue Seite A4 hoch); gibt die neue Seitenzahl zurück */
 export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t: string, classification: string, page: number): number {
+  safePdf(doc);
   const r = lageRotRows(ex, lage, t);
   if (!r.coas.length && !r.kraefte.length && !r.weg.length) return page;
   const W = 210, M = 12, LH = 3.8;

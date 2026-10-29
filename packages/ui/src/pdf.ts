@@ -10,6 +10,7 @@ import {
   type RasterSheet,
 } from "@lage/core";
 import { renderTiles, tileLevel } from "./tiles";
+import { safePdf } from "./pdfSafe";
 
 export type Paper = "A4" | "A3";
 
@@ -29,7 +30,7 @@ export interface PrintOptions {
 export async function printSheet(sheet: RasterSheet, opts: PrintOptions): Promise<Blob> {
   const { jsPDF } = await import("jspdf");
   const [pw, ph] = opts.paper === "A3" ? [420, 297] : [297, 210];
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: opts.paper.toLowerCase() });
+  const doc = safePdf(new jsPDF({ orientation: "landscape", unit: "mm", format: opts.paper.toLowerCase() })); // nur WinAnsi
   const m = 8; // Rand
   const lab = opts.paper === "A3" ? 10 : 7.5; // Höhe Beschriftungsfeld
   const cols = sheet.colLabels.length, rows = sheet.rowLabels.length;

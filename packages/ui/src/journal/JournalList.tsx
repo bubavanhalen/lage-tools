@@ -28,8 +28,8 @@ import "./journal.css";
 export interface JournalListExtra {
   /** Meldung, die gerade im Meldungsfeld korrigiert wird (dunkler Rahmen) */
   correcting?: string | null;
-  /** Lagezeit für den Streifen «Liste bis 05:30» (nur Rückblick) */
-  zeit?: Pick<ZeitApi, "zeit">;
+  /** Lagezeit für den Streifen «Liste bis 05:30» (nur Rückblick); `tNow` bei LIVE: Meldungen danach als «nach LIVE» kennzeichnen */
+  zeit?: Pick<ZeitApi, "zeit"> & { tNow?: string };
   /** Leerzustand «suche»: Suchtext für «Nichts gefunden für «H07».» */
   query?: string;
   /** Leerzustand «zeige-letzte»: Minuten */
@@ -80,9 +80,11 @@ interface RowProps {
   onToggle(id: string): void;
   /** roving tabindex: 0 = Tab-Stopp der Liste, sonst -1 */
   tab: 0 | -1;
+  /** LIVE: Meldung liegt nach der LIVE-Zeit (bestätigte Zukunftszeit) → «nach LIVE (T2 15:35)», noch nicht auf der Karte */
+  spaeter?: string;
 }
 
-const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, neu, open, onSelect, onCorrect, onDelete, onToggle, tab }: RowProps) {
+const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, neu, open, onSelect, onCorrect, onDelete, onToggle, tab, spaeter }: RowProps) {
   const sh = shapeOf(e);
   const [f, word] = SHAPE[sh];
   const own = sh === "eigen";
@@ -105,6 +107,7 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, neu, 
           <span className="jl-text">{displayText(e)}</span>
         </span>
         <span className="jl-l2">
+          {spaeter && <span className="jl-spaeter">nach LIVE ({spaeter}) – noch nicht auf der Karte</span>}
           {!own && e.melder && <span>von {e.melder}</span>}
           {note ? null : place ? <span className="mono">{place}</span> : <span className="jl-warn">Ort fehlt</span>}
           {!own && zwei > 1 && <span>von {zwei} Trupps gesehen</span>}
@@ -343,6 +346,8 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     if (li?.dataset.id && li.dataset.id !== rove) setRove(li.dataset.id);
   };
 
+  /** LIVE-Zeit (Minute); Meldungen danach fehlen auf der Karte (Zukunftszeit bestätigt) */
+  const liveT = p.zeit?.zeit.kind === "live" && p.zeit.tNow ? p.zeit.tNow.slice(0, 16) : null;
   const strip = p.zeit ? <RueckblickStreifen zeit={p.zeit} days={ex.days} art="liste" /> : null;
 
   if (!events.length) {
@@ -403,10 +408,11 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
             <ol className="jlist">
               {g.rows.map((e) => {
                 const c = e.createdAt ? Date.parse(e.createdAt) : NaN;
+                const spaeter = liveT && e.t.slice(0, 16) > liveT ? `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 16)}` : undefined;
                 return (
                   <Row key={e.id} e={e} attachments={ex.attachments} sel={e.id === selected} korr={e.id === p.correcting} flash={e.id === flashId}
                     q={quality?.get(e.id)} zwei={zweiOf(e)} neu={nowMs - c >= -60000 && nowMs - c < NEU_MS} open={openHist === e.id}
-                    onSelect={rowSelect} onCorrect={rowCorrect} onDelete={rowDelete} onToggle={toggle} tab={e.id === active ? 0 : -1} />
+                    onSelect={rowSelect} onCorrect={rowCorrect} onDelete={rowDelete} onToggle={toggle} tab={e.id === active ? 0 : -1} spaeter={spaeter} />
                 );
               })}
             </ol>

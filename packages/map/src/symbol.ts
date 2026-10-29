@@ -9,6 +9,7 @@ import L from "leaflet";
 import ms from "milsymbol";
 import { buildSidc, catalogEntry, sidcFor, STATUS_CODE, SYMBOLS, symbolDef, type Affiliation, type Status } from "@lage/core";
 import { germanPin } from "./symboltext";
+import { KARTE } from "./kartenfarben";
 
 export { germanPin, germanText, germanTextFor, GERMAN_TEXT, KEEP_TEXT, sidcFunction } from "./symboltext";
 
@@ -108,8 +109,14 @@ function draw(key: string, aff: Affiliation, size: number, text: SymbolText, out
   if (!sym.isValid()) sym = new ms.Symbol(resolveSidc(key, aff, { status: text.status }), opts);
   const a = sym.getAnchor();
   const s = sym.getSize();
-  const svg = germanPin(sym.asSVG(), resolveSidc(key, aff, text), catalogEntry(key)?.tag);
+  // milsymbol zeichnet feindliche Grafiken (IED, Checkpoint, Ereignisse) in reinem Rot – auf der Karte gilt ein Rot: #C62828
+  const svg = onlyOneRed(germanPin(sym.asSVG(), resolveSidc(key, aff, text), catalogEntry(key)?.tag));
   return { svg, w: Math.ceil(s.width), h: Math.ceil(s.height), anchor: [a.x, a.y] };
+}
+
+/** reines Rot von milsymbol (rgb(255,0,0), #f00, #ff0000, red) durch das eine Kartenrot ersetzen */
+export function onlyOneRed(svg: string): string {
+  return svg.replace(/rgb\(\s*255\s*,\s*0\s*,\s*0\s*\)|#ff0000\b|#f00\b|(?<=")red(?=")/gi, KARTE.feind);
 }
 
 /** Zusatz neben dem Zeichen: «2× Det 2» */

@@ -60,8 +60,9 @@ export interface SearchApi {
 /**
  * @param q Suchtext
  * @param active Online-Suche nur, solange die Vorschlagsliste offen ist und `q` nicht der eben gewählte Treffer ist
+ * @param allowOnline false = keine Online-Ortssuche (Text wirkt als Listenfilter, z. B. «feind»)
  */
-export function useSearch(ex: Exercise, map: L.Map, q: string, active: boolean): SearchApi {
+export function useSearch(ex: Exercise, map: L.Map, q: string, active: boolean, allowOnline = true): SearchApi {
   const [online, setOnline] = useState<OnlineHit[]>([]);
   const [loading, setLoading] = useState(false);
   const pin = useRef<L.Marker | null>(null);
@@ -76,7 +77,7 @@ export function useSearch(ex: Exercise, map: L.Map, q: string, active: boolean):
   useEffect(() => {
     setOnline([]);
     setLoading(false);
-    if (!active || !navigator.onLine || !onlineAllowed(ex, "ortssuche") || !wantsPlaceLookup(q, local) || !isPlaceName(q)) return;
+    if (!active || !allowOnline || !navigator.onLine || !onlineAllowed(ex, "ortssuche") || !wantsPlaceLookup(q, local) || !isPlaceName(q)) return;
     const ctl = new AbortController();
     setLoading(true);
     const t = window.setTimeout(async () => {
@@ -84,7 +85,7 @@ export function useSearch(ex: Exercise, map: L.Map, q: string, active: boolean):
       if (!ctl.signal.aborted) setLoading(false);
     }, ONLINE_PAUSE_MS);
     return () => { ctl.abort(); window.clearTimeout(t); };
-  }, [q, active, ex.onlineDienste?.ortssuche]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q, active, allowOnline, ex.onlineDienste?.ortssuche]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => { pin.current?.remove(); }, []);
 

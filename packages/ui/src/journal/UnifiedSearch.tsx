@@ -13,7 +13,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { dayLabel } from "../Timeline";
 import type { SearchArt, UnifiedSearchProps } from "../shell/contracts";
-import { ART_LABEL, takeKeyword } from "./filter";
+import { ART_LABEL, matchesQuery, takeKeyword } from "./filter";
 import { registerUnified, useSearch, type Hit } from "./useSearch";
 import { hitText } from "./hitText";
 import "./journal.css";
@@ -48,7 +48,11 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
   const q = text.trim();
-  const { hits, loading, go } = useSearch(ex, map, q, open && q !== shown);
+  // Text, der als Listenfilter wirkt (Stichwort «feind», Chip «Art», oder Wörter aus Meldungen): keine Online-Orte vorschlagen –
+  // die Liste ist die Antwort, Vorschläge «Feindsee · online» führten nur in die Irre
+  const filtering = useMemo(() => !ortOnly && (!!art || !!takeKeyword(q, true).art
+    || (q.length >= 2 && (ex.events ?? []).some((e) => !e.deleted && matchesQuery(e, q)))), [ortOnly, art, q, ex.events]);
+  const { hits, loading, go } = useSearch(ex, map, q, open && q !== shown, !filtering);
   const list = q.length >= 1 ? hits.slice(0, 8) : [];
   const showList = open && list.length > 0;
   /** letzte Meldung je Trupp (für «zuletzt 07:20 gemeldet») */
