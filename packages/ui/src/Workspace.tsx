@@ -39,6 +39,7 @@ import {
   enableCellZoom,
   flyToBoundsSharp,
   rasterLayer,
+  symbolIcon,
   toLv95,
   type Basemap,
   type SwissMap,
@@ -365,26 +366,54 @@ export function Workspace({ product, tagline }: Props) {
   }, [ex?.events, ex?.id, roadRetry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lage zum Zeitpunkt (ruhige Karte in der Basis: Beschriftung nur Neues und Gewähltes)
+  /** eigene Eingabe (Eintragen/Korrektur): die neuen Meldungen sofort als einfache Zeichen setzen (bis zum Neuaufbau) */
+  const mapNow = useRef<string[] | null>(null);
+  const pendingRef = useRef<L.LayerGroup | null>(null);
+  /** womit die Lageebene zuletzt gebaut wurde – gleiche Angaben → kein zweiter Neuaufbau */
+  const builtKey = useRef<unknown[] | null>(null);
+  const hlKey = hintHl ? [...hintHl].join() : "";
+  const buildSituation = (s: SwissMap, x: Exercise, t: string, from: string | null) => {
+    const key = [x.events, x.sheets, t, from, flags, selEvent, present, experte, hlKey, mapReady];
+    if (builtKey.current && key.length === builtKey.current.length && key.every((v, i) => v === builtKey.current![i])) return;
+    // nicht während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen …): nach dem Loslassen nachholen
+    whenNotDragging(s.map, () => {
+      builtKey.current = key;
+      journalRef.current?.remove();
+      pendingRef.current?.remove();
+      pendingRef.current = null;
+      const g = situationLayer(s.map, x.events ?? [], {
+        t, flags, selectedId: selEvent, sheets: x.sheets, days: x.days, from, quiet: !experte,
+        onClick: (e) => { setSideView("journal"); selectEventRef.current(e.id); },
+        onMove: present ? undefined : mover.move,
+        highlight: hintHl,
+      });
+      g.addTo(s.map);
+      journalRef.current = g;
+    });
+  };
+  // eigene Eingabe: im selben Durchgang wie die neue Zeile ein einfaches Zeichen am Ort (die volle Lageebene mit Stapeln,
+  // Beschriftung und Hinweisen folgt nach dem nächsten Bild – ein voller Neuaufbau kostet bei 800 Meldungen zu viel)
+  useEffect(() => {
+    const s = sm.current;
+    const ids = mapNow.current;
+    if (!ids || !s || !ex) return;
+    mapNow.current = null;
+    const g = pendingRef.current ?? L.layerGroup().addTo(s.map);
+    pendingRef.current = g;
+    for (const id of ids) {
+      const e = (ex.events ?? []).find((x) => x.id === id);
+      if (!e || e.deleted || !e.pos || e.t.slice(0, 16) > tNow || (winFrom && e.t < winFrom)) continue;
+      L.marker(toLatLng(e.pos), { icon: symbolIcon(e.sym, e.aff, 18, { sidc: e.sidc, dir: e.dir }, "lt-ev lt-pending"), interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(g);
+    }
+  }, [ex?.events]); // eslint-disable-line react-hooks/exhaustive-deps
+  // sonst: mit der verzögerten Fassung nach dem nächsten Bild (Feld, Liste und Band sind dann schon gezeichnet);
+  // ein neuerer Auftrag ersetzt den offenen, solange die verzögerte Fassung nachhinkt wird nichts gebaut
   useEffect(() => {
     const s = sm.current;
     const x = exLater;
-    if (!s || !x) return;
-    // nach dem nächsten Bild (Feld, Liste und Band sind dann schon gezeichnet); ein neuerer Auftrag ersetzt den offenen
-    return afterPaint(() => {
-      // nicht während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen …): nach dem Loslassen nachholen
-      whenNotDragging(s.map, () => {
-        journalRef.current?.remove();
-        const g = situationLayer(s.map, x.events ?? [], {
-          t: tLater, flags, selectedId: selEvent, sheets: x.sheets, days: x.days, from: fromLater, quiet: !experte,
-          onClick: (e) => { setSideView("journal"); selectEventRef.current(e.id); },
-          onMove: present ? undefined : mover.move,
-          highlight: hintHl,
-        });
-        g.addTo(s.map);
-        journalRef.current = g;
-      });
-    });
-  }, [exLater?.events, exLater?.sheets, tLater, fromLater, flags, selEvent, mapReady, present, experte, hintHl ? [...hintHl].join() : ""]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!s || !x || x !== ex || tLater !== tNow || fromLater !== winFrom) return;
+    return afterPaint(() => buildSituation(s, x, tLater, fromLater));
+  }, [exLater?.events, exLater?.sheets, ex?.events, tLater, tNow, fromLater, winFrom, flags, selEvent, mapReady, present, experte, hlKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flächen- und Linienzeichen (unter den Zeichen)
   const shapeRef = useRef<L.LayerGroup | null>(null);
@@ -661,7 +690,8 @@ export function Workspace({ product, tagline }: Props) {
     const key = (ev: KeyboardEvent) => {
       const tag = (ev.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (ev.key === "Escape") { togglePresent(false); return; }
+      // Esc beendet sofort (auch wenn ein Stapel auf der Karte aufgefächert ist – Fang-Phase vor der Lageebene)
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); togglePresent(false); return; }
       if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
         const list = (ex?.events ?? []).filter((e) => !e.deleted).sort(compareEvents);
         if (!list.length) return;
@@ -674,9 +704,9 @@ export function Workspace({ product, tagline }: Props) {
     };
     // Esc im Vollbild schluckt der Browser (kein keydown): Vollbild verlassen beendet die Präsentation
     const fs = () => { if (!document.fullscreenElement) { if (fsOn.current) { fsOn.current = false; togglePresent(false); } window.setTimeout(() => sm.current?.map.invalidateSize(), 80); } else fsOn.current = true; };
-    window.addEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
     document.addEventListener("fullscreenchange", fs);
-    return () => { window.removeEventListener("keydown", key); document.removeEventListener("fullscreenchange", fs); };
+    return () => { window.removeEventListener("keydown", key, true); document.removeEventListener("fullscreenchange", fs); };
   }); // eslint-disable-line react-hooks/exhaustive-deps
   // Experte aus: Präsentation beenden
   useEffect(() => { if (!experte && present) togglePresent(false); }, [experte]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -728,7 +758,7 @@ export function Workspace({ product, tagline }: Props) {
     <JournalPanel ex={ex} map={map} device={device} selected={selEvent} experte={experte} zeit={zeit}
       win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => { zeit.setShowLast(null); zeit.setAb?.(null); }}
       showLast={zeit.showLast} onSelect={selectEvent} reportAt={reportAt}
-      onCommitted={() => zeit.goLive("eintragen")}
+      onCommitted={(ids) => { mapNow.current = ids; zeit.goLive("eintragen"); }}
       onPrepare={() => { setModus("vorbereiten"); setPrepStep(2); }} onDemo={loadDemo} update={update} say={say} quality={quality}
       between={<SideSwitch view={sideView} onView={setSideView} redLabel={<RedTabLabel badge={badge} />} />}
       tab={hasEvents ? sideView : "journal"} rot={<div role="tabpanel" aria-label="Was Rot vorhaben könnte" className="sh-redpanel">{red}</div>} />

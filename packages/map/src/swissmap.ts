@@ -28,9 +28,14 @@ export const toLv95 = (ll: L.LatLngExpression): LV95 => {
   return { e: e!, n: n! };
 };
 
+/** LV95 je LatLng-Objekt (Leaflet projiziert bei jedem Neuaufbau und Zoom alle Zeichen neu; proj4 ist teuer) */
+const projected = new WeakMap<L.LatLng, { lat: number; lng: number; e: number; n: number }>();
 const projection: L.Projection = {
   project: (ll: L.LatLng) => {
+    const c = typeof ll === "object" ? projected.get(ll) : undefined;
+    if (c && c.lat === ll.lat && c.lng === ll.lng) return L.point(c.e, c.n);
     const p = toLv95(ll);
+    if (ll instanceof L.LatLng) projected.set(ll, { lat: ll.lat, lng: ll.lng, e: p.e, n: p.n });
     return L.point(p.e, p.n);
   },
   unproject: (pt: L.Point) => toLatLng({ e: pt.x, n: pt.y }),

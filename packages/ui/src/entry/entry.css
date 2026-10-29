@@ -55,7 +55,8 @@
 .eb-keys { display: none; margin: 0; font-size: var(--fs-12); color: var(--muted); }
 @media (hover: hover) and (pointer: fine) {
   /* Platz immer reservieren: kein Springen des Layouts beim Verlassen des Felds (sonst geht ein Klick daneben) */
-  .eb-keys { display: block; visibility: hidden; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* nie abgeschnitten (1280×720): bricht bei schmaler Spalte um statt «…» */
+  .eb-keys { display: block; visibility: hidden; white-space: normal; line-height: 1.4; }
   .ebox .eb-fieldwrap:has(.eb-field:focus-visible) ~ .eb-keys { visibility: visible; }
 }
 .eb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

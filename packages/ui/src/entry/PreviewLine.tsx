@@ -3,7 +3,7 @@
  * mit Ausweg, «Verstanden:» (Zeit, Trupp), «gelesen als» (Funksprache), Zeichen ▾ und Einordnung Feind|Eigene|Unklar,
  * Ort (mit Strassenwahl) und «Ort auf Karte setzen». In der Korrektur: geänderte Werte fett mit «(vorher …)».
  * Experte: «Fläche zeichnen». KI deuten nur bei eingeschalteter KI (KiMeldungSuggest blendet sich sonst aus).
- * Testhaken: `data-zustand` am Block (= EntryState.level).
+ * Testhaken: `data-zustand` am Block (= EntryState.level, setzt EntryBox sofort, nie nachgezogen).
  */
 import { createPortal } from "react-dom";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
@@ -31,7 +31,11 @@ function choiceText(c: SymbolChoice, count?: number): string {
     || pickerEntry(c.key)?.name || c.key;
 }
 
-export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: string): void }) {
+/**
+ * `part`: «kopf» = alles Sichtbare der Vorschau (sofort bei jedem Buchstaben, gleiche Reihenfolge wie Spez. 2.4);
+ * «rest» = KI-Vorschlag (EntryBox zeichnet ihn mit `useDeferredValue` nach). Der Block `.eb-prev` mit `data-zustand` gehört EntryBox.
+ */
+export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(name: string): void; part: "kopf" | "rest" }) {
   const { draft, state, ex, base } = d;
   const missing = useDraftMissing(draft, ex);
   const [pickOpen, setPickOpen] = useState(false);
@@ -95,8 +99,8 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
     sym: d.choice?.key ?? draft.sym, pos: d.effPos, cells: draft.cells, nai: draft.nai, where: d.effWhere, angle: d.road?.angle, dir: draft.dir,
   };
 
-  return (
-    <div className={`eb-prev lvl-${lvl}`} data-zustand={lvl}>
+  if (part === "kopf") return (
+    <>
       <div className={`eb-state s-${lvl}${asked ? " asked" : ""}`}>
         {lvl === "bereit" && <p className="eb-state-h"><span aria-hidden="true">✓ </span>Bereit – {korr ? "Enter speichert die Korrektur" : verb}</p>}
         {lvl === "pruefen" && r0 && (asked
@@ -133,7 +137,7 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
       </p>
       {draft.normalized && draft.normalized !== draft.text && <p className="eb-readas">gelesen als: <span className="mono">{draft.normalized}</span></p>}
       {lvl !== "geht-nicht" && note && (
-        <div className="eb-row">
+        <div className="eb-row eb-symrow">
           <span className="eb-note">Notiz – kein Zeichen, nichts auf der Karte</span>
           <span className="eb-seg" role="group" aria-label="Doch eine Lage? Einordnung wählen" data-zaehl="einordnung">
             {KINDS.map(([k, l, f]) => (
@@ -145,7 +149,7 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
         </div>
       )}
       {lvl !== "geht-nicht" && !note && <>
-        <div className="eb-row">
+        <div className="eb-row eb-symrow">
           <span className="eb-symwrap">
             <button type="button" className={"eb-btn eb-sym" + (d.symOverride ? " manual" : "")} aria-expanded={pickOpen} aria-label={`Zeichen: ${whatText} – ändern`}
               onClick={(ev) => openPicker(ev.currentTarget)}>
@@ -167,6 +171,8 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
           </span>
           {kindBefore && kindBefore !== kindNow && <span className="eb-vorher">(vorher {KIND_WORD[kindBefore]})</span>}
         </div>
+      </>}
+      {lvl !== "geht-nicht" && !note && (
         <div className="eb-row eb-ort">
           {d.roadTarget && d.effPos ? (
             <RoadChoice where={baseWhere(d.effWhere0 ?? "")} res={d.roadShown} pick={d.roadPick ?? (d.keepPlace && base?.roadNone ? { none: true } : null)} manual={!!d.roadPick}
@@ -189,8 +195,13 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
               owner={korr && base ? `korr:${base.id}` : "neu"} className="eb-btn" ctx={{ sheets: ex.sheets, areas: ex.areas, event: shapeEvent }} />
           )}
         </div>
-      </>}
+      )}
+    </>
+  );
+
+  return (
+    <>
       <KiMeldungSuggest ex={ex} text={d.text} day={d.day} unklar={meldungUnklar(draft, d.text, !!d.effPos)} onTake={d.takeKi} />
-    </div>
+    </>
   );
 }

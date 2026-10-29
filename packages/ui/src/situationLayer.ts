@@ -93,6 +93,16 @@ class LageIcon extends L.DivIcon {
   }
 }
 
+/** LatLng je Ort-Objekt der Meldung (gleiche Meldung → gleiches Objekt → Projektion aus dem Zwischenspeicher, swissmap.ts) */
+const llCache = new WeakMap<LV95, { e: number; n: number; ll: L.LatLng }>();
+function latLngOf(p: LV95): L.LatLng {
+  const c = llCache.get(p);
+  if (c && c.e === p.e && c.n === p.n) return c.ll;
+  const ll = toLatLng(p);
+  llCache.set(p, { e: p.e, n: p.n, ll });
+  return ll;
+}
+
 const SIZE = 18;
 const SIZE_SEL = 24;
 const TIME_W = 44;
@@ -402,7 +412,7 @@ class SituationLayer extends L.LayerGroup {
       // (800 Meldungen: Parsen war der grösste Teil des Neuaufbaus)
       const parts: MarkerParts = { svg: s.svg, ud: it.ud ? { text: it.ud, x: s.w + 2, top: Math.max(0, ay - 8) } : null,
         time: showTimes ? { text: it.e.t.slice(11, 16), x: s.w + 2, opt: !it.showTime } : null };
-      const ll = toLatLng(it.pos);
+      const ll = latLngOf(it.pos);
       const z = it.selected ? 1000 : (it.fresh ? 200 : 0) + (it.kind !== "eigen" ? 100 : 0);
       const marker = L.marker(ll, {
         icon: new LageIcon({ className: cls, iconSize: [s.w, s.h], iconAnchor: [ax, ay] }, parts),
@@ -622,10 +632,43 @@ class SituationLayer extends L.LayerGroup {
       rects.push([c.x + b[0], c.y + b[1] - peek, c.x + b[2] + peek, c.y + b[3]]);
     });
     map.getContainer().classList.toggle("lt-fanopen", this.openStack >= 0);
+    this.roving();
     publish(this.stacks.filter((s) => s.members.length > 1).length);
     // Flächenbeschriftungen (NAI, AO, Stao) den Zeichen ausweichen lassen – nach dem Zeichnen (kein erzwungenes Layout)
     avoidAreaLabelsSoon(map, rects);
     try { performance.measure("Lage: Stapel", { start: t0, detail: { n } }); } catch { /* ältere Browser */ }
+  }
+
+  /** erreichbare Zeichen (tabindex gesetzt) in Lesereihenfolge: oben nach unten, links nach rechts */
+  private reachable(): HTMLElement[] {
+    const out: Array<{ el: HTMLElement; x: number; y: number }> = [];
+    for (const p of this.placed) {
+      const el = p.marker.getElement();
+      if (!el || !el.hasAttribute("tabindex")) continue;
+      const pt = this._map!.latLngToContainerPoint(p.marker.getLatLng());
+      out.push({ el, x: pt.x, y: pt.y });
+    }
+    return out.sort((a, b) => Math.round(a.y / 24) - Math.round(b.y / 24) || a.x - b.x).map((o) => o.el);
+  }
+  /**
+   * Ein Tab-Stopp für die ganze Karte (Prüfbericht H3: jedes Zeichen war ein eigener Tab-Stopp): tabindex 0 hat das
+   * zuletzt fokussierte bzw. gewählte Zeichen, sonst das erste; ←/→/↑/↓ wandern (`moveFocus`).
+   */
+  private roving(): void {
+    const els = this.reachable();
+    if (!els.length) return;
+    const byId = (id: string | null | undefined) => (id ? this.placed.find((p) => p.it.e.id === id)?.marker.getElement() ?? null : null);
+    const want = [byId(this.ctl.focusId), byId(this.o.selectedId)].find((e) => e && els.includes(e)) ?? els[0]!;
+    for (const el of els) { const v = el === want ? 0 : -1; if (el.tabIndex !== v) el.tabIndex = v; }
+  }
+  private moveFocus(from: HTMLElement, dir: 1 | -1): void {
+    const els = this.reachable();
+    const i = els.indexOf(from);
+    const next = els[Math.min(els.length - 1, Math.max(0, (i < 0 ? 0 : i) + dir))];
+    if (!next || next === from) return;
+    from.tabIndex = -1;
+    next.tabIndex = 0;
+    next.focus({ preventScroll: true });
   }
 
   /** Text für Bildschirmleser und Tastatur: was liegt hier, was tut Enter */
@@ -655,10 +698,11 @@ class SituationLayer extends L.LayerGroup {
     else delete el.dataset.n;
     // nur das gewählte Zeichen lässt sich mit der Maus ziehen (Cursor «grab»)
     el.classList.toggle("movable", !s.under && !s.hid && s.n < 2 && this.movable(p));
-    // Tastatur: sichtbare Zeichen und oberste Zeichen der Stapel erreichbar, verdeckte nicht
+    // Tastatur: sichtbare Zeichen und oberste Zeichen der Stapel erreichbar, verdeckte nicht. Die Karte ist EIN
+    // Tab-Stopp (roving tabindex, `roving()`): ein Zeichen hat tabindex 0, die übrigen -1, Pfeiltasten wechseln
     const reach = !s.under && !s.hid;
     if (reach) {
-      if (el.tabIndex !== 0) { el.tabIndex = 0; el.setAttribute("role", "button"); }
+      if (!el.hasAttribute("tabindex")) { el.tabIndex = -1; el.setAttribute("role", "button"); }
       const label = this.ariaFor(p, s.n);
       if (el.getAttribute("aria-label") !== label) el.setAttribute("aria-label", label);
       if (s.fan) el.setAttribute("aria-expanded", "true"); else if (s.n > 1) el.setAttribute("aria-expanded", "false"); else el.removeAttribute("aria-expanded");
@@ -741,6 +785,17 @@ class SituationLayer extends L.LayerGroup {
     });
     // Tastatur: Enter/Leertaste auf einem Zeichen = wie Klick (Stapel auffächern bzw. Meldung wählen)
     const onKey = (e: KeyboardEvent) => {
+      const arrow = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+      if (arrow) {
+        const q = this.placedAt(e.target);
+        const el = q?.marker.getElement();
+        if (!q || !el || e.target !== el) return;
+        // Pfeiltasten wechseln das Zeichen (statt die Karte zu verschieben)
+        e.preventDefault();
+        e.stopPropagation();
+        this.moveFocus(el, arrow);
+        return;
+      }
       if (e.key !== "Enter" && e.key !== " ") return;
       const p = this.placedAt(e.target);
       if (!p || e.target !== p.marker.getElement()) return;

@@ -15,6 +15,7 @@ import { RasterPanel } from "./RasterPanel";
 import { TruppsPanel } from "./TruppsPanel";
 import { FeindannahmeEdit } from "./FeindannahmeEdit";
 import { OfflineStep, offlinePartsText } from "./OfflineStep";
+import { PlaceSearch } from "../journal/UnifiedSearch";
 import "./prepare.css";
 
 export type PrepStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -64,9 +65,13 @@ export function PrepareMode(p: PrepareModeProps) {
   const done = Object.values(marks).filter((m) => m === "ok").length;
   const nai = ex.areas.filter((a) => a.kind === "nai").length;
 
+  // Ortssuche auch hier (Prüfbericht H3): wer ein Raster anlegt oder ein Bild einpasst, sucht zuerst den Ort
+  const search = map ? <PlaceSearch ex={ex} map={map} className="pm-search" /> : null;
+
   if (georef && map) {
     return (
       <div className="pm">
+        {search}
         <GeorefPane candidates={georef} map={map} existing={ex.areas}
           onAreas={(areas: Area[]) => { update((x) => { x.areas.push(...areas); return x; }); say(`${areas.length} Fläche${areas.length === 1 ? "" : "n"} übernommen`); }}
           onClose={() => { setGeoref(null); onStep(3); }} />
@@ -104,6 +109,7 @@ export function PrepareMode(p: PrepareModeProps) {
 
   return (
     <div className="pm">
+      {search}
       <div className="pm-head">
         <p>Du bereitest vor.</p>
         <button type="button" className="pp-btn primary" onClick={p.onBack}>Zurück zu Lage führen</button>

@@ -22,8 +22,8 @@ import "./entry.css";
 
 /**
  * Vorschau entkoppelt vom Tippen: das Feld zeigt jeden Buchstaben sofort, die Vorschau zeichnet React mit
- * `useDeferredValue` nach (bei vielen Meldungen und langsamem Gerät bleibt das Tippen flüssig). Eintragen liest immer
- * den aktuellen Stand aus `useEntryDraft`, nie die nachgezogene Vorschau.
+ * `useDeferredValue` nach (bei vielen Meldungen und langsamem Gerät bleibt das Tippen flüssig). Zustandszeile und
+ * `data-zustand` sind immer aktuell; Eintragen liest immer den aktuellen Stand aus `useEntryDraft`.
  */
 const PreviewLater = memo(PreviewLine);
 
@@ -146,7 +146,12 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
       <span id="eb-live" className="eb-sr" aria-live="polite">{live}</span>
       {info && <p className="eb-info"><span aria-hidden="true">ⓘ </span>{info}</p>}
       <VoiceStatus v={d.voice} />
-      {draft ? <PreviewLater d={dLater.draft ? dLater : d} onAddUnit={addUnit} /> : !korr && <p className="eb-hint">Zeit · Trupp · was · wo</p>}
+      {draft && state ? (
+        <div className={`eb-prev lvl-${state.level}`} data-zustand={state.level}>
+          <PreviewLine d={d} part="kopf" onAddUnit={addUnit} />
+          <PreviewLater d={dLater.draft && dLater.state ? dLater : d} part="rest" onAddUnit={addUnit} />
+        </div>
+      ) : !korr && <p className="eb-hint">Zeit · Trupp · was · wo</p>}
       <div className="eb-btns">
         <button type="button" className={"eb-btn primary eb-main" + (blocked ? " blocked" : "")} aria-disabled={blocked || undefined}
           onClick={() => d.submit()}>

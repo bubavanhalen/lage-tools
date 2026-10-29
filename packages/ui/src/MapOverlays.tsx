@@ -207,7 +207,7 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
       const old = model.items.find((i) => i.opacity < 1)!;
       out.push({ key: "blass", icon: <span style={{ opacity: 0.45 }}><Sym k={old.sym} aff={old.aff} size={16} /></span>, label: `blass = älter als ${recentMin} min` });
     }
-    if (model.items.some((i) => i.kind === "eigen" && i.isUnit && i.silentMin > STALE_MIN)) out.push({ key: "alt", icon: <span className="mo-tl tnum">75′</span>, label: `keine Meldung seit über ${STALE_MIN} min` });
+    if (model.items.some((i) => i.kind === "eigen" && i.isUnit && i.silentMin > STALE_MIN)) out.push({ key: "alt", icon: <span className="mo-tl tnum">75 min</span>, label: `keine Meldung seit über ${STALE_MIN} min` });
     if (layout.stacks > 0) out.push({
       key: "stapel",
       icon: (
