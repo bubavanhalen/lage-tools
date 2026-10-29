@@ -142,7 +142,7 @@ describe("Aufheben (jetzt) (Kap. 3.5)", () => {
     expect(artOf(a)).toBe("meldung");
   });
   it("Zeit: Geräteuhr am Übungstag, sonst letzte Meldung + 1 min (nie ein erfundener Tag)", () => {
-    expect(jetztT(ex0, new Date("2030-05-15T07:40:00+02:00"))).toBe("2030-05-15T07:40");
+    expect(jetztT(ex0, new Date(2030, 4, 15, 7, 40))).toBe("2030-05-15T07:40");
     const last = [...evs].sort((x, y) => (x.t < y.t ? 1 : -1))[0]!.t;
     const t = jetztT(ex0, new Date("2026-10-29T10:00:00+01:00"));
     expect(t > last).toBe(true);
