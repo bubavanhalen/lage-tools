@@ -16,7 +16,7 @@ describe("Beschriftungsregel Grundansicht", () => {
     for (const kind of ["feind", "unklar", "neutral", "ul"] as const) {
       expect(quietLook({ kind, ageMin: 31, selected: false }, basis)).toEqual({ opacity: QUIET.altDeckkraft, showTime: false, showUd: false });
     }
-    expect(QUIET.altDeckkraft).toBe(0.4);
+    expect(QUIET.altDeckkraft).toBe(0.55);
   });
   it("gewählt: immer kräftig und beschriftet", () => {
     expect(quietLook({ kind: "feind", ageMin: 300, selected: true }, basis)).toEqual({ opacity: 1, showTime: true, showUd: true });
@@ -36,7 +36,7 @@ describe("Experte wie bisher", () => {
   });
   it("Flächen", () => {
     expect(quietShapeOpacity({ kind: "feind", ageMin: 90, selected: false }, { quiet: false })).toBe(0.55);
-    expect(quietShapeOpacity({ kind: "feind", ageMin: 90, selected: false }, { quiet: true })).toBe(0.4);
+    expect(quietShapeOpacity({ kind: "feind", ageMin: 90, selected: false }, { quiet: true })).toBe(0.55);
     expect(quietShapeOpacity({ kind: "eigen", ageMin: 90, selected: false }, { quiet: true })).toBe(1);
     expect(quietShapeOpacity({ kind: "unklar", ageMin: 10, selected: false }, { quiet: true })).toBe(1);
   });

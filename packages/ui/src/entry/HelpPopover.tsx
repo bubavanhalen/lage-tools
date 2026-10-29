@@ -38,7 +38,7 @@ export function HelpPopover({ onPick, onClose, anchor, hasRaster }: {
         ))}
       </ul>
       <p>Reihenfolge egal. Ohne Zeit gilt jetzt. Korrigieren: Zeile wählen → Korrigieren oder ↑.</p>
-      <p className="eb-help-f">«neu» = in den letzten 10 Minuten. {hasRaster ? "" : "Planquadrate gehen erst mit Führungsraster (Vorbereiten)."}</p>
+      <p className="eb-help-f">«T2» = Übungstag 2 (Datum beim Zeigen auf die Zeit). «neu» = in den letzten 10 Minuten. «62 min» an einem Trupp = so lange keine Meldung. {hasRaster ? "" : "Planquadrate gehen erst mit Führungsraster (Vorbereiten)."}</p>
     </div>
   );
 }

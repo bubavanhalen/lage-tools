@@ -13,13 +13,16 @@
 .savefail button { background: var(--paper); color: var(--rot); border-color: var(--paper); font-weight: 600; }
 .savefail .savefail-x { background: transparent; color: var(--paper); border-color: transparent; font-size: 18px; padding: 0 6px; line-height: 1; }
 
+/* Ergebnis «Öffnen»: Band im Fluss unter dem Kopf (verdeckt nichts), verschwindet nach 8 s selbst (SaveBand.tsx) */
 .mergebar {
-  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3050;
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px;
-  width: max-content; max-width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 140px); overflow: auto;
-  padding: 10px 14px; border-radius: 8px;
-  background: var(--ink); color: var(--paper); font-size: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-8) var(--sp-16);
+  max-height: 40vh; overflow: auto;
+  padding: var(--sp-8) var(--sp-16);
+  background: var(--ink); color: var(--surface); font-size: var(--fs-14);
 }
+.mergebar button { min-height: var(--hit); }
+.mergeconf { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4) var(--sp-12); }
+.mergebar.konflikt { box-shadow: inset 4px 0 0 var(--rueckblick); }
 .mergebar-acts { display: flex; gap: 8px; margin-left: auto; }
 .mergebar button { background: transparent; color: var(--paper); border-color: color-mix(in srgb, var(--paper) 50%, transparent); }
 .mergediffs { flex: 1 1 100%; display: flex; flex-direction: column; gap: 4px; }

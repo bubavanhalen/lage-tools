@@ -524,13 +524,15 @@ function hinterhalt(c: Ctx): Cand[] {
   for (const tg of targets) {
     const near = (p: LV95 | undefined, m: number) => !!p && (tg.ring ? distToRing(p, tg.ring) <= m : dist(p, tg.pos) <= m);
     const best = tg.c5[0];
+    // gebündelte gleiche Hinweise zählen einzeln (`Hint.bundled`)
+    const n5 = tg.c5.reduce((n, h) => n + (h.bundled ?? 1), 0);
     const c5e = tg.c5.flatMap((h) => evsOf(c, h));
     // Auslöser: neuestes Hindernis bzw. neueste Meldung der stärksten C5
     const bevs = best ? evsOf(c, best).filter((v) => v.side === "rot") : [];
     const b0 = lastOf(bevs.filter((v) => v.cat?.category === "Hindernisse" || OBSTACLE_IED.has(v.e.sym) || BLOCK_RE.test(v.e.text))) ?? lastOf(bevs);
     const what = b0 ? (b0.cat?.category === "Hindernisse" || BLOCK_RE.test(b0.e.text) ? b0.cat?.category === "Hindernisse" ? b0.cat.noun ?? b0.cat.name : "Hindernis" : b0.cat?.noun ?? b0.cat?.name ?? "Hindernis") : "Hindernis";
     const i1 = best
-      ? ind(`${what} ${tg.label} ${hmOf(b0?.ms ?? hms(best))} (C5${tg.c5.length > 1 ? `, ${tg.c5.length}×` : ""})`, true, tg.engnis ? w.hindernis_engnis : w.hindernis,
+      ? ind(`${what} ${tg.label} ${hmOf(b0?.ms ?? hms(best))} (C5${n5 > 1 ? `, ${n5}×` : ""})`, true, tg.engnis ? w.hindernis_engnis : w.hindernis,
         { ...fromHint(best, c), events: uniq(c5e.map((v) => v.id)), ms: Math.max(...c5e.map((v) => v.ms), hms(best)), key: true, persistent: true })
       : ind(`Hindernis/Halt im Engnis ${tg.label} – nicht gemeldet`, false, w.hindernis_engnis, { key: true, rule: "C5" });
     const c3 = c.hints.filter((h) => h.rule === "C3" && active(c, h, T.RECON_MIN) &&

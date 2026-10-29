@@ -8,6 +8,7 @@
  * Vermutet (Status A) gestrichelt. Für Punktzeichen `null` – dann gilt `symbolSvg`.
  */
 import { catalogEntry, type Affiliation, type ShapeStyle, type Status } from "@lage/core";
+import { KARTE } from "./kartenfarben";
 
 /** wie `SymbolGraphic` in `symbol.ts` (hier ohne Leaflet, damit testbar) */
 export interface ShapeIcon { svg: string; w: number; h: number; anchor: [number, number] }
@@ -24,10 +25,10 @@ function affOf(sidc: string | undefined, aff: Affiliation): Affiliation {
 
 /** Linien- und Füllfarbe je Zugehörigkeit (wie die Formen auf der Karte, `KIND_COLOR`) */
 const COLOR: Record<Affiliation, { line: string; fill: string; fillOp: number }> = {
-  F: { line: "#1F5FB8", fill: "#1F5FB8", fillOp: 0.14 },
-  H: { line: "#D3262D", fill: "#D3262D", fillOp: 0.14 },
-  U: { line: "#B88A00", fill: "#FFD400", fillOp: 0.3 },
-  N: { line: "#2D7A4B", fill: "#2D7A4B", fillOp: 0.14 },
+  F: { line: KARTE.eigen, fill: KARTE.eigen, fillOp: 0.14 },
+  H: { line: KARTE.feind, fill: KARTE.feind, fillOp: 0.14 },
+  U: { line: KARTE.unklar, fill: KARTE.unklarFill, fillOp: 0.3 },
+  N: { line: KARTE.neutral, fill: KARTE.neutral, fillOp: 0.14 },
 };
 
 const VW = 30, VH = 20;

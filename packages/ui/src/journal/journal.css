@@ -3,16 +3,17 @@
 /* ---------- Suche ---------- */
 .us { position: relative; min-width: 0; }
 .us-field {
-  display: flex; align-items: center; gap: var(--sp-4); min-height: var(--hit);
+  display: flex; align-items: center; gap: var(--sp-4); min-height: var(--hit); box-sizing: border-box;
   border: 1px solid var(--line); border-radius: var(--r-4); background: var(--surface); padding: 0 var(--sp-4) 0 var(--sp-8);
 }
 .us-field:focus-within { box-shadow: var(--focus-shadow); }
 .us-ico { color: var(--muted); font-size: var(--fs-16); }
 .us-field input {
-  flex: 1; min-width: 0; min-height: calc(var(--hit) - 2px); border: 0; background: transparent; outline: none;
+  flex: 1; min-width: 0; min-height: var(--hit); border: 0; background: transparent; outline: none;
   font: 400 var(--fs-14) var(--f-body); color: var(--ink);
 }
 .us-field input::placeholder { color: var(--muted); }
+@media (pointer: coarse) { .us-field input { font-size: var(--fs-16); } }
 .us-field input::-webkit-search-cancel-button { display: none; }
 .us-chip, .us-x {
   min-height: 36px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--bg); color: var(--ink);
@@ -52,6 +53,7 @@
 .jl-kind.k-eigen { color: var(--eigen); }
 .jl-kind.k-unklar { color: var(--unklar); }
 .jl-kind.k-neutral { color: var(--neutral); }
+.jl-kind.k-notiz { color: var(--muted); }
 .jl-who { font-weight: 600; }
 .jl-sym { display: inline-flex; vertical-align: middle; line-height: 0; }
 .jl-sym svg { height: 16px; width: auto; max-width: 28px; }

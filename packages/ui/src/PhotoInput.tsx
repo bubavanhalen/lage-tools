@@ -206,7 +206,7 @@ function PhotoDialog({ file, ex, day, say, onAttach, onCell, onCommit, onClose, 
         }, ac.signal);
       }, ac.signal);
       if (ac.signal.aborted) return;
-      const texts = ocrToMeldungen(r.text, (c) => findCells(c, ex.sheets).length > 0, ex.days, ex.areas.filter((x) => x.kind === "nai").map((x) => x.name));
+      const texts = ocrToMeldungen(r.text, (c) => findCells(c, ex.sheets).length > 0, ex.days, ex.areas.filter((x) => x.kind === "nai").map((x) => x.name), ex.units.blau);
       const a: Attachment = { ...att(), text: r.text.trim(), engine: "ocr-offline" };
       if (!texts.length) { setStep({ s: "leer", conf: r.confidence, q: r.quality }); return; }
       const stamp = attLabel(a);

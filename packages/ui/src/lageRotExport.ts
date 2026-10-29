@@ -3,7 +3,8 @@
  * Möglichkeiten mit Indikatoren, Annäherung und Prüfen; Kräfte erkannt ↔ erwartet; nicht mehr gesehen; Feindannahme.
  */
 import type { jsPDF } from "jspdf";
-import type { Exercise } from "@lage/core";
+import { indicatorSummary, type Exercise } from "@lage/core";
+import { COA_KICKER, coaLine, indicatorGroups, indicatorLine } from "./red/redText";
 import {
   COA_LABEL, countLabel, durLabel, expectedLabel, foundLabel, indSign, inWindowLabel, rowName, shownIndicators, STATE_LABEL, windowLabel,
   type LageRotState,
@@ -11,6 +12,33 @@ import {
 
 const csvCell = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 const dayT = (t: string, days: string[]) => { const i = days.indexOf(t.slice(0, 10)); return `${i >= 0 ? `T${i + 1}` : t.slice(0, 10)} ${t.slice(11, 16)}`; };
+/** «T2 (15.05.2030) 07:25» – Übungstag mit Datum (PDF: der Ausdruck muss ohne App lesbar sein) */
+export const dayDateT = (t: string, days: string[]) => {
+  const i = days.indexOf(t.slice(0, 10));
+  const d = t.slice(0, 10).split("-").reverse().join(".");
+  return `${i >= 0 ? `T${i + 1} (${d})` : d} ${t.slice(11, 16)}`;
+};
+/** Fusszeile «Seite 2 von 5» auf jeder Seite (am Schluss, wenn die Seitenzahl feststeht) */
+export function pdfPageNumbers(doc: jsPDF): void {
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(0);
+    doc.text(`Seite ${i} von ${n}`, 210 - 12, 292, { align: "right" });
+  }
+}
+/**
+ * Text für die PDF-Standardschrift (Helvetica, WinAnsi): Zeichen ohne Glyphe ersetzen, sonst stehen dort kaputte
+ * Zeichen («4 von 5 ' erfüllt»). Codes in Klammern («(D1)», «(C6)») entfernen – im Ausdruck nur Klartext.
+ */
+export function pdfText(s: string): string {
+  return s
+    .replace(/\s*\((?:[A-E][1-9]|[A-E][1-9]\/[A-E][1-9])\)/g, "")
+    .replace(/✓/g, "+").replace(/○/g, "o").replace(/✗/g, "x").replace(/⚠\s*/g, "! ").replace(/⛔\s*/g, "")
+    .replace(/↔/g, "<->").replace(/→/g, "->").replace(/←/g, "<-").replace(/[◆■●▲]\s*/g, "")
+    .replace(/(\d)\s*′/g, "$1 min").replace(/′/g, "'").replace(/≈/g, "ca. ").replace(/≥/g, ">=").replace(/≤/g, "<=")
+    .replace(/[‹›]/g, "'").replace(/\u202F|\u2009/g, " ");
+}
 
 /** Zeilen für Export (CSV/PDF) */
 export function lageRotRows(ex: Exercise, lage: LageRotState, t: string) {
@@ -70,8 +98,8 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
     doc.text(`Anhang: Lage Rot – ${ex.name}`, M, 14);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8);
     doc.text(classification, W - M, 10, { align: "right" });
-    doc.text(`Seite ${page} · Stand ${dayT(t, ex.days)} · Hinweise, keine Fakten – Entscheid durch Zfhr`, W - M, 14, { align: "right" });
-    y = 24;
+    doc.text(`Stand ${dayDateT(t, ex.days)} · Vermutungen, keine Fakten – Entscheid durch Zfhr`, M, 19);
+    y = 26;
   };
   const need = (h: number) => { if (y + h > 285) header(); };
   const section = (s: string) => {
@@ -83,38 +111,39 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
     y += 6;
   };
   header();
-  section("Mögliche Aktionen Rot");
+  section("Was Rot vorhaben könnte");
   doc.setFontSize(8.5);
-  if (!r.coas.length) { doc.text("Keine Möglichkeit erkennbar (mindestens zwei Indikatoren nötig).", M + 1.5, y); y += 6; }
-  // ✓/○/✗ in Helvetica nicht vorhanden: «+» erfüllt, «o» offen, «x» spricht dagegen
-  const txt = (s: string) => s.replace(/✓/g, "+").replace(/○/g, "o").replace(/✗/g, "x").replace(/↔/g, "<->").replace(/→/g, "->").replace(/′/g, "'");
-  for (const c of r.coas) {
+  if (!r.coas.length) { doc.text("Keine Vermutung möglich (mindestens zwei Anzeichen aus verschiedenen Meldungen nötig).", M + 1.5, y); y += 6; }
+  const txt = pdfText;
+  r.coas.forEach((c, k) => {
+    const coa = lage.coas[k]!;
+    const g = indicatorGroups(coa);
     const body: Array<[string, string[]]> = [
-      ["Indikatoren", [`${c.indikatoren} erfüllt`, ...c.liste.map(txt)]],
+      ["Anzeichen", [indicatorSummary(coa), ...g.pro.map((i) => `+ ${indicatorLine(i)}`), ...g.open.map((i) => `o ${indicatorLine(i)} (offen)`), ...g.contra.map((i) => `x ${indicatorLine(i)} (spricht dagegen)`)].map(txt)],
       ...(c.annaeherung ? [["Annäherung", [txt(c.annaeherung)]] as [string, string[]]] : []),
       ...(c.pruefen.length ? [["Prüfen", c.pruefen.map((p) => `- ${txt(p)}`)] as [string, string[]]] : []),
     ];
-    const wrapped = body.map(([k, ls]) => [k, ls.flatMap((l) => doc.splitTextToSize(l, W - 2 * M - 34) as string[])] as const);
-    const titleLines = doc.splitTextToSize(txt(c.titel), W - 2 * M - 70) as string[];
-    const h = titleLines.length * 4.4 + wrapped.reduce((s, [, ls]) => s + ls.length * LH + 1, 0) + 4;
+    const wrapped = body.map(([key, ls]) => [key, ls.flatMap((l) => doc.splitTextToSize(l, W - 2 * M - 34) as string[])] as const);
+    const titleLines = doc.splitTextToSize(txt(coaLine(coa)), W - 2 * M - 70) as string[];
+    const h = titleLines.length * 4.4 + wrapped.reduce((sum, [, ls]) => sum + ls.length * LH + 1, 0) + 4;
     need(h);
     const top = y - 3.6;
-    if (c.einordnung !== COA_LABEL.weitere) { doc.setFillColor(253, 232, 235); doc.rect(M, top, W - 2 * M, titleLines.length * 4.4 + 1.6, "F"); }
+    if (coa.label !== "weitere") { doc.setFillColor(253, 232, 235); doc.rect(M, top, W - 2 * M, titleLines.length * 4.4 + 1.6, "F"); }
     doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(150, 30, 35);
-    doc.text(c.einordnung.toUpperCase(), M + 1.5, y);
+    doc.text(doc.splitTextToSize(COA_KICKER[coa.label], 30) as string[], M + 1.5, y);
     doc.setTextColor(0); doc.setFontSize(10);
     doc.text(titleLines, M + 34, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
     if (c.zeitraumKurz) doc.text(txt(c.zeitraumKurz), W - M - 1.5, y, { align: "right" });
     y += titleLines.length * 4.4 + 1.2;
-    for (const [k, ls] of wrapped) {
-      doc.setTextColor(90); doc.setFontSize(7.5); doc.text(k.toUpperCase(), M + 1.5, y);
+    for (const [key, ls] of wrapped) {
+      doc.setTextColor(90); doc.setFontSize(7.5); doc.text(key.toUpperCase(), M + 1.5, y);
       doc.setTextColor(0); doc.setFontSize(8.5); doc.text(ls, M + 34, y);
       y += ls.length * LH + 1;
     }
     doc.setDrawColor(210); doc.line(M, y - 2.2, W - M, y - 2.2);
     y += 3;
-  }
+  });
   y += 2;
   section("Kräfte Rot");
   const win = !!lage.from;
@@ -141,7 +170,7 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
   const tail: string[] = [];
   if (r.weg.length) tail.push(`Nicht mehr gesehen: ${r.weg.join(" · ")}`);
   tail.push(`Feindannahme: ${ex.feindannahme?.trim() || "keine eingetragen (nur erkannt)"}`);
-  if (lage.from) tail.push(`Kräfte über das ganze Journal bis ${dayT(t, ex.days)}; Spalte «im Fenster» nur Meldungen ab ${dayT(lage.from, ex.days)}`);
+  if (lage.from) tail.push(`Kräfte über das ganze Journal bis ${dayDateT(t, ex.days)}; Spalte «im Fenster» nur Meldungen ab ${dayDateT(lage.from, ex.days)}`);
   y += 2;
   for (const s of tail) {
     const l = doc.splitTextToSize(txt(s), W - 2 * M - 3) as string[];

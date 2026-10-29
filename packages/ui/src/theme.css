@@ -81,14 +81,29 @@
   --blau-soft: #E0E8F5;
   --warn: #A86F12;    /* → --warn-sym */
 
-  /* Karte (bleibt auch im Dunkelmodus hell) – alt, → colors.ts */
-  --m-rot: #D3262D;
-  --m-blau: #1F5FB8;
-  --m-ink: #101414;
+  /*
+   * Karte (fest, bleibt auch im Dunkelmodus hell, Kap. 5.4): helle Werte des Vertrags – hier NICHT im Dunkelblock
+   * überschreiben. Spiegel: packages/map/src/kartenfarben.ts (KARTE) und colors.ts (LAGE_KARTE). Ein Rot: Feind.
+   */
+  --karte-feind: #C62828;
+  --karte-eigen: #1F5FB8;
+  --karte-unklar: #8A5A00;
+  --karte-unklar-fill: #F2C200;
+  --karte-neutral: #2E7D32;
+  --karte-zivil: #6A1B9A;
+  --karte-ink: #1B2320;
+  --karte-halo: #FFFFFF;
+  --karte-nai: #1F78D1;
+  --karte-ao: #0B3D91;
+  --karte-flash: #F2B705;
+  /* alte Namen (→ --karte-*) */
+  --m-rot: var(--karte-feind);
+  --m-blau: var(--karte-eigen);
+  --m-ink: var(--karte-ink);
   --m-grid: #111111;
-  --m-nai: #1F78D1;
-  --m-ao: #0B3D91;
-  --m-flash: #F2B705;
+  --m-nai: var(--karte-nai);
+  --m-ao: var(--karte-ao);
+  --m-flash: var(--karte-flash);
 
   /* ältere Namen */
   --soft: var(--grid);

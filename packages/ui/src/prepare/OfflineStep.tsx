@@ -12,8 +12,9 @@ import "./prepare.css";
 
 const mark = (ok: boolean) => (ok ? "✓" : "✗");
 
+/** «Karte ✓ · App ✓» – der Speicherschutz ist nur eine Empfehlung und steht nicht im Zustand (M1) */
 export function offlinePartsText(s: OfflineStatus): string {
-  return `Karte ${mark(s.parts.karte)} · Speicher ${mark(s.parts.speicher)} · App ${mark(s.parts.app)}`;
+  return `Karte ${mark(s.parts.karte)} · App ${mark(s.parts.app)}`;
 }
 
 export function OfflineStep({ ex, map, status }: { ex: Exercise; map: L.Map; status: OfflineStatus }) {
@@ -26,6 +27,14 @@ export function OfflineStep({ ex, map, status }: { ex: Exercise; map: L.Map; sta
         </ul>
       )}
       {!status.parts.app && <p className="pp-note">Die App wird beim ersten Öffnen mit Netz für offline gespeichert. Danach die Seite einmal neu laden.</p>}
+      {!status.parts.speicher && (
+        <div className="pp-rec" role="note">
+          <b>Empfehlung: Speicher schützen</b>
+          <p>Der Browser darf gespeicherte Daten bei Platzmangel löschen. Schutz: die Seite zum Startbildschirm hinzufügen
+            (bzw. als App installieren) oder in den Einstellungen der Website «Daten speichern» erlauben. Unabhängig davon:
+            regelmässig «Datei für anderes Gerät …» sichern.</p>
+        </div>
+      )}
       <OfflineBox ex={ex} map={map} />
       <div className="pp-opt">
         <div className="pp-l">Optional</div>

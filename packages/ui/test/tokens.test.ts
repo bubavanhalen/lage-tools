@@ -100,14 +100,12 @@ describe("Farbvertrag theme.css", () => {
  * Nur senken, nie erhöhen. Milsymbol-Füllungen (Kap. 5.1) dürfen bleiben, gehören dann aber nach colors.ts.
  */
 const BEKANNT: Record<string, number> = {
-  "GeorefPane.tsx": 1,
-  "MapOverlays.tsx": 14,
+  "MapOverlays.tsx": 9,
   "NaiPanel.tsx": 1,
   "PreviewShell.tsx": 2,
   "ShapeDraw.tsx": 1,
   "SymbolPicker.tsx": 1,
   "attachmentStore.ts": 2,
-  "journalLayer.ts": 14,
   "mapoverlays.css": 6,
   "pdf.ts": 16,
   "tiles.ts": 1,

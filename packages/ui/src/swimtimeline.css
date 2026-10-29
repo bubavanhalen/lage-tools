@@ -127,17 +127,17 @@
 
 .swt-dot, .swt-melder, .swt-badge { cursor: pointer; }
 .swt-dot .hit, .swt-melder .hit { fill: transparent; stroke: none; }
-.swt-dot:hover circle:last-child { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--ink) 45%, transparent)); }
+.swt-dot:hover .swt-mk { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--ink) 45%, transparent)); }
 .swt-selring { fill: none; stroke: var(--ink); stroke-width: 2; }
 .swt-link { stroke: var(--eigen); stroke-width: 1.3; stroke-dasharray: 3 3; opacity: .8; pointer-events: none; }
 .swt-link.sel { stroke-width: 2; opacity: 1; stroke-dasharray: 4 2; }
 .swt-melder circle:last-child { fill: var(--swt-bg); stroke: var(--eigen); stroke-width: 1.5; }
 .swt-melder.sel circle:last-child { stroke-width: 2.4; }
 .swt-badge circle { fill: var(--ink); stroke: var(--swt-bg); stroke-width: 1.5; }
-.swt-badge text { font-family: var(--f-mono); font-size: 9px; font-weight: 600; fill: var(--surface); text-anchor: middle; }
+.swt-badge text { font-family: var(--f-mono); font-size: 12px; font-weight: 600; fill: var(--surface); text-anchor: middle; }
 
 .swt-mini { padding: 0 0 6px; }
-.swt-mini circle { cursor: pointer; }
+.swt-mini [data-id] { cursor: pointer; }
 
 .swt-empty {
   margin: 10px 14px 12px; padding: 10px 14px; border: 1.5px dashed var(--line-soft); border-radius: 6px;
@@ -163,7 +163,7 @@
 /* Hinweis auf weitere Spuren (oben/unten), über der Spaltenbeschriftung */
 .swt-bodywrap { position: relative; }
 .swt-more {
-  position: absolute; left: 4px; z-index: 3; min-height: 0; padding: 1px 6px; border-radius: 999px;
+  position: absolute; left: 4px; z-index: 3; min-height: 24px; padding: 1px 8px; border-radius: 999px;
   font-family: var(--f-mono); font-size: 12px; font-weight: 600; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: var(--surface); background: var(--ink); border: 0; opacity: .88; cursor: pointer;
 }

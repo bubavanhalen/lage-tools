@@ -16,6 +16,7 @@ import { ShapeButton } from "../ShapeDraw";
 import { SymbolPicker, choiceSvg, pickerEntry, type SymbolChoice } from "../SymbolPicker";
 import { dayLabel } from "../Timeline";
 import { KiMeldungSuggest, meldungUnklar } from "../ki/KiFeatures";
+import { dayTitle, genericWhat, missLabel, replaceToken } from "./labels";
 import type { EntryDraft } from "./useEntryDraft";
 
 const KINDS: Array<[Kind, string, string]> = [["feind", "Feind", "◆"], ["eigen", "Eigene", "●"], ["unklar", "Unklar", "■"]];
@@ -65,14 +66,30 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
   const time = `${dayLabel(draft.t, ex.days)} ${draft.t.slice(11, 16)}${!korr && !draft.timeFromText ? " (jetzt)" : ""}`;
   const timeChanged = korr && base && draft.timeFromText && draft.t !== base.t;
   const what = d.keepSymbol && base ? base.desc : d.symOverride ? choiceText(d.symOverride, draft.count) : draft.desc;
-  const whatText = what ?? (pickerEntry(d.choice?.key ?? draft.sym)?.name ?? draft.sym) + (draft.count && draft.count > 1 ? ` ×${draft.count}` : "");
   const kindNow = d.effKind ?? draft.kind;
+  const note = draft.kindHint === "notiz" && !d.kindOverride && !d.symOverride;
+  const generic = what ? null : genericWhat(d.choice?.key ?? draft.sym, kindNow === "eigen" ? "blau" : "rot", draft.unit || draft.melder);
+  const whatText = what ?? generic ?? (pickerEntry(d.choice?.key ?? draft.sym)?.name ?? draft.sym) + (draft.count && draft.count > 1 ? ` ×${draft.count}` : "");
   const kindBefore = korr && base ? (base.side === "blau" ? "eigen" : base.aff === "U" || base.aff === "N" ? "unklar" : "feind") as Kind : null;
   const placeChanged = korr && d.oldPlace !== null && (d.placeText || "ohne Ort") !== d.oldPlace;
   const ortProblem = state.reasons.some((x) => x.problem === "ort" || x.problem === "orte");
-  const melderProblems = state.reasons.filter((x) => x.problem === "melder" && x.token);
-  const verb = korr ? "speichert die Korrektur" : coarse() ? "«Eintragen» trägt ein" : "Enter trägt ein";
-  const fehlt = missing.filter((m) => m !== "Melder" && m !== "Ort");
+  const melderProblems = state.reasons.filter((x) => (x.problem === "melder" || x.code === "trupp-neu") && x.token);
+  /** Vorschläge der Erkennung, die in den Text übernommen werden können («meintest du 07:35?», «Schützenpanzer») */
+  const offers = state.reasons.flatMap((x) => {
+    if (x.code === "zukunft" && x.suggest && x.token) return [{ key: "z", label: `${x.suggest.slice(0, 2)}:${x.suggest.slice(2)} einsetzen`, token: x.token, by: x.suggest }];
+    if (x.code === "was" && x.token && draft.unknownWord?.suggestLabel) return [{ key: "w", label: `«${draft.unknownWord.suggestLabel}» einsetzen`, token: x.token, by: draft.unknownWord.suggestLabel }];
+    return [];
+  });
+  const take = (token: string, by: string) => {
+    const cur = d.inputRef.current?.value ?? d.text;
+    const next = replaceToken(cur, token, by);
+    if (next === cur) return;
+    d.setText(next);
+    d.fitInput();
+    requestAnimationFrame(() => { const t = d.inputRef.current; if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(next.length, next.length); } });
+  };
+  const verb = korr ? "speichert die Korrektur" : coarse() ? "Senden-Taste trägt ein" : "Enter trägt ein";
+  const fehlt = note ? [] : missing.filter((m) => m !== "Melder" && m !== "Ort").map(missLabel);
   const shapeColor = kindNow === "eigen" ? LAGE_KARTE.eigen : kindNow === "feind" ? LAGE_KARTE.feind : LAGE_KARTE.unklar;
   const shapeEvent: Pick<LageEvent, "sym" | "pos" | "cells" | "nai" | "where" | "angle" | "dir"> = {
     sym: d.choice?.key ?? draft.sym, pos: d.effPos, cells: draft.cells, nai: draft.nai, where: d.effWhere, angle: d.road?.angle, dir: draft.dir,
@@ -93,8 +110,9 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
           {r0.hint && <p className="eb-state-t">{r0.hint}</p>}
           {state.reasons.slice(1).filter((x) => x.problem).map((x, i) => <p key={i} className="eb-state-t">⛔ {x.text}</p>)}
         </>}
-        {(melderProblems.length > 0 || (ortProblem && lvl === "geht-nicht")) && (
+        {(melderProblems.length > 0 || offers.length > 0 || (ortProblem && lvl === "geht-nicht")) && (
           <div className="eb-acts">
+            {offers.map((o) => <button key={o.key} type="button" className="eb-btn" onClick={() => take(o.token, o.by)}>{o.label}</button>)}
             {melderProblems.map((x) => (
               <button key={x.token} type="button" className="eb-btn" onClick={() => onAddUnit(x.token!)}>«{x.token}» als neuen Trupp aufnehmen</button>
             ))}
@@ -106,7 +124,7 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
       </div>
       <p className="eb-und">
         <span className="eb-und-k">Verstanden: </span>
-        <span className={timeChanged ? "chg" : ""}>{time}</span>
+        <span className={timeChanged ? "chg" : ""} title={dayTitle(draft.t, ex.days)}>{time}</span>
         {timeChanged && <span className="eb-vorher"> (vorher {base!.t.slice(11, 16)})</span>}
         <span> · </span>
         {draft.melder ? <span>{draft.melder} meldet</span> : <span className="eb-q">Trupp ?</span>}
@@ -114,7 +132,19 @@ export function PreviewLine({ d, onAddUnit }: { d: EntryDraft; onAddUnit(name: s
         {fehlt.length > 0 && <span className="eb-fehlt"> · Fehlt noch: {fehlt.join(", ")}</span>}
       </p>
       {draft.normalized && draft.normalized !== draft.text && <p className="eb-readas">gelesen als: <span className="mono">{draft.normalized}</span></p>}
-      {lvl !== "geht-nicht" && <>
+      {lvl !== "geht-nicht" && note && (
+        <div className="eb-row">
+          <span className="eb-note">Notiz – kein Zeichen, nichts auf der Karte</span>
+          <span className="eb-seg" role="group" aria-label="Doch eine Lage? Einordnung wählen" data-zaehl="einordnung">
+            {KINDS.map(([k, l, f]) => (
+              <button key={k} type="button" className={`k-${k}`} aria-pressed={false} onClick={() => { d.setKind(k); d.inputRef.current?.focus(); }}>
+                <span aria-hidden="true">{f} </span>{l}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
+      {lvl !== "geht-nicht" && !note && <>
         <div className="eb-row">
           <span className="eb-symwrap">
             <button type="button" className={"eb-btn eb-sym" + (d.symOverride ? " manual" : "")} aria-expanded={pickOpen} aria-label={`Zeichen: ${whatText} – ändern`}

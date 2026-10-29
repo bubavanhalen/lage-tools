@@ -9,6 +9,7 @@ import type { LayerFlags } from "./layers";
 import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
 import { getSituationLayout, subscribeSituationLayout } from "./situationLayer";
 import { dayLabel } from "./Timeline";
+import { LAGE_KARTE } from "./colors";
 import "./mapoverlays.css";
 
 const UNIT_VAR = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", neutral: "var(--ok)", ul: "var(--muted)" } as const;
@@ -191,15 +192,15 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
     if (ant) out.push({ key: "vermutet", icon: <Sym k={ant.sym} aff={ant.aff} size={16} sidc={ant.sidc} status="anticipated" />, label: "gestrichelt = vermutet" });
     if (model.items.some((i) => i.road === "sperre")) out.push({
       key: "sperre",
-      icon: <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M3 9 L6 4 L9 9 L12 4 L15 9 L18 4 L21 9" fill="none" stroke="#D3262D" strokeWidth="1.4" /><path d="M2 9 H22" stroke="#D3262D" strokeWidth="3" /></svg>,
+      icon: <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M3 9 L6 4 L9 9 L12 4 L15 9 L18 4 L21 9" fill="none" stroke={LAGE_KARTE.feind} strokeWidth="1.4" /><path d="M2 9 H22" stroke={LAGE_KARTE.feind} strokeWidth="3" /></svg>,
       label: "Sperre quer zur Strasse",
     });
     if (model.tracks.some((x) => x.side === "blau")) out.push({ key: "spur-b", icon: <LineSample color="#1F5FB8" dash="5 3" dots width={2} />, label: "Spur eigene" });
-    if (model.tracks.some((x) => x.side !== "blau")) out.push({ key: "spur-r", icon: <LineSample color="#D3262D" dash="5 3" dots width={2} />, label: "Spur Feind" });
+    if (model.tracks.some((x) => x.side !== "blau")) out.push({ key: "spur-r", icon: <LineSample color={LAGE_KARTE.feind} dash="5 3" dots width={2} />, label: "Spur Feind" });
     if (flags.nai && areas?.length) {
       if (areas.some((a) => a.kind === "nai" || a.kind === "other")) out.push({ key: "nai", icon: <AreaSample color="#1F78D1" fill="#1F78D1" />, label: "NAI" });
       if (areas.some((a) => a.kind === "ao")) out.push({ key: "ao", icon: <AreaSample color="#0B3D91" dash="4 3" />, label: "AO" });
-      if (areas.some((a) => a.kind === "stao")) out.push({ key: "stao", icon: <AreaSample color="#B3242A" dash="3 2" fill="#D3262D" />, label: "Stao" });
+      if (areas.some((a) => a.kind === "stao")) out.push({ key: "stao", icon: <AreaSample color={LAGE_KARTE.feind} dash="3 2" fill={LAGE_KARTE.feind} />, label: "Stao" });
     }
     if (model.items.some((i) => i.showTime)) out.push({ key: "zeit", icon: <span className="mo-tl tnum">hh:mm</span>, label: `Meldung jünger als ${recentMin} min` });
     if (model.items.some((i) => i.opacity < 1)) {

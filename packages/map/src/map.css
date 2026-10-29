@@ -4,11 +4,13 @@
 .leaflet-container { background: #dfe3dc; font-family: var(--f-body, "IBM Plex Sans", system-ui, sans-serif); }
 /* ---------- Grundkarte «Grau» (MVP 1, Spez. 5.4): farbige Landeskarte mit Filter – offline aus demselben Kachel-Cache ---------- */
 .leaflet-container.lt-base-grau { background: #fff; }
-.lt-tiles-grau { filter: grayscale(1) contrast(.95) brightness(1.05); opacity: .7; }
-/* Nacht: dunkel und farblos auf Schwarz (ersetzt den allgemeinen Nachtfilter der Kachelebene) */
+/* Deckkraft .7 setzt swissmap.ts als Leaflet-Option (inline) – eine CSS-Deckkraft überschriebe Leaflet mit 1 */
+.lt-tiles-grau { filter: grayscale(1) contrast(.95) brightness(1.05); }
+/* Nacht: dunkel und farblos auf Schwarz (ersetzt den allgemeinen Nachtfilter der Kachelebene); volle Deckkraft,
+   sonst würde die Karte auf Schwarz zusätzlich abgedunkelt (inline .7 → hier mit !important übersteuert) */
 .night .leaflet-container.lt-base-grau { background: #000; }
 .night .lt-base-grau .leaflet-tile-pane { filter: none; }
-.night .lt-tiles-grau { filter: brightness(.45) saturate(0); opacity: 1; }
+.night .lt-tiles-grau { filter: brightness(.45) saturate(0); opacity: 1 !important; }
 
 .lt-drawing, .lt-drawing .leaflet-interactive { cursor: crosshair !important; }
 .lt-picking, .lt-picking .leaflet-interactive { cursor: crosshair !important; }

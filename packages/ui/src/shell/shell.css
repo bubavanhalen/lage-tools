@@ -22,6 +22,7 @@
 .hd-save.fehler { color: var(--stop); font-weight: 600; }
 .hd-off { white-space: nowrap; color: var(--muted); }
 .hd-off.ok { color: var(--ok); }
+.hd-off.net + .hd-off.ok { margin-left: calc(var(--sp-8) - var(--sp-16)); }
 button.hd-off.fix { min-height: var(--hit); padding: 0 var(--sp-12); font: 600 var(--fs-14)/1 var(--f-body); color: var(--warn-ink); background: var(--warn-bg); border: 1px solid var(--line); border-radius: var(--r-pill); }
 button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
 
@@ -132,10 +133,18 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
   .app.shell .sh-work { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(58vh, 1fr) auto; }
   .app.shell .sh-mapcol { order: 1; min-height: 58vh; }
   .app.shell .sh-side { order: 2; border-right: 0; border-top: 1px solid var(--line-soft); max-height: none; overflow: visible; }
-  .hd-save { display: none; }
+  /* Speicherstatus bleibt sichtbar, kompakt «✓ 07:25» (M3) */
+  .hd-save .hd-long, .hd-off .hd-long { display: none; }
+  .hd-status { gap: var(--sp-8); }
 }
 @media (max-width: 560px) {
-  .hd-status { display: none; }
+  /* Handy: nur Statuspunkte – «✓ 07:25», «Kein Netz», «Offline ✗»; «Offline bereit ✓» entfällt (Spez. 2.11) */
+  .hd-off.ok { display: none; }
+  .hd-status { font-size: var(--fs-12); }
+}
+.hd-short { display: none; }
+@media (max-width: 860px) {
+  .hd-save .hd-short, .hd-off .hd-short { display: inline; }
 }
 
 /* «Was Rot vorhaben könnte» in der Spalte: gleiche Kante wie Meldungsfeld, Umschalter und Liste (Spalten-Innenabstand) */

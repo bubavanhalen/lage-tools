@@ -65,8 +65,8 @@
 /* ---------- Stapel: oberstes Zeichen vorne, bis zwei weitere nach rechts oben versetzt, Zahl-Marke ---------- */
 .lt-ev.hid { display: none; }
 .lt-ev.old > svg, .lt-ev.old > .lt-ud, .lt-ev.old > .lt-tl { opacity: .45; }
-/* ruhige Karte (Grundansicht): ältere Sichtungen 40 % (Zahl-Marke des Stapels bleibt kräftig) */
-.lt-ev.old.q > svg, .lt-ev.old.q > .lt-ud, .lt-ev.old.q > .lt-tl { opacity: .4; }
+/* ruhige Karte (Grundansicht): ältere Sichtungen 55 % (= QUIET.altDeckkraft; Zahl-Marke des Stapels bleibt kräftig) */
+.lt-ev.old.q > svg, .lt-ev.old.q > .lt-ud, .lt-ev.old.q > .lt-tl { opacity: .55; }
 .lt-ev.fan.old > svg, .lt-ev.fan.old > .lt-ud, .lt-ev.fan.old > .lt-tl { opacity: .75; }
 .lt-ev.under .lt-ud, .lt-ev.under .lt-tl { display: none; }
 .lt-tl.opt { display: none; }

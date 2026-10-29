@@ -5,7 +5,7 @@ import { jsPDF } from "jspdf";
 import { compareEvents, historyText, journalStatus, kindLabel, type Exercise, type Hint } from "@lage/core";
 import { appendHintsPdf } from "./hintsExport";
 import type { LageRotState } from "./lageRot";
-import { appendLageRotPdf } from "./lageRotExport";
+import { appendLageRotPdf, pdfPageNumbers } from "./lageRotExport";
 
 /**
  * `hints`: Hinweise zu Rot mit Entscheid als Anhang (neue Seite); `lageRot`: Lage Rot zur Lagezeit `t` davor;
@@ -28,8 +28,10 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
     doc.text(`Lagejournal – ${ex.name}`, M, 14);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8);
     doc.text(classification, W - M, 10, { align: "right" });
-    doc.text(`Seite ${page} · erstellt ${new Date().toLocaleString("de-CH")}`, W - M, 14, { align: "right" });
-    y = 22;
+    doc.text(`erstellt ${new Date().toLocaleString("de-CH")}`, W - M, 14, { align: "right" });
+    // Übungstage mit Datum («T2» allein ist im Ausdruck nicht verständlich)
+    if (ex.days.length) doc.text(ex.days.map((d, i) => `T${i + 1} = ${d.split("-").reverse().join(".")}`).join(" · "), M, 18.5);
+    y = 24;
     doc.setFillColor(29, 29, 29); doc.rect(M, y - 4, W - 2 * M, 6, "F");
     doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
     let x = M + 1;
@@ -47,7 +49,7 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
     ];
     const lines = cells.map((c, i) => doc.splitTextToSize(c, cols[i]!.w - 2) as string[]);
     const h = Math.max(...lines.map((l) => l.length)) * 3.6 + 1.6;
-    if (y + h > 285) { doc.addPage(); page++; header(); }
+    if (y + h > 284) { doc.addPage(); page++; header(); }
     if (e.deleted) { /* gestrichen: ohne Farbe */ }
     else if (e.side === "rot" && e.aff === "U") { doc.setFillColor(252, 244, 214); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
     else if (e.side === "rot") { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
@@ -77,5 +79,7 @@ export function journalPdf(ex: Exercise, classification = "INTERN", hints?: Hint
   }
   if (lageRot) page = appendLageRotPdf(doc, ex, lageRot.lage, lageRot.t, classification, page);
   if (hints?.length) appendHintsPdf(doc, ex, hints, classification, page);
+  // «Seite n von m» als Fusszeile auf allen Seiten
+  pdfPageNumbers(doc);
   return doc.output("blob");
 }

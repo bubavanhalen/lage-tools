@@ -14,9 +14,9 @@ describe("Bild für Flächen- und Linienzeichen (Liste, Auswahl, Legende)", () =
     expect(shapeIconSvg("sperre", "H", 14)).toBeNull();
   });
   it("Farbe nach Zugehörigkeit (auch aus dem SIDC), vermutet gestrichelt", () => {
-    expect(shapeIconSvg("minensperre", "H")!.svg).toContain("#D3262D");
+    expect(shapeIconSvg("minensperre", "H")!.svg).toContain("#C62828");
     expect(shapeIconSvg("minensperre", "F")!.svg).toContain("#1F5FB8");
-    expect(shapeIconSvg("abc_gebiet", "U")!.svg).toContain("#B88A00");
+    expect(shapeIconSvg("abc_gebiet", "U")!.svg).toContain("#8A5A00");
     expect(shapeIconSvg("achse", "H", 14, { sidc: "GFGPGPP---****X" })!.svg).toContain("#1F5FB8");
     expect(shapeIconSvg("minensperre", "H", 14, { status: "anticipated" })!.svg).toContain("stroke-dasharray");
     expect(shapeIconSvg("minensperre", "H", 14)!.svg).not.toContain("stroke-dasharray");

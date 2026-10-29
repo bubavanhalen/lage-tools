@@ -7,7 +7,7 @@
  * Abspielen und «Zeige letzte» über den gemeinsamen Automaten (Rückblick-Band und -Rahmen gelten gleich);
  * ohne `zeit` wie bisher über `value`/`onChange` und `win`/`onWin`.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as RKeyboardEvent, type MouseEvent as RMouseEvent, type PointerEvent as RPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as RKeyboardEvent, type MouseEvent as RMouseEvent, type PointerEvent as RPointerEvent, type ReactNode, type CSSProperties } from "react";
 import { axisTicks, buildLanes, clusterX, kindLabel, liveTime, showLastLabel, SHOW_LAST_MIN, stackOffsets, timeBounds, windowLabel, windowStart, type DotKind, type Exercise, type Lane, type LaneItem, type LageEvent, type TimeWindow } from "@lage/core";
 import { dayLabel, isoLocal } from "./Timeline";
 import type { GoLiveGrund, ShowLast, ZeitApi } from "./shell/contracts";
@@ -39,6 +39,13 @@ export interface SwimTimelineProps {
 
 const MIN = 60000;
 const KIND_VAR: Record<DotKind, string> = { eigen: "var(--eigen)", feind: "var(--feind)", unklar: "var(--unklar)", ul: "var(--muted)" };
+
+/** Punkt mit Form nach Art (Spez. 5.1, Regel 5 – nicht nur Farbe): Feind ◆, Unklar ■, Eigene/übrige ● */
+function Mark({ kind, cx, cy, r, style, className }: { kind: DotKind; cx: number; cy: number; r: number; style?: CSSProperties; className?: string }) {
+  if (kind === "feind") { const d = r * 1.3; return <polygon className={className} points={`${cx},${cy - d} ${cx + d},${cy} ${cx},${cy + d} ${cx - d},${cy}`} style={style} />; }
+  if (kind === "unklar") { const d = r * 0.92; return <rect className={className} x={cx - d} y={cy - d} width={2 * d} height={2 * d} style={style} />; }
+  return <circle className={className} cx={cx} cy={cy} r={r} style={style} />;
+}
 const GROUP_VAR = { feind: "var(--feind)", ul: "var(--muted)", eigen: "var(--eigen)" } as const;
 /** Abspieltempo in Übungsminuten pro Sekunde; 0 = automatisch (ganze Übung in ca. 30 s) */
 const SPEEDS = [0, 1, 5, 15, 60];
@@ -97,14 +104,18 @@ export function SwimTimeline(p: SwimTimelineProps) {
 
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => { const id = window.setInterval(() => setClock(Date.now()), 30000); return () => window.clearInterval(id); }, []);
-  const liveMs = liveTime(lastMs, clock);
+  // LIVE wie die Hülle (useLageZeit: Geräteuhr, eine Meldung in der Zukunft verschiebt LIVE nicht); ohne ZeitApi wie bisher
+  const liveMs = zeit?.tLive ? Date.parse(zeit.tLive) : liveTime(lastMs, clock);
   const { t0, t1 } = timeBounds(firstMs, lastMs, liveMs);
   const multiDay = days.length > 1 || (firstMs !== undefined && new Date(t0).getDate() !== new Date(liveMs).getDate());
 
   // ---------- Zustand ----------
   const { w: winW, h: winH } = useWindowSize();
-  /** kleiner Bildschirm (Tablet hochkant, Laptop mit wenig Höhe): standardmässig eingeklappt, offen höchstens ca. 20 % */
-  const small = winW < 900 || winH < 800;
+  /**
+   * kleiner Bildschirm (Tablet hochkant, sehr wenig Höhe): standardmässig eingeklappt, offen höchstens ca. 20 %.
+   * Laptop 1280×720 bleibt offen (dichte Spuren) – eingeklappt wäre der Zeitstrahl nur eine Punktzeile unter den Mindestmassen.
+   */
+  const small = winW < 900 || winH < 640;
   /** wenig Höhe: dichte Spuren (14 px) */
   const dense = !compact && winH < 800;
   // Wahl des Benutzers (eingeklappt/offen) hat Vorrang vor der Voreinstellung nach Bildschirmgrösse
@@ -479,8 +490,8 @@ export function SwimTimeline(p: SwimTimelineProps) {
           badges.push(
             <g key={"b" + grp[0]!.id} className="swt-badge" data-zoom={`${grp[0]!.ms},${grp[grp.length - 1]!.ms}`}>
               <title>{`${so.overflow} weitere Meldungen ${hhmm(hidden[0]!.ms)}–${hhmm(hidden[hidden.length - 1]!.ms)} – klicken zum Vergrössern`}</title>
-              <circle cx={gx + so.badge.dx} cy={ly + so.badge.dy} r={R + 1.5} />
-              <text x={gx + so.badge.dx} y={ly + so.badge.dy + 3}>+{so.overflow}</text>
+              <circle cx={gx + so.badge.dx} cy={ly + so.badge.dy} r={Math.max(R + 3, 9)} />
+              <text x={gx + so.badge.dx} y={ly + so.badge.dy + 4}>+{so.overflow}</text>
             </g>,
           );
         }
@@ -507,7 +518,7 @@ export function SwimTimeline(p: SwimTimelineProps) {
         <g key={it.id} data-id={it.id} className={"swt-dot" + (sel ? " sel" : "")}>
           <circle className="hit" cx={pos.cx} cy={pos.cy} r={Math.max(R + 4, 10)} />
           {sel && <circle className="swt-selring" cx={pos.cx} cy={pos.cy} r={R + 4} />}
-          <circle cx={pos.cx} cy={pos.cy} r={it.located ? R : R - 0.6}
+          <Mark kind={it.kind} cx={pos.cx} cy={pos.cy} r={it.located ? R : R - 0.6} className="swt-mk"
             style={it.located ? { fill: color, stroke: "var(--swt-bg)", strokeWidth: 1.5 } : { fill: "var(--swt-bg)", stroke: color, strokeWidth: 2.2 }} />
         </g>
       );
@@ -663,14 +674,16 @@ export function SwimTimeline(p: SwimTimelineProps) {
       </div>
     );
   } else if (collapsed) {
-    const MH = 18;
+    const MH = 24;
     body = (
       <div className="swt-chart swt-mini" {...chartProps}>
         <svg width={W} height={MH} role="presentation">
           <line className="swt-sep" x1={LM} x2={W - RM} y1={MH / 2} y2={MH / 2} />
           {sorted.filter((i) => i.ms >= v0 && i.ms <= v1).map((i) => (
-            <circle key={i.id} data-id={i.id} cx={x(i.ms)} cy={MH / 2} r={i.id === selectedId ? 4.5 : 3.2}
-              style={i.located ? { fill: KIND_VAR[i.kind] } : { fill: "var(--swt-bg)", stroke: KIND_VAR[i.kind], strokeWidth: 1.5 }} />
+            <g key={i.id} data-id={i.id}>
+              <Mark kind={i.kind} cx={x(i.ms)} cy={MH / 2} r={i.id === selectedId ? 5 : 4}
+                style={i.located ? { fill: KIND_VAR[i.kind] } : { fill: "var(--swt-bg)", stroke: KIND_VAR[i.kind], strokeWidth: 1.5 }} />
+            </g>
           ))}
           {veil(1, MH - 2)}
           {curVisible && <line className="swt-cursor" x1={cx} x2={cx} y1={0} y2={MH} />}

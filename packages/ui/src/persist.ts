@@ -15,7 +15,7 @@
  * 6. Meldungen aus anderen Fenstern werden gemerkt (`noteForeign`): eine offene Bearbeitung zeigt dann den Konflikt
  *    («in einem anderen Fenster geändert/gelöscht», `editConflict`) statt still zu überschreiben oder zu verschwinden.
  */
-import { mergeEvents, mergeHull, type Exercise, type LageEvent } from "@lage/core";
+import { eventWins, mergeEvents, mergeHull, type Exercise, type LageEvent } from "@lage/core";
 import { EVENT_STORE, db, eventRange, loadExerciseFull, reportStore, retryMemBlobs, writeExercise, type EventRec, type HullRec } from "./store";
 
 const WAL_KEY = "lage-tools.wal";
@@ -255,7 +255,14 @@ class Persister {
     const newer: LageEvent[] = [];
     for (const ev of events) {
       const cur = ((await es.get([exId, ev.id])) as EventRec | undefined)?.ev;
-      if (cur && mergeEvents([ev], [cur])[0] === cur && evSig(cur) !== evSig(ev)) { newer.push(cur); continue; }
+      if (cur && evSig(cur) !== evSig(ev)) {
+        // gespeicherte Fassung (anderes Fenster) mit dieser zusammenführen: Gewinnerin samt Historie, bei Konflikt mit der
+        // unterlegenen Fassung (nichts geht verloren); ist sie nicht die hiesige, die Anzeige nachführen
+        const m = mergeEvents([cur], [ev])[0]!;
+        if (eventWins(cur, ev) || evSig(m) !== evSig(ev)) newer.push(m);
+        void es.put({ exId, id: ev.id, ev: m } satisfies EventRec);
+        continue;
+      }
       void es.put({ exId, id: ev.id, ev } satisfies EventRec);
     }
     const old = (await hsto.get(exId)) as HullRec | undefined;

@@ -124,7 +124,7 @@
 /* ---------- Kartenebene «Hinweise» (Karte bleibt hell: Kartenfarben) ---------- */
 .nav-sw.sw-hinweis { background: var(--m-flash); border-radius: 2px; transform: rotate(45deg) scale(.8); }
 .lt-hb { display: flex; gap: 3px; transform: translate(-100%, -100%); width: max-content; }
-.lt-hb-pill { display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 6px 0 4px; border-radius: 4px; background: var(--m-ink); color: white; font: 600 11px/1 var(--f-mono); box-shadow: 0 0 0 1.5px white, 0 1px 3px rgba(0, 0, 0, .35); cursor: pointer; white-space: nowrap; }
+.lt-hb-pill { display: inline-flex; align-items: center; gap: 4px; height: 24px; min-width: 24px; padding: 0 7px 0 5px; border-radius: 4px; background: var(--m-ink); color: white; font: 600 12px/1 var(--f-mono); box-shadow: 0 0 0 1.5px white, 0 1px 3px rgba(0, 0, 0, .35); cursor: pointer; white-space: nowrap; }
 .lt-hb-pill i { width: 8px; height: 8px; border-radius: 50%; background: color-mix(in srgb, var(--m-ink) 40%, white); flex: none; }
 .lt-hb-pill.l-hoch i { background: var(--m-rot); }
 .lt-hb-pill.l-mittel i { background: var(--m-flash); border-radius: 1px; transform: rotate(45deg) scale(.9); }
@@ -134,7 +134,7 @@
 .lt-hb-pill:focus-visible { outline: 2px solid var(--m-blau); outline-offset: 2px; }
 .lt-hb-arrow { color: var(--m-rot); filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .35)); }
 .lt-hb-arrow svg { display: block; }
-.lt-hb-next { transform: translate(-50%, -50%); width: max-content; padding: 1px 6px; border-radius: 3px; background: white; color: var(--m-ink); border: 1.5px dashed var(--m-rot); font: 600 11px/1.4 var(--f-mono); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+.lt-hb-next { transform: translate(-50%, -50%); width: max-content; padding: 1px 6px; border-radius: 3px; background: white; color: var(--m-ink); border: 1.5px dashed var(--m-rot); font: 600 12px/1.4 var(--f-mono); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
 .lt-hb-next.late { background: var(--m-rot); color: white; border-style: solid; }
 /* gewählter Hinweis: Auslöser kräftig, übrige Zeichen blass */
 .lt-hintsel .leaflet-marker-pane .lt-ev:not(.hl) { opacity: .28; transition: opacity .15s; }

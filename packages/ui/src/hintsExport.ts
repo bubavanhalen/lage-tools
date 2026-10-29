@@ -43,7 +43,7 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
     doc.text(`Anhang: Hinweise zu Rot – ${ex.name}`, M, 14);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8);
     doc.text(classification, W - M, 10, { align: "right" });
-    doc.text(`Seite ${page} · Hinweise, keine Fakten – Entscheid durch Zfhr`, W - M, 14, { align: "right" });
+    doc.text("Hinweise, keine Fakten – Entscheid durch Zfhr", W - M, 14, { align: "right" });
     y = 22;
     doc.setFillColor(29, 29, 29); doc.rect(M, y - 4, W - 2 * M, 6, "F");
     doc.setTextColor(255); doc.setFont("helvetica", "bold");

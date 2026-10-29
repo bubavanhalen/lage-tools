@@ -17,10 +17,23 @@ export function withTrupp(text: string, name: string, melder?: string): string {
   return `${lead}${name} ${t.slice(lead.length)}`;
 }
 
-/** Trupps «zuletzt meldend zuerst» */
-export function truppOrder(ex: Exercise): string[] {
-  const last = new Map<string, string>();
-  for (const e of ex.events ?? []) if (!e.deleted && e.melder && (last.get(e.melder) ?? "") < e.t) last.set(e.melder, e.t);
-  return ex.units.blau.map((u, i) => ({ u, i, t: last.get(u) ?? "" })).sort((a, b) => (a.t === b.t ? a.i - b.i : a.t < b.t ? 1 : -1)).map((x) => x.u);
+/**
+ * Trupps in **fester** Reihenfolge, wie vorbereitet bzw. angelegt (H01, H02, …) – Entscheid MVP 1 Nachbesserung
+ * (ändert Spez. 3.2): die Knöpfe springen nie; der zuletzt meldende Trupp wird nur hervorgehoben (`lastMelder`).
+ */
+export function truppOrder(ex: Pick<Exercise, "units">): string[] {
+  return [...ex.units.blau];
+}
+
+/** Trupp der zuletzt eingegangenen Meldung (für die Hervorhebung «zuletzt gemeldet»), sonst null */
+export function lastMelder(ex: Pick<Exercise, "events" | "units">): string | null {
+  let best: { m: string; t: string; c: string } | null = null;
+  for (const e of ex.events ?? []) {
+    if (e.deleted || !e.melder) continue;
+    const c = e.createdAt ?? "";
+    if (!best || e.t > best.t || (e.t === best.t && c > best.c)) best = { m: e.melder, t: e.t, c };
+  }
+  if (!best) return null;
+  return ex.units.blau.find((u) => u.toLowerCase() === best!.m.toLowerCase()) ?? null;
 }
 

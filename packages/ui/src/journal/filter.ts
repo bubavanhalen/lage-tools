@@ -57,11 +57,19 @@ export function matchesQuery(e: LageEvent, q: string): boolean {
  */
 export function filterJournal(events: LageEvent[], o: { q?: string; art?: SearchArt; from?: string | null; to?: string | null; quality?: Map<string, EventQuality> }): LageEvent[] {
   const q = (o.q ?? "").trim();
-  return events
+  // einmal sortieren je Ereignisliste (neueste zuerst), Filterwechsel filtern nur noch (800 Meldungen: kein Sortieren pro Klick)
+  return sortedDesc(events)
     .filter((e) => !e.deleted
       && (!o.to || e.t <= o.to)
       && (!o.from || e.t >= o.from)
       && (!o.art || (o.art === "einzeln" ? o.quality?.get(e.id)?.status === "unbestaetigt" : kindOfEvent(e) === o.art))
-      && (!q || matchesQuery(e, q)))
-    .sort((a, b) => compareEvents(b, a));
+      && (!q || matchesQuery(e, q)));
+}
+
+const SORTED = new WeakMap<LageEvent[], LageEvent[]>();
+/** neueste zuerst; zwischengespeichert pro Array (die Übung ersetzt `events` bei jeder Änderung) */
+function sortedDesc(events: LageEvent[]): LageEvent[] {
+  let s = SORTED.get(events);
+  if (!s) { s = [...events].sort((a, b) => compareEvents(b, a)); SORTED.set(events, s); }
+  return s;
 }

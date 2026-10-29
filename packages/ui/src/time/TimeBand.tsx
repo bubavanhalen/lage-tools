@@ -14,6 +14,8 @@ import { RUECKBLICK_WARN_S } from "./useLageZeit";
 import "./time.css";
 
 const MIN = 60000;
+/** «Zurückblicken» gedrückt: die Rückblick-Leiste setzt beim Erscheinen den Fokus auf «Lage um» (M1) */
+let focusLageUm = false;
 /** Regler: Anfang der Übung (erste Meldung, auf die volle Stunde abgerundet) */
 function rangeStart(firstReport: string | null, tLive: string): string {
   const base = firstReport && firstReport < tLive ? firstReport : shiftMinutes(tLive, -6 * 60);
@@ -55,6 +57,7 @@ function LiveBand({ ex, zeit, lastReport }: { ex: TimeBandProps["ex"]; zeit: Tim
     const first = firstReportOf(ex);
     const start = rangeStart(first, tLive);
     const t = shiftMinutes(tLive, -60);
+    focusLageUm = true;
     zeit.lookBack(t < start ? start : t);
   };
   return (
@@ -92,6 +95,7 @@ function RueckblickLeiste({ ex, zeit }: { ex: TimeBandProps["ex"]; zeit: TimeBan
   const [bad, setBad] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { setBad(false); }, [t]);
+  useEffect(() => { if (focusLageUm) { focusLageUm = false; inputRef.current?.focus(); } }, []);
   const go = (to: string) => {
     const clamped = to < start ? start : to;
     zeit.lookBack(clamped);

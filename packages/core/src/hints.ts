@@ -186,6 +186,8 @@ export interface Hint {
   next?: string;
   /** Radius in m um `pos` für die Karte (D1: Abstand zum Stao) */
   radius?: number;
+  /** so viele gleiche Hinweise sind hier gebündelt (≥ 2, `bundleHints`); fehlt bei einem einzelnen */
+  bundled?: number;
 }
 
 /** Qualität einer einzelnen Meldung (E1/E2) – an der Meldung anzeigen, nicht als Hinweis */
@@ -1448,7 +1450,52 @@ export function analyzeJournal(ex: Exercise, o: HintOptions): { hints: Hint[]; q
       else byId.set(h.id, h);
     }
   }
-  return { hints: [...byId.values()].sort(compareHints), quality: c.quality };
+  return { hints: bundleHints([...byId.values()], tIso).sort(compareHints), quality: c.quality };
+}
+
+/** Schlüssel «gleicher Hinweis»: gleiche Regel, gleicher Titel (Ort/Bezug) und gleiches NAI, Element, Planquadrate */
+const sameHintKey = (h: Hint) => [h.rule, h.title, h.nai ?? "", h.unit ?? "", [...(h.cells ?? [])].sort().join(",")].join("|");
+
+const dayMonth = (t: string) => `${t.slice(8, 10)}.${t.slice(5, 7)}.`;
+
+/**
+ * Gleiche offene Hinweise bündeln (z. B. dieselbe Sperre in NAI 3 alle 6 h gemeldet → einmal «Hinterhalt-Gefahr in NAI 3»
+ * statt 14×): gleiche Regel und gleicher Ort/Bezug (`sameHintKey`). Der Bündel-Hinweis trägt die ID des ältesten (bleibt
+ * stabil, wenn neue gleiche dazukommen), alle Auslöser, `t` = erster, `last` = letzter Auslöser, Text und Ort des neuesten
+ * (mit «n gleiche Hinweise seit …»), die höchste Wichtigkeit und `bundled` = Anzahl. Nur Regeln ohne Ablauf (C5, D1 …);
+ * Augenblicks-Lagen (C6 Formation, C1, C3 …, siehe `STALE_RULES`) laufen von selbst ab und bleiben einzeln, ebenso
+ * beendete Hinweise (Rückblick, Bericht).
+ */
+export function bundleHints(hints: Hint[], t: string): Hint[] {
+  const groups = new Map<string, Hint[]>();
+  const out: Hint[] = [];
+  for (const h of hints) {
+    if (!isOpen(h, t) || STALE_RULES[h.rule]) { out.push(h); continue; }
+    const k = sameHintKey(h);
+    const g = groups.get(k);
+    if (g) g.push(h); else groups.set(k, [h]);
+  }
+  for (const g of groups.values()) {
+    if (g.length === 1) { out.push(g[0]!); continue; }
+    const byT = [...g].sort((a, b) => a.t.localeCompare(b.t) || a.id.localeCompare(b.id));
+    const first = byT[0]!, newest = byT[byT.length - 1]!;
+    const last = byT.map((h) => h.last ?? h.t).sort().pop()!;
+    const level = byT.map((h) => h.level).sort((a, b) => LEVEL_RANK[a] - LEVEL_RANK[b])[0]!;
+    const b: Hint = {
+      ...newest,
+      id: first.id,
+      level,
+      t: first.t,
+      last,
+      events: uniq(byT.flatMap((h) => h.events)),
+      bundled: byT.reduce((n, h) => n + (h.bundled ?? 1), 0),
+      text: `${newest.text} (${byT.length} gleiche Hinweise seit ${dayMonth(first.t)} ${first.t.slice(11, 16)} gebündelt)`,
+    };
+    const next = byT.map((h) => h.next).filter((x): x is string => !!x).sort().pop();
+    if (next) b.next = next; else delete b.next;
+    out.push(b);
+  }
+  return out;
 }
 
 /** Alle Hinweise zur Lagezeit, wichtigste zuerst, dann neueste (Hülle um `analyzeJournal`) */

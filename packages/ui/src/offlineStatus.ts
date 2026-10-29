@@ -1,6 +1,8 @@
 /**
  * Offline-Status für den Kopf (Spez. MVP 1, Kap. 3.1): «Offline bereit ✓» = App im Cache (Service Worker steuert die
- * Seite) ∧ Kartenpaket fürs Raster-Gebiet (oder noch kein Raster) ∧ Speicher geschützt (`storage.persisted()`).
+ * Seite) ∧ Kartenpaket fürs Raster-Gebiet (oder noch kein Raster). Der Speicherschutz (`storage.persisted()`) ist nur
+ * eine Empfehlung (Entscheid MVP 1-Nachbesserung, M1): viele Browser verweigern ihn ohne Zutun des Benutzers – ein
+ * dauerhaftes ✗ im Kopf würde man übersehen lernen. Er steht in `parts.speicher` und `recommend`, nicht in `missing`.
  * Prüfung beim Start, alle 60 s, bei Netz an/aus, bei Raster-Änderung und nach dem Laden für offline
  * (`notifyOfflineChanged`). Keine Netzanfragen – nur Cache und Browser-Zustand.
  */
@@ -31,13 +33,12 @@ export function rasterArea(ex: Pick<Exercise, "sheets">): Bounds | null {
   return { minE: b.minE - m, maxE: b.maxE + m, minN: b.minN - m, maxN: b.maxN + m };
 }
 
-/** reine Zusammenfassung (testbar) */
-export function summarize(parts: OfflineStatus["parts"], net: boolean): OfflineStatus {
+/** reine Zusammenfassung (testbar): bereit = App und Karte offline; Speicherschutz nur Empfehlung (`recommend`) */
+export function summarize(parts: OfflineStatus["parts"], net: boolean): OfflineStatus & { recommend: string[] } {
   const missing: string[] = [];
   if (!parts.karte) missing.push(OFFLINE_GRUND.karte);
-  if (!parts.speicher) missing.push(OFFLINE_GRUND.speicher);
   if (!parts.app) missing.push(OFFLINE_GRUND.app);
-  return { ready: !missing.length, net, parts, missing };
+  return { ready: !missing.length, net, parts, missing, recommend: parts.speicher ? [] : [OFFLINE_GRUND.speicher] };
 }
 
 async function persisted(): Promise<boolean> {
@@ -46,8 +47,8 @@ async function persisted(): Promise<boolean> {
 
 const START: OfflineStatus = summarize({ app: true, karte: true, speicher: true }, true);
 
-export function useOfflineStatus(ex: Pick<Exercise, "id" | "sheets"> | null): OfflineStatus & { checked: boolean; recheck(): void } {
-  const [st, setSt] = useState<OfflineStatus>(START);
+export function useOfflineStatus(ex: Pick<Exercise, "id" | "sheets"> | null): OfflineStatus & { checked: boolean; recheck(): void; recommend?: string[] } {
+  const [st, setSt] = useState<OfflineStatus & { recommend?: string[] }>(START);
   const [checked, setChecked] = useState(false);
   const exRef = useRef(ex);
   exRef.current = ex;

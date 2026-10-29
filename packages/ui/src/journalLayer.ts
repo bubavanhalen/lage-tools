@@ -6,19 +6,20 @@ import { CATALOG, catalogEntry, ECHELONS, kindLabel, situationAt, SYMBOLS, symbo
 import { isAnticipated, sidcAffiliation } from "@lage/map";
 import type { LayerFlags } from "./layers";
 import { roadMark, type RoadMark } from "./roadmark";
+import { LAGE_KARTE } from "./colors";
 
-/** Kartenfarben (entsprechen --m-rot, --m-blau, --unklar); Karte bleibt auch im Dunkelmodus hell */
-export const SIDE_COLOR: Record<Side, string> = { rot: "#D3262D", blau: "#1F5FB8", ul: "#A86F12" };
-export const MAP_INK = "#101414";
+/** Kartenfarben (feste helle Tokens `--karte-*`, `LAGE_KARTE`); Karte bleibt auch im Dunkelmodus hell. Ein Rot (Feind). */
+export const SIDE_COLOR: Record<Side, string> = { rot: LAGE_KARTE.feind, blau: LAGE_KARTE.eigen, ul: LAGE_KARTE.unklar };
+export const MAP_INK: string = LAGE_KARTE.ink;
 
 /** Kartenfarbe nach Art (unklar = gelb wie das Zeichen, nicht rot wie die Seite): Linie und Füllung */
 export const KIND_COLOR: Record<"eigen" | "feind" | "unklar" | "neutral" | "ul", { line: string; fill: string }> = {
-  eigen: { line: "#1F5FB8", fill: "#1F5FB8" },
-  feind: { line: "#D3262D", fill: "#D3262D" },
-  unklar: { line: "#B88A00", fill: "#FFD400" },
-  /** neutral / zivil (Zugehörigkeit N): grün wie das Zeichen (--ok) */
-  neutral: { line: "#2D7A4B", fill: "#2D7A4B" },
-  ul: { line: "#A86F12", fill: "#A86F12" },
+  eigen: { line: LAGE_KARTE.eigen, fill: LAGE_KARTE.eigen },
+  feind: { line: LAGE_KARTE.feind, fill: LAGE_KARTE.feind },
+  unklar: { line: LAGE_KARTE.unklar, fill: LAGE_KARTE.unklarFill },
+  /** neutral / zivil (Zugehörigkeit N): grün wie das Zeichen */
+  neutral: { line: LAGE_KARTE.neutral, fill: LAGE_KARTE.neutral },
+  ul: { line: LAGE_KARTE.unklar, fill: LAGE_KARTE.unklar },
 };
 
 export type ItemKind = "eigen" | "feind" | "unklar" | "neutral" | "ul";
@@ -104,8 +105,8 @@ export const kindText = (e: Pick<LageEvent, "side" | "aff">): string =>
 
 const minutesBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 60000);
 
-/** Alter kurz: «75′», ab 2 h «3 h» */
-export const ageText = (min: number) => (min < 120 ? `${min}′` : `${Math.floor(min / 60)} h`);
+/** Alter kurz und ohne Kürzel: «75 min», ab 2 h «3 h» (Prüfbericht M1: «62′» war unklar) */
+export const ageText = (min: number) => (min < 120 ? `${min} min` : `${Math.floor(min / 60)} h`);
 
 export function situationModel(
   events: LageEvent[],

@@ -7,7 +7,7 @@ import { demoExercise, parseMeldung, type LageEvent } from "@lage/core";
 import { buildEvent, correctionPatch, journalCtx } from "../src/commit";
 import { filterJournal, matchesQuery, takeKeyword } from "../src/journal/filter";
 import { deletedLabel } from "../src/journal/actions";
-import { truppOrder, withTrupp } from "../src/entry/trupp";
+import { lastMelder, truppOrder, withTrupp } from "../src/entry/trupp";
 import { hitText } from "../src/journal/hitText";
 import { reparseEdit } from "../src/editReparseCore";
 
@@ -62,10 +62,15 @@ describe("Meldungsfeld: Trupp-Chip setzt Text (Kap. 3.2)", () => {
     expect(withTrupp("H01 3 Pers bei AJ7", "H02", "H01")).toBe("H02 3 Pers bei AJ7");
     expect(withTrupp("1015 3 Pers AJ7", "H02")).toBe("1015 H02 3 Pers AJ7");
   });
-  it("Reihenfolge: zuletzt meldend zuerst", () => {
+  it("Reihenfolge fest wie vorbereitet; zuletzt meldender Trupp nur hervorgehoben", () => {
     const o = truppOrder(ex);
-    expect(o[0]).toBe("H05"); // 07:25
+    expect(o).toEqual(ex.units.blau);
     expect(o).toHaveLength(5);
+    expect(lastMelder(ex)).toBe("H05"); // 07:25
+    // neue Meldung ändert die Reihenfolge nicht
+    const ex2 = { ...ex, events: [...(ex.events ?? []), { ...e0720, id: "neu", t: "2030-05-15T07:40", melder: "H02" }] };
+    expect(truppOrder(ex2)).toEqual(o);
+    expect(lastMelder(ex2)).toBe("H02");
   });
 });
 

@@ -30,7 +30,7 @@ export interface ShapeLayerOptions {
   onClick?: (e: LageEvent) => void;
   /** Meldungen jünger als so viele Minuten kräftig, ältere blass (Standard 30, wie die Zeichen) */
   recentMin?: number;
-  /** MVP 1: ruhige Karte der Grundansicht (ältere 40 % wie die Zeichen, map/quiet.ts); fehlt = Experte */
+  /** MVP 1: ruhige Karte der Grundansicht (ältere 55 % wie die Zeichen, map/quiet.ts); fehlt = Experte */
   quiet?: boolean;
 }
 

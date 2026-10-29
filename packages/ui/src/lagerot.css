@@ -157,8 +157,8 @@ button.lr-ind:hover span:last-child { text-decoration: underline; text-decoratio
 .lt-coa-ring svg { display: block; overflow: visible; }
 .lt-coa-flag { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 5px; width: max-content; padding: 2px 7px 2px 5px; border-radius: 4px; background: white; color: var(--m-ink); border: 1.5px solid var(--m-rot); font: 600 12px/1.3 var(--f-body); box-shadow: 0 1px 4px rgba(0, 0, 0, .3); cursor: pointer; white-space: nowrap; }
 .lt-coa-flag b { font: 600 12px/1.3 var(--f-display); font-size: 13.5px; letter-spacing: .01em; }
-.lt-coa-flag .tm { font: 600 11.5px/1.3 var(--f-mono); color: var(--m-rot); }
-.lt-coa-flag .tm.w-jetzt { padding: 0 4px; border-radius: 3px; background: var(--m-rot); color: white; font-family: var(--f-body); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; font-size: 10.5px; }
+.lt-coa-flag .tm { font: 600 12px/1.3 var(--f-mono); color: var(--m-rot); }
+.lt-coa-flag .tm.w-jetzt { padding: 0 4px; border-radius: 3px; background: var(--m-rot); color: white; font-family: var(--f-body); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; font-size: 12px; }
 .lt-coa-flag .tm.w-ueberfaellig, .lt-coa-flag .tm.w-offen { color: var(--m-ink); opacity: .65; font-family: var(--f-body); font-style: italic; font-weight: 500; }
 .lt-coa-flag.sel .tm.w-jetzt { background: white; color: var(--m-rot); }
 .lt-coa-flag svg { flex: none; color: var(--m-rot); }

@@ -19,6 +19,18 @@ export function saveStatusOf(o: { problem: string | null; pendingSince: number |
   return { state: "gespeichert", at: o.savedAt || undefined };
 }
 
+/** zuletzt gespeichert, über das Neuladen hinweg (pro Gerät, für die angezeigte Übung): «✓ gespeichert 07:25» auch nach F5 */
+const SAVED_KEY = "lage-tools.gespeichert";
+function rememberSaved(exId: string | null, at: number): void {
+  if (!exId || !at) return;
+  try { localStorage.setItem(SAVED_KEY, JSON.stringify({ id: exId, at })); } catch { /* egal */ }
+}
+/** gemerkte Zeit der letzten Speicherung, wenn sie zur angezeigten Übung gehört */
+export function rememberedSaved(exId: string | null): number {
+  if (!exId) return 0;
+  try { const v = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "null") as { id?: string; at?: number } | null; return v?.id === exId && typeof v.at === "number" ? v.at : 0; } catch { return 0; }
+}
+
 /** Speicherstatus der angezeigten Übung (aus `persister` und `onStoreStatus`, ohne die Speicherlogik zu ändern) */
 export function useSaveStatus(): SaveStatus {
   const [problem, setProblem] = useState<string | null>(null);
@@ -35,7 +47,10 @@ export function useSaveStatus(): SaveStatus {
     return () => window.clearInterval(id);
   }, []);
   void tick;
-  return saveStatusOf({ problem, pendingSince: pendingSince.current, savedAt: persister.savedAt, now: Date.now() });
+  const last = useRef(0);
+  if (persister.savedAt && persister.savedAt !== last.current) { last.current = persister.savedAt; rememberSaved(persister.current, persister.savedAt); }
+  const savedAt = persister.savedAt || rememberedSaved(persister.current);
+  return saveStatusOf({ problem, pendingSince: pendingSince.current, savedAt, now: Date.now() });
 }
 
 const hhmm = (ms: number) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
@@ -43,16 +58,21 @@ const hhmm = (ms: number) => { const d = new Date(ms); return `${String(d.getHou
 export function SaveStatusView({ s }: { s: SaveStatus }) {
   if (s.state === "fehler") return <span className="hd-save fehler" role="status" title={s.text}>⛔ nicht gespeichert</span>;
   if (s.state === "speichert") return <span className="hd-save speichert" role="status">speichert …</span>;
-  return <span className="hd-save ok" role="status" title="Jede Änderung wird sofort auf diesem Gerät gespeichert">✓ gespeichert{s.at ? ` ${hhmm(s.at)}` : ""}</span>;
+  // schmal (< 860 px): nur «✓ 07:25» – das Wort steht dann im Titel und für Screenreader
+  return (
+    <span className="hd-save ok" role="status" title="Jede Änderung wird sofort auf diesem Gerät gespeichert">
+      ✓<span className="hd-long"> gespeichert</span>{s.at ? <> <span className="tnum">{hhmm(s.at)}</span></> : <span className="hd-short"> gespeichert</span>}
+    </span>
+  );
 }
 
 export function OfflineStatusView({ s, onFix }: { s: OfflineStatus & { checked?: boolean }; onFix: () => void }) {
   const net = s.net ? "" : "Kein Netz · ";
-  if (s.checked === false) return net ? <span className="hd-off">Kein Netz</span> : null;
-  if (s.ready) return <span className="hd-off ok" title="Journal, Karte und Speicher funktionieren auch ohne Netz">{net}Offline bereit ✓</span>;
+  if (s.checked === false) return net ? <span className="hd-off net">Kein Netz</span> : null;
+  if (s.ready) return <>{net && <span className="hd-off net">Kein Netz ·</span>}<span className="hd-off ok" title="Journal und Karte funktionieren auch ohne Netz">Offline bereit ✓</span></>;
   return (
-    <button type="button" className="hd-off fix" onClick={onFix} title={s.missing.join(" · ")}>
-      {net}Offline nicht bereit – beheben
+    <button type="button" className="hd-off fix" onClick={onFix} title={s.missing.join(" · ")} aria-label={`${net}Offline nicht bereit – beheben`}>
+      {net}<span className="hd-long">Offline nicht bereit – beheben</span><span className="hd-short">Offline ✗</span>
     </button>
   );
 }

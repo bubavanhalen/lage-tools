@@ -1,7 +1,7 @@
 // Live/Rückblick-Automat (Spez. MVP 1, Kap. 3.5) mit Fake-Timern – fiktive Zeiten (Beispiel Bern, T2 = 2030-05-15)
 process.env.TZ = "Europe/Zurich";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LageZeitCtl, GO_LIVE_TEXT, isLiveKey, lastReportOf, liveIso } from "../src/time/useLageZeit";
+import { LageZeitCtl, GO_LIVE_TEXT, isLiveKey, lastReportOf, lastReportUntil, liveIso, liveRefOf } from "../src/time/useLageZeit";
 import type { GoLiveGrund } from "../src/shell/contracts";
 
 const LIVE_T = "2030-05-15T07:25";
@@ -164,8 +164,22 @@ describe("LIVE-Zeit und Taste", () => {
     const now = Date.parse("2030-05-15T07:25:30+02:00");
     expect(liveIso(null, now)).toBe("2030-05-15T07:25");
     expect(liveIso("2030-05-15T07:20", now)).toBe("2030-05-15T07:25");
-    expect(liveIso("2030-05-15T07:40", now)).toBe("2030-05-15T07:40"); // Meldung mit Zeit in der Zukunft
+    expect(liveIso("2030-05-15T07:30", now)).toBe("2030-05-15T07:30"); // ≤ 10 min Vorsprung (Uhren gehen verschieden)
+    expect(liveIso("2030-05-15T07:40", now)).toBe("2030-05-15T07:25"); // > 10 min in der Zukunft: Geräteuhr (K1)
+    expect(liveIso("2030-05-15T15:35", now)).toBe("2030-05-15T07:25"); // Tippfehler 1535 statt 0735
     expect(liveIso("2030-05-14T06:50", now)).toBe("2030-05-14T06:50"); // > 12 h her
+    expect(liveIso("2030-05-20T06:50", now)).toBe("2030-05-20T06:50"); // Übung ganz in der Zukunft (Beispiel 2030)
+  });
+  it("K1: eine Zeit in der Zukunft verschiebt LIVE nicht", () => {
+    const now = Date.parse("2030-05-15T07:30:10+02:00");
+    const ev = [{ t: "2030-05-15T07:20" }, { t: "2030-05-15T15:35" }, { t: "2030-05-15T07:29" }] as never;
+    expect(liveRefOf(ev, now)).toBe("2030-05-15T07:29");
+    expect(liveIso(liveRefOf(ev, now), now)).toBe("2030-05-15T07:30");
+    // Beispiel 2030 auf einem Gerät von heute: alle Meldungen in der Zukunft → letzte Meldung
+    const heute = Date.parse("2026-10-29T10:00:00+01:00");
+    expect(liveIso(liveRefOf(ev, heute), heute)).toBe("2030-05-15T15:35");
+    expect(liveRefOf([], now)).toBeNull();
+    expect(lastReportUntil(ev, "2030-05-15T07:30")).toBe("2030-05-15T07:29");
   });
   it("letzte Meldung ohne gelöschte", () => {
     expect(lastReportOf([{ t: "2030-05-15T07:00" }, { t: "2030-05-15T07:30", deleted: true }, { t: "2030-05-15T06:00" }] as never)).toBe("2030-05-15T07:00");

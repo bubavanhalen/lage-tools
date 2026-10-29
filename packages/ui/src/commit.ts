@@ -26,6 +26,7 @@ import {
   type Status,
   type Echelon,
 } from "@lage/core";
+import { stateOf } from "./entry/stateOptions";
 
 // gleich wie `shapeFits`/`shapePatch` in ShapeDraw.tsx (hier ohne Leaflet, damit der Eintrage-Weg ohne Browser testbar bleibt)
 const shapeFits = (shape: EventShape, sym: string) => geometryOf(sym) === shape.kind;
@@ -146,7 +147,7 @@ export interface CommitTextsOptions {
   attachment?: Attachment;
   /** Texte stammen aus einem KI-Vorschlag (Standard: wenn der Anhang von der KI gelesen wurde) */
   via?: LageEvent["via"];
-  /** Texte mit Problem im Entwurf (unbekannter Ort, ungültige Zeit) werden nie eingetragen – hier gemeldet */
+  /** Texte mit Problem im Entwurf bzw. «geht nicht» (unbekannter Ort, ungültige Zeit, Zeit in der Zukunft) werden nie eingetragen – hier gemeldet */
   onSkipped?: (texts: string[]) => void;
 }
 
@@ -172,8 +173,9 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
     if (!text) return;
     const now = new Date(base + i);
     const draft = parseMeldung(text, journalCtx(work, day, undefined, now));
-    // nie still falsch: mit Problem (z. B. «AK77» gibt es nicht) nicht eintragen – nur nach Korrektur
-    if (draft.problems?.length) { skipped.push(text); return; }
+    // nie still falsch: mit Problem (z. B. «AK77» gibt es nicht) oder «geht nicht» nach denselben Regeln wie das
+    // Meldungsfeld (z. B. Zeit in der Zukunft ohne Tagesangabe) nicht eintragen – nur nach Korrektur
+    if (draft.problems?.length || stateOf(draft, work, { now }).level === "geht-nicht") { skipped.push(text); return; }
     const ev = buildEvent(draft, o.device, work, { attachments: attId ? [attId] : undefined, source: src, via }, now);
     out.push(ev);
     work = addEvents(work, [ev]);

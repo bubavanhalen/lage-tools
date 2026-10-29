@@ -64,10 +64,15 @@ function zoomFor(res: number): number {
 
 /**
  * Grundkarte. «grau» (MVP 1, Standard der Lagekarte) ist die farbige Landeskarte mit CSS-Filter (map.css,
- * `.lt-tiles-grau`): gleiche Kachel-Adressen wie «lk», damit das Offline-Kartenpaket (speichert nur `lk`) und der
+ * `.lt-tiles-grau`) und Deckkraft `GRAU_DECKKRAFT` (Leaflet-Option): gleiche Kachel-Adressen wie «lk», damit das Offline-Kartenpaket (speichert nur `lk`) und der
  * Kachel-Cache des Service Workers auch für Grau gelten – eine eigene graue Kachelebene wäre offline leer.
  */
 export type Basemap = "lk" | "img" | "grau";
+/**
+ * Deckkraft der grauen Karte (Spez. 5.4: `opacity .7` auf Weiss). Als Leaflet-Option bzw. `setOpacity`, nicht per CSS:
+ * Leaflet setzt die Deckkraft der Kachelebene inline (sonst 1) und überschreibt damit jede CSS-Regel.
+ */
+export const GRAU_DECKKRAFT = 0.7;
 const LAYERS: Record<Basemap, { id: string; ext: string; max: number; className?: string }> = {
   lk: { id: "ch.swisstopo.pixelkarte-farbe", ext: "jpeg", max: 27 },
   grau: { id: "ch.swisstopo.pixelkarte-farbe", ext: "jpeg", max: 27, className: "lt-tiles-grau" },
@@ -90,6 +95,7 @@ export function swisstopoLayer(kind: Basemap): L.TileLayer {
     bounds: L.latLngBounds(toLatLng({ e: 2420000, n: 1030000 }), toLatLng({ e: 2900000, n: 1350000 })),
     attribution: '© <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a>',
     crossOrigin: true,
+    opacity: kind === "grau" ? GRAU_DECKKRAFT : 1,
   });
 }
 
@@ -124,7 +130,7 @@ export function createSwissMap(el: HTMLElement, opts: { basemap?: Basemap; cente
       mark(kind);
       // Grau ↔ Landeskarte: dieselben Kacheln, nur der Filter wechselt (kein Neuladen, kein Flackern)
       const c = same ? layer.getContainer() : undefined;
-      if (c) { c.classList.toggle("lt-tiles-grau", kind === "grau"); return; }
+      if (c) { c.classList.toggle("lt-tiles-grau", kind === "grau"); layer.setOpacity(kind === "grau" ? GRAU_DECKKRAFT : 1); return; }
       map.removeLayer(layer);
       layer = swisstopoLayer(kind).addTo(map);
       layer.bringToBack();

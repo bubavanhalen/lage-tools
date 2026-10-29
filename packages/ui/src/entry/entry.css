@@ -22,10 +22,14 @@
 }
 
 /* «Wer meldet?» */
-.eb-trupps { min-width: 0; }
-.eb-trupps-row { display: flex; gap: var(--sp-8); overflow-x: auto; scrollbar-width: thin; padding: 3px 3px 3px 0; }
+.eb-trupps { min-width: 0; display: flex; gap: var(--sp-8); align-items: center; }
+.eb-trupps-row { display: flex; gap: var(--sp-8); overflow-x: auto; scrollbar-width: thin; padding: 3px 3px 3px 0; flex: 0 1 auto; min-width: 0; }
+/* «+» bleibt neben der scrollenden Reihe sichtbar (Tablet quer ohne Wischen erreichbar) */
+.eb-trupps > .eb-chip-plus, .eb-trupps > .eb-chip-add { flex: none; }
 .ebox .eb-chip { font-family: var(--f-mono); font-weight: 500; flex: none; padding: 0 var(--sp-12); }
 .ebox .eb-chip[aria-pressed="true"] { border: 2px solid var(--sel); font-weight: 600; background: var(--bg); }
+/* zuletzt gemeldet: nur Rahmen (gestrichelt), Platz bleibt fest */
+.ebox .eb-chip.is-last:not([aria-pressed="true"]) { border: 2px dashed var(--ink); padding: 0 calc(var(--sp-12) - 1px); }
 .ebox .eb-chip-plus { font-family: var(--f-body); }
 .eb-chip-add {
   flex: none; min-height: var(--hit); width: 220px; font: 400 var(--fs-16) var(--f-mono); color: var(--ink);
@@ -120,6 +124,7 @@
 .eb-seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); font-weight: 600; position: relative; }
 .eb-seg button[aria-pressed="true"] span { color: inherit; }
 .eb-ort-t { font-size: var(--fs-16); }
+.eb-note { font-size: var(--fs-14); color: var(--muted); }
 .eb-ort .roadchip, .eb-ort .rc-chip { min-height: var(--hit); }
 
 /* Knöpfe */
@@ -135,4 +140,11 @@
 .ebox .vc-wrap, .ebox .ph-wrap { display: inline-flex; }
 @media (pointer: coarse) {
   .ebox .eb-btn, .ebox .eb-chip, .ebox .eb-seg button, .ebox .ph-btn, .ebox .vc-btn { font-size: var(--fs-16); }
+}
+.eb-notice { margin: 0; font-size: var(--fs-14); color: var(--ink); padding: var(--sp-8) var(--sp-12); border-radius: var(--r-4); background: var(--bg); border: 1px solid var(--line-soft); }
+/* Knopfzeile ohne Umbruch im Knopf; Tablet quer: «Sprechen» bleibt in derselben Zeile */
+.ebox .eb-btns .eb-btn, .ebox .eb-btns .ph-btn, .ebox .eb-btns .vc-btn { white-space: nowrap; }
+@media (pointer: coarse), (max-width: 1100px) {
+  .ebox .eb-btns .eb-btn, .ebox .eb-btns .ph-btn, .ebox .eb-btns .vc-btn { padding: 0 10px; }
+  .ebox .eb-main { min-width: 0; }
 }

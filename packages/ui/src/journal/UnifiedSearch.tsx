@@ -4,6 +4,11 @@
  * Auswahl = Karte fliegt hin bzw. Meldung gewählt (`onPickEvent`). Stichwörter «feind», «eigene», «unklar»,
  * «nur 1 Trupp» werden zum Chip «Art: Feind ✕». Ctrl+K oder «/» = Suchfeld, ↑/↓ = Vorschlag, Enter = hin, Esc = leeren.
  * Vertrag `UnifiedSearchProps`; `value`/`art` (optional) erlauben, die Suche von aussen zu leeren («Suche leeren»).
+ * Ein Stichwort filtert schon beim Tippen («feind» ohne Enter); der Chip entsteht erst mit Leerschlag/Enter, damit
+ * man weiterschreiben kann.
+ *
+ * `PlaceSearch` (unten): dieselbe Suche nur für Orte (PQ, NAI, Ort, Koordinate, Trupp) – für den Erststart ohne Meldungen
+ * und den Modus «Vorbereiten» (Raster anlegen: hinzoomen). Filtert keine Liste.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { dayLabel } from "../Timeline";
@@ -20,12 +25,19 @@ const isTyping = (t: EventTarget | null) => {
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
 };
 
+/** Ctrl+K und «/» gehören der zuletzt eingehängten Suche (Journal bzw. Ortssuche im Vorbereiten) */
+const keyOwners: number[] = [];
+let ownerSeq = 0;
+
 export function UnifiedSearch(p: UnifiedSearchProps & {
   /** Tag der Lage als Label («T2»): «zuletzt 06:50» statt «zuletzt T2 06:50» */
   today?: string;
   /** von aussen zurücksetzen (zählt hoch) */
   reset?: number;
+  /** «ort» = nur Orte suchen (keine Stichwörter, kein Listenfilter), Platzhalter «Ort suchen …» */
+  variant?: "journal" | "ort";
 }) {
+  const ortOnly = p.variant === "ort";
   const { ex, map, onQuery, onPickEvent } = p;
   const [text, setText] = useState("");
   const [art, setArt] = useState<SearchArt>(null);
@@ -48,18 +60,26 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
   const repOf = (label: string) => { const t = lastRep.get(label); return t ? { t, day: dayLabel(t, ex.days) } : undefined; };
 
   useEffect(() => registerUnified(), []);
-  useEffect(() => { onQuery(q, art); }, [q, art]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Liste filtern: ein fertiges Stichwort am Ende («feind») gilt schon ohne Enter/Leerschlag
+  useEffect(() => {
+    if (ortOnly) return;
+    const k = art ? null : takeKeyword(q, true);
+    if (k?.art) onQuery(k.q, k.art); else onQuery(q, art);
+  }, [q, art]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setActive(-1); }, [q]);
   useEffect(() => { if (p.reset) { setText(""); setArt(null); setShown(null); } }, [p.reset]);
 
   // Ctrl+K / ⌘K und «/» (nicht beim Tippen) fokussieren die Suche
   useEffect(() => {
+    const me = ++ownerSeq;
+    keyOwners.push(me);
     const key = (e: KeyboardEvent) => {
+      if (keyOwners[keyOwners.length - 1] !== me) return;
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); inp.current?.focus(); inp.current?.select(); }
       else if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && !isTyping(e.target)) { e.preventDefault(); inp.current?.focus(); inp.current?.select(); }
     };
     window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    return () => { window.removeEventListener("keydown", key); const i = keyOwners.indexOf(me); if (i >= 0) keyOwners.splice(i, 1); };
   }, []);
   useEffect(() => {
     if (!open) return;
@@ -69,7 +89,7 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
   }, [open]);
 
   const change = (v: string, complete = false) => {
-    const k = takeKeyword(v, complete);
+    const k = ortOnly ? { q: v, art: null } : takeKeyword(v, complete);
     if (k.art) { setArt(k.art); setText(k.q ? k.q + (/\s$/.test(v) ? " " : "") : ""); }
     else setText(v);
     setShown(null);
@@ -92,7 +112,10 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
             Art: {ART_LABEL[art]} <span aria-hidden="true">✕</span>
           </button>
         )}
-        <input ref={inp} type="search" value={text} placeholder="Suchen: Trupp, PQ, NAI, Text" aria-label="Suchen: Trupp, PQ, NAI, Ort, Text"
+        <input ref={inp} type="search" value={text}
+          placeholder={ortOnly ? "Ort suchen: PQ, NAI, Ort, Koordinate" : "Suchen: Trupp, PQ, NAI, Text"}
+          aria-label={ortOnly ? "Ort suchen: Planquadrat, NAI, Ort, Koordinate" : "Suchen: Trupp, PQ, NAI, Ort, Text"}
+          enterKeyHint="search" autoCorrect="off" autoCapitalize="off"
           role="combobox" aria-expanded={showList} aria-controls={listId} aria-autocomplete="list"
           aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
           autoComplete="off" spellCheck={false}
@@ -103,7 +126,7 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
             else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(-1, a - 1)); }
             else if (e.key === "Enter") {
               e.preventDefault();
-              const k = takeKeyword(text, true);
+              const k = ortOnly ? { art: null } : takeKeyword(text, true);
               if (k.art) { change(text, true); return; }
               const h = list[active] ?? list[0];
               if (h) pick(h);
@@ -126,6 +149,19 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
           {loading && <li className="us-load" aria-hidden="true">Ortssuche …</li>}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * Ortssuche ohne Journal (Erststart ohne Meldungen, Modus «Vorbereiten»): Planquadrat, NAI, Ort (online, wenn erlaubt),
+ * Koordinate, Trupp – Auswahl lässt die Karte hinfliegen. Props: Übung und Karte; `className` optional für die Hülle.
+ */
+export function PlaceSearch({ ex, map, className }: Pick<UnifiedSearchProps, "ex" | "map"> & { className?: string }) {
+  const none = () => {};
+  return (
+    <div className={"us-place" + (className ? ` ${className}` : "")}>
+      <UnifiedSearch ex={ex} map={map} onQuery={none} onPickEvent={none} variant="ort" />
     </div>
   );
 }

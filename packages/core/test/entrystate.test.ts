@@ -40,11 +40,14 @@ describe("entryState – Zustand des Meldungsfelds (Kap. 3.2)", () => {
     expect(s.level).toBe("pruefen");
     expect(s.reasons[0]).toMatchObject({ code: "kein-raster", token: "AK7" });
   });
-  it("Zeit mehr als 10 min in der Zukunft", () => {
+  it("Zeit mehr als 10 min in der Zukunft: ohne Tag geht nicht, mit Tag prüfen", () => {
     const s = state("0750 H04 2 Fz in AK7");
-    expect(s.level).toBe("pruefen");
+    expect(s.level).toBe("geht-nicht");
     expect(codes(s)).toEqual(["zukunft"]);
     expect(s.reasons[0]!.text).toContain("07:50");
+    const t = state("T2 0750 H04 2 Fz in AK7");
+    expect(t.level).toBe("pruefen");
+    expect(codes(t)).toEqual(["zukunft"]);
   });
   it("Ortsname offline bzw. noch gesucht", () => {
     const off = state("H04 2 Fz in Wabern", bern, { online: false });

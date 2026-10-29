@@ -86,9 +86,10 @@ export function JournalPanel(p: Props) {
       {any && p.between}
       {p.tab === "rot" ? p.rot : (
         <>
-          {any && <UnifiedSearch ex={ex} map={map} today={dayLabel(zeit.tNow, ex.days)} reset={resetSearch}
+          {/* ohne Meldungen: dieselbe Suche als Ortssuche (Karte hinfliegen), sobald es Meldungen gibt auch Listenfilter */}
+          <UnifiedSearch ex={ex} map={map} today={dayLabel(zeit.tNow, ex.days)} reset={resetSearch} variant={any ? "journal" : "ort"}
             onQuery={(qq, a) => { setQ(qq); setArt(a); }}
-            onPickEvent={(id) => onSelect(id)} />}
+            onPickEvent={(id) => onSelect(id)} />
           <JournalList ex={ex} events={list} selected={selected} onSelect={(id) => onSelect(id)} quality={quality} empty={empty}
             onCorrect={(id) => { if (!requestCorrection(id)) setOwnReq({ id, n: Date.now() }); }}
             onDelete={(id) => { deleteEvent(update, ex, id, device); if (selected === id) onSelect(null); }}

@@ -212,14 +212,41 @@ export const GO_LIVE_TEXT: Partial<Record<GoLiveGrund, string>> = {
   eintragen: "Eingetragen – Ansicht wieder LIVE",
 };
 
+/** so weit darf eine Meldung in der Zukunft liegen (Uhren der Geräte gehen verschieden), ohne dass sie «geht nicht» ist */
+export const ZUKUNFT_MS = 10 * 60000;
+
 /**
- * LIVE-Zeit: jetzt – oder, wenn die Übung vorbei ist (letzte Meldung > 12 h her), die letzte Meldung
- * (wie bisher im Workspace, damit das Beispiel 2030 nicht leer erscheint).
+ * LIVE-Zeit (Entscheid MVP 1-Nachbesserung, K1): solange die Übung läuft (Bezugsmeldung ≤ 12 h vor jetzt), gilt die
+ * **Geräteuhr** – eine Meldung höchstens 10 min in der Zukunft (Uhren gehen verschieden) zieht LIVE bis dorthin mit.
+ * Eine Meldung weiter in der Zukunft (Tippfehler «1535» statt «0735») verschiebt LIVE nie.
+ * Sonst – Übung vorbei (> 12 h her) oder ganz in der Zukunft (Beispiel 2030) – LIVE = Bezugsmeldung, damit das
+ * Lagebild nicht leer erscheint. `ref` = Bezugsmeldung, siehe `liveRefOf`.
  */
-export function liveIso(lastReport: string | null, nowMs: number): string {
+export function liveIso(ref: string | null, nowMs: number): string {
   const now = localIso(new Date(nowMs));
-  if (!lastReport) return now;
-  return nowMs - Date.parse(lastReport) < VORBEI_MS ? (now > lastReport ? now : lastReport.slice(0, 16)) : lastReport.slice(0, 16);
+  if (!ref) return now;
+  const r = ref.slice(0, 16);
+  const d = nowMs - Date.parse(r);
+  if (!Number.isFinite(d)) return now;
+  if (d > VORBEI_MS) return r; // Übung vorbei
+  if (d >= -ZUKUNFT_MS) return now > r ? now : r; // läuft (höchstens 10 min Vorsprung)
+  return d >= -VORBEI_MS ? now : r; // läuft, Meldung mit Zeit weit in der Zukunft → Geräteuhr; Übung ganz in der Zukunft → Meldung
+}
+
+/**
+ * Bezugsmeldung für LIVE: die späteste (nicht gelöschte) Meldung bis höchstens 10 min nach jetzt; liegen alle weiter
+ * in der Zukunft (Beispiel 2030), die späteste überhaupt. null = keine Meldung.
+ */
+export function liveRefOf(events: LageEvent[] | undefined, nowMs: number): string | null {
+  const lim = localIso(new Date(nowMs + ZUKUNFT_MS));
+  let past = "", any = "";
+  for (const e of events ?? []) {
+    if (e.deleted) continue;
+    const t = e.t.slice(0, 16);
+    if (t > any) any = t;
+    if (t <= lim && t > past) past = t;
+  }
+  return past || any || null;
 }
 
 /** Zeit der letzten (nicht gelöschten) Meldung oder null */
@@ -227,6 +254,14 @@ export function lastReportOf(events: LageEvent[] | undefined): string | null {
   let m = "";
   for (const e of events ?? []) if (!e.deleted && e.t > m) m = e.t;
   return m ? m.slice(0, 16) : null;
+}
+
+/** letzte Meldung bis zur Lagezeit `t` (für «letzte Meldung 07:25» im Live-Band: nie eine aus der Zukunft) */
+export function lastReportUntil(events: LageEvent[] | undefined, t: string): string | null {
+  let m = "";
+  const lim = t.slice(0, 16);
+  for (const e of events ?? []) { const x = e.t.slice(0, 16); if (!e.deleted && x <= lim && x > m) m = x; }
+  return m || null;
 }
 
 /** Uhr auf die Minute (springt zu jeder vollen Minute und beim Zurückkehren ins Fenster) */
@@ -257,8 +292,8 @@ export interface UseLageZeitOptions {
  */
 export function useLageZeit({ exId, events, say }: UseLageZeitOptions): ZeitApi & { tLive: string; ab: string | null; setAb(t: string | null): void } {
   const clock = useMinuteClock();
-  const last = useMemo(() => lastReportOf(events), [events]);
-  const tLive = liveIso(last, clock);
+  const ref = useMemo(() => liveRefOf(events, clock), [events, clock]);
+  const tLive = liveIso(ref, clock);
   const tLiveRef = useRef(tLive);
   tLiveRef.current = tLive;
   const sayRef = useRef(say);

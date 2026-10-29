@@ -134,8 +134,24 @@ export interface EventOrderKey {
  */
 export function compareEvents(a: EventOrderKey, b: EventOrderKey): number {
   if (a.tOffset && b.tOffset && a.t !== b.t) {
-    const d = Date.parse(`${a.t.slice(0, 16)}:00${a.tOffset}`) - Date.parse(`${b.t.slice(0, 16)}:00${b.tOffset}`);
+    const d = instantOf(a.t, a.tOffset) - instantOf(b.t, b.tOffset);
     if (d) return d;
   }
-  return a.t.localeCompare(b.t) || (a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.id.localeCompare(b.id);
+  // gleiches Format (ISO) → Vergleich nach Zeichen genügt und ist viel schneller als `localeCompare`
+  return cmpStr(a.t, b.t) || cmpStr(a.createdAt ?? "", b.createdAt ?? "") || a.id.localeCompare(b.id);
+}
+
+const cmpStr = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+
+/** genauer Zeitpunkt (ms) zu lokaler Zeit + Offset – zwischengespeichert (Sortieren vieler Meldungen) */
+const INSTANT = new Map<string, number>();
+function instantOf(t: string, off: string): number {
+  const k = t.slice(0, 16) + off;
+  let v = INSTANT.get(k);
+  if (v === undefined) {
+    if (INSTANT.size > 20000) INSTANT.clear();
+    v = Date.parse(`${t.slice(0, 16)}:00${off}`);
+    INSTANT.set(k, v);
+  }
+  return v;
 }

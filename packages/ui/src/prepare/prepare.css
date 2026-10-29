@@ -68,3 +68,7 @@
 /* NAI-Panel im Schritt 3 ohne eigenen Rahmenabstand */
 .pm-body .panel { padding: var(--sp-12) 0 0; }
 .pm-body .panel button, .pm-body .panel select, .pm-body .panel input:not([type="color"]):not([type="checkbox"]):not([type="range"]) { min-height: var(--hit); }
+/* Speicherschutz: Empfehlung, kein Fehler (MVP 1-Nachbesserung M1) */
+.pp-rec { padding: var(--sp-8) var(--sp-12); border: 1px solid var(--line-soft); border-radius: var(--r-8); background: var(--bg); font-size: var(--fs-14); }
+.pp-rec b { font-weight: 600; }
+.pp-rec p { margin: var(--sp-4) 0 0; font-size: var(--fs-12); color: var(--muted); line-height: 1.45; }

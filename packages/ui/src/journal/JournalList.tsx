@@ -5,8 +5,14 @@
  * Entf löscht. «korrigiert 07:34» öffnet die früheren Fassungen. Die Zeile in Korrektur ist dunkel gerahmt.
  * Leerzustände Kap. 4.5. Struktur: `.jlist` mit `li` je Meldung (Stundenköpfe stehen ausserhalb, nicht als `li`).
  * Vertrag `JournalListProps`; Ergänzungen (optional) unten.
+ *
+ * Tastatur (Spez. 3.4): die Liste ist **ein** Tab-Stopp (roving tabindex): nur eine Zeile hat `tabIndex=0` (zuletzt
+ * fokussiert, sonst gewählt, sonst die oberste); ↑/↓ (Pos1/Ende) wechseln die Zeile, Entf löscht, danach steht der
+ * Fokus auf der nächsten Zeile. Knöpfe in nicht aktiven Zeilen sind aus der Tab-Reihenfolge genommen.
+ * Ab `VIRT_AB` Meldungen ist die Liste virtualisiert: nur Zeilen im sichtbaren Bereich der scrollenden Spalte (plus
+ * Vorrat) stehen im DOM, gemessene Höhen werden gemerkt, Platzhalter oben/unten halten die Bildlaufleiste richtig.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { journalStatus, placeLabel, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { AttachmentChips } from "../Attachments";
@@ -16,6 +22,7 @@ import { KiMark } from "../ki/context";
 import { dayLabel } from "../Timeline";
 import { RueckblickStreifen } from "../time/RueckblickBanner";
 import type { JournalListProps, ZeitApi } from "../shell/contracts";
+import { dayTitle, missLabel } from "../entry/labels";
 import "./journal.css";
 
 export interface JournalListExtra {
@@ -36,9 +43,9 @@ export interface JournalListExtra {
   onDemo?(): void;
 }
 
-type Shape = "feind" | "eigen" | "unklar" | "neutral";
-const SHAPE: Record<Shape, [string, string]> = { feind: ["◆", "Feind"], eigen: ["●", "Eigene"], unklar: ["■", "Unklar"], neutral: ["▲", "Neutral"] };
-const shapeOf = (e: Pick<LageEvent, "side" | "aff">): Shape => (e.side === "blau" ? "eigen" : e.aff === "N" ? "neutral" : e.aff === "U" ? "unklar" : "feind");
+type Shape = "feind" | "eigen" | "unklar" | "neutral" | "notiz";
+const SHAPE: Record<Shape, [string, string]> = { feind: ["◆", "Feind"], eigen: ["●", "Eigene"], unklar: ["■", "Unklar"], neutral: ["▲", "Neutral"], notiz: ["✎", "Notiz"] };
+const shapeOf = (e: Pick<LageEvent, "side" | "aff" | "notiz">): Shape => (e.notiz ? "notiz" : e.side === "blau" ? "eigen" : e.aff === "N" ? "neutral" : e.aff === "U" ? "unklar" : "feind");
 const NEU_MS = 10 * 60000;
 
 /** Anzeigetext ohne vorangestellten Melder («H01 4 Pers …» → «4 Pers …»), der Melder steht separat */
@@ -71,19 +78,22 @@ interface RowProps {
   onCorrect(id: string): void;
   onDelete(id: string): void;
   onToggle(id: string): void;
+  /** roving tabindex: 0 = Tab-Stopp der Liste, sonst -1 */
+  tab: 0 | -1;
 }
 
-const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, neu, open, onSelect, onCorrect, onDelete, onToggle }: RowProps) {
+const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, neu, open, onSelect, onCorrect, onDelete, onToggle, tab }: RowProps) {
   const sh = shapeOf(e);
   const [f, word] = SHAPE[sh];
   const own = sh === "eigen";
+  const note = sh === "notiz";
   const who = own ? (e.unit || e.melder) : e.unit && e.unit !== e.melder ? e.unit : "";
   const place = placeLabel(e);
   const status = journalStatus(e);
-  const missing = (q?.missing ?? []).filter((m) => m !== "Ort" && m !== "Melder");
+  const missing = note ? [] : (q?.missing ?? []).filter((m) => m !== "Ort" && m !== "Melder").map(missLabel);
   const att = e.attachments?.length ? attachmentsOf({ attachments }, e.attachments) : [];
   return (
-    <li data-id={e.id} className={`jl-row k-${sh}${sel ? " sel" : ""}${korr ? " korr" : ""}${flash ? " flash" : ""}`} tabIndex={0}
+    <li data-id={e.id} className={`jl-row k-${sh}${sel ? " sel" : ""}${korr ? " korr" : ""}${flash ? " flash" : ""}`} tabIndex={tab}
       aria-current={sel || undefined}
       onClick={(ev) => { if (!(ev.target as HTMLElement).closest("button")) onSelect(e.id); }}>
       <span className="jl-t mono">{e.t.slice(11, 16)}</span>
@@ -91,12 +101,12 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, neu, 
         <span className="jl-l1">
           <span className={`jl-kind k-${sh}`}><span aria-hidden="true">{f}</span> {word}</span>
           {who && <b className="jl-who">{who}</b>}
-          <SymbolMini e={e} />
+          {!note && <SymbolMini e={e} />}
           <span className="jl-text">{displayText(e)}</span>
         </span>
         <span className="jl-l2">
           {!own && e.melder && <span>von {e.melder}</span>}
-          {place ? <span className="mono">{place}</span> : <span className="jl-warn">Ort fehlt</span>}
+          {note ? null : place ? <span className="mono">{place}</span> : <span className="jl-warn">Ort fehlt</span>}
           {!own && zwei > 1 && <span>von {zwei} Trupps gesehen</span>}
           {missing.length > 0 && <span>Fehlt noch: {missing.join(", ")}</span>}
           {status && <button type="button" className="jl-hist" aria-expanded={open} onClick={() => onToggle(e.id)}>{status}</button>}
@@ -124,40 +134,149 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, neu, 
   );
 });
 
+/** ab so vielen Meldungen nur sichtbare Zeilen ins DOM (kleine Listen bleiben vollständig, z. B. für Abnahme-Zählungen) */
+export const VIRT_AB = 120;
+/** Vorrat über/unter dem sichtbaren Bereich (px) */
+const VORRAT = 900;
+/** geschätzte Höhen, bis gemessen */
+const H_HEAD = 34, H_ROW = 62;
+
+type Item = { k: "h"; key: string; head: string } | { k: "r"; key: string; e: LageEvent };
+
+const FOCUSABLE = "button, a[href], input, select, textarea, audio[controls], [tabindex]";
+
+/** nächster scrollender Vorfahre (Spalte), sonst das Dokument */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight + 1) return p;
+  }
+  return null;
+}
+const viewOf = (sc: HTMLElement | null) => (sc ? { top: sc.getBoundingClientRect().top, h: sc.clientHeight } : { top: 0, h: window.innerHeight });
+
+/** erster Index i mit offs[i + 1] > y (binäre Suche) */
+function indexAt(offs: number[], y: number): number {
+  let lo = 0, hi = offs.length - 2;
+  if (hi < 0) return 0;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (offs[m + 1]! <= y) lo = m + 1; else hi = m; }
+  return lo;
+}
+
 export function JournalList(p: JournalListProps & JournalListExtra) {
   const { ex, events, selected, onSelect, onCorrect, onDelete, quality, empty } = p;
   const all = ex.events ?? [];
   const box = useRef<HTMLDivElement>(null);
+  const vbox = useRef<HTMLDivElement>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [openHist, setOpenHist] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  /** roving tabindex: zuletzt fokussierte Zeile */
+  const [rove, setRove] = useState<string | null>(null);
+  /** nach dem Darstellen fokussieren (↑/↓, nach Löschen) */
+  const focusNext = useRef<string | null>(null);
   useEffect(() => { const i = window.setInterval(() => setNowMs(Date.now()), 30000); return () => window.clearInterval(i); }, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => setNowMs(Date.now()), [events]);
 
-  // Auswahl von aussen (Karte, Eintragen): Zeile zeigen und kurz hervorheben
-  useEffect(() => {
-    if (!selected) return;
-    const li = box.current?.querySelector<HTMLElement>(`li[data-id="${selected}"]`);
-    if (!li) return;
-    const side = li.closest<HTMLElement>(".side");
-    const r = li.getBoundingClientRect(), pr = side?.getBoundingClientRect();
-    if (!pr || r.top < pr.top || r.bottom > pr.bottom) li.scrollIntoView({ block: "nearest" });
-    setFlashId(selected);
-    const t = window.setTimeout(() => setFlashId(null), 1600);
-    return () => window.clearTimeout(t);
-  }, [selected]);
-
-  const groups = useMemo(() => {
-    const out: Array<{ key: string; head: string; list: LageEvent[] }> = [];
+  const items = useMemo(() => {
+    const out: Item[] = [];
+    let k = "";
     for (const e of events) {
-      const k = e.t.slice(0, 13);
-      const g = out[out.length - 1];
-      if (g && g.key === k) g.list.push(e);
-      else out.push({ key: k, head: `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 13)}:00`, list: [e] });
+      const h = e.t.slice(0, 13);
+      if (h !== k) { k = h; out.push({ k: "h", key: "h:" + h, head: `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 13)}:00` }); }
+      out.push({ k: "r", key: e.id, e });
     }
     return out;
   }, [events, ex.days]);
+  const virt = events.length >= VIRT_AB;
+  const index = useMemo(() => new Map(events.map((e, i) => [e.id, i])), [events]);
+  const itemIndex = useMemo(() => new Map(items.map((it, i) => [it.key, i])), [items]);
+
+  // ---------- Fenster (nur virtualisiert)
+  const heights = useRef(new Map<string, number>());
+  const [measured, setMeasured] = useState(0);
+  const offs = useMemo(() => {
+    const o = new Array<number>(items.length + 1);
+    o[0] = 0;
+    for (let i = 0; i < items.length; i++) { const it = items[i]!; o[i + 1] = o[i]! + (heights.current.get(it.key) ?? (it.k === "h" ? H_HEAD : H_ROW)); }
+    return o;
+  }, [items, measured]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [range, setRange] = useState<[number, number]>([0, 40]);
+  const scroller = useRef<HTMLElement | null>(null);
+  const recompute = useCallback(() => {
+    const v = vbox.current;
+    if (!v) return;
+    const view = viewOf(scroller.current);
+    const top = v.getBoundingClientRect().top - view.top;
+    const a = indexAt(offs, Math.max(0, -top - VORRAT));
+    const b = indexAt(offs, Math.max(0, -top + view.h + VORRAT));
+    setRange((r) => (r[0] === a && r[1] === b ? r : [a, b]));
+  }, [offs]);
+  const recRef = useRef(recompute);
+  recRef.current = recompute;
+  useEffect(() => {
+    if (!virt) return;
+    scroller.current = scrollParent(vbox.current);
+    let raf = 0;
+    const on = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; recRef.current(); }); };
+    const target: HTMLElement | Window = scroller.current ?? window;
+    target.addEventListener("scroll", on, { passive: true });
+    window.addEventListener("resize", on);
+    on();
+    return () => { target.removeEventListener("scroll", on); window.removeEventListener("resize", on); cancelAnimationFrame(raf); };
+  }, [virt]);
+  useLayoutEffect(() => { if (virt) recompute(); }, [virt, recompute]);
+  // gemessene Höhen merken (nur gezeichnete Teile)
+  useLayoutEffect(() => {
+    if (!virt) return;
+    let changed = false;
+    vbox.current?.querySelectorAll<HTMLElement>("[data-vk], li[data-id]").forEach((el) => {
+      const k = el.dataset.vk ?? el.dataset.id!, h = el.offsetHeight;
+      if (h > 0 && Math.abs((heights.current.get(k) ?? -1) - h) > 0.5) { heights.current.set(k, h); changed = true; }
+    });
+    if (changed) setMeasured((n) => n + 1);
+  });
+
+  /** Zeile sichtbar machen (auch wenn sie im virtualisierten Fenster noch nicht gezeichnet ist) */
+  const reveal = useCallback((id: string, focus: boolean) => {
+    const li = box.current?.querySelector<HTMLElement>(`li[data-id="${id}"]`);
+    const sc = virt ? scroller.current : (box.current?.closest<HTMLElement>(".side") ?? null);
+    if (li) {
+      const r = li.getBoundingClientRect(), view = viewOf(sc ?? null);
+      if (r.top < view.top || r.bottom > view.top + view.h) li.scrollIntoView({ block: "nearest" });
+      if (focus) li.focus({ preventScroll: true });
+      return;
+    }
+    const i = itemIndex.get(id);
+    const v = vbox.current;
+    if (i === undefined || !v) return;
+    const view = viewOf(scroller.current);
+    const y = v.getBoundingClientRect().top - view.top + offs[i]!;
+    const dy = y < 0 ? y - 8 : y + (offs[i + 1]! - offs[i]!) > view.h ? y + (offs[i + 1]! - offs[i]!) - view.h + 8 : 0;
+    if (dy) { if (scroller.current) scroller.current.scrollTop += dy; else window.scrollBy(0, dy); }
+    if (focus) focusNext.current = id;
+    recRef.current();
+  }, [virt, itemIndex, offs]);
+
+  // Auswahl von aussen (Karte, Eintragen): Zeile zeigen und kurz hervorheben
+  useEffect(() => {
+    if (!selected) return;
+    if (!index.has(selected)) return;
+    setRove(selected);
+    reveal(selected, false);
+    setFlashId(selected);
+    const t = window.setTimeout(() => setFlashId(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fokus nach ↑/↓ bzw. Löschen, sobald die Zeile gezeichnet ist
+  useLayoutEffect(() => {
+    const id = focusNext.current;
+    if (!id) return;
+    const li = box.current?.querySelector<HTMLElement>(`li[data-id="${id}"]`);
+    if (li) { focusNext.current = null; li.focus({ preventScroll: true }); }
+  });
 
   const byId = useMemo(() => new Map(all.map((e) => [e.id, e])), [all]);
   const zweiOf = (e: LageEvent): number => {
@@ -168,17 +287,60 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
   };
   const toggle = useCallback((id: string) => setOpenHist((o) => (o === id ? null : id)), []);
 
+  // gezeichnete Teile
+  const [a, b] = virt ? [Math.min(range[0], Math.max(0, items.length - 1)), Math.min(range[1], items.length - 1)] : [0, items.length - 1];
+  const shown = items.slice(a, b + 1);
+  const shownIds = new Set(shown.filter((x) => x.k === "r").map((x) => x.key));
+  /** Tab-Stopp: zuletzt fokussiert → gewählt → oberste gezeichnete Zeile */
+  const active = (rove && shownIds.has(rove) ? rove : null) ?? (selected && shownIds.has(selected) ? selected : null) ?? shown.find((x) => x.k === "r")?.key ?? null;
+
+  // Knöpfe in nicht aktiven Zeilen aus der Tab-Reihenfolge nehmen (eine Liste = ein Tab-Stopp)
+  useLayoutEffect(() => {
+    box.current?.querySelectorAll<HTMLElement>("li[data-id]").forEach((li) => {
+      const on = li.dataset.id === active;
+      li.querySelectorAll<HTMLElement>(FOCUSABLE).forEach((el) => {
+        if (el === li) return;
+        if (!on && el.getAttribute("tabindex") !== "-1") { el.setAttribute("tabindex", "-1"); el.dataset.rv = "1"; }
+        else if (on && el.dataset.rv) { el.removeAttribute("tabindex"); delete el.dataset.rv; }
+      });
+    });
+  });
+
+  const move = (id: string, to: string | undefined, select = true) => {
+    if (!to || to === id) return;
+    setRove(to);
+    focusNext.current = to;
+    if (select) onSelect(to);
+    reveal(to, true);
+  };
+  const del = (id: string) => {
+    const i = index.get(id) ?? -1;
+    const next = events[i + 1]?.id ?? events[i - 1]?.id;
+    const hadFocus = !!box.current?.contains(document.activeElement);
+    onDelete(id);
+    if (next) { setRove(next); if (hadFocus || document.activeElement === document.body) { focusNext.current = next; reveal(next, true); } }
+  };
+
+  // feste Rückrufe für die Zeilen (memo): neue Funktionen der Hülle zeichnen sonst bei jedem Tastendruck alle Zeilen neu
+  const cb = useRef({ onSelect, onCorrect, del });
+  cb.current = { onSelect, onCorrect, del };
+  const rowSelect = useCallback((id: string) => cb.current.onSelect(id), []);
+  const rowCorrect = useCallback((id: string) => cb.current.onCorrect(id), []);
+  const rowDelete = useCallback((id: string) => cb.current.del(id), []);
+
   const onKey = (ev: React.KeyboardEvent) => {
     const li = (ev.target as HTMLElement).closest<HTMLElement>("li[data-id]");
     if (!li || (ev.target as HTMLElement).closest("button")) return;
     const id = li.dataset.id!;
-    if (ev.key === "Enter") { ev.preventDefault(); onSelect(id); }
-    else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
-      ev.preventDefault();
-      const rows = [...(box.current?.querySelectorAll<HTMLElement>("li[data-id]") ?? [])];
-      const n = rows[rows.indexOf(li) + (ev.key === "ArrowDown" ? 1 : -1)];
-      if (n) { n.focus(); onSelect(n.dataset.id!); }
-    } else if (ev.key === "Delete") { ev.preventDefault(); onDelete(id); }
+    const i = index.get(id) ?? 0;
+    if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onSelect(id); }
+    else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); move(id, events[i + (ev.key === "ArrowDown" ? 1 : -1)]?.id); }
+    else if (ev.key === "Home" || ev.key === "End") { ev.preventDefault(); move(id, (ev.key === "Home" ? events[0] : events[events.length - 1])?.id); }
+    else if (ev.key === "Delete") { ev.preventDefault(); del(id); }
+  };
+  const onFocus = (ev: React.FocusEvent) => {
+    const li = (ev.target as HTMLElement).closest<HTMLElement>("li[data-id]");
+    if (li?.dataset.id && li.dataset.id !== rove) setRove(li.dataset.id);
   };
 
   const strip = p.zeit ? <RueckblickStreifen zeit={p.zeit} days={ex.days} art="liste" /> : null;
@@ -220,24 +382,38 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     );
   }
 
+  // gezeichnete Teile zu Stundengruppen zusammenfassen (Kopf nur, wenn er selbst im Fenster liegt)
+  const groups: Array<{ key: string; head?: string; rows: LageEvent[] }> = [];
+  for (const it of shown) {
+    if (it.k === "h") groups.push({ key: it.key, head: it.head, rows: [] });
+    else if (groups.length) groups[groups.length - 1]!.rows.push(it.e);
+    // Fenster beginnt mitten in einer Stunde: gleicher Schlüssel wie mit Kopf (sonst baut React die Zeilen neu – Fokus weg)
+    else groups.push({ key: "h:" + it.e.t.slice(0, 13), rows: [it.e] });
+  }
+  const vk = virt ? (k: string) => ({ "data-vk": k }) : () => ({});
+
   return (
-    <div className="jl" ref={box} onKeyDown={onKey}>
+    <div className="jl" ref={box} onKeyDown={onKey} onFocus={onFocus}>
       {strip}
-      {groups.map((g) => (
-        <section key={g.key} className="jl-group" aria-label={g.head}>
-          <h4 className="jl-head mono">{g.head}</h4>
-          <ol className="jlist">
-            {g.list.map((e) => {
-              const c = e.createdAt ? Date.parse(e.createdAt) : NaN;
-              return (
-                <Row key={e.id} e={e} attachments={ex.attachments} sel={e.id === selected} korr={e.id === p.correcting} flash={e.id === flashId}
-                  q={quality?.get(e.id)} zwei={zweiOf(e)} neu={nowMs - c >= -60000 && nowMs - c < NEU_MS} open={openHist === e.id}
-                  onSelect={onSelect} onCorrect={onCorrect} onDelete={onDelete} onToggle={toggle} />
-              );
-            })}
-          </ol>
-        </section>
-      ))}
+      <div ref={vbox} className="jl-v">
+        {virt && <div aria-hidden="true" style={{ height: offs[a] }} />}
+        {groups.map((g) => (
+          <section key={g.key} className="jl-group" aria-label={g.head}>
+            {g.head && <h4 className="jl-head mono" title={dayTitle(g.key.slice(2), ex.days)} {...vk(g.key)}>{g.head}</h4>}
+            <ol className="jlist">
+              {g.rows.map((e) => {
+                const c = e.createdAt ? Date.parse(e.createdAt) : NaN;
+                return (
+                  <Row key={e.id} e={e} attachments={ex.attachments} sel={e.id === selected} korr={e.id === p.correcting} flash={e.id === flashId}
+                    q={quality?.get(e.id)} zwei={zweiOf(e)} neu={nowMs - c >= -60000 && nowMs - c < NEU_MS} open={openHist === e.id}
+                    onSelect={rowSelect} onCorrect={rowCorrect} onDelete={rowDelete} onToggle={toggle} tab={e.id === active ? 0 : -1} />
+                );
+              })}
+            </ol>
+          </section>
+        ))}
+        {virt && <div aria-hidden="true" style={{ height: offs[items.length]! - offs[b + 1]! }} />}
+      </div>
     </div>
   );
 }

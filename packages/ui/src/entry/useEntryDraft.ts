@@ -18,7 +18,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import L from "leaflet";
 import {
   catalogEntry, cellAtAny, cellBounds, clockDay, correctEvent, correctionSummary, entryState, findCells, isPlaceName,
-  lastPosition, onlineAllowed, parseMeldung, placeLabel, sheetBounds, undoCorrection,
+  lastPosition, normalizeMelder, onlineAllowed, parseMeldung, placeLabel, sheetBounds, undoCorrection,
   type Attachment, type Bounds, type Draft, type EntryState, type Exercise, type Kind, type LageEvent, type LV95, type Side,
 } from "@lage/core";
 import { pickPoint, toLatLng, toLv95 } from "@lage/map";
@@ -36,9 +36,10 @@ import { DELETED_EVENT } from "../journal/actions";
 import { kindOfEvent } from "../journal/filter";
 import { offerUndo } from "../journal/journalUndo";
 import type { EntryBoxProps } from "../shell/contracts";
+import { entryOptions } from "./stateOptions";
 import { withTrupp } from "./trupp";
 
-export { truppOrder, withTrupp } from "./trupp";
+export { lastMelder, truppOrder, withTrupp } from "./trupp";
 
 export type EntryMode = { art: "neu" } | { art: "korrektur"; id: string };
 
@@ -122,6 +123,17 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   /** «geht nicht» + Enter: Zustandszeile erneut ansagen / Konfliktband hervorheben */
   const [announce, setAnnounce] = useState(0);
   const [nudge, setNudge] = useState(0);
+  /**
+   * Rückmeldung direkt unter dem Feld (statt Toast über dem LIVE-Band): «Eingetragen – ohne Ort …», «Korrektur beendet».
+   * Verschwindet nach 6 s oder beim nächsten Tippen; `role="status"` sagt sie an.
+   */
+  const [notice, setNotice] = useState<{ t: string; n: number } | null>(null);
+  const tell = useCallback((t: string) => setNotice((o) => ({ t, n: (o?.n ?? 0) + 1 })), []);
+  useEffect(() => {
+    if (!notice) return;
+    const id = window.setTimeout(() => setNotice((o) => (o?.n === notice.n ? null : o)), 6000);
+    return () => window.clearTimeout(id);
+  }, [notice]);
   const kiTaken = useRef(false);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
   useEffect(() => {
@@ -138,6 +150,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const resetExtras = () => { setChosen(null); setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); };
   const setText = useCallback((t: string) => {
     setTextState(t);
+    if (t) setNotice(null);
     if (!t) { setChosen(null); setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); kiTaken.current = false; }
   }, []);
   useEffect(() => { setArmed(null); }, [text]);
@@ -163,7 +176,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const startKorr = useCallback((id: string) => {
     const e = (ex.events ?? []).find((x) => x.id === id);
     if (!e) return;
-    if (e.deleted) { say("Gelöschte Meldung – zuerst «Rückgängig», dann korrigieren."); return; }
+    if (e.deleted) { tell("Gelöschte Meldung – zuerst «Rückgängig», dann korrigieren."); return; }
     const parked = korr.current ? korr.current.parked : text;
     korr.current = { id, base: e, parked, at: Date.now() };
     saveKorr(ex.id, korr.current);
@@ -177,7 +190,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
       if (wideScreen()) { t.focus({ preventScroll: true }); t.setSelectionRange(t.value.length, t.value.length); }
       t.closest(".ebox")?.scrollIntoView({ block: "nearest" });
     });
-  }, [ex.events, ex.id, text, say, fitInput]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ex.events, ex.id, text, tell, fitInput]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startRef = useRef(startKorr);
   startRef.current = startKorr;
@@ -196,10 +209,10 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   useEffect(() => { if (p.reportAt) { setManualPos(p.reportAt.pos); inputRef.current?.focus(); } }, [p.reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   // in diesem Fenster gelöscht (Liste): laufende Korrektur dieser Meldung abbrechen
   useEffect(() => {
-    const h = (ev: Event) => { if (korr.current && (ev as CustomEvent<string>).detail === korr.current.id) { endKorr(); say("Korrektur abgebrochen – die Meldung wurde gelöscht."); } };
+    const h = (ev: Event) => { if (korr.current && (ev as CustomEvent<string>).detail === korr.current.id) { endKorr(); tell("Korrektur abgebrochen – die Meldung wurde gelöscht."); } };
     window.addEventListener(DELETED_EVENT, h);
     return () => window.removeEventListener(DELETED_EVENT, h);
-  }, [endKorr, say]);
+  }, [endKorr, tell]);
 
   // anderes Fenster hat geändert/gelöscht (MVP 0): nie still überschreiben
   const conflict = base ? (editConflict(ex.id, base, cur) ?? (!cur || cur.deleted ? "geloescht" : null)) : null;
@@ -294,16 +307,14 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const placeText = manualPos ? (manualCell ? `Karte (${manualCell})` : "Karte") : keepPlace && base && !roadPick ? placeLabel(base) : effWhere ?? "";
   const oldPlace = base ? placeLabel(base) || "ohne Ort" : null;
 
-  const state: EntryState | null = draft ? entryState(draft, {
-    hasRaster: ex.sheets.length > 0,
+  // gleiche Regeln wie Foto-/Sprach-Übersicht (entryOptions); Korrektur: Trupp der Meldung gilt als bekannt
+  const state: EntryState | null = draft ? entryState(draft, entryOptions(ex, {
     online: online && onlineAllowed(ex, "ortssuche"),
     placePending: !!q && lookup === q,
     manualPos: !!manualPos,
     hasPos: !!foundPos || (keepPlace && !!base?.pos),
-    now: new Date(),
-    sheets: ex.sheets,
-    areas: ex.areas,
-  }) : null;
+    alsoKnown: base?.melder,
+  })) : null;
 
   const pickOnMap = async () => {
     setPicking(true);
@@ -321,10 +332,12 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     fitInput();
     requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(next.length, next.length); } });
   };
-  const addUnit = (name: string) => {
-    const n = name.trim();
-    if (!n) return;
+  /** neuen Trupp aufnehmen («h6» → «H06» wie die vorhandenen); gibt den Namen zurück, wie er aufgenommen wurde */
+  const addUnit = (name: string): string => {
+    const n = normalizeMelder(name.trim(), ex.units.blau);
+    if (!n) return n;
     update((x) => { if (!x.units.blau.some((u) => u.toLowerCase() === n.toLowerCase())) x.units = { ...x.units, blau: [...x.units.blau, n] }; return x; });
+    return n;
   };
 
   // ---------- Eintragen / Korrektur speichern
@@ -353,7 +366,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     setTextState("");
     resetExtras();
     afterCommit(ev);
-    if (!ev.pos) say("Eingetragen – ohne Ort. Später mit Korrigieren setzen.");
+    if (ev.notiz) tell("Als Notiz eingetragen – ohne Zeichen auf der Karte.");
+    else if (!ev.pos) tell("Eingetragen – ohne Ort. Später mit Korrigieren setzen.");
   };
 
   const afterCommit = (ev: Pick<LageEvent, "id" | "pos">) => {
@@ -390,7 +404,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     }
     const restoreDeleted = force && !!now0.deleted;
     if (restoreDeleted) patch.deleted = false;
-    if (!Object.keys(patch).length) { endKorr(); say("Keine Änderung – Korrektur beendet."); return; }
+    if (!Object.keys(patch).length) { endKorr(); tell("Keine Änderung – Korrektur beendet."); return; }
     const id = b.id;
     const before = now0;
     update((x) => {
@@ -401,7 +415,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     });
     const summary = correctionSummary(before, { ...before, ...patch } as LageEvent);
     offerUndo(`Korrigiert: ${summary}`, () => update((x) => { x.events = (x.events ?? []).map((y) => (y.id === id ? undoCorrection(y, before, device) : y)); return x; }));
-    if (restoreDeleted) say("Meldung wiederhergestellt (war in einem anderen Fenster gelöscht) – mit dieser Korrektur gespeichert.");
+    if (restoreDeleted) tell("Meldung wiederhergestellt (war in einem anderen Fenster gelöscht) – mit dieser Korrektur gespeichert.");
     kiTaken.current = false;
     endKorr();
     afterCommit({ id, pos: (patch.pos ?? before.pos) as LV95 | undefined });
@@ -412,16 +426,16 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     const korrNow = !!korr.current;
     if (korrNow && conflict && !force) { setNudge((n) => n + 1); return; }
     if (!draft || !state) {
-      if (korrNow) say("Text fehlt – Esc bricht die Korrektur ab.");
+      if (korrNow) tell("Text fehlt – Esc bricht die Korrektur ab.");
       return;
     }
     const dirty = textChanged || !!kindOverride || !!symOverride || !!manualPos || !!roadPick || !!shapeDraft;
-    if (korrNow && !dirty && !force) { endKorr(); say("Keine Änderung – Korrektur beendet."); return; }
+    if (korrNow && !dirty && !force) { endKorr(); tell("Keine Änderung – Korrektur beendet."); return; }
     // nie still falsch: «geht nicht» trägt nie ein
-    if (state.level === "geht-nicht") { setAnnounce((n) => n + 1); say(state.reasons[0]?.text ?? "Geht nicht."); inputRef.current?.focus(); return; }
+    if (state.level === "geht-nicht") { setAnnounce((n) => n + 1); inputRef.current?.focus(); return; }
     // Fläche/Linie wird noch gezeichnet: zuerst abschliessen (Form übernehmen)
     const drawn = takeDrawing(korr.current ? `korr:${korr.current.id}` : "neu");
-    if (drawn === "unfertig") { say("Fläche/Linie noch nicht fertig – weitere Punkte setzen, dann «Fertig» (oder Esc)."); return; }
+    if (drawn === "unfertig") { tell("Fläche/Linie noch nicht fertig – weitere Punkte setzen, dann «Fertig» (oder Esc)."); return; }
     if (drawn) setShapeDraft(drawn);
     if (state.level === "pruefen" && armed !== text) { setArmed(text); setAnnounce((n) => n + 1); return; }
     setArmed(null);
@@ -477,7 +491,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     roadTarget, roadShown, roadPick, setRoadPick, road,
     shapeDraft, setShapeDraft, pendingAtt, setPendingAtt, removePending,
     chooseTrupp, addUnit, submit, escape, correctLast, startKorr, endKorr, takeKi,
-    voice, commitBatch, day, online,
+    voice, commitBatch, day, online, notice: notice?.t ?? null, tell,
   };
 }
 

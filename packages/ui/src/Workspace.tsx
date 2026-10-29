@@ -3,7 +3,7 @@
  * `shell/`, Modus «Vorbereiten» in `prepare/`, Zeit in `time/` (Paket C). Speichern/Abgleich unverändert aus MVP 0
  * (`useExerciseStore`, `persist.ts`), ebenso Speicherbänder, Zusammenführen beim Öffnen und Rückgängig.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
   cellAtAny,
@@ -74,7 +74,7 @@ import { kiPdfNote } from "./ki/settings";
 import { SpeechSettings } from "./SpeechSettings";
 import { LAGE_KARTE } from "./colors";
 import { useOfflineStatus } from "./offlineStatus";
-import { useLageZeit, lastReportOf } from "./time/useLageZeit";
+import { useLageZeit, lastReportUntil } from "./time/useLageZeit";
 import { RueckblickBanner } from "./time/RueckblickBanner";
 import { TimeBand } from "./time/TimeBand";
 import { RedPanel, RedTabLabel } from "./red/RedPanel";
@@ -86,6 +86,16 @@ import { ExerciseList } from "./shell/ExerciseList";
 import { Dialog } from "./shell/Dialog";
 import { useArbeitsweise } from "./shell/mode";
 import { PrepareMode, type PrepStep } from "./prepare/PrepareMode";
+
+/**
+ * `f` nach dem nächsten gezeichneten Bild ausführen (rAF → Task): so erscheinen Feld, Liste und Band sofort, die
+ * teuren Kartenebenen kommen gleich danach. Gibt die Aufräumfunktion für `useEffect` zurück (neuerer Auftrag ersetzt).
+ */
+function afterPaint(f: () => void): () => void {
+  let t: number | undefined;
+  const raf = requestAnimationFrame(() => { t = window.setTimeout(f, 0); });
+  return () => { cancelAnimationFrame(raf); if (t !== undefined) window.clearTimeout(t); };
+}
 
 function deviceId(): string {
   try {
@@ -129,7 +139,13 @@ export function Workspace({ product, tagline }: Props) {
   const [present, setPresent] = useState(false);
   /** «Korrigieren» von der Karte, solange das Meldungsfeld noch nicht eingehängt ist (Modus Vorbereiten) */
   const pendingCorr = useRef<string | null>(null);
-  const [night, setNight] = useState(() => { try { return localStorage.getItem("lage-tools.night") === "1"; } catch { return false; } });
+  // Nacht: beim Erststart wie die Systemeinstellung (dunkel → Nacht an), danach die Wahl des Benutzers
+  const [night, setNight] = useState(() => {
+    let v: string | null = null;
+    try { v = localStorage.getItem("lage-tools.night"); } catch { /* egal */ }
+    if (v === "1" || v === "0") return v === "1";
+    try { return matchMedia("(prefers-color-scheme: dark)").matches; } catch { return false; }
+  });
   useEffect(() => {
     try { localStorage.setItem("lage-tools.night", night ? "1" : "0"); } catch { /* egal */ }
     // Nacht: dunkle Oberfläche (data-theme), Karte abgedunkelt (shell.css)
@@ -244,19 +260,27 @@ export function Workspace({ product, tagline }: Props) {
   const zeit = useLageZeit({ exId: ex?.id, events: ex?.events, say });
   const tNow = zeit.tNow;
   const winFrom = zeit.from;
+  /**
+   * Karte und «Was Rot» rechnen mit einer verzögerten Fassung (useDeferredValue): nach Enter, Zeitwechsel oder
+   * «Zeige letzte» zeichnet React zuerst Feld, Liste und Band; Kartenebenen und Hinweise folgen im nächsten Durchgang
+   * (800 Meldungen, Feld-Tablet: sonst blockiert der Neuaufbau der Karte die Antwort der Liste).
+   */
+  const exLater = useDeferredValue(ex);
+  const tLater = useDeferredValue(tNow);
+  const fromLater = useDeferredValue(winFrom);
   useEffect(() => { zeit.suspend("praesentation", present); }, [present]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { zeit.suspend("dialog", dialog !== null); }, [dialog]); // eslint-disable-line react-hooks/exhaustive-deps
   const suspendMenu = useCallback((key: string) => (o: boolean) => zeit.suspend(key, o), [zeit.suspend]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---------- Hinweise zu Rot (folgen Lagezeit und «Zeige letzte»)
-  const { hints, quality, all: allHints } = useHints(ex, tNow, winFrom);
+  // ---------- Hinweise zu Rot: folgen der Lagezeit, nie «Zeige letzte» (Entscheid: «Was Rot» rechnet immer über alles)
+  const { hints, quality, all: allHints } = useHints(exLater, tLater, null);
   const [selHint, setSelHint] = useState<string | null>(null);
   const [presentHints, setPresentHints] = useState(false);
   const hintSel = hints.find((h) => h.id === selHint) ?? null;
   const redVisible = present ? presentHints : lage && sideView === "rot";
   /** gewählter Hinweis hebt seine Auslöser hervor – nur solange «Was Rot» sichtbar ist */
   const hintFocus = !!hintSel && redVisible;
-  const lageRot = useLageRot(ex, tNow, allHints, winFrom);
+  const lageRot = useLageRot(exLater, tLater, allHints, null);
   const [selCoa, setSelCoa] = useState<string | null>(null);
   const coaSel = lageRot.coas.find((c) => c.id === selCoa) ?? null;
   const coaFocus = !!coaSel && redVisible;
@@ -268,7 +292,7 @@ export function Workspace({ product, tagline }: Props) {
     if (hintSel.unit) for (const e of ex?.events ?? []) if (e.side === "blau" && e.unit === hintSel.unit) ids.add(e.id);
     return ids;
   })();
-  const badge = redBadge(ex, hints, tNow);
+  const badge = redBadge(exLater, hints, tLater);
   const showRed = () => { setModus("lage"); setSideView("rot"); };
 
   // Hindernisse, Checkpoint, IED … (und Meldungen «auf Hauptstrasse/Autobahn») ohne Ausrichtung nachträglich auf die
@@ -291,6 +315,31 @@ export function Workspace({ product, tagline }: Props) {
     const exId = ex.id;
     (async () => {
       const { placeOnRoadTry } = await import("./roadsource");
+      // Ergebnisse gesammelt übernehmen (eine Änderung pro Schub statt pro Meldung: 800 Meldungen aus einer Datei
+      // lösten sonst 800 Neuaufbauten von Karte, Hinweisen und Speicher aus) und zwischendurch dem Browser Zeit lassen
+      const done = new Map<string, { e: LageEvent; pl: NonNullable<Awaited<ReturnType<typeof placeOnRoadTry>>["pl"]> }>();
+      const flush = () => {
+        if (!done.size || exRef.current?.id !== exId) { done.clear(); return; }
+        const batch = new Map(done);
+        done.clear();
+        update((x) => {
+          x.events = (x.events ?? []).map((y) => {
+            const r = batch.get(y.id);
+            if (!r) return y;
+            const { e, pl } = r;
+            // inzwischen von Hand verschoben, Ort entfernt/geändert oder schon ausgerichtet → nicht überschreiben
+            const samePos = y.pos?.e === e.pos?.e && y.pos?.n === e.pos?.n;
+            const sameWhere = (y.cells?.[0] ?? "") === (e.cells?.[0] ?? "") && (y.nai ?? "") === (e.nai ?? "");
+            if (y.deleted || y.roadNone || y.where === "Karte" || y.angle !== undefined || !samePos || !sameWhere) return y;
+            // neue Revision (für den Abgleich), aber Zeitstempel nur minimal weiter: automatische Ergänzung,
+            // keine Benutzeränderung (sonst stünde jede Meldung des Beispiels als «neu» in der Liste)
+            const at = new Date((Date.parse(y.updatedAt) || Date.now()) + 1);
+            return reviseEvent(y, { pos: pl.pos, angle: pl.angle, road: pl.road, where: `${y.where ?? ""}${pl.road ? ` · auf ${pl.road}` : ""}`.replace(/^ · /, "") }, device, at);
+          });
+          return x;
+        });
+      };
+      let slice = performance.now(), sinceFlush = performance.now();
       try {
         for (const e of todo) {
           let target: Bounds | LV95[] | null = null;
@@ -303,22 +352,13 @@ export function Workspace({ product, tagline }: Props) {
           if (exRef.current?.id !== exId) break;
           if (!pl) { if (complete) roadDone.current.add(e.id); continue; }
           roadDone.current.add(e.id);
-          update((x) => {
-            x.events = (x.events ?? []).map((y) => {
-              if (y.id !== e.id) return y;
-              // inzwischen von Hand verschoben, Ort entfernt/geändert oder schon ausgerichtet → nicht überschreiben
-              const samePos = y.pos?.e === e.pos?.e && y.pos?.n === e.pos?.n;
-              const sameWhere = (y.cells?.[0] ?? "") === (e.cells?.[0] ?? "") && (y.nai ?? "") === (e.nai ?? "");
-              if (y.deleted || y.roadNone || y.where === "Karte" || y.angle !== undefined || !samePos || !sameWhere) return y;
-              // neue Revision (für den Abgleich), aber Zeitstempel nur minimal weiter: automatische Ergänzung,
-              // keine Benutzeränderung (sonst stünde jede Meldung des Beispiels als «neu» in der Liste)
-              const at = new Date((Date.parse(y.updatedAt) || Date.now()) + 1);
-              return reviseEvent(y, { pos: pl.pos, angle: pl.angle, road: pl.road, where: `${y.where ?? ""}${pl.road ? ` · auf ${pl.road}` : ""}`.replace(/^ · /, "") }, device, at);
-            });
-            return x;
-          });
+          done.set(e.id, { e, pl });
+          // höchstens ~40 ms am Stück rechnen, höchstens alle 400 ms eine Änderung
+          if (performance.now() - sinceFlush > 400) { flush(); sinceFlush = performance.now(); }
+          if (performance.now() - slice > 40) { await new Promise((r) => window.setTimeout(r, 16)); slice = performance.now(); }
         }
       } finally {
+        flush();
         todo.forEach((e) => roadBusy.current.delete(e.id));
       }
     })();
@@ -327,35 +367,41 @@ export function Workspace({ product, tagline }: Props) {
   // Lage zum Zeitpunkt (ruhige Karte in der Basis: Beschriftung nur Neues und Gewähltes)
   useEffect(() => {
     const s = sm.current;
-    if (!s || !ex) return;
-    // nicht während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen …): nach dem Loslassen nachholen
-    whenNotDragging(s.map, () => {
-      journalRef.current?.remove();
-      const g = situationLayer(s.map, ex.events ?? [], {
-        t: tNow, flags, selectedId: selEvent, sheets: ex.sheets, days: ex.days, from: winFrom, quiet: !experte,
-        onClick: (e) => { setSideView("journal"); selectEvent(e.id); },
-        onMove: present ? undefined : mover.move,
-        highlight: hintHl,
+    const x = exLater;
+    if (!s || !x) return;
+    // nach dem nächsten Bild (Feld, Liste und Band sind dann schon gezeichnet); ein neuerer Auftrag ersetzt den offenen
+    return afterPaint(() => {
+      // nicht während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen …): nach dem Loslassen nachholen
+      whenNotDragging(s.map, () => {
+        journalRef.current?.remove();
+        const g = situationLayer(s.map, x.events ?? [], {
+          t: tLater, flags, selectedId: selEvent, sheets: x.sheets, days: x.days, from: fromLater, quiet: !experte,
+          onClick: (e) => { setSideView("journal"); selectEventRef.current(e.id); },
+          onMove: present ? undefined : mover.move,
+          highlight: hintHl,
+        });
+        g.addTo(s.map);
+        journalRef.current = g;
       });
-      g.addTo(s.map);
-      journalRef.current = g;
     });
-  }, [ex?.events, ex?.sheets, tNow, winFrom, flags, selEvent, mapReady, present, experte, hintHl ? [...hintHl].join() : ""]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [exLater?.events, exLater?.sheets, tLater, fromLater, flags, selEvent, mapReady, present, experte, hintHl ? [...hintHl].join() : ""]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flächen- und Linienzeichen (unter den Zeichen)
   const shapeRef = useRef<L.LayerGroup | null>(null);
   useEffect(() => {
     const s = sm.current;
-    shapeRef.current?.remove();
-    shapeRef.current = null;
-    if (!s || !ex) return;
-    const g = shapeLayer(ex.events ?? [], {
-      t: tNow, from: winFrom, flags, selectedId: selEvent, sheets: ex.sheets, areas: ex.areas, quiet: !experte,
-      onClick: (e) => { setSideView("journal"); selectEvent(e.id); },
+    const x = exLater;
+    if (!s || !x) { shapeRef.current?.remove(); shapeRef.current = null; return; }
+    return afterPaint(() => {
+      shapeRef.current?.remove();
+      const g = shapeLayer(x.events ?? [], {
+        t: tLater, from: fromLater, flags, selectedId: selEvent, sheets: x.sheets, areas: x.areas, quiet: !experte,
+        onClick: (e) => { setSideView("journal"); selectEventRef.current(e.id); },
+      });
+      g.addTo(s.map);
+      shapeRef.current = g;
     });
-    g.addTo(s.map);
-    shapeRef.current = g;
-  }, [ex?.events, ex?.sheets, ex?.areas, tNow, winFrom, flags, selEvent, mapReady, experte]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [exLater?.events, exLater?.sheets, exLater?.areas, tLater, fromLater, flags, selEvent, mapReady, experte]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fotos an Planquadraten (Experte «Fotos»): Kamera-Symbol, Klick öffnet den Betrachter
   const attRef = useRef<L.LayerGroup | null>(null);
@@ -375,7 +421,7 @@ export function Workspace({ product, tagline }: Props) {
     hintRef.current = null;
     if (!s || !ex || !(flags.hinweise || redVisible)) return;
     const g = hintLayer(s.map, {
-      hints, ex, t: tNow, selectedId: selHint, focus: hintFocus, onlySelected: !experte,
+      hints, ex: exLater ?? ex, t: tLater, selectedId: selHint, focus: hintFocus, onlySelected: !experte,
       onClick: (h) => {
         // Handy: Blatt über der Karte statt Seitensprung (MapTipSheet)
         if (!present && tipOnMap()) { setSelHint(h.id); showMapTip(hintTip(h, () => { showRed(); setSelHint(h.id); })); return; }
@@ -395,7 +441,7 @@ export function Workspace({ product, tagline }: Props) {
     coaRef.current = null;
     if (!s || !ex || !lageRot.coas.length || !(flags.aktionen || coaFocus)) return;
     const g = coaLayer(s.map, {
-      coas: flags.aktionen ? lageRot.coas : lageRot.coas.filter((c) => c === coaSel), ex, t: tNow, selectedId: selCoa, focus: coaFocus, onlySelected: !experte,
+      coas: flags.aktionen ? lageRot.coas : lageRot.coas.filter((c) => c === coaSel), ex: exLater ?? ex, t: tLater, selectedId: selCoa, focus: coaFocus, onlySelected: !experte,
       onClick: (c) => {
         if (!present && tipOnMap()) { setSelHint(null); setSelCoa(c.id); showMapTip(coaTip(c, ex, tNow, () => { showRed(); setSelHint(null); setSelCoa(c.id); })); return; }
         if (present) setPresentHints(true); else showRed();
@@ -460,6 +506,8 @@ export function Workspace({ product, tagline }: Props) {
     if (e && zeit.zeit.kind === "rueckblick" && e.t > zeit.zeit.t) zeit.lookBack(e.t);
     if (e) focusEvent(e);
   };
+  const selectEventRef = useRef(selectEvent);
+  selectEventRef.current = selectEvent;
   const correct = (id: string) => {
     setSideView("journal");
     if (lage && requestCorrection(id)) return;
@@ -587,6 +635,9 @@ export function Workspace({ product, tagline }: Props) {
         // abweichendes Raster/NAI: pro Element hiesige behalten oder aus der Datei übernehmen (Meldungen bleiben)
         diffs: report.diffs,
         choose: (d, c) => update((x) => (x.id === merged.id ? takeHullItems(x, c === "datei" ? file : local, [d]) : x)),
+        // gleiche Revision, anderer Inhalt (K3): eine Fassung gewinnt, die andere bleibt in den Fassungen der Meldung
+        conflictIds: report.conflictIds ?? [],
+        onShowConflict: (id) => { setModus("lage"); setSideView("journal"); selectEventRef.current(id); },
       });
     } catch (e) {
       say((e as Error).message);
@@ -595,12 +646,15 @@ export function Workspace({ product, tagline }: Props) {
 
   const togglePresent = (on: boolean) => {
     setPresent(on);
+    // Präsentation beendet (Esc, Knopf, Vollbild verlassen): sofort LIVE, der Beamer zeigt nie eine alte Lage (M5)
+    if (!on) zeit.goLive("taste");
     try {
       if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
       if (!on && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     } catch { /* egal */ }
     window.setTimeout(() => sm.current?.map.invalidateSize(), 80);
   };
+  const fsOn = useRef(false);
   // Präsentation: Esc beendet, ←/→ vorherige/nächste Meldung (setzt die Lagezeit über den Rückblick)
   useEffect(() => {
     if (!present) return;
@@ -618,7 +672,8 @@ export function Workspace({ product, tagline }: Props) {
         ev.preventDefault();
       }
     };
-    const fs = () => { if (!document.fullscreenElement) window.setTimeout(() => sm.current?.map.invalidateSize(), 80); };
+    // Esc im Vollbild schluckt der Browser (kein keydown): Vollbild verlassen beendet die Präsentation
+    const fs = () => { if (!document.fullscreenElement) { if (fsOn.current) { fsOn.current = false; togglePresent(false); } window.setTimeout(() => sm.current?.map.invalidateSize(), 80); } else fsOn.current = true; };
     window.addEventListener("keydown", key);
     document.addEventListener("fullscreenchange", fs);
     return () => { window.removeEventListener("keydown", key); document.removeEventListener("fullscreenchange", fs); };
@@ -649,7 +704,8 @@ export function Workspace({ product, tagline }: Props) {
   const cell = cursor ? cellAtAny(ex.sheets, cursor) : null;
   const map = mapReady ? sm.current?.map ?? null : null;
   const hasEvents = (ex.events ?? []).some((e) => !e.deleted);
-  const selEv = (ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null;
+  // Meldungsband nur für eine Meldung bis zur Lagezeit (Rückblick zeigt nie eine spätere, M4)
+  const selEv = (ex.events ?? []).find((e) => e.id === selEvent && !e.deleted && e.t.slice(0, 16) <= tNow) ?? null;
 
   const menu = (
     <WorkspaceMenu exName={ex.name} aw={aw} setModus={setModus} setExperte={setExperte} offlineReady={offline.ready}
@@ -662,7 +718,7 @@ export function Workspace({ product, tagline }: Props) {
   );
 
   const red = (
-    <RedPanel ex={ex} t={tNow} from={winFrom} hints={hints} lage={lageRot}
+    <RedPanel ex={ex} t={tLater} from={null} hints={hints} lage={lageRot}
       variant={experte ? "experte" : "basis"} selHint={selHint} selCoa={selCoa}
       onSelectHint={setSelHint} onSelectCoa={selectCoa} onMapHint={focusHint} onMapCoa={focusCoa}
       onEvent={(id) => { setSideView("journal"); selectEvent(id); }} update={update}
@@ -687,7 +743,7 @@ export function Workspace({ product, tagline }: Props) {
   );
 
   const band = lage || present ? (
-    <TimeBand ex={ex} zeit={zeit} experte={experte || present} lastReport={lastReportOf(ex.events)}
+    <TimeBand ex={ex} zeit={zeit} experte={experte || present} lastReport={lastReportUntil(ex.events, zeit.tLive)}
       swim={{
         events: ex.events ?? [], days: ex.days, units: ex.units, selectedId: selEvent, compact: present,
         onSelect: (id) => { setSideView("journal"); const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) { zeit.lookBack(e.t); focusEvent(e); } },
@@ -724,7 +780,7 @@ export function Workspace({ product, tagline }: Props) {
               <EventBanner event={selEv} days={ex.days} onClose={() => setSelEvent(null)}
                 extra={(() => { if (!selEv?.attachments?.length) return null; const all = attachmentsOf(ex, selEv.attachments); const fotos = all.filter((a) => a.kind === "foto"); const memos = all.filter((a) => a.kind === "audio"); return <>{fotos.length ? <AttachmentChips list={fotos} size={22} /> : null}{memos.length ? <RowMemos list={memos} /> : null}</>; })()}
                 onEdit={present || (lage && sideView === "journal") ? undefined : (e) => correct(e.id)} />
-              {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} from={winFrom} />}
+              {flags.legende && <Legend events={exLater?.events ?? ex.events ?? []} t={tLater} flags={flags} areas={ex.areas} selectedId={selEvent} from={fromLater} />}
               <MapContextMenu map={map} sheets={ex.sheets} eventNear={eventNear} onCorrect={present ? undefined : correct}
                 onReportHere={(pos) => { setModus("lage"); setSideView("journal"); setReportAt({ pos, n: Date.now() }); }} />
               {!present && <MapTipHost map={map} />}

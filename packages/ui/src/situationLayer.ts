@@ -10,7 +10,7 @@
  * - Tastatur: Tab erreicht Stapel und Zeichen, Enter fächert auf bzw. wählt, Esc klappt zu,
  * - gewählte Meldung: grösser, 2 px Tinte-Ring mit weissem Halo, Planquadrat mit Tinte 8 % hinterlegt (nicht rot),
  *   Linie Melder → Sichtung, ihr Stapel offen,
- * - MVP 1 ruhige Karte (`quiet`, Grundansicht): Beschriftungsregel aus map/quiet.ts – ältere Feind/Unklar 40 % ohne
+ * - MVP 1 ruhige Karte (`quiet`, Grundansicht): Beschriftungsregel aus map/quiet.ts – ältere Feind/Unklar 55 % ohne
  *   Fähnchen und Zusatz, eigene Trupps immer mit Namen; Stapel-Zahl bleibt kräftig.
  */
 import L from "leaflet";
@@ -46,6 +46,51 @@ export interface SituationOptions {
   highlight?: ReadonlySet<string> | null;
   /** MVP 1: ruhige Karte der Grundansicht (Beschriftungsregel Kap. 3.7); false/fehlt = Experte (wie bisher) */
   quiet?: boolean;
+}
+
+/** geparste Zeichen-SVG je Gestalt (Text → Element), geklont statt neu geparst */
+const svgParsed = new Map<string, Element>();
+function svgClone(svg: string): Node {
+  let n = svgParsed.get(svg);
+  if (!n) {
+    const t = document.createElement("template");
+    t.innerHTML = svg;
+    n = t.content.firstElementChild ?? document.createElement("span");
+    if (svgParsed.size > 500) svgParsed.clear();
+    svgParsed.set(svg, n);
+  }
+  return n.cloneNode(true);
+}
+interface MarkerParts { svg: string; ud: { text: string; x: number; top: number } | null; time: { text: string; x: number; opt: boolean } | null }
+/**
+ * Icon eines Lage-Zeichens: SVG, Zusatz («H04», «2× Det 1»), Zeit-Fähnchen – gleiche Struktur wie früher als HTML-Text
+ * (`.lt-ev > svg`, `> .lt-ud`, `> .lt-tl`), aber als DOM gebaut (SVG geklont statt geparst).
+ */
+class LageIcon extends L.DivIcon {
+  constructor(opts: L.DivIconOptions, private parts: MarkerParts) { super(opts); }
+  override createIcon(old?: HTMLElement): HTMLElement {
+    const div = old && old.tagName === "DIV" ? old : document.createElement("div");
+    div.textContent = "";
+    const { svg, ud, time } = this.parts;
+    div.appendChild(svgClone(svg));
+    if (ud) {
+      const sp = document.createElement("span");
+      sp.className = "lt-ud";
+      sp.style.setProperty("--x", `${ud.x}px`);
+      sp.style.top = `${ud.top}px`;
+      sp.textContent = ud.text;
+      div.appendChild(sp);
+    }
+    if (time) {
+      const sp = document.createElement("span");
+      sp.className = time.opt ? "lt-tl opt" : "lt-tl";
+      sp.style.setProperty("--x", `${time.x}px`);
+      sp.textContent = time.text;
+      div.appendChild(sp);
+    }
+    (this as unknown as { _setIconStyles(el: HTMLElement, name: string): void })._setIconStyles(div, "icon");
+    return div;
+  }
 }
 
 const SIZE = 18;
@@ -353,13 +398,14 @@ class SituationLayer extends L.LayerGroup {
       const core: Box = [-ax, -ay, s.w - ax, s.h - ay];
       const boxWith = (time: boolean): Box => [-ax - 2, -ay - 2 - (time ? TIME_H : 0), s.w - ax + 2 + Math.max(udW, time ? TIME_W : 0), s.h - ay + 2];
       const cls = ["lt-ev", `k-${it.kind}`, it.selected ? "sel" : "", it.opacity < 1 ? "old" : "", it.opacity < 1 && o.quiet ? "q" : "", o.highlight?.has(it.e.id) ? "hl" : ""].filter(Boolean).join(" ");
-      const html = `${s.svg}`
-        + (it.ud ? `<span class="lt-ud" style="--x:${s.w + 2}px;top:${Math.max(0, ay - 8)}px">${escapeHtml(it.ud)}</span>` : "")
-        + (showTimes ? `<span class="lt-tl${it.showTime ? "" : " opt"}" style="--x:${s.w + 2}px">${it.e.t.slice(11, 16)}</span>` : "");
+      // Inhalt als Element statt HTML-Text: das Zeichen-SVG wird pro Gestalt einmal geparst und dann geklont
+      // (800 Meldungen: Parsen war der grösste Teil des Neuaufbaus)
+      const parts: MarkerParts = { svg: s.svg, ud: it.ud ? { text: it.ud, x: s.w + 2, top: Math.max(0, ay - 8) } : null,
+        time: showTimes ? { text: it.e.t.slice(11, 16), x: s.w + 2, opt: !it.showTime } : null };
       const ll = toLatLng(it.pos);
       const z = it.selected ? 1000 : (it.fresh ? 200 : 0) + (it.kind !== "eigen" ? 100 : 0);
       const marker = L.marker(ll, {
-        icon: L.divIcon({ className: cls, html, iconSize: [s.w, s.h], iconAnchor: [ax, ay] }),
+        icon: new LageIcon({ className: cls, iconSize: [s.w, s.h], iconAnchor: [ax, ay] }, parts),
         // ältere blass über CSS (.old), damit die Zahl-Marke eines Stapels kräftig bleibt
         zIndexOffset: z,
         keyboard: false,
