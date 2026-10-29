@@ -10,7 +10,7 @@
  * - Tage, Elemente, Orte: Vereinigung. Name und Einstellungen: lokal (fehlt lokal etwas, aus der anderen Fassung).
  * «Ersetzen» (andere Fassung gilt ganz) ist bewusst kein Teil davon – nur auf ausdrücklichen Wunsch.
  */
-import { mergeEvents, type Exercise, type HintDecision, type LageEvent } from "./model";
+import { eventWins, mergeEventsDetailed, type Exercise, type HintDecision, type LageEvent } from "./model";
 
 export interface MergeReport {
   /** Meldungen nur in der anderen Fassung */
@@ -21,6 +21,14 @@ export interface MergeReport {
   unveraendert: number;
   /** Meldungen nur hier (nicht in der anderen Fassung) – bleiben */
   nurHier: number;
+  /**
+   * Konflikte: gleiche Meldung auf beiden Geräten mit gleicher Revision, aber anderem Inhalt (z. B. beide korrigiert).
+   * Die neuere Korrektur gilt, die andere Fassung steht in `history` (`conflict: true`). Zählt weder als aktualisiert
+   * noch als unverändert.
+   */
+  conflicts: number;
+  /** IDs der Meldungen mit Konflikt (für «1 Konflikt – ansehen») */
+  conflictIds: string[];
   /** hinzugekommen: Raster, Flächen (NAI/AO), Bilder, Anhänge, Entscheide */
   sheets: number;
   areas: number;
@@ -120,7 +128,7 @@ const unionCi = (a: string[] = [], b: string[] = []) => {
  * Hülle (alles ausser Meldungen) zusammenführen: `ours` gewinnt bei gleicher ID / bei Einstellungen. Was in einer
  * der Fassungen gelöscht wurde (Löschmarke, die spätere gilt), bleibt gelöscht. Gibt die Hülle mit `ours.events` zurück.
  */
-export function mergeHull(ours: Exercise, theirs: Exercise): { ex: Exercise; report: Omit<MergeReport, "neu" | "aktualisiert" | "unveraendert" | "nurHier"> } {
+export function mergeHull(ours: Exercise, theirs: Exercise): { ex: Exercise; report: Omit<MergeReport, "neu" | "aktualisiert" | "unveraendert" | "nurHier" | "conflicts" | "conflictIds"> } {
   const marks = mergeMarks(ours.removed, theirs.removed);
   const sheets = unionById(ours.sheets, theirs.sheets, marks);
   const areas = unionById(ours.areas, theirs.areas, marks);
@@ -178,8 +186,10 @@ export function takeHullItems(ex: Exercise, source: Exercise, picks: Array<Pick<
 }
 
 /** Meldungen zusammenführen und zählen (andere Fassung `theirs` gegen hiesige `ours`) */
-export function mergeEventsReport(ours: LageEvent[], theirs: LageEvent[]): { events: LageEvent[]; neu: number; aktualisiert: number; unveraendert: number; nurHier: number } {
+export function mergeEventsReport(ours: LageEvent[], theirs: LageEvent[]): { events: LageEvent[]; neu: number; aktualisiert: number; unveraendert: number; nurHier: number; conflicts: number; conflictIds: string[] } {
   const mine = new Map(ours.map((e) => [e.id, e]));
+  const merged = mergeEventsDetailed(ours, theirs);
+  const conflict = new Set(merged.conflicts);
   let neu = 0, aktualisiert = 0, unveraendert = 0;
   const seen = new Set<string>();
   for (const o of theirs) {
@@ -187,11 +197,12 @@ export function mergeEventsReport(ours: LageEvent[], theirs: LageEvent[]): { eve
     seen.add(o.id);
     const l = mine.get(o.id);
     if (!l) neu++;
-    else if (mergeEvents([l], [o])[0] === o && !same(l, o)) aktualisiert++;
+    else if (conflict.has(o.id)) continue;
+    else if (eventWins(o, l) && !same(l, o)) aktualisiert++;
     else unveraendert++;
   }
   const nurHier = ours.filter((e) => !seen.has(e.id)).length;
-  return { events: mergeEvents(ours, theirs), neu, aktualisiert, unveraendert, nurHier };
+  return { events: merged.events, neu, aktualisiert, unveraendert, nurHier, conflicts: merged.conflicts.length, conflictIds: merged.conflicts };
 }
 
 /**
@@ -204,12 +215,13 @@ export function mergeExercise(ours: Exercise, theirs: Exercise): { ex: Exercise;
   h.ex.events = ev.events;
   // Tage der Meldungen sicher dabei
   for (const e of ev.events) { const d = e.t.slice(0, 10); if (!h.ex.days.includes(d)) h.ex.days = [...h.ex.days, d].sort(); }
-  return { ex: h.ex, report: { ...h.report, neu: ev.neu, aktualisiert: ev.aktualisiert, unveraendert: ev.unveraendert, nurHier: ev.nurHier } };
+  return { ex: h.ex, report: { ...h.report, neu: ev.neu, aktualisiert: ev.aktualisiert, unveraendert: ev.unveraendert, nurHier: ev.nurHier, conflicts: ev.conflicts, conflictIds: ev.conflictIds } };
 }
 
-/** «3 neu · 1 aktualisiert · 0 unverändert» (+ «2 nur hier», «+1 NAI/Fläche» …) */
+/** «3 neu · 1 aktualisiert · 0 unverändert» (+ «1 Konflikt», «2 nur hier», «+1 NAI/Fläche» …) */
 export function mergeReportText(r: MergeReport): string {
   const parts = [`${r.neu} neu`, `${r.aktualisiert} aktualisiert`, `${r.unveraendert} unverändert`];
+  if (r.conflicts) parts.push(`${r.conflicts} ${r.conflicts === 1 ? "Konflikt" : "Konflikte"}`);
   if (r.nurHier) parts.push(`${r.nurHier} nur hier`);
   const plus: string[] = [];
   if (r.sheets) plus.push(`${r.sheets} Raster`);

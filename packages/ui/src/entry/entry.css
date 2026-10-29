@@ -1,0 +1,153 @@
+/* Meldungsfeld (Spez. MVP 1, Kap. 2.1–2.5, 5) – nur Tokens aus theme.css, Bedienelemente ≥ var(--hit) */
+
+/* Wurzel heisst zusätzlich «entry» (Foto: Ziehen/Einfügen aufs Feld); alte Regeln aus style.css hier aufheben */
+.ebox.entry {
+  position: static; display: flex; flex-direction: column; gap: var(--sp-8);
+  padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; min-width: 0;
+}
+.ebox .eb-label { margin: 0; font-size: var(--fs-14); font-weight: 600; color: var(--muted); }
+.ebox .eb-btn, .ebox .eb-chip, .ebox .eb-helpbtn, .ebox .ph-btn, .ebox .vc-btn, .ebox .chipbtn {
+  min-height: var(--hit); min-width: var(--hit); font-size: var(--fs-14); border-radius: var(--r-4);
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 var(--sp-12);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-4);
+}
+.ebox .eb-btn:focus-visible, .ebox .eb-chip:focus-visible, .ebox .eb-helpbtn:focus-visible, .ebox .eb-field:focus-visible,
+.ebox .eb-seg button:focus-visible, .ebox .ph-btn:focus-visible, .ebox .vc-btn:focus-visible {
+  outline: none; box-shadow: var(--focus-shadow);
+}
+.ebox .eb-btn:disabled { opacity: .55; cursor: default; }
+.ebox .eb-btn.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); font-weight: 600; }
+.ebox .eb-btn.primary.blocked, .ebox .eb-btn.primary[aria-disabled="true"] {
+  background: var(--surface); color: var(--muted); border: 1px dashed var(--line); cursor: not-allowed;
+}
+
+/* «Wer meldet?» */
+/* Kein Scrollen, nichts überdeckt: Chips und «+» liegen in einem umbrechenden Fluss (Reihe = display: contents) */
+.eb-trupps { min-width: 0; display: flex; flex-wrap: wrap; gap: var(--sp-8); align-items: center; padding: 3px 0; }
+.eb-trupps-row { display: contents; }
+.eb-trupps > .eb-chip-plus, .eb-trupps > .eb-chip-add { flex: none; }
+.eb-trupps > .eb-chip-add { max-width: 100%; }
+/* schmal (bleibt ≥ var(--hit)): fünf Trupps und «+» passen auch auf dem Tablet (Schrift 16 px) in eine Zeile */
+.ebox .eb-chip { font-family: var(--f-mono); font-weight: 500; flex: none; padding: 0 var(--sp-8); }
+.ebox .eb-chip[aria-pressed="true"] { border: 2px solid var(--sel); font-weight: 600; background: var(--bg); padding: 0 calc(var(--sp-8) - 1px); }
+/* zuletzt gemeldet: nur Rahmen (gestrichelt), Platz bleibt fest */
+.ebox .eb-chip.is-last:not([aria-pressed="true"]) { border: 2px dashed var(--ink); padding: 0 calc(var(--sp-8) - 1px); }
+.ebox .eb-chip-plus { font-family: var(--f-body); padding: 0 var(--sp-12); }
+.eb-chip-add {
+  flex: none; min-height: var(--hit); width: 220px; font: 400 var(--fs-16) var(--f-mono); color: var(--ink);
+  background: var(--surface); border: 2px solid var(--ink); border-radius: var(--r-4); padding: 0 var(--sp-8);
+}
+
+/* Feld */
+.eb-fieldwrap { position: relative; display: flex; align-items: stretch; }
+.ebox .eb-field {
+  flex: 1; min-width: 0; display: block; resize: none; overflow: hidden;
+  font: 500 var(--fs-16)/1.4 var(--f-mono); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r-4); padding: 11px calc(var(--hit) + 8px) 11px 12px; min-height: calc(var(--hit) + 4px);
+}
+.ebox .eb-field::placeholder { color: var(--muted); font-family: var(--f-body); font-weight: 400; }
+.ebox .eb-field[aria-invalid="true"] { border-color: var(--stop); }
+.ebox.is-korr .eb-field { border: 2px solid var(--ink); }
+.ebox .eb-helpbtn {
+  position: absolute; right: 2px; top: 2px; min-height: var(--hit); min-width: var(--hit);
+  border: 0; background: transparent; font-weight: 600; font-size: var(--fs-16); color: var(--muted); padding: 0;
+}
+.ebox .eb-helpbtn:hover, .ebox .eb-helpbtn[aria-expanded="true"] { color: var(--ink); }
+.eb-hint { margin: 0; font-size: var(--fs-14); color: var(--muted); }
+.eb-keys { display: none; margin: 0; font-size: var(--fs-12); color: var(--muted); }
+@media (hover: hover) and (pointer: fine) {
+  /* Platz immer reservieren: kein Springen des Layouts beim Verlassen des Felds (sonst geht ein Klick daneben) */
+  /* nie abgeschnitten (1280×720): bricht bei schmaler Spalte um statt «…» */
+  .eb-keys { display: block; visibility: hidden; white-space: normal; line-height: 1.4; }
+  .ebox .eb-fieldwrap:has(.eb-field:focus-visible) ~ .eb-keys { visibility: visible; }
+}
+.eb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.eb-info { margin: 0; font-size: var(--fs-14); color: var(--ink); padding: var(--sp-8) var(--sp-12); border-radius: var(--r-4); background: var(--bg); border: 1px solid var(--line-soft); }
+
+/* Hilfe */
+.eb-help {
+  position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px);
+  border: 1px solid var(--line); border-radius: var(--r-8); background: var(--surface); padding: var(--sp-12);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .18); font-size: var(--fs-14); display: grid; gap: var(--sp-8);
+}
+.eb-help p { margin: 0; }
+.eb-help .eb-help-h { font-weight: 600; }
+.eb-help .eb-help-f { color: var(--muted); font-size: var(--fs-12); }
+.eb-help ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-4); }
+.eb-help li button {
+  width: 100%; min-height: var(--hit); display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 0; text-align: left;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-4); padding: 0 var(--sp-12); color: var(--ink); font-size: var(--fs-14);
+}
+.eb-help li button:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
+.eb-help li button { padding: var(--sp-4) var(--sp-12); }
+.eb-help .eb-help-w { color: var(--muted); font-size: var(--fs-12); }
+
+/* Korrektur */
+.eb-korr { display: flex; align-items: center; gap: var(--sp-8); justify-content: space-between; flex-wrap: wrap; }
+.eb-korr-t { font-weight: 600; font-size: var(--fs-16); }
+
+/* Vorschau */
+.eb-prev { display: flex; flex-direction: column; gap: var(--sp-8); min-width: 0; }
+.eb-state { border-radius: var(--r-4); padding: var(--sp-8) var(--sp-12); display: grid; gap: var(--sp-4); }
+.eb-state p { margin: 0; }
+.eb-state-h { font-weight: 600; font-size: var(--fs-14); }
+.eb-state-t { font-size: var(--fs-14); }
+.eb-state.s-bereit { background: var(--ok-bg); color: var(--ok); }
+.eb-state.s-pruefen { background: var(--warn-bg); color: var(--warn-ink); border-left: 4px solid var(--warn-sym); }
+.eb-state.s-pruefen .eb-state-h > span[aria-hidden] { color: var(--warn-sym); }
+.eb-state.s-pruefen.asked { box-shadow: inset 0 0 0 2px var(--warn-sym); }
+.eb-state.s-geht-nicht { background: var(--stop-bg); color: var(--stop); border-left: 4px solid var(--stop); }
+.eb-state.s-geht-nicht .eb-state-t { color: var(--ink); }
+.eb-more { font-weight: 400; color: var(--muted); }
+.eb-acts { display: flex; flex-wrap: wrap; gap: var(--sp-8); margin-top: var(--sp-4); }
+.eb-und, .eb-readas { margin: 0; font-size: var(--fs-16); line-height: 1.4; }
+.eb-readas { font-size: var(--fs-12); color: var(--muted); }
+.eb-readas .mono { color: var(--ink); }
+.eb-und-k { color: var(--muted); }
+.eb-q { color: var(--warn-sym); font-weight: 600; }
+.eb-fehlt { color: var(--muted); font-size: var(--fs-14); }
+.eb-vorher { color: var(--muted); font-size: var(--fs-14); }
+.eb-prev .chg { font-weight: 700; }
+.eb-row { display: flex; flex-wrap: wrap; gap: var(--sp-8); align-items: center; }
+.eb-symwrap { display: inline-flex; min-width: 0; max-width: 100%; }
+.ebox .eb-sym { max-width: 100%; justify-content: flex-start; }
+.ebox .eb-sym.manual { border: 2px solid var(--sel); }
+.eb-symtxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.eb-symico { display: inline-flex; flex: none; }
+.eb-seg { display: inline-flex; }
+.eb-seg button {
+  min-height: var(--hit); min-width: var(--hit); padding: 0 var(--sp-12); font-size: var(--fs-14); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 0; margin-left: -1px;
+}
+.eb-seg button:first-child { border-radius: var(--r-4) 0 0 var(--r-4); margin-left: 0; }
+.eb-seg button:last-child { border-radius: 0 var(--r-4) var(--r-4) 0; }
+.eb-seg button.k-feind span { color: var(--feind); }
+.eb-seg button.k-eigen span { color: var(--eigen); }
+.eb-seg button.k-unklar span { color: var(--unklar); }
+.eb-seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); font-weight: 600; position: relative; }
+.eb-seg button[aria-pressed="true"] span { color: inherit; }
+.eb-ort-t { font-size: var(--fs-16); }
+.eb-note { font-size: var(--fs-14); color: var(--muted); }
+.eb-ort .roadchip, .eb-ort .rc-chip { min-height: var(--hit); }
+
+/* Knöpfe */
+.eb-btns { display: flex; flex-wrap: wrap; gap: var(--sp-8); align-items: center; }
+.ebox .eb-main { min-width: 120px; }
+.eb-kbd { font-weight: 400; opacity: .8; }
+@media (pointer: coarse) { .eb-kbd { display: none; } }
+.eb-blocked { margin: 0; font-size: var(--fs-12); color: var(--stop); }
+.eb-nomic { margin: 0; font-size: var(--fs-12); color: var(--muted); }
+.eb-coord { font-size: var(--fs-12); color: var(--muted); }
+/* Spracheinstellungen ⚙ nur für Experten (Menü «Spracherkennung …») */
+.ebox:not(.is-experte) .vc-gear { display: none; }
+.ebox .vc-wrap, .ebox .ph-wrap { display: inline-flex; }
+@media (pointer: coarse) {
+  .ebox .eb-btn, .ebox .eb-chip, .ebox .eb-seg button, .ebox .ph-btn, .ebox .vc-btn { font-size: var(--fs-16); }
+}
+.eb-notice { margin: 0; font-size: var(--fs-14); color: var(--ink); padding: var(--sp-8) var(--sp-12); border-radius: var(--r-4); background: var(--bg); border: 1px solid var(--line-soft); }
+/* Knopfzeile ohne Umbruch im Knopf; Tablet quer: «Sprechen» bleibt in derselben Zeile */
+.ebox .eb-btns .eb-btn, .ebox .eb-btns .ph-btn, .ebox .eb-btns .vc-btn { white-space: nowrap; }
+@media (pointer: coarse), (max-width: 1100px) {
+  .ebox .eb-btns .eb-btn, .ebox .eb-btns .ph-btn, .ebox .eb-btns .vc-btn { padding: 0 10px; }
+  .ebox .eb-main { min-width: 0; }
+}

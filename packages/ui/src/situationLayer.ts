@@ -8,7 +8,10 @@
  * - Zeichen verschieben: Maus nur das gewählte Zeichen ziehen (ab 4 px; Ziehen auf anderen Zeichen schiebt die Karte),
  *   Finger/Stift langes Drücken (350 ms) hebt das Zeichen an → ziehen; während des Ziehens kein Neuaufbau (`whenNotDragging`),
  * - Tastatur: Tab erreicht Stapel und Zeichen, Enter fächert auf bzw. wählt, Esc klappt zu,
- * - gewählte Meldung: grösser, hervorgehoben, Planquadrat hinterlegt, Linie Melder → Sichtung, ihr Stapel offen.
+ * - gewählte Meldung: grösser, 2 px Tinte-Ring mit weissem Halo, Planquadrat mit Tinte 8 % hinterlegt (nicht rot),
+ *   Linie Melder → Sichtung, ihr Stapel offen,
+ * - MVP 1 ruhige Karte (`quiet`, Grundansicht): Beschriftungsregel aus map/quiet.ts – ältere Feind/Unklar 55 % ohne
+ *   Fähnchen und Zusatz, eigene Trupps immer mit Namen; Stapel-Zahl bleibt kräftig.
  */
 import L from "leaflet";
 import {
@@ -20,6 +23,8 @@ import { KIND_COLOR, kindText, MAP_INK, SIDE_COLOR, situationModel, type Situati
 import { isLocked, subscribeLock, type LayerFlags } from "./layers";
 import { clickSuppressed, longPress, suppressClick, suppressContextMenu } from "./longpress";
 import { dayLabel } from "./Timeline";
+import { quietLook } from "./map/quiet";
+import { LAGE_KARTE } from "./colors";
 import "./mapoverlays.css";
 
 export interface SituationOptions {
@@ -39,6 +44,63 @@ export interface SituationOptions {
   onMove?: (e: LageEvent, pos: LV95) => void;
   /** Meldungen eines gewählten Hinweises: Zeichen erhalten die Klasse `hl` (übrige blass, siehe hints.css) */
   highlight?: ReadonlySet<string> | null;
+  /** MVP 1: ruhige Karte der Grundansicht (Beschriftungsregel Kap. 3.7); false/fehlt = Experte (wie bisher) */
+  quiet?: boolean;
+}
+
+/** geparste Zeichen-SVG je Gestalt (Text → Element), geklont statt neu geparst */
+const svgParsed = new Map<string, Element>();
+function svgClone(svg: string): Node {
+  let n = svgParsed.get(svg);
+  if (!n) {
+    const t = document.createElement("template");
+    t.innerHTML = svg;
+    n = t.content.firstElementChild ?? document.createElement("span");
+    if (svgParsed.size > 500) svgParsed.clear();
+    svgParsed.set(svg, n);
+  }
+  return n.cloneNode(true);
+}
+interface MarkerParts { svg: string; ud: { text: string; x: number; top: number } | null; time: { text: string; x: number; opt: boolean } | null }
+/**
+ * Icon eines Lage-Zeichens: SVG, Zusatz («H04», «2× Det 1»), Zeit-Fähnchen – gleiche Struktur wie früher als HTML-Text
+ * (`.lt-ev > svg`, `> .lt-ud`, `> .lt-tl`), aber als DOM gebaut (SVG geklont statt geparst).
+ */
+class LageIcon extends L.DivIcon {
+  constructor(opts: L.DivIconOptions, private parts: MarkerParts) { super(opts); }
+  override createIcon(old?: HTMLElement): HTMLElement {
+    const div = old && old.tagName === "DIV" ? old : document.createElement("div");
+    div.textContent = "";
+    const { svg, ud, time } = this.parts;
+    div.appendChild(svgClone(svg));
+    if (ud) {
+      const sp = document.createElement("span");
+      sp.className = "lt-ud";
+      sp.style.setProperty("--x", `${ud.x}px`);
+      sp.style.top = `${ud.top}px`;
+      sp.textContent = ud.text;
+      div.appendChild(sp);
+    }
+    if (time) {
+      const sp = document.createElement("span");
+      sp.className = time.opt ? "lt-tl opt" : "lt-tl";
+      sp.style.setProperty("--x", `${time.x}px`);
+      sp.textContent = time.text;
+      div.appendChild(sp);
+    }
+    (this as unknown as { _setIconStyles(el: HTMLElement, name: string): void })._setIconStyles(div, "icon");
+    return div;
+  }
+}
+
+/** LatLng je Ort-Objekt der Meldung (gleiche Meldung → gleiches Objekt → Projektion aus dem Zwischenspeicher, swissmap.ts) */
+const llCache = new WeakMap<LV95, { e: number; n: number; ll: L.LatLng }>();
+function latLngOf(p: LV95): L.LatLng {
+  const c = llCache.get(p);
+  if (c && c.e === p.e && c.n === p.n) return c.ll;
+  const ll = toLatLng(p);
+  llCache.set(p, { e: p.e, n: p.n, ll });
+  return ll;
 }
 
 const SIZE = 18;
@@ -262,6 +324,13 @@ class SituationLayer extends L.LayerGroup {
   private buildItems() {
     const o = this.o;
     const model = situationModel(this.events, o.t, o.flags, { recentMin: o.recentMin, selectedId: o.selectedId, from: o.from });
+    // Beschriftungs- und Deckkraftregel (Grundansicht ruhig, Experte wie bisher)
+    for (const it of model.items) {
+      const q = quietLook(it, { quiet: !!o.quiet, zeiten: o.flags.zeiten, neuMin: o.recentMin });
+      it.opacity = q.opacity;
+      it.showTime = q.showTime;
+      if (!q.showUd) it.ud = "";
+    }
     const selected = model.items.find((i) => i.selected);
 
     // Planquadrate der Sichtungen (Seitenfarbe 12 %, ältere blass), je Farbe/Deckkraft eine Fläche
@@ -286,14 +355,13 @@ class SituationLayer extends L.LayerGroup {
       if (f.rings.length) L.polygon(f.rings, { color: f.line, weight: 1.2, opacity: 0.8 * f.o, fillColor: f.fill, fillOpacity: (f.fill === f.line ? 0.12 : 0.2) * f.o, interactive: false }).addTo(this);
     }
 
-    // gewählte Meldung: Planquadrat(e) hinterlegt (inkl. Unterquadrant)
+    // gewählte Meldung: Planquadrat(e) mit Tinte 8 % hinterlegt, Rand Tinte mit weissem Saum (inkl. Unterquadrant)
     if (selected) {
-      const kc = KIND_COLOR[selected.kind];
       for (const label of selected.e.cells ?? []) {
         const ring = cellRing(label, o.sheets);
         if (ring) {
-          L.polygon(ring, { color: "#fff", weight: 5, opacity: 0.85, fill: false, interactive: false }).addTo(this);
-          L.polygon(ring, { color: kc.line, weight: 2.5, opacity: 1, dashArray: "7 4", fillColor: kc.fill, fillOpacity: kc.fill === kc.line ? 0.24 : 0.32, interactive: false, className: "lt-selcell" }).addTo(this);
+          L.polygon(ring, { color: LAGE_KARTE.halo, weight: 5, opacity: 0.85, fill: false, interactive: false }).addTo(this);
+          L.polygon(ring, { color: LAGE_KARTE.ink, weight: 2, opacity: 1, fillColor: LAGE_KARTE.ink, fillOpacity: 0.08, interactive: false, className: "lt-selcell" }).addTo(this);
         }
       }
     }
@@ -339,14 +407,15 @@ class SituationLayer extends L.LayerGroup {
       const udW = it.ud ? it.ud.length * 7 + 6 : 0;
       const core: Box = [-ax, -ay, s.w - ax, s.h - ay];
       const boxWith = (time: boolean): Box => [-ax - 2, -ay - 2 - (time ? TIME_H : 0), s.w - ax + 2 + Math.max(udW, time ? TIME_W : 0), s.h - ay + 2];
-      const cls = ["lt-ev", `k-${it.kind}`, it.selected ? "sel" : "", it.opacity < 1 ? "old" : "", o.highlight?.has(it.e.id) ? "hl" : ""].filter(Boolean).join(" ");
-      const html = `${s.svg}`
-        + (it.ud ? `<span class="lt-ud" style="--x:${s.w + 2}px;top:${Math.max(0, ay - 8)}px">${escapeHtml(it.ud)}</span>` : "")
-        + (showTimes ? `<span class="lt-tl${it.showTime ? "" : " opt"}" style="--x:${s.w + 2}px">${it.e.t.slice(11, 16)}</span>` : "");
-      const ll = toLatLng(it.pos);
+      const cls = ["lt-ev", `k-${it.kind}`, it.selected ? "sel" : "", it.opacity < 1 ? "old" : "", it.opacity < 1 && o.quiet ? "q" : "", o.highlight?.has(it.e.id) ? "hl" : ""].filter(Boolean).join(" ");
+      // Inhalt als Element statt HTML-Text: das Zeichen-SVG wird pro Gestalt einmal geparst und dann geklont
+      // (800 Meldungen: Parsen war der grösste Teil des Neuaufbaus)
+      const parts: MarkerParts = { svg: s.svg, ud: it.ud ? { text: it.ud, x: s.w + 2, top: Math.max(0, ay - 8) } : null,
+        time: showTimes ? { text: it.e.t.slice(11, 16), x: s.w + 2, opt: !it.showTime } : null };
+      const ll = latLngOf(it.pos);
       const z = it.selected ? 1000 : (it.fresh ? 200 : 0) + (it.kind !== "eigen" ? 100 : 0);
       const marker = L.marker(ll, {
-        icon: L.divIcon({ className: cls, html, iconSize: [s.w, s.h], iconAnchor: [ax, ay] }),
+        icon: new LageIcon({ className: cls, iconSize: [s.w, s.h], iconAnchor: [ax, ay] }, parts),
         // ältere blass über CSS (.old), damit die Zahl-Marke eines Stapels kräftig bleibt
         zIndexOffset: z,
         keyboard: false,
@@ -563,10 +632,43 @@ class SituationLayer extends L.LayerGroup {
       rects.push([c.x + b[0], c.y + b[1] - peek, c.x + b[2] + peek, c.y + b[3]]);
     });
     map.getContainer().classList.toggle("lt-fanopen", this.openStack >= 0);
+    this.roving();
     publish(this.stacks.filter((s) => s.members.length > 1).length);
     // Flächenbeschriftungen (NAI, AO, Stao) den Zeichen ausweichen lassen – nach dem Zeichnen (kein erzwungenes Layout)
     avoidAreaLabelsSoon(map, rects);
     try { performance.measure("Lage: Stapel", { start: t0, detail: { n } }); } catch { /* ältere Browser */ }
+  }
+
+  /** erreichbare Zeichen (tabindex gesetzt) in Lesereihenfolge: oben nach unten, links nach rechts */
+  private reachable(): HTMLElement[] {
+    const out: Array<{ el: HTMLElement; x: number; y: number }> = [];
+    for (const p of this.placed) {
+      const el = p.marker.getElement();
+      if (!el || !el.hasAttribute("tabindex")) continue;
+      const pt = this._map!.latLngToContainerPoint(p.marker.getLatLng());
+      out.push({ el, x: pt.x, y: pt.y });
+    }
+    return out.sort((a, b) => Math.round(a.y / 24) - Math.round(b.y / 24) || a.x - b.x).map((o) => o.el);
+  }
+  /**
+   * Ein Tab-Stopp für die ganze Karte (Prüfbericht H3: jedes Zeichen war ein eigener Tab-Stopp): tabindex 0 hat das
+   * zuletzt fokussierte bzw. gewählte Zeichen, sonst das erste; ←/→/↑/↓ wandern (`moveFocus`).
+   */
+  private roving(): void {
+    const els = this.reachable();
+    if (!els.length) return;
+    const byId = (id: string | null | undefined) => (id ? this.placed.find((p) => p.it.e.id === id)?.marker.getElement() ?? null : null);
+    const want = [byId(this.ctl.focusId), byId(this.o.selectedId)].find((e) => e && els.includes(e)) ?? els[0]!;
+    for (const el of els) { const v = el === want ? 0 : -1; if (el.tabIndex !== v) el.tabIndex = v; }
+  }
+  private moveFocus(from: HTMLElement, dir: 1 | -1): void {
+    const els = this.reachable();
+    const i = els.indexOf(from);
+    const next = els[Math.min(els.length - 1, Math.max(0, (i < 0 ? 0 : i) + dir))];
+    if (!next || next === from) return;
+    from.tabIndex = -1;
+    next.tabIndex = 0;
+    next.focus({ preventScroll: true });
   }
 
   /** Text für Bildschirmleser und Tastatur: was liegt hier, was tut Enter */
@@ -596,10 +698,11 @@ class SituationLayer extends L.LayerGroup {
     else delete el.dataset.n;
     // nur das gewählte Zeichen lässt sich mit der Maus ziehen (Cursor «grab»)
     el.classList.toggle("movable", !s.under && !s.hid && s.n < 2 && this.movable(p));
-    // Tastatur: sichtbare Zeichen und oberste Zeichen der Stapel erreichbar, verdeckte nicht
+    // Tastatur: sichtbare Zeichen und oberste Zeichen der Stapel erreichbar, verdeckte nicht. Die Karte ist EIN
+    // Tab-Stopp (roving tabindex, `roving()`): ein Zeichen hat tabindex 0, die übrigen -1, Pfeiltasten wechseln
     const reach = !s.under && !s.hid;
     if (reach) {
-      if (el.tabIndex !== 0) { el.tabIndex = 0; el.setAttribute("role", "button"); }
+      if (!el.hasAttribute("tabindex")) { el.tabIndex = -1; el.setAttribute("role", "button"); }
       const label = this.ariaFor(p, s.n);
       if (el.getAttribute("aria-label") !== label) el.setAttribute("aria-label", label);
       if (s.fan) el.setAttribute("aria-expanded", "true"); else if (s.n > 1) el.setAttribute("aria-expanded", "false"); else el.removeAttribute("aria-expanded");
@@ -682,6 +785,17 @@ class SituationLayer extends L.LayerGroup {
     });
     // Tastatur: Enter/Leertaste auf einem Zeichen = wie Klick (Stapel auffächern bzw. Meldung wählen)
     const onKey = (e: KeyboardEvent) => {
+      const arrow = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+      if (arrow) {
+        const q = this.placedAt(e.target);
+        const el = q?.marker.getElement();
+        if (!q || !el || e.target !== el) return;
+        // Pfeiltasten wechseln das Zeichen (statt die Karte zu verschieben)
+        e.preventDefault();
+        e.stopPropagation();
+        this.moveFocus(el, arrow);
+        return;
+      }
       if (e.key !== "Enter" && e.key !== " ") return;
       const p = this.placedAt(e.target);
       if (!p || e.target !== p.marker.getElement()) return;

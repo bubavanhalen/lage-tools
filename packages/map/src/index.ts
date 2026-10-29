@@ -7,3 +7,4 @@ export * from "./tools";
 export * from "./cellzoom";
 export * from "./measure";
 export * from "./flash";
+export * from "./kartenfarben";

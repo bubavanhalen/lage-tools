@@ -68,6 +68,28 @@ export async function downloadTiles(b: Bounds, finest: number, layer: TileLayer,
   return { saved, failed };
 }
 
+/**
+ * Ist das Gebiet offline vorhanden (Landeskarte bis Übersicht 5 m)? Nur Cache-Abfragen, keine Netzanfragen.
+ * Bei sehr vielen Kacheln wird gleichmässig eine Stichprobe (`maxCheck`) geprüft. Für den Offline-Status (Kap. 3.1).
+ */
+export async function areaTilesCached(b: Bounds, finest = 5, maxCheck = 160): Promise<boolean> {
+  try {
+    if (typeof caches === "undefined") return false;
+    const cache = await caches.open(TILE_CACHE);
+    const urls: string[] = [];
+    for (const z of levels(finest)) {
+      const r = tileRange(b, z);
+      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) urls.push(`https://wmts.geo.admin.ch/1.0.0/${WMTS_LAYER.lk}/default/current/2056/${z}/${x}/${y}.jpeg`);
+    }
+    if (!urls.length) return true;
+    const step = Math.max(1, Math.ceil(urls.length / maxCheck));
+    for (let i = 0; i < urls.length; i += step) if (!(await cache.match(urls[i]!))) return false;
+    return !!(await cache.match(urls[urls.length - 1]!));
+  } catch {
+    return false;
+  }
+}
+
 export async function tileCacheCount(): Promise<number> {
   try { return (await (await caches.open(TILE_CACHE)).keys()).length; } catch { return 0; }
 }

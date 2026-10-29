@@ -7,7 +7,7 @@
  * Ohne Laufzeit-Abhängigkeiten; alle Beispiele fiktiv (Raum Bern).
  */
 import type { Area } from "./model";
-import { catalogEntry, isTacticalWord, readTactical, type CatalogEntry, type TacticalReading } from "./catalog";
+import { catalogEntry, closestTerm, isKnownTerm, isTacticalWord, readTactical, type CatalogEntry, type TacticalReading } from "./catalog";
 import { isCountNoun, looksSpoken, normalizeSpoken, spokenNumber } from "./funk";
 import type { FoundCell, RasterSheet } from "./raster";
 import { findTimes, type FoundTime } from "./time";
@@ -581,4 +581,125 @@ export function partPlaces(text: string, skip: Array<[number, number]>, cells: A
   const at = parts.map((p, k) => cells.find((c) => c.index > p && c.index < (parts[k + 1] ?? Infinity))?.label);
   const uniq = [...new Set(at.filter((x): x is string => !!x))];
   return uniq.length > 1 && at.every(Boolean) ? uniq : [];
+}
+
+/** Gleiches Element trotz Schreibweise? «H3» = «h03» = «H03», «Det 2» = «det2» */
+export function sameUnitName(a: string, b: string): boolean {
+  return sameUnit(a, b);
+}
+
+/** Kurzformen von Elementnamen in der üblichen Schreibweise («det 2» → «Det 2», «zug1» bleibt Name) */
+const UNIT_CASE: Record<string, string> = { det: "Det", zug: "Zug", gr: "Gr", trp: "Trp", pat: "Pat", patr: "Patr", z: "Z" };
+
+/**
+ * Melder in der Schreibweise der Übung: «h3» → «H03», wenn H03 bekannt ist; sonst H-Namen gross und mit führender Null wie
+ * die bekannten Trupps (keine bekannten: zweistellig, «h3» → «H03»; bekannt «H1», «H2»: ohne Null, «h3» → «H3»).
+ * Andere Namen: bekannter Name in dessen Schreibweise, sonst Kürzel gross («det 2» → «Det 2»).
+ */
+export function normalizeMelder(name: string, known: string[] = []): string {
+  const n = name.trim();
+  if (!n) return n;
+  const hit = known.find((u) => sameUnit(u, n));
+  if (hit) return hit;
+  const h = /^h\s?0*(\d{1,3})$/i.exec(n);
+  if (h) {
+    const num = +h[1]!;
+    const hs = known.map((u) => /^H(\d{1,3})$/.exec(u.trim())?.[1]).filter((x): x is string => !!x);
+    const width = hs.length ? Math.max(...hs.map((x) => x.length)) : 2;
+    return `H${String(num).padStart(width, "0")}`;
+  }
+  const m = /^([\p{L}]+)(\.?\s?)(\d{1,3})$/u.exec(n);
+  if (m && UNIT_CASE[m[1]!.toLowerCase()]) return `${UNIT_CASE[m[1]!.toLowerCase()]}${m[2]}${m[3]}`;
+  return n;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Richtung auf eigene Kräfte, Rückfrage/Auftrag, unbekannte Wörter
+
+/**
+ * Richtung auf eigene Kräfte («Rtg eigene Stellung», «Richtung eig Stao», «Rtg unsere Pos», «Rtg uns»): das ist das Ziel
+ * einer (meist gegnerischen) Bewegung – weder Ort noch Zeichen, und es macht die Meldung nicht zur eigenen Lage.
+ * Liefert die Textstelle und die Beschriftung («Rtg eigene Stellung»).
+ */
+const OWN_DIR_RE = new RegExp(
+  `(?<![${L}])(?:in\\s+)?(?:rtg|richtung|fahrtrichtung)\\.?\\s+(?:auf\\s+|zur?\\s+|der\\s+|die\\s+|den\\s+|das\\s+)?` +
+    `((?:eigene[nrs]?|eig\\.?|unsere[nrs]?|uns|wir)(?![${L}])(?:\\s+(?:stellung\\w*|stao|standort\\w*|stp|stützpunkt\\w*|pos(?:ition\\w*)?|kp|beo(?:\\s*stao)?|truppe\\w*|kräfte|leute|linie\\w*|sperre\\w*|checkpoint\\w*|posten|element\\w*|trupp\\w*|zug|gruppe|h\\d{1,3}))?)(?![${L}])`,
+  "iu",
+);
+
+export function ownDirection(text: string): { span: [number, number]; label: string } | undefined {
+  const m = OWN_DIR_RE.exec(text);
+  if (!m) return undefined;
+  const words = m[1]!.replace(/\s+/g, " ").trim();
+  return { span: [m.index, m.index + m[0].length], label: `Rtg ${words}` };
+}
+
+/**
+ * Rückfrage, Auftrag, Befehl oder Frage («H04 Rückfrage: Standort Det 2?», «Auftrag an H01: Beo NAI 1», «… ?»): keine
+ * Lage – Vorschlag «als Notiz ohne Zeichen». `to` = Empfänger nach «an» («H01»), dann ist er nicht der Melder.
+ */
+const NOTE_RE = new RegExp(`(?<![${L}])(rückfrage|rueckfrage|frage|auftrag\\s+(?:an|für)|befehl\\s+(?:an|für))(?![${L}])`, "iu");
+const NOTE_TO_RE = new RegExp(`(?<![${L}])(?:rückfrage|rueckfrage|anfrage|frage|auftrag|befehl)\\s+(?:an|für)\\s+(?:den\\s+|die\\s+)?([${L}]{1,6}\\.?\\s?\\d{0,3})(?![${L}\\d])`, "iu");
+
+export function noteIntent(text: string): { word: string; to?: string } | undefined {
+  const t = text.trim();
+  const m = NOTE_RE.exec(t);
+  if (!m && !/\?\s*$/.test(t)) return undefined;
+  const to = NOTE_TO_RE.exec(t)?.[1]?.trim();
+  return { word: m ? m[1]!.replace(/\s+/g, " ") : "?", ...(to ? { to } : {}) };
+}
+
+/** Wörter nach einer Zahl, die kein gesehener Gegenstand sind (Einheiten, Zeit, Präpositionen, Richtungen) */
+const NOT_SUBJECT = new RegExp(
+  `^(?:x|mal|min|minuten?|sek|sekunden?|std|stunden?|h|uhr|m|km|meter|kilometer|grad|tage?|nächte?|stück|stk|prozent|` +
+    `in|im|bei|beim|an|am|auf|nach|von|vom|aus|mit|ohne|und|oder|bis|vor|hinter|neben|über|unter|ca|circa|rtg|richtung|` +
+    `n|no|ne|o|e|so|se|s|sw|w|nw|nord\\w*|ost\\w*|süd\\w*|west\\w*|uq|pq|nai|bnb|pers\\w*|fz|leute|stellung\\w*|meter|` +
+    `geschätzt|gezählt|gesehen|gemeldet|beobachtet|gesichtet|erkannt|weitere|andere|davon|total|insgesamt|zusätzlich|neu|neue|mehr|weniger|wörter|zeichen|stellen|zeilen|seiten)$`,
+  "iu",
+);
+
+export interface UnknownWord {
+  /** Textstelle wie getippt, z. B. «schützenpnzr» */
+  token: string;
+  /** Anzahl davor («2 schützenpnzr» → 2) */
+  count?: number;
+  /** Vorschlag aus dem Katalog (Schlüssel), z. B. «spz» – nur Vorschlag, nie still übernommen */
+  suggest?: string;
+  /** Vorschlag in Worten, z. B. «Schützenpanzer» */
+  suggestLabel?: string;
+}
+
+const entryWord = (e: CatalogEntry) => e.noun ?? e.name.replace(/\s*\(.*?\)\s*/g, " ").split(" / ")[0]!.trim();
+
+/**
+ * Unbekanntes bzw. verstümmeltes Wort an der Stelle des Gesehenen – statt einer geratenen Art:
+ * - nach einer Anzahl («2 schützenpnzr»): weder Begriff noch bekanntes Sichtungswort, aber nahe an einem Katalogbegriff;
+ * - als Wortteil gelesen («schützenpnzr» enthält «schützen» → Infanterie), obwohl ein anderer Begriff viel näher liegt.
+ * Wörter ohne nahen Begriff («2 Golf», «Militärfahrzeug») bleiben wie bisher.
+ * @param skip Elementnamen und Orte (nicht prüfen)
+ * @param isSightWord bekanntes Sichtungswort ohne Katalogbegriff («Lieferwagen», «Velo», «Wanderer»)
+ */
+export function unknownSubject(text: string, reading: TacticalReading | null, skip: Array<[number, number]> = [], isSightWord: (w: string) => boolean = () => false): UnknownWord | undefined {
+  const free = (a: number, b: number) => !skip.some(([x, y]) => a < y && b > x);
+  // Wortteil-Treffer: gelesener Begriff ist kein ganzes Wort («schützenpnzr» als «schützen» gelesen)
+  for (const [a, b] of reading?.spans ?? []) {
+    const w = text.slice(a, b);
+    if (!/^[\p{L}]{6,}$/u.test(w) || isKnownTerm(w) || !free(a, b)) continue;
+    const c = closestTerm(w);
+    if (!c || c.entry.key === reading!.key) continue;
+    const cnt = /(?<![\p{L}\d'’.:])(\d{1,3})\s*$/u.exec(text.slice(0, a))?.[1];
+    return { token: w, ...(cnt ? { count: +cnt } : {}), suggest: c.entry.key, suggestLabel: entryWord(c.entry) };
+  }
+  // nach einer Anzahl
+  // Zahl nach einem Namen («NAI 1», «Det 2», «Zug 3») ist keine Anzahl
+  for (const m of text.matchAll(/(?<![\p{L}\d'’.:])(?<!(?<![\p{L}])(?:NAI|BNB|PQ|Det|Zug|Gr|Trp|Pat|Patr|Kp|Nr|Ziff)\.?\s?)(\d{1,3})\s+([\p{L}][\p{L}\-]*)(?![\p{L}\d])(?:\s+([\p{L}][\p{L}\-]*)(?![\p{L}\d]))?/giu)) {
+    if (!free(m.index!, m.index! + m[0].length)) continue;
+    const w1 = m[2]!, w2 = m[3];
+    const ok = (w: string | undefined) => !!w && (isKnownTerm(w) || isCountNoun(w) || NOT_SUBJECT.test(w) || PART_NOUN.test(w) || isSightWord(w));
+    if (ok(w1) || (/^[\p{Ll}]/u.test(w1) && ok(w2))) continue;
+    const c = closestTerm(w1);
+    if (!c || (reading && c.entry.key === reading.key)) continue;
+    return { token: w1, count: +m[1]!, suggest: c.entry.key, suggestLabel: entryWord(c.entry) };
+  }
+  return undefined;
 }

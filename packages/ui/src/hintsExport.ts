@@ -4,6 +4,7 @@
 import type { jsPDF } from "jspdf";
 import type { Exercise, Hint } from "@lage/core";
 import { decisionOf, decisionRec, GROUP_LABEL, groupOf, LEVEL_LABEL, ruleOf } from "./hintsData";
+import { safePdf } from "./pdfSafe";
 
 const csvCell = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 const dayOf = (t: string, days: string[]) => { const i = days.indexOf(t.slice(0, 10)); return i >= 0 ? `T${i + 1}` : t.slice(0, 10); };
@@ -34,6 +35,7 @@ export function hintsToCsv(ex: Exercise, hints: Hint[]): string {
 /** Anhang «Hinweise» an ein Journal-PDF (A4 hoch, neue Seite). `page` = bisherige Seitenzahl. */
 export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classification: string, page: number): void {
   if (!hints.length) return;
+  safePdf(doc); // «N↔S» → «N–S», «→» → «nach» (Standardschrift nur WinAnsi)
   const W = 210, M = 12;
   const cols = [{ h: "Tag", w: 10 }, { h: "Zeit", w: 12 }, { h: "Stufe", w: 15 }, { h: "Regel", w: 12 }, { h: "Hinweis / Begründung / Auslöser", w: 103 }, { h: "Entscheid", w: 34 }];
   let y = 0;
@@ -43,7 +45,7 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
     doc.text(`Anhang: Hinweise zu Rot – ${ex.name}`, M, 14);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8);
     doc.text(classification, W - M, 10, { align: "right" });
-    doc.text(`Seite ${page} · Hinweise, keine Fakten – Entscheid durch Zfhr`, W - M, 14, { align: "right" });
+    doc.text("Hinweise, keine Fakten – Entscheid durch Zfhr", W - M, 14, { align: "right" });
     y = 22;
     doc.setFillColor(29, 29, 29); doc.rect(M, y - 4, W - 2 * M, 6, "F");
     doc.setTextColor(255); doc.setFont("helvetica", "bold");

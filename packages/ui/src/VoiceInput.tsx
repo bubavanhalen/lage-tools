@@ -27,6 +27,7 @@ import { SpeechSettings } from "./SpeechSettings";
 import { fixHearing } from "./stt/hearing";
 import { BatchReview, DraftPreview, type BatchItem } from "./BatchReview";
 import { defaultDay, journalCtx } from "./commit";
+import { stateOf } from "./entry/stateOptions";
 import { deleteBlob, getBlob } from "./store";
 import "./voice.css";
 
@@ -413,6 +414,10 @@ export function useVoice(o: VoiceOptions): Voice {
   const sugCommit = (id: string) => {
     const j = job(id);
     if (!j?.sug) return;
+    // gleiche Regeln wie das Meldungsfeld: direkt nur, wenn jede Meldung grün «bereit» ist – sonst zuerst die Übersicht
+    const ex = opts.current.ex, c = journalCtx(ex, opts.current.day ?? defaultDay(ex));
+    const green = j.sug.parts.every((t) => stateOf(parseMeldung(t, c), ex, { online: navigator.onLine }).level === "bereit");
+    if (!green) { if (!batchRef.current) { dropJob(id); openBatch(j.att, j.sug.raw, j.sug.parts); } return; }
     dropJob(id);
     opts.current.onCommit(j.sug.parts, { ...j.att, text: j.sug.raw });
   };

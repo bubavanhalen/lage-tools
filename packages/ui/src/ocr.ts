@@ -361,7 +361,8 @@ export function fixOcrTokens(line: string, isCell?: (c: string) => boolean): str
     // Störzeichen vor Melder/Planquadrat («!'H05», «)H01»)
     if (/^[\\|)(\][{}!'‚„`´]+$/.test(pre) && /^(?:[Hh][O0o\d]|A[A-Z]\d)/.test(core)) pre = "";
     let c = core;
-    if (/^[Hh][OoDQ0-9IlL|SsZzB]{2,3}$/.test(c)) c = "H" + toDigits(c.slice(1).replace(/[Oo]{2}/, "O")).slice(0, 2);
+    // «HO4», «HOS» → H04/H05; auch mit überzähliger Null «HO04», «H0O4» → H04 (nicht H00)
+    if (/^[Hh][OoDQ0-9IlL|SsZzB]{2,3}$/.test(c)) { const n = +toDigits(c.slice(1)); c = n >= 1 && n <= 99 ? `H${String(n).padStart(2, "0")}` : "H" + toDigits(c.slice(1)).slice(0, 2); }
     else if (/^[0-2Oo][0-9OoIlSB][0-5Oo][0-9OoIlSB]$/.test(c) && /\d/.test(c)) c = toDigits(c);
     else if (/^R[Iıil1t][gq]$/.test(c)) c = "Rtg";
     else if (/^R[Iıil1tT][gqGQ](N|NO|O|SO|S|SW|W|NW)$/.test(c)) c = "Rtg " + c.slice(3);
@@ -430,8 +431,8 @@ const HEADER = /^\s*(?:datum|zeit|meldung|lagejournal|journal|melder|nr\.?|seite
  * Erkannten Text in einzelne Meldungen trennen: `splitMeldungen` aus dem Kern; trennt der (noch) nicht,
  * hier nach Zeilen mit Zeitangabe am Anfang (Folgezeilen hängen an der vorherigen).
  */
-export function ocrToMeldungen(text: string, isCell?: (c: string) => boolean, days?: string[], nai?: string[]): string[] {
-  const clean = cleanOcrText(text, { isCell, nai }).split("\n").map((l) => stripTail(fixCircle(fixOcrTokens(l, isCell)))).join("\n");
+export function ocrToMeldungen(text: string, isCell?: (c: string) => boolean, days?: string[], nai?: string[], units?: string[]): string[] {
+  const clean = cleanOcrText(text, { isCell, nai, units }).split("\n").map((l) => stripTail(fixCircle(fixOcrTokens(l, isCell)))).join("\n");
   const form = formToMeldung(clean, days);
   if (form) return [form];
   const k = kern.splitMeldungen(clean).map((x) => x.trim()).filter(Boolean);

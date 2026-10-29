@@ -1,37 +1,35 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+/**
+ * Arbeitsfläche Lagejournal (MVP 1): nur Zustand und Verdrahtung. Anordnung in `shell/AppShell.tsx`, Kopf und Menü in
+ * `shell/`, Modus «Vorbereiten» in `prepare/`, Zeit in `time/` (Paket C). Speichern/Abgleich unverändert aus MVP 0
+ * (`useExerciseStore`, `persist.ts`), ebenso Speicherbänder, Zusammenführen beim Öffnen und Rückgängig.
+ */
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
-  blattFromRect,
   cellAtAny,
   exerciseToFile,
-  feldFromRect,
   formatLv95,
-  makeBlattSheet,
   journalToCsv,
   findCells,
   cellBounds,
   catalogEntry,
   type Bounds,
-  makeFeldSheet,
   newDeviceId,
   demoExercise,
   newExercise,
-  nextPrefix,
-  niceCellSize,
-  referencePoint,
   sheetBounds,
-  situationAt,
   reviseEvent,
-  type Area,
   type Exercise,
   type LageEvent,
   type LV95,
-  type RasterSheet,
-  wgs84ToLv95,
   mergeExercise,
   mergeReportText,
   markRemovals,
   takeHullItems,
+  compareEvents,
+  KI_PURPOSE_LABEL,
+  type Hint,
+  type RedCoa,
 } from "@lage/core";
 import {
   AffineImageLayer,
@@ -40,8 +38,8 @@ import {
   createSwissMap,
   enableCellZoom,
   flyToBoundsSharp,
-  drawRect,
   rasterLayer,
+  symbolIcon,
   toLv95,
   type Basemap,
   type SwissMap,
@@ -49,40 +47,56 @@ import {
 import { currentExerciseId, downloadText, getBlob, listExercises, onDbNotice, pickFile, safeFileName } from "./store";
 import { lastCurrent, openStored, peekStored, persister, requestPersist } from "./persist";
 import { useExerciseStore } from "./useExerciseStore";
+import { beispielAusUrl, beispielAusUrlEntfernen, beispielUebung } from "./beispiel";
 import { MergeBar, StatusBands, type MergeInfo } from "./SaveBand";
 import { useUndo } from "./undo";
 import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
 import { RowMemos } from "./VoiceInput";
 import { attachmentLayer, attachmentsOf, forgetBlobUrls, putAttachmentBlob, useAttachmentGc } from "./attachmentStore";
-import { NaiPanel } from "./NaiPanel";
-import { GeorefPane } from "./GeorefPane";
-import type { Candidate } from "./imageimport";
 import { JournalPanel } from "./JournalPanel";
-import { OfflineBox } from "./OfflineBox";
-import { isoLocal } from "./Timeline";
-import { SwimTimeline } from "./SwimTimeline";
 import { situationLayer, whenNotDragging } from "./situationLayer";
 import { shapeLayer } from "./shapeLayer";
 import { EventBanner, Legend } from "./MapOverlays";
-import { MapSearch } from "./MapSearch";
 import { MapToolbar } from "./MapToolbar";
 import { MapContextMenu } from "./MapContextMenu";
-import { loadFlags, saveFlags, type LayerFlags } from "./layers";
-import { compareEvents, windowStart } from "@lage/core";
-import { useMoveEvent, useTimeWindow } from "./mapedit";
+import { effectiveFlags, flagVariant, loadBasemap, loadFlags, saveBasemap, saveFlags, type FlagVariant, type LayerFlags } from "./layers";
+import { useMoveEvent } from "./mapedit";
 import { HintsPanel } from "./HintsPanel";
 import { hintExtent, hintLayer } from "./hintLayer";
-import { hasOpenHoch, newCount, useHints } from "./hintsData";
+import { redBadge, useHints } from "./hintsData";
 import { hintsToCsv } from "./hintsExport";
-import type { Hint, RedCoa } from "@lage/core";
 import { LageRotPanel } from "./LageRotPanel";
 import { coaEventIds, useLageRot } from "./lageRot";
 import { coaExtent, coaLayer } from "./coaLayer";
 import { MapTipHost, coaTip, hintTip, showMapTip, tipOnMap } from "./MapTipSheet";
 import { lageRotCsv } from "./lageRotExport";
-import { KiMenuButton, KiProvider } from "./ki/context";
+import { KiProvider, useKi } from "./ki/context";
 import { kiPdfNote } from "./ki/settings";
-import { KI_PURPOSE_LABEL } from "@lage/core";
+import { SpeechSettings } from "./SpeechSettings";
+import { LAGE_KARTE } from "./colors";
+import { useOfflineStatus } from "./offlineStatus";
+import { useLageZeit, lastReportUntil } from "./time/useLageZeit";
+import { RueckblickBanner } from "./time/RueckblickBanner";
+import { TimeBand } from "./time/TimeBand";
+import { RedPanel, RedTabLabel } from "./red/RedPanel";
+import { AppShell, SideSwitch, type SideView } from "./shell/AppShell";
+import { requestCorrection } from "./entry/useEntryDraft";
+import { Header, useSaveStatus } from "./shell/Header";
+import { MainMenu, APP_VERSION } from "./shell/MainMenu";
+import { ExerciseList } from "./shell/ExerciseList";
+import { Dialog } from "./shell/Dialog";
+import { useArbeitsweise } from "./shell/mode";
+import { PrepareMode, type PrepStep } from "./prepare/PrepareMode";
+
+/**
+ * `f` nach dem nächsten gezeichneten Bild ausführen (rAF → Task): so erscheinen Feld, Liste und Band sofort, die
+ * teuren Kartenebenen kommen gleich danach. Gibt die Aufräumfunktion für `useEffect` zurück (neuerer Auftrag ersetzt).
+ */
+function afterPaint(f: () => void): () => void {
+  let t: number | undefined;
+  const raf = requestAnimationFrame(() => { t = window.setTimeout(f, 0); });
+  return () => { cancelAnimationFrame(raf); if (t !== undefined) window.clearTimeout(t); };
+}
 
 function deviceId(): string {
   try {
@@ -97,47 +111,68 @@ interface Props {
   tagline: string;
 }
 
-type Tab = "journal" | "hinweise" | "raster" | "nai";
-type SheetPatch = Partial<{ name: string; prefix: string; cellSize: number; cols: number; rows: number; basemap: "lk" | "img"; classification: string; quadrants: boolean }>;
+type DialogKind = "uebungen" | "hilfe" | "ueber" | "sprache" | null;
 
 export function Workspace({ product, tagline }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const sm = useRef<SwissMap | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
   const [ex, setEx] = useState<Exercise | null>(null);
-  const [saved, setSaved] = useState<Array<{ id: string; name: string }>>([]);
-  const [tab, setTab] = useState<Tab>(product === "Lagejournal" ? "journal" : "raster");
-  const [tCursor, setTCursor] = useState<string | null>(null);
-  const [flags, setFlagsState] = useState<LayerFlags>(loadFlags);
-  const setFlags = (f: LayerFlags) => { setFlagsState(f); saveFlags(f); };
+  const [, setSaved] = useState<Array<{ id: string; name: string }>>([]);
+  // ---------- Arbeitsweise (Modus, Experte), Ansicht der Spalte, Vorbereiten-Schritt
+  const { aw, setModus, setExperte } = useArbeitsweise();
+  const experte = aw.experte;
+  const lage = aw.modus === "lage";
+  const [sideView, setSideView] = useState<SideView>("journal");
+  const [prepStep, setPrepStep] = useState<PrepStep | null>(null);
+  // ---------- Ebenen und Grundkarte, getrennt für Basis und Experte (pro Gerät)
+  const fv: FlagVariant = flagVariant(experte);
+  const [flagsBy, setFlagsBy] = useState<Record<FlagVariant, LayerFlags>>(() => ({ basis: loadFlags("basis"), experte: loadFlags("experte") }));
+  const userFlags = flagsBy[fv];
+  const setUserFlags = (f: LayerFlags) => { setFlagsBy((x) => ({ ...x, [fv]: f })); saveFlags(fv, f); };
+  const flags = useMemo(() => effectiveFlags(aw, userFlags), [aw, userFlags]);
+  const [baseBy, setBaseBy] = useState<Record<FlagVariant, Basemap>>(() => ({ basis: loadBasemap("basis"), experte: loadBasemap("experte") }));
+  const basemap = baseBy[fv];
+  const setBasemap = (b: Basemap) => { setBaseBy((x) => ({ ...x, [fv]: b })); saveBasemap(fv, b); };
+  useEffect(() => { sm.current?.setBasemap(basemap); }, [basemap]);
+
   const [reportAt, setReportAt] = useState<{ pos: LV95; n: number } | null>(null);
   const [present, setPresent] = useState(false);
-  const [editReq, setEditReq] = useState<{ id: string; n: number } | null>(null);
-  const [night, setNight] = useState(() => { try { return localStorage.getItem("lage-tools.night") === "1"; } catch { return false; } });
-  useEffect(() => { try { localStorage.setItem("lage-tools.night", night ? "1" : "0"); } catch { /* egal */ } }, [night]);
+  /** «Korrigieren» von der Karte, solange das Meldungsfeld noch nicht eingehängt ist (Modus Vorbereiten) */
+  const pendingCorr = useRef<string | null>(null);
+  // Nacht: beim Erststart wie die Systemeinstellung (dunkel → Nacht an), danach die Wahl des Benutzers
+  const [night, setNight] = useState(() => {
+    let v: string | null = null;
+    try { v = localStorage.getItem("lage-tools.night"); } catch { /* egal */ }
+    if (v === "1" || v === "0") return v === "1";
+    try { return matchMedia("(prefers-color-scheme: dark)").matches; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("lage-tools.night", night ? "1" : "0"); } catch { /* egal */ }
+    // Nacht: dunkle Oberfläche (data-theme), Karte abgedunkelt (shell.css)
+    const root = document.documentElement;
+    if (night) root.setAttribute("data-theme", "dark"); else if (root.getAttribute("data-theme") === "dark") root.removeAttribute("data-theme");
+  }, [night]);
   const [selEvent, setSelEvent] = useState<string | null>(null);
   const journalRef = useRef<L.LayerGroup | null>(null);
   const device = useRef(deviceId()).current;
-  const [online, setOnline] = useState(navigator.onLine);
-  useEffect(() => {
-    const on = () => setOnline(navigator.onLine);
-    window.addEventListener("online", on); window.addEventListener("offline", on);
-    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); };
-  }, []);
-  const [basemap, setBasemap] = useState<Basemap>("lk");
   const [selSheet, setSelSheet] = useState<string | null>(null);
   const [selArea, setSelArea] = useState<string | null>(null);
   const [cursor, setCursor] = useState<LV95 | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [georef, setGeoref] = useState<Candidate[] | null>(null);
   const [drawing, setDrawing] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [dialog, setDialog] = useState<DialogKind>(null);
 
   const say = useCallback((t: string) => {
     setToast(t);
     window.setTimeout(() => setToast((x) => (x === t ? null : x)), 4000);
   }, []);
+
+  // ---------- Kopf: Speicher- und Offline-Status
+  const saveStatus = useSaveStatus();
+  const offline = useOfflineStatus(ex);
 
   // Datenbank blockiert (altes Lagejournal-Fenster offen): Hinweis zeigen, App läuft mit leerer Übung weiter
   const [dbBlocked, setDbBlocked] = useState(false);
@@ -164,6 +199,17 @@ export function Workspace({ product, tagline }: Props) {
   // Übung laden (mit Notfall-Puffer: was beim letzten Mal noch nicht in der Datenbank war)
   useEffect(() => {
     (async () => {
+      // Testzugang ?beispiel / ?beispiel=leer (beispiel.ts): ersetzt nur die Beispielübung, wie «Beispiel ansehen»
+      const art = beispielAusUrl();
+      if (art) {
+        const b = beispielUebung(art);
+        void persister.writeAll(b, true);
+        void requestPersist();
+        setEx(b);
+        beispielAusUrlEntfernen();
+        setSaved(await listExercises());
+        return;
+      }
       const id = lastCurrent() ?? await currentExerciseId().catch(() => null);
       let r = id ? await openStored(id).catch(() => null) : null;
       if (!r && id) { const db = await currentExerciseId().catch(() => null); if (db && db !== id) r = await openStored(db).catch(() => null); }
@@ -171,7 +217,6 @@ export function Workspace({ product, tagline }: Props) {
       if (!r && dbBlockedRef.current) fallbackId.current = next.id;
       setEx(next);
       if (r?.recovered) say(`${r.recovered} ${r.recovered === 1 ? "Änderung" : "Änderungen"} aus dem Notfallpuffer übernommen`);
-      // andere Zeitzone als die Übung: rotes Band (StatusBands) – beim Start, Öffnen einer Datei und aus der Liste
       setSaved(await listExercises());
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -179,10 +224,13 @@ export function Workspace({ product, tagline }: Props) {
   // Karte
   useEffect(() => {
     if (!el.current || sm.current) return;
-    const s = createSwissMap(el.current, { center: { e: 2660000, n: 1190000 }, zoom: 16 });
+    const s = createSwissMap(el.current, { center: { e: 2660000, n: 1190000 }, zoom: 16, basemap });
     sm.current = s;
     s.map.on("mousemove", (ev: L.LeafletMouseEvent) => setCursor(toLv95(ev.latlng)));
-    // Grösse der Karte ändert sich (Zeitstrahl ein/aus, Fenster, Seitenleiste) → Leaflet informieren
+    s.map.on("mouseout", () => setCursor(null));
+    // Zoom ± zählt im Inventar als ein Element (Kap. 7.2)
+    s.map.zoomControl?.getContainer()?.setAttribute("data-zaehl", "zoom");
+    // Grösse der Karte ändert sich (Band, Fenster, Seitenleiste) → Leaflet informieren
     const ro = new ResizeObserver(() => s.map.invalidateSize({ pan: false }));
     ro.observe(el.current);
     s.map.doubleClickZoom.disable();
@@ -191,47 +239,52 @@ export function Workspace({ product, tagline }: Props) {
   }, [ex === null]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { sm.current?.map.remove(); sm.current = null; }, []);
 
-  // Ebenen neu zeichnen
+  // Raster, NAI, Bilder: im Modus Lage leise und nicht bearbeitbar, in Vorbereiten bearbeitbar (gewähltes Raster kräftig)
   useEffect(() => {
     const s = sm.current;
     if (!s || !ex) return;
     layerRef.current?.remove();
     const g = L.layerGroup();
     for (const o of ex.overlays ?? []) if (o.visible) g.addLayer(new AffineImageLayer(o.dataUrl, o.width, o.height, o.affine, o.opacity));
-    if (flags.raster || tab === "raster") for (const sh of ex.sheets) g.addLayer(rasterLayer(s.map, sh, { color: sh.id === selSheet ? "#c8102e" : "#111111" }));
+    if (flags.raster) for (const sh of ex.sheets) g.addLayer(rasterLayer(s.map, sh, lage ? { quiet: true } : sh.id === selSheet ? { color: LAGE_KARTE.ink } : { quiet: true }));
     // NAI mit zugeteiltem Trupp: «NAI 2 · H03»
     const areas = ex.areas.map((a) => (a.kind === "nai" && a.trupp ? { ...a, name: `${a.name} · ${a.trupp}` } : a));
-    if (flags.nai || tab === "nai") g.addLayer(areasLayer(areas, { selectedId: selArea ?? undefined, onClick: (a) => { setTab("nai"); setSelArea(a.id); } }));
+    if (flags.nai) g.addLayer(areasLayer(areas, {
+      selectedId: lage ? undefined : selArea ?? undefined,
+      onClick: lage ? (a) => say(a.name) : (a) => { setPrepStep(3); setSelArea(a.id); },
+    }));
     g.addTo(s.map);
     layerRef.current = g;
-  }, [ex, selSheet, selArea, mapReady, flags.raster, flags.nai, tab]);
+  }, [ex, selSheet, selArea, mapReady, flags.raster, flags.nai, lage]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Zeitpunkt der Lage: gewählt oder Live (jetzt – oder, wenn die Übung vorbei ist, die letzte Meldung)
-  const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => { const id = window.setInterval(() => setClock(Date.now()), 30000); return () => window.clearInterval(id); }, []);
-  const tNow = (() => {
-    if (tCursor) return tCursor;
-    const last = (ex?.events ?? []).filter((e) => !e.deleted).reduce((m, e) => (e.t > m ? e.t : m), "");
-    const now = isoLocal(clock);
-    return !last || clock - Date.parse(last) < 12 * 3600000 ? (now > last ? now : last) : last;
-  })();
-  // Zeitfenster (pro Übung gemerkt): Anfang zur Lagezeit, null = alles
-  const [win, setWin] = useTimeWindow(ex?.id);
-  const winFrom = windowStart(win, tNow);
+  // ---------- Lagezeit (Paket C): LIVE / Rückblick, «Zeige letzte»
+  const zeit = useLageZeit({ exId: ex?.id, events: ex?.events, say });
+  const tNow = zeit.tNow;
+  const winFrom = zeit.from;
+  /**
+   * Karte und «Was Rot» rechnen mit einer verzögerten Fassung (useDeferredValue): nach Enter, Zeitwechsel oder
+   * «Zeige letzte» zeichnet React zuerst Feld, Liste und Band; Kartenebenen und Hinweise folgen im nächsten Durchgang
+   * (800 Meldungen, Feld-Tablet: sonst blockiert der Neuaufbau der Karte die Antwort der Liste).
+   */
+  const exLater = useDeferredValue(ex);
+  const tLater = useDeferredValue(tNow);
+  const fromLater = useDeferredValue(winFrom);
+  useEffect(() => { zeit.suspend("praesentation", present); }, [present]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { zeit.suspend("dialog", dialog !== null); }, [dialog]); // eslint-disable-line react-hooks/exhaustive-deps
+  const suspendMenu = useCallback((key: string) => (o: boolean) => zeit.suspend(key, o), [zeit.suspend]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---------- Hinweise zu Rot (folgen Lagezeit und Zeitfenster)
-  const { hints, quality, all: allHints } = useHints(ex, tNow, winFrom);
+  // ---------- Hinweise zu Rot: folgen der Lagezeit, nie «Zeige letzte» (Entscheid: «Was Rot» rechnet immer über alles)
+  const { hints, quality, all: allHints } = useHints(exLater, tLater, null);
   const [selHint, setSelHint] = useState<string | null>(null);
   const [presentHints, setPresentHints] = useState(false);
   const hintSel = hints.find((h) => h.id === selHint) ?? null;
-  /** gewählter Hinweis hebt seine Auslöser hervor – nur solange die Hinweise sichtbar sind */
-  const hintFocus = !!hintSel && (present ? presentHints : tab === "hinweise");
-  // ---------- Lage Rot: mögliche Aktionen und Kräfte (ganzes Journal bis zur Lagezeit; Zeitfenster nur Spalte «im Fenster»)
-  const lageRot = useLageRot(ex, tNow, allHints, winFrom);
+  const redVisible = present ? presentHints : lage && sideView === "rot";
+  /** gewählter Hinweis hebt seine Auslöser hervor – nur solange «Was Rot» sichtbar ist */
+  const hintFocus = !!hintSel && redVisible;
+  const lageRot = useLageRot(exLater, tLater, allHints, null);
   const [selCoa, setSelCoa] = useState<string | null>(null);
   const coaSel = lageRot.coas.find((c) => c.id === selCoa) ?? null;
-  const coaFocus = !!coaSel && (present ? presentHints : tab === "hinweise");
-  // Hinweis gewählt (Liste, Karte, Indikator) → Möglichkeit abwählen
+  const coaFocus = !!coaSel && redVisible;
   useEffect(() => { if (selHint) setSelCoa(null); }, [selHint]);
   const hintHl = (() => {
     if (coaFocus && coaSel) return coaEventIds(coaSel, lageRot.hints);
@@ -240,12 +293,9 @@ export function Workspace({ product, tagline }: Props) {
     if (hintSel.unit) for (const e of ex?.events ?? []) if (e.side === "blau" && e.unit === hintSel.unit) ids.add(e.id);
     return ids;
   })();
-  const nNew = ex ? newCount(ex, hints, tNow) : 0;
-  const nHoch = ex ? hasOpenHoch(ex, hints, tNow) : false;
-  // Zahl am Reiter pulsiert einmal, wenn neue Hinweise dazukommen (kein Pop-up, kein Ton)
-  const prevNew = useRef(nNew);
-  const [pulse, setPulse] = useState(0);
-  useEffect(() => { if (nNew > prevNew.current) setPulse((n) => n + 1); prevNew.current = nNew; }, [nNew]);
+  // Entscheide («Trifft nicht zu») sofort aus der aktuellen Übung, nur die Hinweise selbst sind verzögert gerechnet
+  const badge = redBadge(ex, hints, tLater);
+  const showRed = () => { setModus("lage"); setSideView("rot"); };
 
   // Hindernisse, Checkpoint, IED … (und Meldungen «auf Hauptstrasse/Autobahn») ohne Ausrichtung nachträglich auf die
   // Strasse legen (z. B. Beispiel, Import, Meldung offline erfasst). Erledigt erst mit Ergebnis; fehlten Strassendaten
@@ -267,6 +317,31 @@ export function Workspace({ product, tagline }: Props) {
     const exId = ex.id;
     (async () => {
       const { placeOnRoadTry } = await import("./roadsource");
+      // Ergebnisse gesammelt übernehmen (eine Änderung pro Schub statt pro Meldung: 800 Meldungen aus einer Datei
+      // lösten sonst 800 Neuaufbauten von Karte, Hinweisen und Speicher aus) und zwischendurch dem Browser Zeit lassen
+      const done = new Map<string, { e: LageEvent; pl: NonNullable<Awaited<ReturnType<typeof placeOnRoadTry>>["pl"]> }>();
+      const flush = () => {
+        if (!done.size || exRef.current?.id !== exId) { done.clear(); return; }
+        const batch = new Map(done);
+        done.clear();
+        update((x) => {
+          x.events = (x.events ?? []).map((y) => {
+            const r = batch.get(y.id);
+            if (!r) return y;
+            const { e, pl } = r;
+            // inzwischen von Hand verschoben, Ort entfernt/geändert oder schon ausgerichtet → nicht überschreiben
+            const samePos = y.pos?.e === e.pos?.e && y.pos?.n === e.pos?.n;
+            const sameWhere = (y.cells?.[0] ?? "") === (e.cells?.[0] ?? "") && (y.nai ?? "") === (e.nai ?? "");
+            if (y.deleted || y.roadNone || y.where === "Karte" || y.angle !== undefined || !samePos || !sameWhere) return y;
+            // neue Revision (für den Abgleich), aber Zeitstempel nur minimal weiter: automatische Ergänzung,
+            // keine Benutzeränderung (sonst stünde jede Meldung des Beispiels als «neu» in der Liste)
+            const at = new Date((Date.parse(y.updatedAt) || Date.now()) + 1);
+            return reviseEvent(y, { pos: pl.pos, angle: pl.angle, road: pl.road, where: `${y.where ?? ""}${pl.road ? ` · auf ${pl.road}` : ""}`.replace(/^ · /, "") }, device, at);
+          });
+          return x;
+        });
+      };
+      let slice = performance.now(), sinceFlush = performance.now();
       try {
         for (const e of todo) {
           let target: Bounds | LV95[] | null = null;
@@ -279,62 +354,86 @@ export function Workspace({ product, tagline }: Props) {
           if (exRef.current?.id !== exId) break;
           if (!pl) { if (complete) roadDone.current.add(e.id); continue; }
           roadDone.current.add(e.id);
-          update((x) => {
-            x.events = (x.events ?? []).map((y) => {
-              if (y.id !== e.id) return y;
-              // inzwischen von Hand verschoben, Ort entfernt/geändert oder schon ausgerichtet → nicht überschreiben
-              const samePos = y.pos?.e === e.pos?.e && y.pos?.n === e.pos?.n;
-              const sameWhere = (y.cells?.[0] ?? "") === (e.cells?.[0] ?? "") && (y.nai ?? "") === (e.nai ?? "");
-              if (y.deleted || y.roadNone || y.where === "Karte" || y.angle !== undefined || !samePos || !sameWhere) return y;
-              // neue Revision (für den Abgleich), aber Zeitstempel nur minimal weiter: automatische Ergänzung,
-              // keine Benutzeränderung (sonst stünde jede Meldung des Beispiels als «neu» in der Liste)
-              const at = new Date((Date.parse(y.updatedAt) || Date.now()) + 1);
-              return reviseEvent(y, { pos: pl.pos, angle: pl.angle, road: pl.road, where: `${y.where ?? ""}${pl.road ? ` · auf ${pl.road}` : ""}`.replace(/^ · /, "") }, device, at);
-            });
-            return x;
-          });
+          done.set(e.id, { e, pl });
+          // höchstens ~40 ms am Stück rechnen, höchstens alle 400 ms eine Änderung
+          if (performance.now() - sinceFlush > 400) { flush(); sinceFlush = performance.now(); }
+          if (performance.now() - slice > 40) { await new Promise((r) => window.setTimeout(r, 16)); slice = performance.now(); }
         }
       } finally {
+        flush();
         todo.forEach((e) => roadBusy.current.delete(e.id));
       }
     })();
   }, [ex?.events, ex?.id, roadRetry]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Lage zum Zeitpunkt
-  useEffect(() => {
-    const s = sm.current;
-    if (!s || !ex) return;
+  // Lage zum Zeitpunkt (ruhige Karte in der Basis: Beschriftung nur Neues und Gewähltes)
+  /** eigene Eingabe (Eintragen/Korrektur): die neuen Meldungen sofort als einfache Zeichen setzen (bis zum Neuaufbau) */
+  const mapNow = useRef<string[] | null>(null);
+  const pendingRef = useRef<L.LayerGroup | null>(null);
+  /** womit die Lageebene zuletzt gebaut wurde – gleiche Angaben → kein zweiter Neuaufbau */
+  const builtKey = useRef<unknown[] | null>(null);
+  const hlKey = hintHl ? [...hintHl].join() : "";
+  const buildSituation = (s: SwissMap, x: Exercise, t: string, from: string | null) => {
+    const key = [x.events, x.sheets, t, from, flags, selEvent, present, experte, hlKey, mapReady];
+    if (builtKey.current && key.length === builtKey.current.length && key.every((v, i) => v === builtKey.current![i])) return;
     // nicht während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen …): nach dem Loslassen nachholen
     whenNotDragging(s.map, () => {
-    journalRef.current?.remove();
-    const g = situationLayer(s.map, ex.events ?? [], {
-      t: tNow, flags, selectedId: selEvent, sheets: ex.sheets, days: ex.days, from: winFrom,
-      onClick: (e) => { setTab("journal"); setSelEvent(e.id); },
-      onMove: present ? undefined : mover.move,
-      highlight: hintHl,
+      builtKey.current = key;
+      journalRef.current?.remove();
+      pendingRef.current?.remove();
+      pendingRef.current = null;
+      const g = situationLayer(s.map, x.events ?? [], {
+        t, flags, selectedId: selEvent, sheets: x.sheets, days: x.days, from, quiet: !experte,
+        onClick: (e) => { setSideView("journal"); selectEventRef.current(e.id); },
+        onMove: present ? undefined : mover.move,
+        highlight: hintHl,
+      });
+      g.addTo(s.map);
+      journalRef.current = g;
     });
-    g.addTo(s.map);
-    journalRef.current = g;
-    });
-  }, [ex?.events, ex?.sheets, tNow, winFrom, flags, selEvent, mapReady, present, hintHl ? [...hintHl].join() : ""]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Flächen- und Linienzeichen (unter den Zeichen); Zeitfenster: `from` = Anfang des Fensters (null = alles)
-  const shapeRef = useRef<L.LayerGroup | null>(null);
-  const shapeFrom = winFrom;
+  };
+  // eigene Eingabe: im selben Durchgang wie die neue Zeile ein einfaches Zeichen am Ort (die volle Lageebene mit Stapeln,
+  // Beschriftung und Hinweisen folgt nach dem nächsten Bild – ein voller Neuaufbau kostet bei 800 Meldungen zu viel)
   useEffect(() => {
     const s = sm.current;
-    shapeRef.current?.remove();
-    shapeRef.current = null;
-    if (!s || !ex) return;
-    const g = shapeLayer(ex.events ?? [], {
-      t: tNow, from: shapeFrom, flags, selectedId: selEvent, sheets: ex.sheets, areas: ex.areas,
-      onClick: (e) => { setTab("journal"); setSelEvent(e.id); },
-    });
-    g.addTo(s.map);
-    shapeRef.current = g;
-  }, [ex?.events, ex?.sheets, ex?.areas, tNow, shapeFrom, flags, selEvent, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+    const ids = mapNow.current;
+    if (!ids || !s || !ex) return;
+    mapNow.current = null;
+    const g = pendingRef.current ?? L.layerGroup().addTo(s.map);
+    pendingRef.current = g;
+    for (const id of ids) {
+      const e = (ex.events ?? []).find((x) => x.id === id);
+      if (!e || e.deleted || !e.pos || e.t.slice(0, 16) > tNow || (winFrom && e.t < winFrom)) continue;
+      L.marker(toLatLng(e.pos), { icon: symbolIcon(e.sym, e.aff, 18, { sidc: e.sidc, dir: e.dir }, "lt-ev lt-pending"), interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(g);
+    }
+  }, [ex?.events]); // eslint-disable-line react-hooks/exhaustive-deps
+  // sonst: mit der verzögerten Fassung nach dem nächsten Bild (Feld, Liste und Band sind dann schon gezeichnet);
+  // ein neuerer Auftrag ersetzt den offenen, solange die verzögerte Fassung nachhinkt wird nichts gebaut
+  useEffect(() => {
+    const s = sm.current;
+    const x = exLater;
+    if (!s || !x || x !== ex || tLater !== tNow || fromLater !== winFrom) return;
+    return afterPaint(() => buildSituation(s, x, tLater, fromLater));
+  }, [exLater?.events, exLater?.sheets, ex?.events, tLater, tNow, fromLater, winFrom, flags, selEvent, mapReady, present, experte, hlKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fotos an Planquadraten (Ebene «Anhänge»): Kamera-Symbol, Klick öffnet den Betrachter
+  // Flächen- und Linienzeichen (unter den Zeichen)
+  const shapeRef = useRef<L.LayerGroup | null>(null);
+  useEffect(() => {
+    const s = sm.current;
+    const x = exLater;
+    if (!s || !x) { shapeRef.current?.remove(); shapeRef.current = null; return; }
+    return afterPaint(() => {
+      shapeRef.current?.remove();
+      const g = shapeLayer(x.events ?? [], {
+        t: tLater, from: fromLater, flags, selectedId: selEvent, sheets: x.sheets, areas: x.areas, quiet: !experte,
+        onClick: (e) => { setSideView("journal"); selectEventRef.current(e.id); },
+      });
+      g.addTo(s.map);
+      shapeRef.current = g;
+    });
+  }, [exLater?.events, exLater?.sheets, exLater?.areas, tLater, fromLater, flags, selEvent, mapReady, experte]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fotos an Planquadraten (Experte «Fotos»): Kamera-Symbol, Klick öffnet den Betrachter
   const attRef = useRef<L.LayerGroup | null>(null);
   useEffect(() => {
     const s = sm.current;
@@ -344,26 +443,27 @@ export function Workspace({ product, tagline }: Props) {
     attRef.current = attachmentLayer(ex, (list) => openViewer(list, 0, `Fotos an ${list[0]!.cell}`)).addTo(s.map);
   }, [ex?.attachments, ex?.sheets, flags.anhaenge, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Hinweise auf der Karte (Ebene «Hinweise»; im Reiter «Hinweise» immer)
+  // Hinweise auf der Karte: Basis nur der gewählte, Experte nach Ebene
   const hintRef = useRef<L.LayerGroup | null>(null);
   useEffect(() => {
     const s = sm.current;
     hintRef.current?.remove();
     hintRef.current = null;
-    if (!s || !ex || !(flags.hinweise || tab === "hinweise" || (present && presentHints))) return;
+    if (!s || !ex || !(flags.hinweise || redVisible)) return;
     const g = hintLayer(s.map, {
-      hints, ex, t: tNow, selectedId: selHint, focus: hintFocus,
+      hints, ex: exLater ?? ex, t: tLater, selectedId: selHint, focus: hintFocus, onlySelected: !experte,
       onClick: (h) => {
-        // Handy: Blatt über der Karte statt Reiterwechsel und Seitensprung (MapTipSheet)
-        if (!present && tipOnMap()) { setSelHint(h.id); showMapTip(hintTip(h, () => { setTab("hinweise"); setSelHint(h.id); })); return; }
-        if (present) setPresentHints(true); else setTab("hinweise"); setSelHint(h.id);
+        // Handy: Blatt über der Karte statt Seitensprung (MapTipSheet)
+        if (!present && tipOnMap()) { setSelHint(h.id); showMapTip(hintTip(h, () => { showRed(); setSelHint(h.id); })); return; }
+        if (present) setPresentHints(true); else showRed();
+        setSelHint(h.id);
       },
     });
     g.addTo(s.map);
     hintRef.current = g;
-  }, [hints, selHint, hintFocus, flags.hinweise, tab, present, presentHints, ex?.hintDecisions, ex?.events, ex?.sheets, ex?.areas, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hints, selHint, hintFocus, flags.hinweise, redVisible, present, presentHints, experte, ex?.hintDecisions, ex?.events, ex?.sheets, ex?.areas, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Mögliche Aktionen Rot auf der Karte (Ebene «Aktionen Rot»; gewählte immer)
+  // Mögliche Aktionen Rot auf der Karte: Basis nur die gewählte
   const coaRef = useRef<L.LayerGroup | null>(null);
   useEffect(() => {
     const s = sm.current;
@@ -371,17 +471,18 @@ export function Workspace({ product, tagline }: Props) {
     coaRef.current = null;
     if (!s || !ex || !lageRot.coas.length || !(flags.aktionen || coaFocus)) return;
     const g = coaLayer(s.map, {
-      coas: flags.aktionen ? lageRot.coas : lageRot.coas.filter((c) => c === coaSel), ex, t: tNow, selectedId: selCoa, focus: coaFocus,
+      coas: flags.aktionen ? lageRot.coas : lageRot.coas.filter((c) => c === coaSel), ex: exLater ?? ex, t: tLater, selectedId: selCoa, focus: coaFocus, onlySelected: !experte,
       onClick: (c) => {
-        if (!present && tipOnMap()) { setSelHint(null); setSelCoa(c.id); showMapTip(coaTip(c, ex, tNow, () => { setTab("hinweise"); setSelHint(null); setSelCoa(c.id); })); return; }
-        if (present) setPresentHints(true); else setTab("hinweise"); setSelHint(null); setSelCoa(c.id);
+        if (!present && tipOnMap()) { setSelHint(null); setSelCoa(c.id); showMapTip(coaTip(c, ex, tNow, () => { showRed(); setSelHint(null); setSelCoa(c.id); })); return; }
+        if (present) setPresentHints(true); else showRed();
+        setSelHint(null); setSelCoa(c.id);
       },
     });
     g.addTo(s.map);
     coaRef.current = g;
-  }, [lageRot.coas, selCoa, coaFocus, flags.aktionen, flags.hinweise, flags.nai, present, mapReady, hints]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lageRot.coas, selCoa, coaFocus, flags.aktionen, flags.hinweise, flags.nai, present, experte, mapReady, hints]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectCoa = (id: string | null) => { setSelCoa(id); if (id) setSelHint(null); };
-  /** Indikator-Hinweis einer Möglichkeit: Hinweis zeigen; liegt er ausserhalb des Zeitfensters, seine letzte Meldung */
+  /** Indikator-Hinweis einer Möglichkeit: Hinweis zeigen; liegt er ausserhalb «Zeige letzte», seine letzte Meldung */
   const coaHint = (id: string) => {
     const h = hints.find((x) => x.id === id);
     if (h) { focusHint(h); return; }
@@ -406,7 +507,6 @@ export function Workspace({ product, tagline }: Props) {
     setSelHint(h.id);
     const { box } = hintExtent(h, ex);
     if (!box) return;
-    // Handy: Karte liegt oben – hinscrollen
     if (window.innerWidth <= 560) window.scrollTo({ top: 0, behavior: "smooth" });
     const pad = Math.max(250, Math.max(box.maxE - box.minE, box.maxN - box.minN) * 0.6);
     flyToBoundsSharp(map, { minE: box.minE - pad, minN: box.minN - pad, maxE: box.maxE + pad, maxN: box.maxN + pad }, { maxZoom: 21 });
@@ -426,46 +526,61 @@ export function Workspace({ product, tagline }: Props) {
       const a = ex.areas.find((x) => x.name === e.nai)!;
       map.flyToBounds(L.latLngBounds(a.ring.map(toLatLng)).pad(0.6), { duration: 0.6, maxZoom: 22 });
     } else if (e.pos) {
-      const ll = toLatLng(e.pos);
-      map.flyTo(ll, Math.max(map.getZoom(), 20), { duration: 0.6 });
+      map.flyTo(toLatLng(e.pos), Math.max(map.getZoom(), 20), { duration: 0.6 });
     }
   };
+  /** Meldung wählen: in LIVE ändert sich die Zeit nie; im Rückblick springt sie auf eine spätere Meldung (R7) */
   const selectEvent = (id: string | null) => {
     setSelEvent(id);
     const e = (ex?.events ?? []).find((x) => x.id === id);
-    if (e && tCursor && e.t > tCursor) setTCursor(e.t);
+    if (e && zeit.zeit.kind === "rueckblick" && e.t > zeit.zeit.t) zeit.lookBack(e.t);
     if (e) focusEvent(e);
   };
+  const selectEventRef = useRef(selectEvent);
+  selectEventRef.current = selectEvent;
+  const correct = (id: string) => {
+    setSideView("journal");
+    if (lage && requestCorrection(id)) return;
+    pendingCorr.current = id;
+    setModus("lage");
+  };
+  useEffect(() => {
+    if (!lage || !pendingCorr.current) return;
+    const id = window.setTimeout(() => { if (pendingCorr.current && requestCorrection(pendingCorr.current)) pendingCorr.current = null; }, 0);
+    return () => window.clearTimeout(id);
+  });
 
   const exportJournal = async (kind: "csv" | "pdf") => {
     if (!ex) return;
     if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days), "text/csv;charset=utf-8"); return; }
-    const { journalPdf } = await import("./journalpdf");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN", hints, { lage: lageRot, t: tNow }, kiPdfNote(ex, KI_PURPOSE_LABEL)));
-    a.download = `Lagejournal_${safeFileName(ex.name)}.pdf`;
-    a.click();
+    try {
+      const { journalPdf } = await import("./journalpdf");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(journalPdf(ex, ex.sheets[0]?.classification ?? "INTERN", hints, { lage: lageRot, t: tNow }, kiPdfNote(ex, KI_PURPOSE_LABEL)));
+      a.download = `Lagejournal_${safeFileName(ex.name)}.pdf`;
+      a.click();
+    } catch (e) {
+      say("PDF konnte nicht erstellt werden: " + (e as Error).message + ".");
+    }
   };
+  const exportHints = () => { if (ex) downloadText(`Hinweise_${safeFileName(ex.name)}.csv`, hintsToCsv(ex, hints) + lageRotCsv(ex, lageRot, tNow), "text/csv;charset=utf-8"); };
 
-  const fitSheet = (sh: RasterSheet) => {
-    const b = sheetBounds(sh);
-    sm.current?.fitLv95({ e: b.minE, n: b.minN }, { e: b.maxE, n: b.maxN }, 30);
-  };
   const fitAll = (x: Exercise) => {
     const pts: LV95[] = [];
     x.sheets.forEach((s) => { const b = sheetBounds(s); pts.push({ e: b.minE, n: b.minN }, { e: b.maxE, n: b.maxN }); });
     x.areas.forEach((a) => pts.push(...a.ring));
-    if (!pts.length) return;
-    if (!sm.current) return;
-    const b = { minE: Math.min(...pts.map((p) => p.e)), minN: Math.min(...pts.map((p) => p.n)), maxE: Math.max(...pts.map((p) => p.e)), maxN: Math.max(...pts.map((p) => p.n)) };
+    if (!pts.length || !sm.current) return;
+    const b = { minE: Math.min(...pts.map((q) => q.e)), minN: Math.min(...pts.map((q) => q.n)), maxE: Math.max(...pts.map((q) => q.e)), maxN: Math.max(...pts.map((q) => q.n)) };
     flyToBoundsSharp(sm.current.map, b, { duration: 0 });
   };
-  // Beim Laden einpassen – erst wenn das Layout (Zeitstrahl, Werkzeuge) steht
+  // Beim Laden einpassen – erst wenn das Layout steht
   useEffect(() => {
     if (!ex || !sm.current) return;
     const id = window.setTimeout(() => { sm.current?.map.invalidateSize(); if (exRef.current) fitAll(exRef.current); }, 350);
     return () => window.clearTimeout(id);
   }, [ex?.id, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Modus/Experte gewechselt: Spalten- und Bandhöhe ändern sich
+  useEffect(() => { const id = window.setTimeout(() => sm.current?.map.invalidateSize({ pan: false }), 60); return () => window.clearTimeout(id); }, [aw.modus, aw.experte]);
 
   const exRef = useRef<Exercise | null>(null);
   exRef.current = ex;
@@ -479,10 +594,17 @@ export function Workspace({ product, tagline }: Props) {
   const switchTo = (x: Exercise, how: "neu" | "ersetzen") => {
     void persister.writeAll(x, how === "ersetzen");
     void requestPersist();
-    setEx(x); setSelSheet(null);
+    setEx(x); setSelSheet(null); setSelArea(null); setSelEvent(null); setSelHint(null); setSelCoa(null);
   };
-  const loadDemo = () => { switchTo(demoExercise(), "ersetzen"); setTCursor(null); say("Beispielübung geladen (fiktiv, Raum Bern)"); };
-  // Rückgängig für Raster/NAI löschen; Ergebnis von «Öffnen»
+  const loadDemo = () => { switchTo(demoExercise(), "ersetzen"); setModus("lage"); say("Beispiel geladen (fiktiv, Raum Bern)"); };
+  const openSaved = async (id: string) => {
+    const r = await openStored(id).catch(() => null);
+    if (!r) { say("Übung konnte nicht geöffnet werden."); return; }
+    setEx(r.ex); setSelSheet(null); setSelArea(null); setSelEvent(null); setSelHint(null); setSelCoa(null);
+    void requestPersist();
+    setDialog(null);
+  };
+  // Rückgängig für Löschen (Raster, NAI, Bilder, Trupps, Übungen); Ergebnis von «Öffnen»
   const undo = useUndo();
   const [mergeInfo, setMergeInfo] = useState<MergeInfo | null>(null);
   // Speicher freigeben: Anhänge gelöschter Meldungen, verwaiste Fotos/Memos (still)
@@ -490,74 +612,16 @@ export function Workspace({ product, tagline }: Props) {
   // Zeichen auf der Karte verschoben → Ort der Meldung korrigieren (mit Rückgängig)
   const mover = useMoveEvent(update, device, ex);
 
-  // ---------- Raster ----------
-  const addSheet = async (kind: "gesamt" | "detail" | "feld") => {
-    const s = sm.current;
-    if (!s || !ex) return;
-    setDrawing(kind === "gesamt" ? "Gesamtblatt: Rechteck über den ganzen Raum aufziehen (vorher hinzoomen)" : kind === "detail" ? "Detailblatt: Rechteck über den Ausschnitt aufziehen" : "Feld-Raster: Rechteck über den Raum aufziehen (vorher hinzoomen)");
-    const r = await drawRect(s.map);
-    setDrawing(null);
-    if (!r) return;
-    let sh: RasterSheet;
-    if (kind === "feld") {
-      const size = niceCellSize(Math.max(r.maxE - r.minE, r.maxN - r.minN) / 30);
-      sh = feldFromRect(r, "AOR", size);
-    } else {
-      const prefix = kind === "gesamt" ? nextPrefix(ex.sheets, "A") : nextPrefix(ex.sheets, "U");
-      sh = blattFromRect(r, kind === "gesamt" ? "GESAMT" : `BLATT ${prefix}`, prefix);
-    }
-    update((x) => { x.sheets.push(sh); return x; });
-    setSelSheet(sh.id);
-    fitSheet(sh);
-  };
-
-  const patchSheet = (id: string, patch: SheetPatch) =>
-    update((x) => {
-      const i = x.sheets.findIndex((s) => s.id === id);
-      const old = x.sheets[i];
-      if (!old) return x;
-      const cols = patch.cols ?? old.colLabels.length, rows = patch.rows ?? old.rowLabels.length;
-      const cell = patch.cellSize ?? old.cellW;
-      let sh: RasterSheet;
-      if (old.variant === "blatt") {
-        const b = sheetBounds(old);
-        const prefix = (patch.prefix ?? old.colLabels[0]!.slice(0, -1)).toUpperCase().slice(0, 1) || "A";
-        sh = makeBlattSheet({ name: patch.name ?? old.name, prefix, center: { e: (b.minE + b.maxE) / 2, n: (b.minN + b.maxN) / 2 }, cellSize: cell, cols, rows, basemap: patch.basemap ?? old.basemap, classification: patch.classification ?? old.classification, quadrants: patch.quadrants ?? old.quadrants });
-      } else {
-        sh = makeFeldSheet({ name: patch.name ?? old.name, origin: old.origin, cellW: cell, cellH: cell, cols, rows, basemap: patch.basemap ?? old.basemap, classification: patch.classification ?? old.classification, quadrants: patch.quadrants ?? old.quadrants });
-      }
-      sh.id = old.id;
-      sh.reference = referencePoint(sh);
-      x.sheets[i] = sh;
-      return x;
-    });
-
-  const pdf = async (sh: RasterSheet, paper: "A4" | "A3") => {
-    setBusy("Karte wird geladen … 0 %");
-    try {
-      const { printSheet } = await import("./pdf");
-      const blob = await printSheet(sh, { paper, areas: ex?.areas, onProgress: (p) => setBusy(`Karte wird geladen … ${Math.round(p * 100)} %`) });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `Fhr_Raster_${safeFileName(sh.name)}_${paper}.pdf`;
-      a.click();
-    } catch (e) {
-      say("PDF konnte nicht erstellt werden: " + (e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
   // ---------- Datei ----------
   // mit Anhängen (Fotos, Memos) als .lage.zip, sonst .lage.json
   const saveFile = async (): Promise<boolean> => {
     // neuester Stand (auch, was wegen eines Speicherfehlers nicht in der Datenbank ist)
-    const ex = exRef.current;
-    if (!ex) return false;
+    const cur = exRef.current;
+    if (!cur) return false;
     try {
-      if (!ex.attachments?.length) { downloadText(`${safeFileName(ex.name)}.lage.json`, exerciseToFile(ex)); return true; }
+      if (!cur.attachments?.length) { downloadText(`${safeFileName(cur.name)}.lage.json`, exerciseToFile(cur)); return true; }
       const { exerciseFile, sizeText } = await import("./exportZip");
-      const r = await exerciseFile(ex, safeFileName(ex.name), getBlob);
+      const r = await exerciseFile(cur, safeFileName(cur.name), getBlob);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(r.blob); a.download = r.name; a.click();
       window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
@@ -601,277 +665,233 @@ export function Workspace({ product, tagline }: Props) {
         // abweichendes Raster/NAI: pro Element hiesige behalten oder aus der Datei übernehmen (Meldungen bleiben)
         diffs: report.diffs,
         choose: (d, c) => update((x) => (x.id === merged.id ? takeHullItems(x, c === "datei" ? file : local, [d]) : x)),
+        // gleiche Revision, anderer Inhalt (K3): eine Fassung gewinnt, die andere bleibt in den Fassungen der Meldung
+        conflictIds: report.conflictIds ?? [],
+        onShowConflict: (id) => { setModus("lage"); setSideView("journal"); selectEventRef.current(id); },
       });
     } catch (e) {
       say((e as Error).message);
     }
   };
 
-  const onGeorefAreas = (areas: Area[]) => {
-    update((x) => { x.areas.push(...areas); return x; });
-    say(`${areas.length} Fläche${areas.length === 1 ? "" : "n"} übernommen`);
-  };
-
   const togglePresent = (on: boolean) => {
     setPresent(on);
+    // Präsentation beendet (Esc, Knopf, Vollbild verlassen): sofort LIVE, der Beamer zeigt nie eine alte Lage (M5)
+    if (!on) zeit.goLive("taste");
     try {
       if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
       if (!on && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     } catch { /* egal */ }
     window.setTimeout(() => sm.current?.map.invalidateSize(), 80);
   };
-  // Präsentation: Esc beendet, ←/→ vorherige/nächste Meldung
+  const fsOn = useRef(false);
+  // Präsentation: Esc beendet, ←/→ vorherige/nächste Meldung (setzt die Lagezeit über den Rückblick)
   useEffect(() => {
     if (!present) return;
     const key = (ev: KeyboardEvent) => {
       const tag = (ev.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (ev.key === "Escape") { togglePresent(false); return; }
+      // Esc beendet sofort (auch wenn ein Stapel auf der Karte aufgefächert ist – Fang-Phase vor der Lageebene)
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); togglePresent(false); return; }
       if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
         const list = (ex?.events ?? []).filter((e) => !e.deleted).sort(compareEvents);
         if (!list.length) return;
         const i = list.findIndex((e) => e.id === selEvent);
         const j = i < 0 ? (ev.key === "ArrowRight" ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, i + (ev.key === "ArrowRight" ? 1 : -1)));
         const e = list[j]!;
-        setSelEvent(e.id); setTCursor(e.t); focusEvent(e);
+        setSelEvent(e.id); zeit.lookBack(e.t); focusEvent(e);
         ev.preventDefault();
       }
     };
-    const fs = () => { if (!document.fullscreenElement) window.setTimeout(() => sm.current?.map.invalidateSize(), 80); };
-    window.addEventListener("keydown", key);
+    // Esc im Vollbild schluckt der Browser (kein keydown): Vollbild verlassen beendet die Präsentation
+    const fs = () => { if (!document.fullscreenElement) { if (fsOn.current) { fsOn.current = false; togglePresent(false); } window.setTimeout(() => sm.current?.map.invalidateSize(), 80); } else fsOn.current = true; };
+    window.addEventListener("keydown", key, true);
     document.addEventListener("fullscreenchange", fs);
-    return () => { window.removeEventListener("keydown", key); document.removeEventListener("fullscreenchange", fs); };
+    return () => { window.removeEventListener("keydown", key, true); document.removeEventListener("fullscreenchange", fs); };
   }); // eslint-disable-line react-hooks/exhaustive-deps
+  // Experte aus: Präsentation beenden
+  useEffect(() => { if (!experte && present) togglePresent(false); }, [experte]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Meldung am Kartenpunkt (für «Korrigieren» im Kontextmenü): nächstes sichtbares Zeichen innerhalb 22 px */
+  const eventNear = (_pos: LV95, pt: { x: number; y: number }) => {
+    const map = sm.current?.map;
+    if (!map || !ex) return null;
+    let best: { e: LageEvent; d: number } | null = null;
+    for (const e of ex.events ?? []) {
+      if (e.deleted || !e.pos || e.t > tNow || (winFrom && e.t < winFrom)) continue;
+      const q = map.latLngToContainerPoint(toLatLng(e.pos));
+      const d = Math.hypot(q.x - pt.x, q.y - pt.y);
+      if (d <= 22 && (!best || d < best.d - 4 || (Math.abs(d - best.d) <= 4 && e.t > best.e.t))) best = { e, d };
+    }
+    return best ? { id: best.e.id, label: `${best.e.t.slice(11, 16)} ${best.e.melder ?? best.e.unit}`.trim() } : null;
+  };
 
   if (!ex) return (
-    <div className="app">
+    <div className="app shell">
       <div className="loading">Wird geladen …</div>
-      {dbBlocked && <div className="toast dbblocked" role="alert">Speicher blockiert: Bitte andere (ältere) Lagejournal-Fenster schliessen – dann geht es hier automatisch weiter.</div>}
+      {dbBlocked && <div className="toast dbblocked" role="alert">Ein anderes Lagejournal-Fenster ist offen – bitte schliessen. Danach geht es hier automatisch weiter.</div>}
     </div>
   );
   const cell = cursor ? cellAtAny(ex.sheets, cursor) : null;
-  const sel = ex.sheets.find((s) => s.id === selSheet) ?? null;
-  const hasBlatt = ex.sheets.some((s) => s.variant === "blatt");
+  const map = mapReady ? sm.current?.map ?? null : null;
+  const hasEvents = (ex.events ?? []).some((e) => !e.deleted);
+  // Meldungsband nur für eine Meldung bis zur Lagezeit (Rückblick zeigt nie eine spätere, M4)
+  const selEv = (ex.events ?? []).find((e) => e.id === selEvent && !e.deleted && e.t.slice(0, 16) <= tNow) ?? null;
+
+  const menu = (
+    <WorkspaceMenu exName={ex.name} aw={aw} setModus={setModus} setExperte={setExperte} offlineReady={offline.ready}
+      onRename={(name) => update((x) => { x.name = name; return x; })}
+      onSwitch={() => setDialog("uebungen")} onNew={() => { switchTo(newExercise(), "neu"); say("Neue Übung angelegt"); }} onDemo={loadDemo}
+      onSaveFile={() => void saveFile()} onOpenFile={() => void openFile()} onPdf={() => void exportJournal("pdf")} onCsv={() => void exportJournal("csv")}
+      night={night} onNight={setNight} onPresent={() => togglePresent(true)}
+      onSpeech={() => setDialog("sprache")} onHintsCsv={exportHints} onHelp={() => setDialog("hilfe")} onAbout={() => setDialog("ueber")}
+      onOpenChange={suspendMenu("menu")} />
+  );
+
+  const red = (
+    <RedPanel ex={ex} t={tLater} from={null} hints={hints} lage={lageRot}
+      variant={experte ? "experte" : "basis"} selHint={selHint} selCoa={selCoa}
+      onSelectHint={setSelHint} onSelectCoa={selectCoa} onMapHint={focusHint} onMapCoa={focusCoa}
+      onEvent={(id) => { setSideView("journal"); selectEvent(id); }} update={update}
+      stand={zeit.zeit.kind === "rueckblick" ? zeit.zeit.t : null} />
+  );
+  const journal = map ? (
+    <JournalPanel ex={ex} map={map} device={device} selected={selEvent} experte={experte} zeit={zeit}
+      win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => { zeit.setShowLast(null); zeit.setAb?.(null); }}
+      showLast={zeit.showLast} onSelect={selectEvent} reportAt={reportAt}
+      onCommitted={(ids) => { mapNow.current = ids; zeit.goLive("eintragen"); }}
+      onPrepare={() => { setModus("vorbereiten"); setPrepStep(2); }} onDemo={loadDemo} update={update} say={say} quality={quality}
+      between={<SideSwitch view={sideView} onView={setSideView} redLabel={<RedTabLabel badge={badge} />} />}
+      tab={hasEvents ? sideView : "journal"} rot={<div role="tabpanel" aria-label="Was Rot vorhaben könnte" className="sh-redpanel">{red}</div>} />
+  ) : <div className="panel"><p className="help">Karte wird geladen …</p></div>;
+
+  const side = lage ? (
+    journal
+  ) : (
+    <PrepareMode ex={ex} map={map} update={update} say={say} offerUndo={undo.offer} offline={offline}
+      step={prepStep} onStep={setPrepStep} selSheet={selSheet} onSelectSheet={setSelSheet} selArea={selArea} onSelectArea={setSelArea}
+      setDrawing={setDrawing} setBusy={setBusy} onBack={() => setModus("lage")} />
+  );
+
+  const band = lage || present ? (
+    <TimeBand ex={ex} zeit={zeit} experte={experte || present} lastReport={lastReportUntil(ex.events, zeit.tLive)}
+      swim={{
+        events: ex.events ?? [], days: ex.days, units: ex.units, selectedId: selEvent, compact: present,
+        onSelect: (id) => { setSideView("journal"); const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) { zeit.lookBack(e.t); focusEvent(e); } },
+        extra: present ? <>
+          <button className={"swt-chip" + (presentHints ? " on" : "")} aria-pressed={presentHints} onClick={() => { setPresentHints(!presentHints); window.setTimeout(() => sm.current?.map.invalidateSize(), 50); }}>
+            Was Rot vorhaben könnte{badge.n ? ` (${badge.n})` : ""}</button>
+          <button className="swt-chip" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button>
+        </> : undefined,
+      }} />
+  ) : undefined;
 
   return (
     <KiProvider ex={ex} t={tNow} update={update} say={say}>
-    <div className={"app" + (present ? " present" : "") + (night ? " night" : "")}>
-      <header className="bar">
-        <div className="brand">
-          <strong title={tagline}>{product}</strong>
-          {(ex.events ?? []).some((e) => !e.deleted) ? <Stats events={ex.events ?? []} /> : <span className="tag">{tagline}</span>}
-          {!online && <span className="netbadge" title="Kein Netz – Journal und gespeicherte Karten funktionieren weiter">offline</span>}
-        </div>
-        <div className="tools">
-          <input className="exname" value={ex.name} onChange={(e) => update((x) => { x.name = e.target.value; return x; })} aria-label="Name der Übung" />
-          <select aria-label="Gespeicherte Übungen" value="" onChange={async (e) => {
-            const v = e.target.value;
-            if (v === "__new") { switchTo(newExercise(), "neu"); return; }
-            if (v === "__demo") { loadDemo(); return; }
-            const r = await openStored(v).catch(() => null);
-            if (r) { setEx(r.ex); setSelSheet(null); void requestPersist(); }
-          }}>
-            <option value="" disabled>Übungen …</option>
-            <option value="__new">+ Neue Übung</option>
-            <option value="__demo">Beispiel (fiktiv) laden</option>
-            {saved.filter((s) => s.id !== ex.id).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <button onClick={openFile}>Öffnen</button>
-          <button onClick={saveFile}>Speichern</button>
-          <KiMenuButton />
-          <button className={"iconbtn" + (night ? " on" : "")} onClick={() => setNight(!night)} title="Nachtbetrieb: Karte abdunkeln" aria-pressed={night}>☾</button>
-          <button className="primary" onClick={() => togglePresent(true)} title="Karte im Vollbild, Zeitstrahl oben (Esc beendet)">▶ Präsentation</button>
-        </div>
-      </header>
-      <StatusBands ex={ex} dbBlocked={dbBlocked} onSaveFile={saveFile} />
-      <div className="work">
-        <aside className="side">
-          <div className="tabs" role="tablist">
-            <button role="tab" aria-selected={tab === "journal"} onClick={() => setTab("journal")}>Journal</button>
-            <button role="tab" aria-selected={tab === "hinweise"} onClick={() => setTab("hinweise")} title={nNew ? `${nNew} offene Hinweise zu Rot` : "Hinweise zu Rot"}>
-              Hinweise{nNew > 0 && <span key={pulse} className={"tab-n" + (nHoch ? "" : " mittel") + (pulse ? " pulse" : "")} aria-label={`${nNew} offen`}>{nNew}</span>}
-            </button>
-            <button role="tab" aria-selected={tab === "raster"} onClick={() => setTab("raster")}><span className="tab-l-long">Führungsraster</span><span className="tab-l-short">Raster</span></button>
-            <button role="tab" aria-selected={tab === "nai"} onClick={() => setTab("nai")}><span className="tab-l-long">NAI / BNB</span><span className="tab-l-short">NAI</span></button>
-          </div>
-          {georef ? (
-            <GeorefPane candidates={georef} map={sm.current!.map} existing={ex.areas} onAreas={onGeorefAreas} onClose={() => { setGeoref(null); setTab("nai"); }} />
-          ) : !mapReady || !sm.current ? (
-            <div className="panel"><p className="help">Karte wird geladen …</p></div>
-          ) : tab === "journal" ? (
-            <JournalPanel ex={ex} map={sm.current!.map} device={device} selected={selEvent}
-              win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => setWin({ mode: "alles" })}
-              onSelect={selectEvent} reportAt={reportAt} editRequest={editReq}
-              onGoto={(t) => setTab(t)} onDemo={loadDemo} update={update} say={say} onExport={exportJournal}
-              quality={quality} />
-          ) : tab === "hinweise" ? (
-            <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint}
-              onMap={focusHint} onEvent={selectEvent} update={update} winFrom={winFrom} onWinClear={() => setWin({ mode: "alles" })}
-              onCsv={() => downloadText(`Hinweise_${safeFileName(ex.name)}.csv`, hintsToCsv(ex, hints) + lageRotCsv(ex, lageRot, tNow), "text/csv;charset=utf-8")}
-              lead={<LageRotPanel ex={ex} lage={lageRot} t={tNow} selected={selCoa} onSelect={selectCoa} onMap={focusCoa}
-                onHint={coaHint} onEvent={selectEvent} update={update} />} />
-          ) : tab === "raster" ? (
-            <div className="panel">
-              {ex.sheets.length === 0 && (
-                <div className="empty">
-                  <p>Noch kein Führungsraster. Wähle eine Variante und ziehe auf der Karte ein Rechteck über den Raum.</p>
-                </div>
-              )}
-              <div className="btnrow">
-                <button className="primary" onClick={() => addSheet(hasBlatt ? "detail" : "gesamt")}>{hasBlatt ? "+ Detailblatt" : "+ Blatt-Raster (Gesamtblatt)"}</button>
-                <button onClick={() => addSheet("feld")}>+ Feld-Raster</button>
-              </div>
-              <ul className="list">
-                {ex.sheets.map((s) => (
-                  <li key={s.id} className={s.id === selSheet ? "sel" : ""}>
-                    <button className="row" onClick={() => { setSelSheet(s.id); fitSheet(s); }}>
-                      <b>{s.name}</b>
-                      <span className="mono">{s.variant === "blatt" ? `${s.colLabels[0]}–${s.colLabels.at(-1)} · 1–${s.rowLabels.length}` : `A–${s.rowLabels.at(-1)} · 1–${s.colLabels.length}`} · {s.cellW} m</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {sel && <SheetForm sheet={sel} onPatch={(p) => patchSheet(sel.id, p)} onPdf={(paper) => pdf(sel, paper)}
-                onDelete={() => {
-                  const i = ex.sheets.findIndex((s) => s.id === sel.id), gone = sel;
-                  update((x) => { x.sheets = x.sheets.filter((s) => s.id !== gone.id); return x; }); setSelSheet(null);
-                  undo.offer(`Raster «${gone.name}» gelöscht`, () => update((x) => { if (!x.sheets.some((s) => s.id === gone.id)) x.sheets.splice(Math.min(i, x.sheets.length), 0, gone); return x; }));
-                }} />}
-              {ex.sheets.length > 0 ? <OfflineBox ex={ex} map={sm.current.map} /> : <p className="help">Karte für den Einsatz ohne Netz speichern: zuerst ein Raster anlegen.</p>}
-            </div>
-          ) : (
-            <NaiPanel exercise={ex} selected={selArea} onSelect={(id) => setSelArea(id)} map={sm.current!.map}
-              onChange={(areas: Area[]) => {
-                // gelöschte Flächen (NAI, AO …): Rückgängig anbieten
-                const gone = ex.areas.map((a, i) => ({ a, i })).filter(({ a }) => !areas.some((b) => b.id === a.id));
-                update((x) => { x.areas = areas; return x; });
-                if (gone.length) undo.offer(gone.length === 1 ? `«${gone[0]!.a.name}» gelöscht` : `${gone.length} Flächen gelöscht`,
-                  () => update((x) => { for (const { a, i } of gone) if (!x.areas.some((b) => b.id === a.id)) x.areas.splice(Math.min(i, x.areas.length), 0, a); return x; }));
-              }}
-              onOverlays={(o) => {
-                // entferntes Bild (BNB, Skizze): Rückgängig anbieten
-                const gone = (ex.overlays ?? []).map((a, i) => ({ a, i })).filter(({ a }) => !o.some((b) => b.id === a.id));
-                update((x) => { x.overlays = o; return x; });
-                if (gone.length) undo.offer(`Bild «${gone[0]!.a.name}» entfernt`,
-                  () => update((x) => { const l = x.overlays ?? []; for (const { a, i } of gone) if (!l.some((b) => b.id === a.id)) l.splice(Math.min(i, l.length), 0, a); x.overlays = l; return x; }));
-              }}
-              onImage={(c) => setGeoref(c)} say={say} />
-          )}
-        </aside>
-        <main className="mapwrap">
-          {(tab === "journal" || (ex.events ?? []).some((e) => !e.deleted)) && (
-            <SwimTimeline events={ex.events ?? []} days={ex.days} units={ex.units} value={tCursor} onChange={setTCursor}
-              selectedId={selEvent} compact={present} win={win} onWin={setWin}
-              onSelect={(id) => { setSelEvent(id); setTab("journal"); const e = (ex.events ?? []).find((x) => x.id === id); if (e) { setTCursor(e.t); focusEvent(e); } }}
-              extra={present ? <>
-                <button className={"swt-chip" + (presentHints ? " on" : "")} aria-pressed={presentHints} onClick={() => { setPresentHints(!presentHints); window.setTimeout(() => sm.current?.map.invalidateSize(), 50); }}
-                  title="Hinweise zu Rot als Spalte rechts">Hinweise{nNew ? ` (${nNew})` : ""}</button>
-                <button className="swt-chip" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button>
-              </> : undefined} />
-          )}
-          <div className="mapbox">
+      <AppShell aw={aw} lagezeit={zeit.zeit.kind} night={night} present={present}
+        header={<Header name={ex.name} product={product} save={saveStatus} offline={offline} menu={menu}
+          onFixOffline={() => { setModus("vorbereiten"); setPrepStep(6); }} />}
+        bands={<>
+          <StatusBands ex={ex} dbBlocked={dbBlocked} onSaveFile={saveFile} />
+          {mergeInfo && <MergeBar info={mergeInfo} onClose={() => setMergeInfo(null)} />}
+        </>}
+        side={side}
+        mapTop={lage || present ? <RueckblickBanner zeit={zeit} days={ex.days} /> : undefined}
+        map={<>
           <div ref={el} className="map" />
-          {present && presentHints && (
-            <aside className="hp-present" aria-label="Hinweise zu Rot">
-              <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint} compact
-                onMap={focusHint} onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update}
-                lead={<LageRotPanel ex={ex} lage={lageRot} t={tNow} selected={selCoa} onSelect={selectCoa} onMap={focusCoa} compact
-                  onHint={coaHint}
-                  onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update} />} />
-            </aside>
-          )}
-          {mapReady && sm.current && (
+          {map && (
             <>
               <div className="maptools">
-                <MapSearch ex={ex} map={sm.current.map} onSelectEvent={(id) => { setTab("journal"); setSelEvent(id); const e = (ex.events ?? []).find((x) => x.id === id); if (e && tCursor && e.t > tCursor) setTCursor(e.t); }} />
-                <MapToolbar map={sm.current.map} basemap={basemap} onBasemap={(b) => { setBasemap(b); sm.current?.setBasemap(b); }}
-                  flags={flags} onFlags={setFlags} onFitAll={() => fitAll(ex)} canFitAll={ex.sheets.length + ex.areas.length > 0}
-                  online={ex.onlineDienste} onOnline={(o) => update((x) => { x.onlineDienste = o; return x; })} />
+                <MapToolbar map={map} basemap={basemap} onBasemap={setBasemap} experte={experte}
+                  flags={userFlags} onFlags={setUserFlags} onFitAll={() => fitAll(ex)} canFitAll={ex.sheets.length + ex.areas.length > 0}
+                  online={ex.onlineDienste} net={offline.net}
+                  showLast={lage ? zeit.showLast : undefined} onShowLast={lage ? zeit.setShowLast : undefined}
+                  onOpenChange={suspendMenu("anzeige")} />
               </div>
-              <EventBanner event={(ex.events ?? []).find((e) => e.id === selEvent && !e.deleted) ?? null} days={ex.days} onClose={() => setSelEvent(null)}
-                extra={(() => { const e = (ex.events ?? []).find((x) => x.id === selEvent); if (!e?.attachments?.length) return null; const all = attachmentsOf(ex, e.attachments); const fotos = all.filter((a) => a.kind === "foto"); const memos = all.filter((a) => a.kind === "audio"); return <>{fotos.length ? <AttachmentChips list={fotos} size={22} /> : null}{memos.length ? <RowMemos list={memos} /> : null}</>; })()}
-                onEdit={present ? undefined : (e) => { setTab("journal"); setEditReq({ id: e.id, n: Date.now() }); }} />
-              {flags.legende && <Legend events={ex.events ?? []} t={tNow} flags={flags} areas={ex.areas} selectedId={selEvent} from={winFrom} />}
-              <MapContextMenu map={sm.current.map} sheets={ex.sheets} onReportHere={(pos) => { setTab("journal"); setReportAt({ pos, n: Date.now() }); }} />
-              {!present && <MapTipHost map={sm.current.map} />}
+              <EventBanner event={selEv} days={ex.days} onClose={() => setSelEvent(null)}
+                extra={(() => { if (!selEv?.attachments?.length) return null; const all = attachmentsOf(ex, selEv.attachments); const fotos = all.filter((a) => a.kind === "foto"); const memos = all.filter((a) => a.kind === "audio"); return <>{fotos.length ? <AttachmentChips list={fotos} size={22} /> : null}{memos.length ? <RowMemos list={memos} /> : null}</>; })()}
+                onEdit={present || (lage && sideView === "journal") ? undefined : (e) => correct(e.id)} />
+              {flags.legende && <Legend events={exLater?.events ?? ex.events ?? []} t={tLater} flags={flags} areas={ex.areas} selectedId={selEvent} from={fromLater} />}
+              <MapContextMenu map={map} sheets={ex.sheets} eventNear={eventNear} onCorrect={present ? undefined : correct}
+                onReportHere={(pos) => { setModus("lage"); setSideView("journal"); setReportAt({ pos, n: Date.now() }); }} />
+              {!present && <MapTipHost map={map} />}
             </>
           )}
           {drawing && <div className="hint">{drawing} · Esc = Abbrechen</div>}
-          <div className="status mono" aria-live="polite">
-            {cursor ? <>{formatLv95(cursor)}{cell ? <> · <b>{cell.label}</b></> : null}</> : "Maus über die Karte bewegen"}
-          </div>
-          </div>
-        </main>
-      </div>
-      {busy && <div className="busy"><div>{busy}</div></div>}
-      {toast && <div className="toast" role="status">{toast}</div>}
-      {mover.notice}
-      {undo.bar}
-      {mergeInfo && <MergeBar info={mergeInfo} onClose={() => setMergeInfo(null)} />}
-      <ViewerHost />
-    </div>
+          {cursor && (
+            <div className="status mono" aria-hidden="true">
+              {cell ? <><b>{cell.label}</b> · </> : null}{formatLv95(cursor)}
+            </div>
+          )}
+        </>}
+        presentAside={present && presentHints ? (
+          <aside className="hp-present" aria-label="Was Rot vorhaben könnte">
+            <HintsPanel ex={ex} hints={hints} t={tNow} selected={selHint} onSelect={setSelHint} compact
+              onMap={focusHint} onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update}
+              lead={<LageRotPanel ex={ex} lage={lageRot} t={tNow} selected={selCoa} onSelect={selectCoa} onMap={focusCoa} compact
+                onHint={coaHint}
+                onEvent={(id) => { const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) focusEvent(e); }} update={update} />} />
+          </aside>
+        ) : undefined}
+        band={band}>
+        {busy && <div className="busy"><div>{busy}</div></div>}
+        {toast && <div className="toast" role="status">{toast}</div>}
+        {mover.notice}
+        {undo.bar}
+        <ViewerHost />
+        {dialog === "uebungen" && (
+          <ExerciseList currentId={ex.id} onOpen={(id) => void openSaved(id)} onClose={() => setDialog(null)} offerUndo={undo.offer}
+            onChanged={() => void listExercises().then(setSaved)} />
+        )}
+        {dialog === "hilfe" && <HelpDialog onClose={() => setDialog(null)} />}
+        {dialog === "ueber" && <AboutDialog product={product} tagline={tagline} onClose={() => setDialog(null)} />}
+        {dialog === "sprache" && <Dialog title="Spracherkennung" onClose={() => setDialog(null)}><SpeechSettings onClose={() => setDialog(null)} /></Dialog>}
+      </AppShell>
     </KiProvider>
   );
 }
 
-const CELL_OPTIONS = [10, 20, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 600, 750, 1000, 1500, 2000];
-
-function SheetForm({ sheet, onPatch, onPdf, onDelete }: {
-  sheet: RasterSheet;
-  onPatch: (p: SheetPatch) => void;
-  onPdf: (paper: "A4" | "A3") => void;
-  onDelete: () => void;
-}) {
-  const prefix = sheet.variant === "blatt" ? sheet.colLabels[0]!.slice(0, -1) : "";
-  const cells = CELL_OPTIONS.includes(sheet.cellW) ? CELL_OPTIONS : [...CELL_OPTIONS, sheet.cellW].sort((a, b) => a - b);
-  return (
-    <div className="form">
-      <label>Codename<input value={sheet.name} onChange={(e) => onPatch({ name: e.target.value })} /></label>
-      {sheet.variant === "blatt" && (
-        <label>Präfix<input value={prefix} maxLength={1} onChange={(e) => onPatch({ prefix: e.target.value })} className="short mono" /></label>
-      )}
-      <label>Feldgrösse
-        <select value={sheet.cellW} onChange={(e) => onPatch({ cellSize: +e.target.value })}>
-          {cells.map((v) => <option key={v} value={v}>{v} m</option>)}
-        </select>
-      </label>
-      <div className="two">
-        <label>Spalten<input type="number" min={2} max={sheet.variant === "blatt" ? 26 : 60} value={sheet.colLabels.length} onChange={(e) => onPatch({ cols: Math.max(2, +e.target.value || 2) })} /></label>
-        <label>Zeilen<input type="number" min={2} max={60} value={sheet.rowLabels.length} onChange={(e) => onPatch({ rows: Math.max(2, +e.target.value || 2) })} /></label>
-      </div>
-      <label>Karte
-        <select value={sheet.basemap} onChange={(e) => onPatch({ basemap: e.target.value as "lk" | "img" })}>
-          <option value="lk">Landeskarte</option>
-          <option value="img">Luftbild</option>
-        </select>
-      </label>
-      <label>Klassifizierung<input value={sheet.classification} onChange={(e) => onPatch({ classification: e.target.value })} /></label>
-      <label className="check"><input type="checkbox" checked={sheet.quadrants} onChange={(e) => onPatch({ quadrants: e.target.checked })} /> Unterquadranten A B / D C</label>
-      <div className="btnrow">
-        <button className="primary" onClick={() => onPdf("A4")}>PDF A4</button>
-        <button className="primary" onClick={() => onPdf("A3")}>PDF A3</button>
-        <button className="danger" onClick={onDelete}>Löschen</button>
-      </div>
-    </div>
-  );
+/** Menü innerhalb des KiProvider (Eintrag «KI …» braucht die KI-Einstellungen der Übung) */
+function WorkspaceMenu(p: Omit<Parameters<typeof MainMenu>[0], "onKi">) {
+  const ki = useKi();
+  return <MainMenu {...p} onKi={ki ? ki.openSettings : undefined} />;
 }
 
-/** Kopfzahlen für das LVZ: Meldungen, eigene Elemente, Sichtungen, letzte Meldung */
-function Stats({ events }: { events: LageEvent[] }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(id); }, []);
-  const live = events.filter((e) => !e.deleted);
-  if (!live.length) return null;
-  const own = new Set(live.flatMap((e) => [e.melder, e.side === "blau" ? e.unit : undefined]).filter((u): u is string => !!u).map((u) => u.toLowerCase())).size;
-  const sight = live.filter((e) => e.side === "rot").length;
-  const last = live.reduce((m, e) => (e.t > m ? e.t : m), "");
-  const ago = Math.round((now - Date.parse(last)) / 60000);
+/** Hilfe: Beispiele (Kap. 4.4, fiktiv, passen zum Beispiel Bern) und Tastenkürzel */
+const BEISPIELE: Array<[string, string]> = [
+  ["H04 2 Fz in AK7 Rtg N", "Fahrzeuge gesehen"],
+  ["1015 H02 Beo Stao bezogen AJ9", "eigener Trupp"],
+  ["H03 3 Pers unklar bei NAI 2", "unklar"],
+  ["H01 Sperre AF13 auf Hauptstrasse", "Sperre auf der Strasse"],
+  ["H05 Kontakt mit Gegner AP11", "Kontakt"],
+];
+function HelpDialog({ onClose }: { onClose: () => void }) {
   return (
-    <span className="stats" aria-label="Kopfzahlen">
-      <span><b className="tnum">{live.length}</b> {live.length === 1 ? "Meldung" : "Meldungen"}</span>
-      <span><b className="tnum">{own}</b> {own === 1 ? "eigenes Element" : "eigene Elemente"}</span>
-      <span><b className="tnum">{sight}</b> {sight === 1 ? "Sichtung" : "Sichtungen"}</span>
-      {ago >= 0 && ago < 24 * 60 && <span>letzte vor <b className="tnum">{ago < 60 ? `${ago}′` : `${Math.floor(ago / 60)} h ${ago % 60}′`}</b></span>}
-    </span>
+    <Dialog title="Beispiele und Tastenkürzel" onClose={onClose}>
+      <p className="dlg-p">Eine Meldung ist eine Zeile: Zeit · Trupp · was · wo. Reihenfolge egal. Ohne Zeit gilt jetzt.</p>
+      <h3>Beispiele</h3>
+      <ul className="dlg-ex">
+        {BEISPIELE.map(([t, d]) => <li key={t}><code>{t}</code><span>{d}</span></li>)}
+      </ul>
+      <p className="dlg-note">Planquadrate gehen erst mit Führungsraster (Vorbereiten). «neu» heisst: in den letzten 10 Minuten gemeldet.</p>
+      <h3>Tastenkürzel</h3>
+      <dl className="dlg-keys">
+        <dt><kbd>Enter</kbd></dt><dd>eintragen</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Feld leeren, Korrektur abbrechen, Fenster schliessen</dd>
+        <dt><kbd>↑</kbd></dt><dd>im leeren Feld: letzte eigene Meldung korrigieren</dd>
+        <dt><kbd>Ctrl+K</kbd></dt><dd>suchen</dd>
+        <dt><kbd>L</kbd></dt><dd>zurück zu LIVE</dd>
+        <dt><kbd>Ctrl+Z</kbd></dt><dd>Löschen rückgängig machen</dd>
+      </dl>
+    </Dialog>
+  );
+}
+function AboutDialog({ product, tagline, onClose }: { product: string; tagline: string; onClose: () => void }) {
+  return (
+    <Dialog title={`Über ${product}`} onClose={onClose}>
+      <p className="dlg-p"><b>{product}</b> – {tagline} · Version {APP_VERSION}</p>
+      <p className="dlg-p">Daten bleiben auf diesem Gerät. Jede Änderung wird sofort gespeichert. Für ein anderes Gerät: Menü → «Datei für anderes Gerät …».</p>
+      <p className="dlg-note">Karten: © swisstopo. Ortsnamen und Strassen nur, wenn die Online-Dienste der Übung eingeschaltet sind. KI nur nach ausdrücklichem Einschalten.</p>
+    </Dialog>
   );
 }

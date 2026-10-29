@@ -1,60 +1,22 @@
 /**
- * Lagejournal: Meldungen eingeben (eine Zeile pro Meldung), Erkennung prüfen, Liste führen.
+ * Lagejournal (linke Spalte, Modus «Lage führen»): dünne Hülle um Meldungsfeld (`EntryBox`), eine Suche
+ * (`UnifiedSearch`) und Liste (`JournalList`) – Spez. MVP 1, Kap. 2.1, 3.2–3.4. Die Teile sind einzeln verdrahtbar
+ * (Verträge in shell/contracts.ts); diese Hülle hält nur Suche, Filter und Korrektur-Anforderung zusammen.
+ * `between` = Platz zwischen Meldungsfeld und Liste für den Umschalter «Journal | Was Rot vorhaben könnte» (Paket A);
+ * `tab = "rot"` zeigt statt Suche und Liste `rot` (Panel von Paket D).
  */
-import { createPortal } from "react-dom";
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import L from "leaflet";
-import {
-  clockField,
-  compareEvents,
-  formatLv95,
-  isoOf,
-  lastPosition,
-  minutesOf,
-  parseMeldung,
-  reviseEvent,
-  sheetBounds,
-  catalogEntry,
-  cellBounds,
-  describeTactical,
-  findCells,
-  isPlaceName,
-  onlineAllowed,
-  type Affiliation,
-  type Status,
-  symbolDef,
-  type Draft,
-  type Exercise,
-  type Kind,
-  type LageEvent,
-  type LV95,
-  type Side,
-  type EventQuality,
-} from "@lage/core";
-import { QualityMarks, useDraftMissing } from "./QualityMarks";
-import { useNow } from "./useNow";
-import { clockDay, localDay, withDay } from "@lage/core";
-import { iconSvg, pickPoint, toLatLng, toLv95 } from "@lage/map";
-import { dayLabel } from "./Timeline";
-import { SymbolPicker, choiceSvg, makeChoice, pickerEntry, rebaseSidc, type SymbolChoice } from "./SymbolPicker";
-import { RoadChoice, RoadEdit, roadOutside, useRoadChoice, type RoadPatch, type RoadPick } from "./RoadChoice";
-import { kindText } from "./journalLayer";
-import { WindowHint } from "./mapedit";
-import { inWindow } from "@lage/core";
-import { ShapeButton, shapePatch, takeDrawing } from "./ShapeDraw";
-import { addEvents, buildEvent, commitTexts } from "./commit";
-import { PhotoButton, PendingAttachment } from "./PhotoInput";
-import { AttachmentChips } from "./Attachments";
-import { attachmentsOf, deleteAttachmentBlob } from "./attachmentStore";
-import type { Attachment } from "@lage/core";
-import { RowMemos, VoiceButton, VoiceStatus, useVoice } from "./VoiceInput";
-import { KiMeldungSuggest, meldungUnklar } from "./ki/KiFeatures";
-import { KiMark } from "./ki/context";
-import { BlockNote, ProblemChips, blockText, openProblems } from "./DraftProblems";
-import { useDraftPersist } from "./draftPersist";
-import { EditPreview, placeFromText, reparseEdit, reparseExtras, revealEditRow } from "./editReparse";
-import { EditConflict } from "./EditConflict";
-import { editConflict } from "./persist";
+import type { EventQuality, Exercise, LV95 } from "@lage/core";
+import { EntryBox } from "./entry/EntryBox";
+import { requestCorrection } from "./entry/useEntryDraft";
+import { deleteEvent } from "./journal/actions";
+import { filterJournal } from "./journal/filter";
+import { JournalList } from "./journal/JournalList";
+import { UnifiedSearch } from "./journal/UnifiedSearch";
+import { dayLabel, isoLocal } from "./Timeline";
+import type { JournalEmpty, SearchArt, ShowLast, ZeitApi } from "./shell/contracts";
+import "./journal/journal.css";
 
 interface Props {
   ex: Exercise;
@@ -64,645 +26,97 @@ interface Props {
   onSelect: (id: string | null) => void;
   update: (f: (x: Exercise) => Exercise) => void;
   say: (t: string) => void;
-  onExport: (kind: "csv" | "pdf") => void;
+  /** alt (vor MVP 1): Fussknöpfe CSV/PDF – mit Menü (Paket A) weglassen */
+  onExport?: (kind: "csv" | "pdf") => void;
   /** «Meldung hier» aus dem Kontextmenü der Karte: Ort vorbelegen */
   reportAt?: { pos: LV95; n: number } | null;
-  /** Leerzustand: zu Raster/NAI wechseln, Beispiel laden */
+  /** Leerzustand: «Übung vorbereiten» bzw. alt Reiter Raster; «Beispiel ansehen» */
   onGoto?: (tab: "raster" | "nai") => void;
+  onPrepare?: () => void;
   onDemo?: () => void;
-  /** «Bearbeiten» aus dem Meldungsband der Karte */
+  /** «Korrigieren» aus Meldungsband / Kontextmenü der Karte */
   editRequest?: { id: string; n: number } | null;
-  /** Zeitfenster der Karte: Liste nur [from, to] (ISO lokal), null = alles */
+  /** Liste nur [from, to] (ISO lokal): Lagezeit und «Zeige letzte»; null = alles */
   win?: { from: string; to: string } | null;
   onWinClear?: () => void;
-  /** Meldungsqualität (E1 bestätigt/unbestätigt, E2 unvollständig) zur Lagezeit */
   quality?: Map<string, EventQuality>;
+  // ---------- MVP 1 (alle optional)
+  experte?: boolean;
+  /** Lagezeit (Paket C); ohne Angabe LIVE */
+  zeit?: Pick<ZeitApi, "zeit" | "tNow">;
+  /** nach Eintragen/Korrektur (Paket A: `goLive("eintragen")`); die Zeile wird hier schon gewählt */
+  onCommitted?: (ids: string[]) => void;
+  /** «Zeige letzte» in Minuten (für den Leerzustand) */
+  showLast?: ShowLast;
+  /** Umschalter «Journal | Was Rot vorhaben könnte» */
+  between?: ReactNode;
+  tab?: "journal" | "rot";
+  rot?: ReactNode;
 }
 
-/** Auf Handy/Tablet nicht automatisch fokussieren (sonst springt die Seite und die Tastatur geht auf) */
-const wideScreen = typeof window !== "undefined" && window.innerWidth >= 860 && !window.matchMedia?.("(pointer: coarse)").matches;
-const KINDS: Array<[Kind, string]> = [["eigen", "Eigene"], ["feind", "Feind"], ["unklar", "Unklar"]];
-export const KIND_COLOR: Record<Kind, string> = { eigen: "#1f5fb8", feind: "#c8102e", unklar: "#b8860b" };
-/** Art für Filter und Bearbeiten: neutral (N) zählt zu «Unklar» (nicht Feind) */
-const kindOf = (e: Pick<LageEvent, "side" | "aff">): Kind => (e.side === "blau" ? "eigen" : e.aff === "U" || e.aff === "N" ? "unklar" : "feind");
-/** Zugehörigkeit ↔ Art: F = eigen, H = feind, U/N = unklar */
-const kindOfAff = (a: Affiliation): Kind => (a === "F" ? "eigen" : a === "H" ? "feind" : "unklar");
-const affOfKind = (k: Kind, cur: Affiliation): Affiliation => (k === "eigen" ? "F" : k === "feind" ? "H" : cur === "N" ? "N" : "U");
-const sideOfAff = (a: Affiliation): Side => (a === "F" ? "blau" : "rot");
-/** Farbe für Liste/Zeile: neutral grün */
-const kindColor = (e: Pick<LageEvent, "side" | "aff">): string => (e.side !== "blau" && e.aff === "N" ? "#2d7a4b" : KIND_COLOR[kindOf(e)]);
-const kindVar = (e: Pick<LageEvent, "side" | "aff">): string => {
-  const k = kindOf(e);
-  return k === "eigen" ? "var(--blau)" : e.aff === "N" ? "var(--ok)" : k === "feind" ? "var(--rot)" : "var(--unklar)";
-};
-const STATUS_WORD: Partial<Record<Status, string>> = { anticipated: "vermutet", destroyed: "zerstört", damaged: "beschädigt" };
-const COMPASS = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
-const compass = (deg: number) => COMPASS[Math.round(deg / 45) % 8]!;
-/** ausgeschriebener Sinn zu einer (von Hand gewählten) Zeichenwahl, inkl. Zugehörigkeit und Anzahl */
-function choiceText(c: SymbolChoice, count?: number): string {
-  const st = c.status && c.status !== "present" ? STATUS_WORD[c.status] : undefined;
-  return describeTactical({ key: c.key, echelon: c.echelon, count: count && count > 0 ? count : undefined, statusWord: st }, c.aff === "H" || c.aff === "F" ? c.aff : null)
-    || pickerEntry(c.key)?.name || c.key;
-}
-/** Ort nur ersatzweise (letzte Lage bzw. beim Melder) – ein nachgeschlagener Ortsname geht vor */
-const fallbackWhere = (k: string | undefined) => k === "zuletzt" || k === "melder";
-const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-
-/** Bereich der Übung (Raster, NAI) – für die Ortssuche */
-function exerciseBox(ex: Exercise, map: L.Map) {
-  const pts: LV95[] = [];
-  ex.sheets.forEach((s) => { const b = sheetBounds(s); pts.push({ e: b.minE, n: b.minN }, { e: b.maxE, n: b.maxN }); });
-  ex.areas.forEach((a) => pts.push(...a.ring));
-  if (!pts.length) {
-    const b = map.getBounds();
-    pts.push(toLv95(b.getSouthWest()), toLv95(b.getNorthEast()));
-  }
-  const pad = 8000;
-  return { minE: Math.min(...pts.map((p) => p.e)) - pad, maxE: Math.max(...pts.map((p) => p.e)) + pad, minN: Math.min(...pts.map((p) => p.n)) - pad, maxN: Math.max(...pts.map((p) => p.n)) + pad };
-}
-
-async function lookupPlace(q: string, box: ReturnType<typeof exerciseBox>, signal: AbortSignal): Promise<{ name: string; pos: LV95 } | null> {
-  const url = `https://api3.geo.admin.ch/rest/services/api/SearchServer?type=locations&sr=2056&limit=5&searchText=${encodeURIComponent(q)}&bbox=${Math.round(box.minE)},${Math.round(box.minN)},${Math.round(box.maxE)},${Math.round(box.maxN)}`;
-  const r = await fetch(url, { signal });
-  const j = await r.json();
-  const hit = (j.results ?? []).find((x: { attrs: { y: number; x: number } }) => x.attrs.y >= box.minE && x.attrs.y <= box.maxE && x.attrs.x >= box.minN && x.attrs.x <= box.maxN);
-  return hit ? { name: q, pos: { e: hit.attrs.y, n: hit.attrs.x } } : null;
-}
-
-function SymbolMini({ k, aff, sidc, status }: { k: string; aff: LageEvent["aff"]; sidc?: string; status?: LageEvent["status"] }) {
-  // gleiches Objekt behalten: React 19 setzt innerHTML sonst bei jeder Darstellung neu (300 Zeilen bei jeder Mausbewegung)
-  const html = useMemo(() => ({ __html: iconSvg(k, aff, 14, { sidc, status }).svg }), [k, aff, sidc, status]);
-  return <span className="symmini" dangerouslySetInnerHTML={html} />;
-}
-
-export function JournalPanel({ ex, map, device, selected, onSelect, update, say, onExport, reportAt, editRequest, onGoto, onDemo, win, onWinClear, quality }: Props) {
+export function JournalPanel(p: Props) {
+  const { ex, map, device, selected, onSelect, update, say, quality } = p;
   const events = ex.events ?? [];
-  const [kindOverride, setKindOverride] = useState<Kind | null>(null);
-  /** Uhr für die Vorschau («jetzt 10:40») – die Zeit einer Meldung ohne Zeitangabe wird erst beim Eintragen festgelegt */
-  const now = useNow();
-  /** von Hand gewählter Übungstag; null = Tag folgt der Uhr (nach Mitternacht automatisch der nächste, wird beim Eintragen angelegt) */
-  const [dayPick, setDay] = useState<string | null>(null);
-  // Tag folgt der Uhr nur, wenn die Übung heute läuft (kein heutiges T1 vor dem Beispiel 2030 / Vorbereitungstagen)
-  const clk = clockDay(ex.days, now);
-  const day = dayPick ?? clk.day;
-  const [text, setText] = useState("");
-  const [manualPos, setManualPos] = useState<LV95 | null>(null);
-  /** von Hand gezeichnete Fläche/Linie für die neue Meldung */
-  const [shapeDraft, setShapeDraft] = useState<LageEvent["shape"]>(undefined);
-  const [found, setFound] = useState<{ q: string; name: string; pos: LV95 } | null>(null);
-  const [picking, setPicking] = useState(false);
-  const [filter, setFilter] = useState<"alle" | Kind | "unbest">("alle");
-  const [search, setSearch] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fitInput = () => requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; } });
-  // angefangene Meldung überlebt Neuladen und Reiterwechsel (pro Übung, draftPersist.ts)
-  useDraftPersist(ex.id, text, setText, fitInput);
-  /** Esc hat die Meldung verworfen: Rückgängig (~8 s; auch Ctrl+Z im leeren Feld) */
-  const [escUndo, setEscUndo] = useState<string | null>(null);
-  const escTimer = useRef<number | undefined>(undefined);
-  const stashEsc = (t: string) => { setEscUndo(t); window.clearTimeout(escTimer.current); escTimer.current = window.setTimeout(() => setEscUndo(null), 8000); };
-  const restoreEsc = () => { if (escUndo === null) return; setText(escUndo); setEscUndo(null); window.clearTimeout(escTimer.current); fitInput(); inputRef.current?.focus(); };
-  const [confirmNoMelder, setConfirmNoMelder] = useState(false);
-  const [symOverride, setSymOverride] = useState<SymbolChoice | null>(null);
-  const [pickOpen, setPickOpen] = useState(false);
-  /** Popover fest am Bildschirm ausrichten (die Seitenleiste schneidet sonst ab) */
-  const [pickPos, setPickPos] = useState<{ left: number; top: number; maxH: number } | null>(null);
-  const pickClosedAt = useRef(0);
-  const openPicker = (btn: HTMLElement) => {
-    if (pickOpen) { setPickOpen(false); return; }
-    if (Date.now() - pickClosedAt.current < 300) return; // Klick auf den Chip hat das Popover eben geschlossen
-    const r = btn.getBoundingClientRect();
-    const w = Math.min(440, window.innerWidth - 24);
-    const left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12));
-    const below = window.innerHeight - r.bottom - 18;
-    const top = below >= 360 ? r.bottom + 6 : Math.max(12, window.innerHeight - Math.min(560, window.innerHeight - 24) - 12);
-    setPickPos({ left, top, maxH: Math.min(560, window.innerHeight - top - 12) });
-    setPickOpen(true);
-  };
-  /** Strassenwahl von Hand (Kreuzung), bleibt wie die Zeichenwahl bis zum Eintragen */
-  const [roadPick, setRoadPick] = useState<RoadPick | null>(null);
-  /** Anhang (Foto), der an die nächste eingetragene Meldung gehängt wird */
-  const [pendingAtt, setPendingAtt] = useState<Attachment | null>(null);
-  /** Text im Feld stammt aus einem übernommenen KI-Vorschlag («KI deuten») – bis das Feld leer ist */
-  const kiTaken = useRef(false);
-  useEffect(() => { if (!text.trim()) kiTaken.current = false; }, [text]);
-  /** Sprechen: Memo → Meldungsfeld (eine Meldung) bzw. Übersicht (mehrere) */
-  const voice = useVoice({ ex, update, say, text, setText, day, input: inputRef, onAttach: setPendingAtt, pendingId: pendingAtt?.id,
-    onDetach: (id) => setPendingAtt((p) => (p?.id === id ? null : p)),
-    onCommit: (texts, a) => { const evs = commitTexts(texts, { ex, device, update, day, attachment: a }); const last = evs[evs.length - 1]; if (last) onSelect(last.id); } });
+  const [q, setQ] = useState("");
+  const [art, setArt] = useState<SearchArt>(null);
+  const [resetSearch, setResetSearch] = useState(0);
+  const [ownReq, setOwnReq] = useState<{ id: string; n: number } | null>(null);
+  const [correcting, setCorrecting] = useState<string | null>(null);
+  const zeit = p.zeit ?? { zeit: { kind: "live" as const }, tNow: isoLocal(Date.now()) };
+  const rueckblick = zeit.zeit.kind === "rueckblick";
+  // Korrektur: Anforderung von aussen (Karte) oder aus der Liste – die jüngere gilt
+  const correct = !p.editRequest ? ownReq : !ownReq ? p.editRequest : ownReq.n > p.editRequest.n ? ownReq : p.editRequest;
 
-  // Taste «N» (ausserhalb von Eingabefeldern): zurück in die Meldungszeile
-  useEffect(() => {
-    const key = (ev: KeyboardEvent) => {
-      const el = ev.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
-      if ((ev.key === "n" || ev.key === "N") && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); inputRef.current?.focus(); }
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, []);
-  // gelöschte Meldungen sind nicht bearbeitbar (nur «Rückgängig» bzw. «Trotzdem speichern» im Konflikt)
-  useEffect(() => { if (editRequest && !events.find((x) => x.id === editRequest.id)?.deleted) { setFilter("alle"); setSearch(""); setEditing(editRequest.id); } }, [editRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (reportAt) { setManualPos(reportAt.pos); inputRef.current?.focus(); } }, [reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setDay(null); }, [ex.id]);
+  const list = useMemo(() => filterJournal(events, { q, art, from: p.win?.from, to: rueckblick ? zeit.tNow : p.win?.to ?? null, quality: art === "einzeln" ? quality : undefined }),
+    [events, q, art, p.win?.from, p.win?.to, rueckblick, zeit.tNow, art === "einzeln" && quality]); // eslint-disable-line react-hooks/exhaustive-deps
+  const any = events.some((e) => !e.deleted);
+  const empty: JournalEmpty = list.length ? null : !any ? "erststart" : q || art ? "suche" : rueckblick ? "rueckblick" : p.win ? "zeige-letzte" : null;
 
-  const ctx = useMemo(() => ({
-    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now, dayFromClock: dayPick === null && clk.follow,
-    lastPos: (u: string, s: Side) => lastPosition(events, s, u),
-  }), [ex, kindOverride, day, events, now, dayPick]);
-  const draft: Draft | null = useMemo(() => (text.trim() ? parseMeldung(text, ctx) : null), [text, ctx]);
-  /** E2: was der Meldung fehlt (Rückfrage nach AEIOU) */
-  const draftMissing = useDraftMissing(draft, ex);
-
-  // Ortsname online nachschlagen (nur wenn sonst kein Ort erkannt wurde)
-  useEffect(() => {
-    const q = draft?.placeQuery;
-    // nur echte Ortsnamen (nicht «Alpha Kilo», «AK77»), nur wenn für die Übung erlaubt (Online-Dienste), erst nach einer Pause
-    if (!q || (draft?.pos && !fallbackWhere(draft.where?.kind)) || !navigator.onLine || !isPlaceName(q) || !onlineAllowed(ex, "ortssuche") || draft?.problems?.some((p) => p.kind === "ort")) { setFound(null); return; }
-    if (found?.q === q) return;
-    const ctl = new AbortController();
-    const t = window.setTimeout(async () => {
-      try {
-        const r = await lookupPlace(q, exerciseBox(ex, map), ctl.signal);
-        setFound(r ? { q, ...r } : null);
-      } catch { /* offline */ }
-    }, 600);
-    return () => { ctl.abort(); window.clearTimeout(t); };
-  }, [draft?.placeQuery, draft?.pos, ex.onlineDienste?.ortssuche]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** Probleme, die das Eintragen sperren (unbekannter Ort, ungültige Zeit); «Ort auf Karte» löst ein Ort-Problem */
-  const problems = draft ? openProblems(draft, { manualPos: !!manualPos }) : [];
-  const ortProblem = problems.some((p) => p.kind === "ort");
-  const future = !!draft && draft.timeFromText && Date.parse(draft.t) - Date.now() > 10 * 60000 && Date.parse(draft.t) - Date.now() < 36 * 3600000;
-  // Zeichen: erkannt oder von Hand gewählt
-  const autoEntry = draft ? pickerEntry(draft.sym) ?? pickerEntry("einheit")! : null;
-  const choice: SymbolChoice | null = draft ? symOverride ?? makeChoice(autoEntry!, draft.aff, draft.echelon, draft.status) : null;
-  const choiceEntry = choice ? pickerEntry(choice.key) ?? autoEntry : null;
-  const choiceDesc = symOverride && choiceEntry ? choiceText(symOverride, draft?.count) : draft?.desc;
-  // Art folgt einer von Hand gewählten Zugehörigkeit (Neutral → unklar)
-  const effKind: Kind | null = draft ? (symOverride ? kindOfAff(symOverride.aff) : draft.kind) : null;
-  const setKind = (k: Kind) => {
-    setKindOverride(k);
-    if (symOverride) setSymOverride(makeChoice(pickerEntry(symOverride.key) ?? pickerEntry("einheit")!, affOfKind(k, symOverride.aff), symOverride.echelon, symOverride.status));
-  };
-  // Hindernisse, Checkpoint, IED …: auf die wahrscheinlichste Strasse im gemeldeten Gebiet legen
-  const roadTarget = (() => {
-    if (!draft || !choice || manualPos) return null;
-    const ce = catalogEntry(choice.key);
-    // Hindernis & Co. – oder ausdrücklich «auf Hauptstrasse / Autobahn» gemeldet
-    if (ce?.placement !== "strasse" && !draft.roadHint) return null;
-    const hint = draft.roadHint;
-    if (draft.where?.kind === "raster" && draft.cells?.[0]) {
-      const c = findCells(draft.cells[0], ex.sheets)[0];
-      const sh = c && ex.sheets.find((x) => x.id === c.sheetId);
-      if (c && sh) return { key: `${choice.key}|${draft.cells[0]}|${hint ?? ""}`, target: cellBounds(sh, c.col, c.row, c.quadrant) as import("@lage/core").Bounds | LV95[], along: choice.key === "hinterhalt", hint };
-    }
-    if (draft.where?.kind === "nai" && draft.nai) {
-      const a = ex.areas.find((x) => x.name === draft.nai);
-      if (a) return { key: `${choice.key}|${a.id}|${hint ?? ""}`, target: a.ring as import("@lage/core").Bounds | LV95[], along: choice.key === "hinterhalt", hint };
-    }
-    return null;
-  })();
-  // Strasse: im Text genannte gewinnt, sonst wahrscheinlichste; von Hand wählbar (RoadChoice)
-  const roadRes = useRoadChoice(roadTarget, text, roadPick);
-  const road = roadTarget ? roadRes.pl : null;
-  const effPos0 = manualPos ?? (found && draft?.placeQuery === found.q && (!draft.pos || fallbackWhere(draft.where?.kind)) ? found.pos : draft?.pos);
-  const effWhere0 = manualPos ? "Karte" : found && effPos0 === found.pos ? found.name : draft?.where?.label;
-  const effPos = road ? road.pos : effPos0;
-  const effWhere = road ? `${effWhere0} · auf ${road.road ?? "Strasse"}` : effWhere0;
-
-  const pickOnMap = async () => {
-    setPicking(true);
-    const p = await pickPoint(map);
-    setPicking(false);
-    if (p) setManualPos(p);
-    inputRef.current?.focus();
-  };
-
-  const add = () => {
-    if (!draft) return;
-    // nie still falsch: unbekannter Ort / ungültige Zeit sperrt
-    if (problems.length) { say(blockText(problems)); inputRef.current?.focus(); return; }
-    // Fläche/Linie wird noch gezeichnet: zuerst abschliessen (Form übernehmen), dann eintragen
-    const drawn = takeDrawing("neu");
-    if (drawn === "unfertig") { say("Fläche/Linie noch nicht fertig – weitere Punkte setzen, dann «Fertig» (oder Esc)."); return; }
-    if (drawn) setShapeDraft(drawn);
-    const sd = drawn ?? shapeDraft;
-    if (!draft.melder && !confirmNoMelder) { setConfirmNoMelder(true); return; }
-    setConfirmNoMelder(false);
-    // Eintrage-Weg in commit.ts (gleich für mehrere Meldungen aus Foto/Sprachmemo)
-    // Zeit «jetzt» erst jetzt (Enter) festlegen, nicht beim Tippen; eine getippte Zeit hat Vorrang
-    const at = new Date();
-    const clkAt = clockDay(ex.days, at);
-    const fresh = parseMeldung(text, { ...ctx, now: at, day: dayPick ?? clkAt.day, dayFromClock: dayPick === null && clkAt.follow });
-    const dNow: Draft = { ...draft, minutes: fresh.minutes, day: fresh.day, t: fresh.t };
-    const ev = buildEvent(dNow, device, ex, {
-      pos: effPos, where: effWhere, whereKind: manualPos ? "karte" : "ort",
-      sym: symOverride ? { ...symOverride, desc: choiceDesc } : undefined,
-      road,
-      // genannte Strasse liegt ausserhalb des gemeldeten Feldes: Feld nachführen
-      roadCell: roadOutside(road, effWhere0 ?? "", ex.sheets)?.cell,
-      roadNone: !!(roadTarget && roadPick?.none),
-      shape: sd,
-      attachments: pendingAtt ? [pendingAtt.id] : undefined,
-      source: pendingAtt ? { kind: pendingAtt.kind === "audio" ? "audio" : "image", ref: pendingAtt.id } : undefined,
-      via: kiTaken.current ? "ki" : undefined,
-    }, at);
-    kiTaken.current = false;
-    update((x) => addEvents(x, [ev], { place: found && effPos0 === found.pos ? found : undefined, attachments: pendingAtt ? [pendingAtt] : undefined }));
-    setPendingAtt(null);
-    setText(""); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setPickOpen(false); setRoadPick(null); setShapeDraft(undefined);
-    onSelect(ev.id);
-    if (ev.pos && !map.getBounds().contains(toLatLng(ev.pos))) map.panTo(toLatLng(ev.pos));
-    if (!ev.pos) say("Eingetragen – ohne Ort. Mit ✎ kann der Ort später auf der Karte gesetzt werden.");
-    inputRef.current?.focus();
-  };
-
-  const patch = (id: string, p: Partial<LageEvent>) => update((x) => { x.events = (x.events ?? []).map((e) => (e.id === id ? reviseEvent(e, p, device) : e)); return x; });
-  const [undo, setUndo] = useState<string | null>(null);
-  const undoTimer = useRef<number | undefined>(undefined);
-  const removeWithUndo = (id: string) => {
-    patch(id, { deleted: true });
-    setUndo(id);
-    window.clearTimeout(undoTimer.current);
-    undoTimer.current = window.setTimeout(() => setUndo(null), 6000);
-  };
-  // Auswahl von aussen (Karte, Zeitstrahl): Zeile zeigen und kurz aufblitzen
-  const listRef = useRef<HTMLOListElement>(null);
-  const [flashId, setFlashId] = useState<string | null>(null);
-  useEffect(() => {
-    if (!selected) return;
-    const li = listRef.current?.querySelector<HTMLElement>(`li[data-id="${selected}"]`);
-    if (!li) return;
-    const r = li.getBoundingClientRect(), pr = listRef.current!.closest(".side")?.getBoundingClientRect();
-    if (!pr || r.top < pr.top + 230 || r.bottom > pr.bottom) li.scrollIntoView({ block: "center", behavior: "smooth" });
-    setFlashId(selected);
-    const t = window.setTimeout(() => setFlashId(null), 1600);
-    return () => window.clearTimeout(t);
-  }, [selected]);
-
-  const list = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return events
-      .filter((e) => (!e.deleted || e.id === editing) && (filter === "alle" || (filter === "unbest" ? quality?.get(e.id)?.status === "unbestaetigt" : kindOf(e) === filter)) && (!q || `${e.unit} ${e.melder ?? ""} ${e.text} ${e.where ?? ""} ${(e.cells ?? []).join(" ")}`.toLowerCase().includes(q)))
-      .filter((e) => !win || inWindow(e.t, win.from, win.to))
-      .sort((a, b) => compareEvents(b, a));
-    // `editing` gehört dazu: eine während der Bearbeitung gelöschte Meldung verschwindet nach «Verwerfen» (keine Geisterzeile)
-  }, [events, editing, filter, search, win?.from, win?.to, filter === "unbest" && quality]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const addDay = () => {
-    const last = ex.days[ex.days.length - 1] ?? todayIso();
-    const d = new Date(last + "T12:00"); d.setDate(d.getDate() + 1);
-    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    update((x) => { x.days = [...x.days, iso]; return x; });
-    setDay(iso);
-  };
+  /** zuletzt eingetragene Zeilen: bei aktivem Suchfilter sagen, wenn sie dadurch ausgeblendet sind (Filter bleibt, Klartext) */
+  const [justIds, setJustIds] = useState<string[]>([]);
+  const onCommitted = useCallback((ids: string[]) => {
+    const last = ids[ids.length - 1];
+    if (last) onSelect(last);
+    setJustIds(ids);
+    p.onCommitted?.(ids);
+  }, [onSelect, p.onCommitted]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setJustIds([]), [q, art]);
+  useEffect(() => { if (!justIds.length) return; const t = window.setTimeout(() => setJustIds([]), 15000); return () => window.clearTimeout(t); }, [justIds]);
+  const hiddenNew = (q || art) && justIds.length > 0
+    && justIds.some((id) => events.some((e) => e.id === id && !e.deleted) && !list.some((e) => e.id === id));
 
   return (
-    <div className="panel journal">
-      {!ex.sheets.length && !events.some((e) => !e.deleted) && (
-        <div className="onboard">
-          <h3>So startest du</h3>
-          <ol>
-            <li><b>Führungsraster</b> über den Raum legen – damit «AK7 C» verstanden wird.{onGoto && <> <button className="chipbtn" onClick={() => onGoto("raster")}>Raster anlegen</button></>}</li>
-            <li><b>NAI / BNB</b> einpflegen (Word, Bild, KML) – optional.{onGoto && <> <button className="chipbtn" onClick={() => onGoto("nai")}>NAI einpflegen</button></>}</li>
-            <li><b>Meldungen</b> unten eintippen: Zeit · Melder · was · wo.</li>
-          </ol>
-          {onDemo && <div className="btnrow"><button onClick={onDemo}>Beispiel (fiktiv) ansehen</button></div>}
-        </div>
-      )}
-      <div className="entry" style={{ borderColor: effKind ? (symOverride?.aff === "N" ? "#2d7a4b" : KIND_COLOR[effKind]) : undefined }}>
-        <div className="btnrow">
-          <b className="entry-title">Meldung</b>
-          <select value={day} onChange={(e) => (e.target.value === "__add" ? addDay() : setDay(e.target.value === clk.day ? null : e.target.value))} aria-label="Übungstag"
-            title={dayPick ? "Tag von Hand gewählt" : clk.follow ? "Tag folgt der Uhr (nach Mitternacht automatisch der nächste)" : "Übung läuft nicht heute – Tag folgt nicht der Uhr"}>
-            {withDay(ex.days, day).map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.{ex.days.includes(d) ? "" : " (neu)"}</option>)}
-            <option value="__add">+ Tag</option>
-          </select>
-          {!clk.follow && dayPick === null && localDay(now) > clk.day && (
-            <button className="chipbtn" title="Übung läuft heute weiter: heutigen Tag anlegen (sonst gelten Meldungen ohne Tag für den letzten Übungstag)"
-              onClick={() => { const t = localDay(new Date()); update((x) => { x.days = withDay(x.days, t); return x; }); }}>+ heute {localDay(now).slice(8, 10)}.{localDay(now).slice(5, 7)}.</button>
+    <div className="panel journal jpanel">
+      <EntryBox ex={ex} map={map} device={device} experte={!!p.experte} update={update} say={say} zeit={zeit}
+        onCommitted={onCommitted} correct={correct} reportAt={p.reportAt ?? null} onCorrecting={setCorrecting} />
+      <hr className="jp-sep" />
+      {any && p.between}
+      {p.tab === "rot" ? p.rot : (
+        <>
+          {/* ohne Meldungen: dieselbe Suche als Ortssuche (Karte hinfliegen), sobald es Meldungen gibt auch Listenfilter */}
+          <UnifiedSearch ex={ex} map={map} today={dayLabel(zeit.tNow, ex.days)} reset={resetSearch} variant={any ? "journal" : "ort"}
+            onQuery={(qq, a) => { setQ(qq); setArt(a); }}
+            onPickEvent={(id) => onSelect(id)} />
+          {hiddenNew && (
+            <p className="jp-hidden" role="status">
+              <span>Eingetragen – durch Suchfilter ausgeblendet</span>
+              <button type="button" className="jl-btn" onClick={() => { setResetSearch((n) => n + 1); setJustIds([]); }}>Filter löschen</button>
+            </p>
           )}
-        </div>
-        <textarea ref={inputRef} className="msg" value={text} autoFocus={wideScreen} rows={1} placeholder={wideScreen ? "z. B. 1015 H04 2 Fz in NAI 3 Rtg N" : "1015 H04 2 Fz NAI 3"} aria-label="Meldung"
-          onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; }}
-          onChange={(e) => { setText(e.target.value.replace(/\n/g, " ")); setConfirmNoMelder(false); if (!e.target.value) { setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); e.target.style.height = "auto"; } }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); add(); }
-            // Esc verwirft – mit Rückgängig (Leiste unten, Ctrl+Z im leeren Feld)
-            if (e.key === "Escape" && text) { stashEsc(text); setText(""); setManualPos(null); setKindOverride(null); e.currentTarget.style.height = "auto"; }
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !text && escUndo !== null) { e.preventDefault(); restoreEsc(); }
-            // ↑ in leerer Zeile: letzte Meldung zum Korrigieren öffnen
-            if (e.key === "ArrowUp" && !text) { const last = [...events].filter((x) => !x.deleted).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]; if (last) { e.preventDefault(); setEditing(last.id); onSelect(last.id); } }
-            // Alt+1/2/3: Einordnung festlegen
-            if (e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setKind(KINDS[+e.key - 1]![0]); }
-          }} />
-        <VoiceStatus v={voice} />
-        {draft ? (
-          <div className="preview">
-            <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={`${draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – Zeit beim Eintragen (Enter)"} · ${dayLabel(draft.t, withDay(ex.days, draft.day))} ${draft.day.slice(8, 10)}.${draft.day.slice(5, 7)}.${ex.days.includes(draft.day) ? "" : " (neuer Tag)"}`}>{draft.timeFromText ? `${dayLabel(draft.t, withDay(ex.days, draft.day))} ${draft.t.slice(11, 16)}` : `jetzt ${draft.t.slice(11, 16)}`}</span>
-            {draft.melder ? <span className="chip" title="eigenes Element, das meldet">Melder <b>{draft.melder}</b></span>
-              : <span className={"chip " + (confirmNoMelder ? "err" : "warnsoft")} title="Wer meldet? z. B. «H04» an den Anfang">{confirmNoMelder ? "Ohne Melder? Nochmals Enter" : "Melder fehlt"}</span>}
-            {future && <span className="chip warnsoft" title="Zeit liegt nach jetzt">liegt in der Zukunft – Vortag?</span>}
-            <span className="seg kinds" role="group" aria-label="Einordnung" title={draft.kindFrom === "inhalt" ? "aus dem Inhalt erkannt – zum Ändern anklicken" : undefined}>
-              {KINDS.map(([k, l]) => (
-                <button key={k} className={k === "unklar" && symOverride?.aff === "N" ? "neutral" : k} aria-pressed={effKind === k} onClick={() => { setKind(k); inputRef.current?.focus(); }}>{k === "unklar" && symOverride?.aff === "N" ? "Neutral" : l}</button>
-              ))}
-            </span>
-            {effKind !== "eigen" && draft.unit && draft.unit !== draft.melder && <span className="chip"><b>{draft.unit}</b></span>}
-            <span className="symchipwrap">
-              <button className={"chip symchip" + (symOverride ? " manual" : "")} onClick={(ev) => openPicker(ev.currentTarget)} title="Zeichen ändern" aria-expanded={pickOpen}>
-                {choiceEntry && <span className="symmini" dangerouslySetInnerHTML={{ __html: !symOverride && draft.sidc ? iconSvg(draft.sym, draft.aff, 16, { sidc: draft.sidc, status: draft.status }).svg : choiceSvg(choiceEntry, choice!.aff, 16, { echelon: choice!.echelon, status: choice!.status }) }} />}
-                {choiceDesc ?? choiceEntry?.name ?? symbolDef(draft.sym).name}{!choiceDesc && draft.count && draft.count > 1 ? ` ×${draft.count}` : ""} ▾
-              </button>
-              {pickOpen && choice && createPortal(
-                <div className="sympop" style={pickPos && window.innerWidth > 560 ? ({ left: pickPos.left, top: pickPos.top, "--sp-maxh": `${pickPos.maxH}px` } as CSSProperties) : undefined}>
-                  <SymbolPicker value={choice} onChange={(c) => setSymOverride(c)} onClose={() => { pickClosedAt.current = Date.now(); setPickOpen(false); inputRef.current?.focus(); }} />
-                </div>
-              , document.body)}
-            </span>
-            {(draft.dir !== undefined || draft.dirLabel) && <span className="chip" title="Bewegungsrichtung">{draft.dirLabel ?? `Rtg ${compass(draft.dir!)}`}</span>}
-            {(draft.from !== undefined || draft.fromLabel) && <span className="chip" title="Herkunft (woher) – kein Bewegungspfeil">{draft.fromLabel ?? `aus ${compass(draft.from!)}`}</span>}
-            {(() => {
-              // «Melder fehlt» und «kein Ort» stehen schon als eigene Chips
-              // Ort aus Ortssuche/Karte (nicht aus dem Entwurf): kein «unvollständig: Ort» neben «📍 Wabern»
-              const m = draftMissing.filter((x) => x !== "Melder" && !(x === "Ort" && (!effPos || effPos !== draft.pos)));
-              return m.length > 0 && <span className="chip aeiou" title={`Unvollständig: ${m.join(", ")} – Rückfrage nach AEIOU (Wann · Wer tut was · Wie · Wo · Umwelt)`}>unvollständig: {m.join(", ")}</span>;
-            })()}
-            {draft.roadHint && <span className="chip soft" title="wird auf die passende Strasse gelegt">{draft.roadHint === "autobahn" ? "auf Autobahn" : "auf Hauptstrasse"}</span>}
-            <ProblemChips problems={problems} onAddUnit={(u) => { update((x) => { if (!x.units.blau.includes(u)) x.units = { ...x.units, blau: [...x.units.blau, u] }; return x; }); say(`«${u}» als neuer Trupp aufgenommen.`); inputRef.current?.focus(); }} />
-            {ortProblem ? null : effPos ? (roadTarget ? <RoadChoice where={effWhere0 ?? ""} res={roadRes} pick={roadPick} onPick={setRoadPick} onMap={pickOnMap} map={map} sheets={ex.sheets} /> : <span className="chip where">📍 {effWhere}</span>) : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}» nicht gefunden)` : ""}</span>}
-            <button className="chipbtn" onClick={pickOnMap} disabled={picking}>{picking ? "Auf Karte klicken …" : effPos ? "Ort ändern" : "Ort auf Karte"}</button>
-            <ShapeButton map={map} sym={choice?.key ?? draft.sym} value={shapeDraft} onChange={setShapeDraft} color={effKind ? KIND_COLOR[effKind] : undefined} owner="neu"
-              ctx={{ sheets: ex.sheets, areas: ex.areas, event: { sym: choice?.key ?? draft.sym, pos: effPos, cells: draft.cells, nai: draft.nai, where: effWhere, angle: road?.angle, dir: draft.dir } }} />
-          </div>
-        ) : (
-          <p className="help">Zeit · Melder · was · wo – z. B. <span className="mono">1015 H04 2 Fz in NAI 3 Rtg N</span>. Ort als Planquadrat, NAI, Koordinate oder Ortsname. Ob eigene Lage oder Feind, erkenne ich aus dem Inhalt. <b>Enter</b> = eintragen · <b>↑</b> = letzte korrigieren · <b>N</b> = zurück ins Feld.</p>
-        )}
-        {draft && <BlockNote problems={problems} />}
-        {draft?.normalized && draft.normalized !== draft.text && <p className="readas">gelesen als: <span className="mono">{draft.normalized}</span></p>}
-        <KiMeldungSuggest ex={ex} text={text} day={day} unklar={meldungUnklar(draft, text, !!effPos)}
-          onTake={(kurz) => { kiTaken.current = true; setText(kurz); setManualPos(null); setFound(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setConfirmNoMelder(false); inputRef.current?.focus();
-            requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 96) + "px"; } }); }} />
-        <div className="btnrow">
-          <button className="primary" disabled={!draft || problems.length > 0} onClick={add} title={problems.length ? blockText(problems) : undefined}>Eintragen</button>
-          <PhotoButton ex={ex} day={day} say={say} onAttach={(a) => { setPendingAtt(a); inputRef.current?.focus(); }}
-            onCell={(a) => update((x) => addEvents(x, [], { attachments: [a] }))}
-            onCommit={(texts, a) => { const evs = commitTexts(texts, { ex, device, update, day, attachment: a }); const last = evs[evs.length - 1]; if (last) onSelect(last.id); }} />
-          <VoiceButton v={voice} />
-          {pendingAtt && <PendingAttachment att={pendingAtt} onRemove={() => { if (pendingAtt.kind === "foto") void deleteAttachmentBlob(pendingAtt.id); setPendingAtt(null); }} />}
-          {manualPos && <span className="help mono">{formatLv95(manualPos)}</span>}
-        </div>
-      </div>
-
-      <div className="btnrow filters">
-        <div className="seg" role="group" aria-label="Filter">
-          {(["alle", "eigen", "feind", "unklar"] as const).map((f) => <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === "alle" ? "Alle" : KINDS.find((k) => k[0] === f)![1]}</button>)}
-        </div>
-        <input className="aname" placeholder="Suchen …" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Journal durchsuchen" />
-      </div>
-      {win && <WindowHint events={events} from={win.from} to={win.to} onClear={onWinClear} />}
-
-      {list.length === 0 ? (
-        <div className="empty"><p>{events.length ? "Keine Einträge für diesen Filter." : "Noch keine Meldungen. Oben eintippen und Enter drücken."}</p></div>
-      ) : (
-        <ol className="jlist" ref={listRef}>
-          {list.map((e, i) => {
-            const hour = e.t.slice(0, 13);
-            const head = i === 0 || list[i - 1]!.t.slice(0, 13) !== hour;
-            const k = kindOf(e);
-            const age = Date.now() - Date.parse(e.updatedAt);
-            const fresh = age >= 0 && age < 10 * 60000;
-            return (
-              <Fragment key={e.id}>
-                {head && <li className="hourhead" aria-hidden="true">{dayLabel(e.t, ex.days)} {e.t.slice(11, 13)}:00</li>}
-                {editing === e.id ? (
-                  <EditRow e={e} ex={ex} map={map} onCancel={() => { setEditing(null); if (wideScreen) inputRef.current?.focus(); }} onSave={(p) => {
-                    patch(e.id, p); setEditing(null);
-                    // «Trotzdem speichern» auf eine anderswo gelöschte Meldung: bewusst wiederhergestellt – sichtbar melden
-                    if (e.deleted && p.deleted === false) { say("Meldung wiederhergestellt (war in einem anderen Fenster gelöscht) – mit dieser Korrektur gespeichert."); onSelect(e.id); }
-                    if (wideScreen) inputRef.current?.focus();
-                  }} />
-                ) : e.deleted ? null : (
-                  <li data-id={e.id} className={"jrow " + k + (e.id === selected ? " sel" : "") + (e.id === flashId ? " flash" : "")} tabIndex={0}
-                    onClick={() => onSelect(e.id)} onKeyDown={(ev) => { if (ev.key === "Enter") onSelect(e.id); }}>
-                    <span className="sbar" style={{ background: kindColor(e) }} />
-                    <span className="jt tnum">{e.t.slice(11, 16)}</span>
-                    <span className="ju">
-                      <b style={{ color: kindVar(e) }}>{e.unit || (k === "eigen" ? e.melder : kindText(e))}</b>
-                      {e.melder && e.melder !== e.unit && <small>via {e.melder}</small>}
-                    </span>
-                    <span className="jb">
-                      <span className="jtext" title={e.desc ? `${e.desc} – ${e.text}` : e.text}><SymbolMini k={e.sym} aff={e.aff} sidc={e.sidc} status={e.status} />{displayText(e)}</span>
-                      <span className="jmeta">
-                        {(e.cells ?? []).slice(0, 2).map((c) => <span key={c} className="pq">{c}</span>)}
-                        {e.nai && <span className="naichip">{e.nai}</span>}
-                        {!e.cells?.length && !e.nai && (e.where ? <span className="wh">{e.where}</span> : <span className="wh warn">ohne Ort</span>)}
-                        {quality && <QualityMarks e={e} q={quality.get(e.id)} events={events} />}
-                        {e.attachments?.length ? <><AttachmentChips list={attachmentsOf(ex, e.attachments).filter((a) => a.kind !== "audio")} /><RowMemos list={attachmentsOf(ex, e.attachments)} /></> : null}
-                        {e.via === "ki" && <span className="kitag" title="Text aus einem KI-Vorschlag übernommen (Claude) – vom Benutzer eingetragen"><KiMark size={9} />KI</span>}
-                        {fresh && <span className="newdot" title="in den letzten 10 Minuten erfasst">neu</span>}
-                      </span>
-                    </span>
-                    <span className="acts">
-                      <button title="Bearbeiten" onClick={(ev) => { ev.stopPropagation(); setEditing(e.id); }}>✎</button>
-                      <button title="Löschen" className="danger" onClick={(ev) => { ev.stopPropagation(); removeWithUndo(e.id); }}>✕</button>
-                    </span>
-                  </li>
-                )}
-              </Fragment>
-            );
-          })}
-        </ol>
+          <JournalList ex={ex} events={list} selected={selected} onSelect={(id) => onSelect(id)} quality={quality} empty={empty}
+            onCorrect={(id) => { if (!requestCorrection(id)) setOwnReq({ id, n: Date.now() }); }}
+            onDelete={(id) => { deleteEvent(update, ex, id, device); if (selected === id) onSelect(null); }}
+            correcting={correcting} zeit={zeit} query={q} showLast={p.showLast ?? null} stand={rueckblick ? zeit.tNow : null}
+            onClearSearch={() => setResetSearch((n) => n + 1)} onShowAll={p.onWinClear}
+            onPrepare={p.onPrepare ?? (p.onGoto ? () => p.onGoto!("raster") : undefined)} onDemo={p.onDemo} />
+          {p.onExport && any && (
+            <div className="jp-filter">
+              <button type="button" className="jl-btn" onClick={() => p.onExport!("pdf")}>Journal drucken (PDF)</button>
+              <button type="button" className="jl-btn" onClick={() => p.onExport!("csv")}>Journal als Tabelle (CSV)</button>
+            </div>
+          )}
+        </>
       )}
-
-      {undo && (
-        <div className="undobar" role="status">
-          <span>Eintrag gelöscht</span>
-          <button onClick={() => { patch(undo, { deleted: false }); setUndo(null); }}>Rückgängig</button>
-        </div>
-      )}
-
-      {escUndo !== null && (
-        <div className="undobar" role="status">
-          <span>Meldung verworfen</span>
-          <button onClick={restoreEsc}>Rückgängig</button>
-        </div>
-      )}
-
-      <div className="btnrow foot">
-        <span className="help">{(() => { const n = events.filter((e) => !e.deleted).length; return `${n} ${n === 1 ? "Eintrag" : "Einträge"}`; })()}
-          {(() => { const u = quality ? events.filter((e) => !e.deleted && quality.get(e.id)?.status === "unbestaetigt").length : 0; return u > 0 || filter === "unbest" ? <> · <button className="linkbtn" aria-pressed={filter === "unbest"} title="Sichtungen aus nur einer Quelle – bestätigt, sobald ein zweiter Melder dasselbe in der Nähe meldet" onClick={() => setFilter(filter === "unbest" ? "alle" : "unbest")}>{filter === "unbest" ? "alle zeigen" : `${u} unbestätigt`}</button></> : null; })()}</span>
-        <button onClick={() => onExport("csv")} disabled={!events.length}>CSV</button>
-        <button onClick={() => onExport("pdf")} disabled={!events.length}>PDF</button>
-      </div>
     </div>
   );
-}
-
-function EditRow({ e: cur, ex, map, onCancel, onSave }: { e: LageEvent; ex: Exercise; map: L.Map; onCancel: () => void; onSave: (p: Partial<LageEvent>) => void }) {
-  // Fassung beim Öffnen der Bearbeitung; ändert/löscht ein anderes Fenster die Meldung, bleibt die Bearbeitung offen (EditConflict)
-  const e = useRef(cur).current;
-  // gelöschte Meldung in Bearbeitung (auch ohne bekannte fremde Revision): nie still als gelöscht speichern
-  const conflict = editConflict(ex.id, e, cur) ?? (cur.deleted ? "geloescht" : null);
-  const [nudge, setNudge] = useState(0);
-  const [time, setTime] = useState(e.t.slice(11, 16));
-  const [day, setDay] = useState(e.t.slice(0, 10));
-  const [unit, setUnit] = useState(e.unit);
-  const [melder, setMelder] = useState(e.melder ?? "");
-  const [text, setText] = useState(e.text);
-  // Zeichen und Art bleiben synchron: Art = Zugehörigkeit (F eigen, H Feind, U/N unklar)
-  const initial = useMemo(() => {
-    const aff: Affiliation = e.side === "blau" ? "F" : e.aff === "F" ? "H" : e.aff;
-    return makeChoice(pickerEntry(e.sym) ?? pickerEntry("einheit")!, aff, e.echelon, e.status);
-  }, [e]);
-  const [choice, setChoice] = useState<SymbolChoice>(initial);
-  const kind = kindOfAff(choice.aff);
-  const setKind = (k: Kind) => setChoice((c) => makeChoice(pickerEntry(c.key) ?? pickerEntry("einheit")!, affOfKind(k, c.aff), c.echelon, c.status));
-  const [count, setCount] = useState(e.count ?? 0);
-  const [pos, setPos] = useState<LV95 | undefined>(e.pos);
-  const [where, setWhere] = useState(e.where);
-  const [picking, setPicking] = useState(false);
-  /** Fläche/Linie: von Hand gezeichnet (auto: false) – Punktzeichen dann am Schwerpunkt */
-  const [shape, setShape] = useState(e.shape);
-  /** Planquadrat nach dem Zeichnen (Schwerpunkt der Form) */
-  const [cells, setCells] = useState(e.cells);
-  /** Strassenwahl beim Bearbeiten (gilt nur, solange der Ort nicht anders geändert wurde) */
-  const [roadPatch, setRoadPatch] = useState<RoadPatch | null>(null);
-  const days = ex.days.includes(day) ? ex.days : [...ex.days, day];
-  /** geänderter Meldungstext neu gelesen (editReparse.tsx); null = Text unverändert */
-  const [re, setRe] = useState<Draft | null>(null);
-  /** nach dem Neulesen von Hand auf der Karte gesetzt (löst ein Ort-Problem) */
-  const [rePicked, setRePicked] = useState(false);
-  // Zeitfeld «25:70»: nie still kappen – Problem anzeigen, Speichern gesperrt
-  const timeField = clockField(time);
-  const timeProblem = typeof timeField === "object" && timeField ? [timeField] : [];
-  const reProblems = [...(re ? openProblems(re, { manualPos: rePicked }) : []), ...timeProblem];
-  const liRef = useRef<HTMLLIElement>(null);
-  // Fokus in den Text (Laptop) ohne Browser-Sprung, dann unter dem klebenden Meldungsfeld sichtbar machen
-  useEffect(() => {
-    if (wideScreen) liRef.current?.querySelector<HTMLInputElement>("input[data-edit-text]")?.focus({ preventScroll: true });
-    const id = requestAnimationFrame(() => revealEditRow(liRef.current));
-    return () => cancelAnimationFrame(id);
-  }, []);
-  const onText = (t: string) => {
-    setText(t);
-    setRePicked(false);
-    if (t === e.text) {
-      // zurück zum gespeicherten Text: Felder wie gespeichert
-      setRe(null); setTime(e.t.slice(11, 16)); setDay(e.t.slice(0, 10)); setUnit(e.unit); setMelder(e.melder ?? ""); setChoice(initial);
-      setCount(e.count ?? 0); setPos(e.pos); setWhere(e.where); setCells(e.cells); setShape(e.shape); setRoadPatch(null);
-      return;
-    }
-    const d = reparseEdit(e, t, ex);
-    setRe(d);
-    if (!d) return;
-    // Felder folgen dem Text (danach von Hand änderbar); ohne Zeit/Ort im Text bleiben Zeit/Ort
-    if (d.timeFromText) { setTime(d.t.slice(11, 16)); setDay(d.t.slice(0, 10)); }
-    if (d.melder) setMelder(d.melder);
-    setUnit(d.unit);
-    setChoice(makeChoice(pickerEntry(d.sym) ?? pickerEntry("einheit")!, d.aff, d.echelon, d.status));
-    setCount(d.count ?? 0);
-    if (placeFromText(d)) { setPos(d.pos); setWhere(d.where!.label); setCells(d.cells); setRoadPatch(null); setShape(undefined); }
-  };
-  const save = (force = false) => {
-    // anderes Fenster hat geändert/gelöscht: nur mit «Trotzdem speichern»
-    if (conflict && !force) { setNudge((n) => n + 1); return; }
-    // neu gelesener Text mit unbekanntem Ort / ungültiger Zeit: nicht speichern (Hinweis steht unter dem Feld)
-    if (reProblems.length) return;
-    // Fläche/Linie wird noch gezeichnet: zuerst abschliessen und übernehmen
-    const drawn = takeDrawing(`edit:${e.id}`);
-    if (drawn === "unfertig") return;
-    const dp = drawn ? shapePatch(drawn, ex.sheets) : null;
-    const minutes = typeof timeField === "number" ? timeField : minutesOf(e.t);
-    const entry = pickerEntry(choice.key) ?? pickerEntry("einheit")!;
-    // SIDC immer neu aus Zeichen + Zugehörigkeit + Stufe + Status (nie einen alten SIDC mit alter Zugehörigkeit behalten)
-    const c0 = makeChoice(entry, choice.aff, choice.echelon, choice.status);
-    // gleiches Zeichen: erkannten SIDC (z. B. Kolonne «Lastwagen») behalten, nur Zugehörigkeit/Status/Stufe anpassen
-    const c = c0.key === e.sym ? { ...c0, sidc: rebaseSidc(e.sidc, c0) ?? c0.sidc } : c0;
-    const n = count > 0 ? count : undefined;
-    const same = c.key === e.sym && c.aff === e.aff && c.echelon === e.echelon && (c.status ?? "present") === (e.status ?? "present") && n === e.count;
-    const side = sideOfAff(c.aff);
-    const u = unit.trim() || (side === "blau" ? melder.trim() : "");
-    const moved = (dp?.pos ?? pos)?.e !== e.pos?.e || (dp?.pos ?? pos)?.n !== e.pos?.n;
-    onSave({
-      ...(conflict ? { deleted: false } : {}),
-      t: isoOf(day, minutes), side, unit: u, melder: melder.trim() || undefined, text, count: n, label: n && n > 1 ? String(n) : undefined,
-      sym: c.key, sidc: c.sidc, echelon: c.echelon, status: c.status, aff: c.aff,
-      // ausgeschriebenen Sinn nur neu bilden, wenn sich am Zeichen etwas geändert hat (sonst bleibt «mögliche IED» usw.)
-      desc: same && e.desc ? e.desc : choiceText(c, n),
-      // Text neu gelesen: Richtung, Herkunft, NAI, erkannter SIDC/Sinn
-      ...(re ? reparseExtras(re, c, n, placeFromText(re) && !rePicked && where !== "Karte") : {}),
-      pos, where,
-      // von Hand verschoben: Ausrichtung auf der alten Strasse gilt nicht mehr
-      ...(moved ? { angle: undefined, road: undefined } : {}),
-      ...(roadPatch && pos === roadPatch.pos ? { angle: roadPatch.angle, road: roadPatch.road, roadNone: roadPatch.roadNone, ...(roadPatch.cells ? { cells: roadPatch.cells } : {}) } : {}),
-      ...(shape !== e.shape ? { shape } : {}),
-      ...(cells !== e.cells ? { cells } : {}),
-      ...(dp ?? {}),
-    });
-  };
-  return (
-    <li className="edit" ref={liRef} onKeyDown={(k) => {
-      // Enter = speichern, Esc = abbrechen (nicht in der Zeichenwahl)
-      const t = k.target as HTMLElement;
-      if (t.closest(".editpick")) return;
-      if (k.key === "Enter" && !k.shiftKey && (t.tagName === "INPUT" || t.tagName === "SELECT")) { k.preventDefault(); save(); }
-      if (k.key === "Escape") { k.preventDefault(); onCancel(); }
-    }}>
-      <div className="form">
-        <EditConflict kind={conflict} nudge={nudge} onForce={() => save(true)} onDiscard={onCancel} />
-        <div className="two">
-          <label>Zeit<input value={time} onChange={(x) => setTime(x.target.value)} className="mono" aria-invalid={timeProblem.length > 0} title={timeProblem[0]?.text} /></label>
-          <label>Tag<select value={day} onChange={(x) => setDay(x.target.value)}>{days.map((d, i) => <option key={d} value={d}>T{i + 1} · {d.slice(8, 10)}.{d.slice(5, 7)}.</option>)}</select></label>
-        </div>
-        <div className="two">
-          <label>Art<select value={kind} onChange={(x) => setKind(x.target.value as Kind)}>{KINDS.map(([k, l]) => <option key={k} value={k}>{k === "unklar" && choice.aff === "N" ? "Unklar (neutral)" : l}</option>)}</select></label>
-          <label>Melder<input value={melder} onChange={(x) => setMelder(x.target.value)} /></label>
-        </div>
-        <div className="two">
-          <label>Element auf der Karte<input value={unit} onChange={(x) => setUnit(x.target.value)} placeholder={kind === "eigen" ? "= Melder" : "leer = einzelne Sichtung"} /></label>
-          <label>Anzahl<input type="number" min={0} value={count || ""} onChange={(x) => setCount(+x.target.value)} /></label>
-        </div>
-        <label>Meldung<input value={text} data-edit-text onChange={(x) => onText(x.target.value)} /></label>
-        {re && <EditPreview d={re} ex={ex} manualPos={rePicked} oldWhere={where ?? (pos ? formatLv95(pos) : undefined)} />}
-        <BlockNote problems={reProblems} verb="Speichern" />
-        <div className="btnrow">
-          {pos && where !== "Karte"
-            ? <RoadEdit e={e} ex={ex} map={map} symKey={choice.key} text={text} where={where}
-                onChange={(p) => { setRoadPatch(p); setPos(p.pos); setWhere(p.where); }}
-                fallback={<span className="help">📍 {where ?? formatLv95(pos)}</span>} />
-            : <span className="help">{pos ? `📍 ${where ?? formatLv95(pos)}` : "ohne Ort"}</span>}
-          <button disabled={picking} onClick={async () => { setPicking(true); const p = await pickPoint(map); setPicking(false); if (p) { setPos(p); setWhere("Karte"); setRePicked(true); } }}>{picking ? "Auf Karte klicken …" : "Ort auf Karte"}</button>
-          {pos && <button onClick={() => { setPos(undefined); setWhere(undefined); }}>Ort entfernen</button>}
-          <ShapeButton map={map} sym={choice.key} value={shape?.auto ? undefined : shape} className="" color={KIND_COLOR[kind]} owner={`edit:${e.id}`}
-            ctx={{ sheets: ex.sheets, areas: ex.areas, event: { ...e, sym: choice.key, pos, where, cells, shape } }}
-            onChange={(sh) => {
-              if (!sh) { setShape(undefined); return; }
-              const p = shapePatch(sh, ex.sheets);
-              setShape(sh); setPos(p.pos); setWhere(p.where); setCells(p.cells);
-            }} />
-        </div>
-        <div className="btnrow">
-          <button className="primary" onClick={() => save()} disabled={reProblems.length > 0}>Speichern</button>
-          <button onClick={onCancel}>Abbrechen</button>
-          <span className="edithint">Enter = speichern · Esc = abbrechen</span>
-        </div>
-        <div className="editpick">
-          <span className="help">Zeichen</span>
-          <SymbolPicker anchor="inline" compact value={choice} onChange={setChoice} />
-        </div>
-      </div>
-    </li>
-  );
-}
-
-/** Anzeigetext ohne vorangestellten Melder («H01 4 Pers …» → «4 Pers …»), der Melder steht separat */
-function displayText(e: LageEvent): string {
-  const m = e.melder;
-  if (!m) return e.text;
-  const re = new RegExp("^" + m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*") + "\\s*[:,]?\\s*", "i");
-  const t = e.text.replace(re, "");
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : e.text;
 }

@@ -28,9 +28,14 @@ export const toLv95 = (ll: L.LatLngExpression): LV95 => {
   return { e: e!, n: n! };
 };
 
+/** LV95 je LatLng-Objekt (Leaflet projiziert bei jedem Neuaufbau und Zoom alle Zeichen neu; proj4 ist teuer) */
+const projected = new WeakMap<L.LatLng, { lat: number; lng: number; e: number; n: number }>();
 const projection: L.Projection = {
   project: (ll: L.LatLng) => {
+    const c = typeof ll === "object" ? projected.get(ll) : undefined;
+    if (c && c.lat === ll.lat && c.lng === ll.lng) return L.point(c.e, c.n);
     const p = toLv95(ll);
+    if (ll instanceof L.LatLng) projected.set(ll, { lat: ll.lat, lng: ll.lng, e: p.e, n: p.n });
     return L.point(p.e, p.n);
   },
   unproject: (pt: L.Point) => toLatLng({ e: pt.x, n: pt.y }),
@@ -62,22 +67,40 @@ function zoomFor(res: number): number {
   return res > RESOLUTIONS[0]! ? 0 : RESOLUTIONS.length - 1;
 }
 
+/**
+ * Grundkarte. «grau» (MVP 1, Standard der Lagekarte) ist die farbige Landeskarte mit CSS-Filter (map.css,
+ * `.lt-tiles-grau`) und Deckkraft `GRAU_DECKKRAFT` (Leaflet-Option): gleiche Kachel-Adressen wie «lk», damit das Offline-Kartenpaket (speichert nur `lk`) und der
+ * Kachel-Cache des Service Workers auch für Grau gelten – eine eigene graue Kachelebene wäre offline leer.
+ */
 export type Basemap = "lk" | "img" | "grau";
-const LAYERS: Record<Basemap, { id: string; ext: string; max: number }> = {
+/**
+ * Deckkraft der grauen Karte (Spez. 5.4: `opacity .7` auf Weiss). Als Leaflet-Option bzw. `setOpacity`, nicht per CSS:
+ * Leaflet setzt die Deckkraft der Kachelebene inline (sonst 1) und überschreibt damit jede CSS-Regel.
+ */
+export const GRAU_DECKKRAFT = 0.7;
+const LAYERS: Record<Basemap, { id: string; ext: string; max: number; className?: string }> = {
   lk: { id: "ch.swisstopo.pixelkarte-farbe", ext: "jpeg", max: 27 },
-  grau: { id: "ch.swisstopo.pixelkarte-grau", ext: "jpeg", max: 27 },
+  grau: { id: "ch.swisstopo.pixelkarte-farbe", ext: "jpeg", max: 27, className: "lt-tiles-grau" },
   img: { id: "ch.swisstopo.swissimage", ext: "jpeg", max: 28 },
 };
 
+/** Adresse der Kacheln einer Grundkarte (Grau = Landeskarte) */
+export function basemapTileUrl(kind: Basemap): string {
+  const l = LAYERS[kind];
+  return `https://wmts.geo.admin.ch/1.0.0/${l.id}/default/current/2056/{z}/{x}/{y}.${l.ext}`;
+}
+
 export function swisstopoLayer(kind: Basemap): L.TileLayer {
   const l = LAYERS[kind];
-  return L.tileLayer(`https://wmts.geo.admin.ch/1.0.0/${l.id}/default/current/2056/{z}/{x}/{y}.${l.ext}`, {
+  return L.tileLayer(basemapTileUrl(kind), {
+    className: l.className ?? "",
     maxNativeZoom: l.max,
     maxZoom: 28,
     minZoom: 14,
     bounds: L.latLngBounds(toLatLng({ e: 2420000, n: 1030000 }), toLatLng({ e: 2900000, n: 1350000 })),
     attribution: '© <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a>',
     crossOrigin: true,
+    opacity: kind === "grau" ? GRAU_DECKKRAFT : 1,
   });
 }
 
@@ -99,13 +122,24 @@ export function createSwissMap(el: HTMLElement, opts: { basemap?: Basemap; cente
     wheelPxPerZoomLevel: 90,
   });
   map.attributionControl.setPrefix(false);
-  let layer = swisstopoLayer(opts.basemap ?? "lk").addTo(map);
+  const mark = (kind: Basemap) => el.classList.toggle("lt-base-grau", kind === "grau");
+  let kind0 = opts.basemap ?? "lk";
+  let layer = swisstopoLayer(kind0).addTo(map);
+  mark(kind0);
   return {
     map,
     setBasemap(kind) {
+      if (kind === kind0) return;
+      const same = LAYERS[kind].id === LAYERS[kind0].id;
+      kind0 = kind;
+      mark(kind);
+      // Grau ↔ Landeskarte: dieselben Kacheln, nur der Filter wechselt (kein Neuladen, kein Flackern)
+      const c = same ? layer.getContainer() : undefined;
+      if (c) { c.classList.toggle("lt-tiles-grau", kind === "grau"); layer.setOpacity(kind === "grau" ? GRAU_DECKKRAFT : 1); return; }
       map.removeLayer(layer);
       layer = swisstopoLayer(kind).addTo(map);
       layer.bringToBack();
+      mark(kind);
     },
     fitLv95(min, max, padding = 20) {
       map.fitBounds(L.latLngBounds(toLatLng(min), toLatLng(max)), { padding: [padding, padding] });

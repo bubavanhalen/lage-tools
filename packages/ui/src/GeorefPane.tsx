@@ -25,6 +25,7 @@ import {
 } from "@lage/core";
 import { AffineImageLayer, toLatLng, toLv95 } from "@lage/map";
 import { imageDataOf, type Candidate } from "./imageimport";
+import { LAGE_KARTE } from "./colors";
 import { autoPlace, refinePlace, type PlaceResult } from "./autoplace";
 
 interface Props {
@@ -158,7 +159,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
     if (t) {
       const inv = invertAffine(t);
       for (const f of found) {
-        const style = { color: f.on ? "#c8102e" : "#888", weight: f.on ? 2.5 : 1.5, dashArray: f.on ? undefined : "4 4", fillOpacity: f.on ? 0.08 : 0, interactive: false };
+        const style = { color: f.on ? LAGE_KARTE.ink : "#888", weight: f.on ? 2.5 : 1.5, dashArray: f.on ? undefined : "4 4", fillOpacity: f.on ? 0.08 : 0, interactive: false };
         L.polygon(f.area.ring.map((q) => { const p = applyAffine(inv, { x: q.e, y: q.n }); return [-p.y, p.x] as [number, number]; }), style).addTo(imgLayer.current);
         if (f.on) L.polygon(f.area.ring.map(toLatLng), style).addTo(mapLayer.current);
       }
@@ -186,7 +187,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
     const sw = toLv95(b.getSouthWest()), ne = toLv95(b.getNorthEast());
     const view = { minE: sw.e, maxE: ne.e, minN: sw.n, maxN: ne.n };
     if (view.maxE - view.minE > 60000) {
-      setMsg("Zuerst näher an das Gebiet zoomen (oben rechts Ort suchen). Der Kartenausschnitt sollte das Gebiet des Bildes zeigen, höchstens etwa 50 km breit.");
+      setMsg("Zuerst näher an das Gebiet zoomen (oben in der Spalte «Ort suchen»). Der Kartenausschnitt sollte das Gebiet des Bildes zeigen, höchstens etwa 50 km breit.");
       return;
     }
     homeView.current ??= { c: map.getCenter(), z: map.getZoom() };
@@ -340,7 +341,7 @@ export function GeorefPane({ candidates, map, existing, onAreas, onClose }: Prop
       {mode === "place" && (
         <>
           {!place ? (
-            <p className="help">Karte auf den Ort des Bildes stellen (oben rechts <b>Ort suchen</b>) und so weit zoomen, dass die Karte <b>etwa gleich viel Gelände</b> zeigt wie das Bild. Dann <b>Automatisch einpassen</b>.</p>
+            <p className="help">Karte auf den Ort des Bildes stellen (oben in der Spalte <b>Ort suchen</b>) und so weit zoomen, dass die Karte <b>etwa gleich viel Gelände</b> zeigt wie das Bild. Dann <b>Automatisch einpassen</b>.</p>
           ) : (
             <p className="help">Gefunden{place.score !== undefined ? ` (Übereinstimmung ${Math.round(place.score * 100)} %)` : ""}. Liegt das Bild deckungsgleich auf der Karte?</p>
           )}

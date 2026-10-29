@@ -989,13 +989,15 @@ const fixDigits = (s: string) => s.replace(/[OoIl|]/g, (c) => OCR_DIGIT[c] ?? c)
 
 /**
  * Typische Fehler der Texterkennung glätten: O/0 und l/1 in Zeiten und Planquadraten («O7I5» → 0715, «AGl3» → AG13,
- * «HO4» → H04), Trennungen am Zeilenende («Liefer-\nwagen» → Lieferwagen), doppelte Leerzeichen, typografische Zeichen.
+ * «HO4» → H04, «HO04»/«H0O4» → H04), Trennungen am Zeilenende («Liefer-\nwagen» → Lieferwagen), doppelte Leerzeichen, typografische Zeichen.
  */
 export interface CleanOcrOptions {
   /** gibt es das Planquadrat im Raster? («NA13» ist dann kein «NAI 3») */
   isCell?: (c: string) => boolean;
   /** Namen der NAI der Übung («NAI 3») */
   nai?: string[];
+  /** eigene Trupps der Übung («H04») – «HO04» wird in deren Schreibweise geschrieben */
+  units?: string[];
 }
 
 export function cleanOcr(text: string, opts: CleanOcrOptions = {}): string {
@@ -1056,9 +1058,15 @@ function fixCore(c: string, opts: CleanOcrOptions = {}): string {
     const d = fixDigits(c);
     if (/^(?:[01]?\d|2[0-3])[:.][0-5]\d$/.test(d)) return d;
   }
-  // Element «HO4», «H0l» → H04 / H01
-  const h = /^H([\dOoIl|])([\dOoIl|])$/.exec(c);
-  if (h && /[OoIl|]/.test(c) && /\d/.test(c)) return "H" + fixDigits(h[1]! + h[2]!);
+  // Element «HO4», «H0l» → H04 / H01; auch mit überzähliger Null «HO04», «H0O4» → H04 (nicht H00)
+  const h = /^H([\dOoIl|]{2,3})$/.exec(c);
+  if (h && /[OoIl|]/.test(h[1]!) && /\d/.test(h[1]!)) {
+    const n = +fixDigits(h[1]!);
+    if (n >= 1 && n <= 99) {
+      const known = opts.units?.find((u) => { const m = /^H0*(\d{1,3})$/i.exec(u.trim()); return !!m && +m[1]! === n; });
+      return known ?? `H${String(n).padStart(2, "0")}`;
+    }
+  }
   // Planquadrat «AGl3», «AGI3», «AG1O» (Buchstaben gross, dann Ziffern mit Verwechslungen; mind. eine echte Ziffer)
   const pq = /^([A-Z]{1,2})([\dOoIl|]{1,2})([A-D]?)$/.exec(c);
   if (pq && /[OoIl|]/.test(pq[2]!) && (/\d/.test(pq[2]!) || (pq[1]!.length === 2 && pq[2]!.length === 2 && /[lI|]/.test(pq[2]!)))) {

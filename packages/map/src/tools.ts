@@ -4,6 +4,7 @@
 import L from "leaflet";
 import { applyAffine, type Affine, type Area, type LV95 } from "@lage/core";
 import { toLatLng, toLv95 } from "./swissmap";
+import { KARTE } from "./kartenfarben";
 
 export interface RectLV95 {
   minE: number;
@@ -13,7 +14,7 @@ export interface RectLV95 {
 }
 
 /** Lässt den Benutzer ein Rechteck auf der Karte aufziehen (Maus oder Finger). Esc bricht ab. */
-export function drawRect(map: L.Map, color = "#c8102e"): Promise<RectLV95 | null> {
+export function drawRect(map: L.Map, color: string = KARTE.ink): Promise<RectLV95 | null> {
   return new Promise((resolve) => {
     const el = map.getContainer();
     el.classList.add("lt-drawing");
@@ -93,7 +94,7 @@ export function areasLayer(areas: Area[], opts: { onClick?: (a: Area) => void; s
     const sel = a.id === opts.selectedId;
     L.polygon(ring, { color: "#fff", weight: sel ? 7 : 5, opacity: 0.8, fill: false, interactive: false }).addTo(g);
     const poly = L.polygon(ring, {
-      color, weight: sel ? 4 : 2.5, dashArray: style.dash, fill: style.fill > 0, fillColor: a.kind === "stao" ? "#D3262D" : color, fillOpacity: style.fill,
+      color, weight: sel ? 4 : 2.5, dashArray: style.dash, fill: style.fill > 0, fillColor: a.kind === "stao" ? KARTE.feind : color, fillOpacity: style.fill,
       interactive: !!opts.onClick, bubblingMouseEvents: false,
     }).addTo(g);
     if (opts.onClick) poly.on("click", () => opts.onClick!(a));
@@ -115,10 +116,10 @@ export function areasLayer(areas: Area[], opts: { onClick?: (a: Area) => void; s
 }
 
 const AREA_STYLE: Record<Area["kind"], { line: string; dash?: string; fill: number }> = {
-  nai: { line: "#1F78D1", fill: 0.1 },
-  ao: { line: "#0B3D91", dash: "10 6", fill: 0 },
-  stao: { line: "#B3242A", dash: "6 4", fill: 0.1 },
-  other: { line: "#1F78D1", fill: 0.1 },
+  nai: { line: KARTE.nai, fill: 0.1 },
+  ao: { line: KARTE.ao, dash: "10 6", fill: 0 },
+  stao: { line: KARTE.feind, dash: "6 4", fill: 0.1 },
+  other: { line: KARTE.nai, fill: 0.1 },
 };
 
 function escapeHtml(s: string) {

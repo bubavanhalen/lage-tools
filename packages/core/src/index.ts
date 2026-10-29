@@ -27,3 +27,5 @@ export * from "./erkennung";
 export * from "./placequery";
 export * from "./clock";
 export * from "./sync";
+export * from "./entrystate";
+export * from "./klartext";

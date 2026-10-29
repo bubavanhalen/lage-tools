@@ -126,6 +126,57 @@ export interface LageEvent {
   /** Vom Benutzer bestätigt (sonst Vorschlag der Erkennung) */
   confirmed: boolean;
   note?: string;
+  /**
+   * Notiz ohne Zeichen (Rückfrage, Auftrag, Befehl, Frage – bestätigt im Meldungsfeld, siehe `Draft.kindHint`): ohne Ort
+   * und Element, also nie auf der Karte und ohne Wirkung auf Lage/Hinweise; Art im Journal «Notiz».
+   */
+  notiz?: boolean;
+  /**
+   * Frühere Fassungen (älteste zuerst), gefüllt von `correctEvent` – für «korrigiert 07:34», Detail, PDF/CSV.
+   * Fehlt bei nie korrigierten Meldungen. `mergeEvents`: die höhere Revision gewinnt samt Historie.
+   */
+  history?: EventRevision[];
+  /** letzte Korrektur (ISO UTC), gesetzt von `correctEvent` – für «korrigiert 07:34» */
+  correctedAt?: string;
+}
+
+/** Eine frühere Fassung einer Meldung (Schnappschuss vor einer Korrektur). */
+export interface EventRevision {
+  /** Revision dieser Fassung (`LageEvent.rev` damals) */
+  rev: number;
+  /** wann diese Fassung entstand (`updatedAt` damals, ISO UTC) */
+  at: string;
+  /** Gerät, das diese Fassung geschrieben hat */
+  device: string;
+  text: string;
+  t: string;
+  melder?: string;
+  unit: string;
+  side: Side;
+  aff: Affiliation;
+  sym: string;
+  sidc?: string;
+  pos?: LV95;
+  cells?: string[];
+  nai?: string;
+  where?: string;
+  count?: number;
+  dir?: number;
+  desc?: string;
+  deleted?: boolean;
+  /**
+   * unterlegene Fassung eines Konflikts beim Zusammenführen (gleiche Revision auf zwei Geräten, anderer Inhalt) – steht
+   * neben der gewinnenden Fassung gleicher Revision; nichts geht verloren (`mergeEvents`)
+   */
+  conflict?: boolean;
+}
+
+/** Schnappschuss einer Meldung als `EventRevision` (nur gesetzte Felder). */
+export function revisionOf(e: LageEvent): EventRevision {
+  const r: EventRevision = { rev: e.rev, at: e.updatedAt, device: e.device, text: e.text, t: e.t, unit: e.unit, side: e.side, aff: e.aff, sym: e.sym };
+  const opt = { melder: e.melder, sidc: e.sidc, pos: e.pos, cells: e.cells, nai: e.nai, where: e.where, count: e.count, dir: e.dir, desc: e.desc, deleted: e.deleted };
+  for (const [k, v] of Object.entries(opt)) if (v !== undefined) (r as unknown as Record<string, unknown>)[k] = Array.isArray(v) ? [...v] : v && typeof v === "object" ? { ...v } : v;
+  return r;
 }
 
 export interface Area {
@@ -226,20 +277,81 @@ export function newDeviceId(): string {
 }
 
 /**
- * Führt zwei Journale zusammen: pro ID gewinnt die höhere Revision,
- * bei gleicher Revision die spätere Änderung, dann die Gerätekennung (deterministisch).
+ * Führt zwei Journale zusammen: pro ID gewinnt die höhere Revision (samt Historie; ältere Fassungen der Verliererin
+ * werden ergänzt). **Konflikt** = gleiche Revision, anderer Inhalt (zwei Geräte korrigieren dieselbe Meldung): es gewinnt
+ * deterministisch die neuere Korrektur (`correctedAt`, dann `updatedAt`, dann Gerät), die unterlegene Fassung kommt mit
+ * `conflict: true` in `history` – nichts geht verloren. Gezählt wird ein Konflikt nur, wenn die unterlegene Fassung
+ * noch nicht in der Historie steht (wiederholtes Zusammenführen zählt nicht doppelt). Zählen: `mergeEventsDetailed`.
  */
 export function mergeEvents(a: LageEvent[], b: LageEvent[]): LageEvent[] {
+  return mergeEventsDetailed(a, b).events;
+}
+
+/** wie `mergeEvents`, dazu die IDs der Meldungen mit neuem Konflikt (gleiche Revision, anderer Inhalt) */
+export function mergeEventsDetailed(a: LageEvent[], b: LageEvent[]): { events: LageEvent[]; conflicts: string[] } {
   const map = new Map<string, LageEvent>();
+  const conflicts = new Set<string>();
   for (const e of [...a, ...b]) {
     const cur = map.get(e.id);
-    if (!cur || wins(e, cur)) map.set(e.id, e);
+    if (!cur) { map.set(e.id, e); continue; }
+    if (e === cur) continue;
+    const [w, l] = wins(e, cur) ? [e, cur] : [cur, e];
+    const r = mergePair(w, l);
+    if (r.conflict) conflicts.add(e.id);
+    map.set(e.id, r.ev);
   }
-  return [...map.values()].sort(compareEvents);
+  return { events: [...map.values()].sort(compareEvents), conflicts: [...conflicts] };
+}
+
+/** Gewinnt Fassung `x` gegen `y` derselben Meldung? (höhere Revision; gleich: neuere Korrektur, später geändert, Gerät) */
+export function eventWins(x: LageEvent, y: LageEvent): boolean {
+  return wins(x, y);
+}
+
+/** JSON mit sortierten Schlüsseln (Reihenfolge der Felder egal), `undefined` fällt weg */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(",")}]`;
+  if (v && typeof v === "object") {
+    return `{${Object.keys(v).filter((k) => (v as Record<string, unknown>)[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v) ?? "null";
+}
+
+/** Inhalt einer Meldung (ohne Revision, Zeitstempel, Gerät, Historie) – gleich = kein Konflikt */
+function contentSig(e: LageEvent): string {
+  const { rev: _r, updatedAt: _u, device: _d, history: _h, correctedAt: _c, ...rest } = e;
+  return stableJson(rest);
+}
+
+/** Fassungen gleich? (Konfliktmarke zählt nicht) */
+function sameRevision(x: EventRevision, y: EventRevision): boolean {
+  const { conflict: _a, ...a } = x;
+  const { conflict: _b, ...b } = y;
+  return stableJson(a) === stableJson(b);
+}
+
+/** Gewinnerin `w` mit der Historie von `l` und – bei Konflikt – der unterlegenen Fassung `l` selbst */
+function mergePair(w: LageEvent, l: LageEvent): { ev: LageEvent; conflict: boolean } {
+  let out = withHistory(w, l);
+  if (w.rev !== l.rev || contentSig(w) === contentSig(l)) return { ev: out, conflict: false };
+  const lost = { ...revisionOf(l), conflict: true };
+  if ((out.history ?? []).some((h) => sameRevision(h, lost))) return { ev: out, conflict: false };
+  out = { ...out, history: [...(out.history ?? []), lost].sort((x, y) => x.rev - y.rev || (x.at < y.at ? -1 : x.at > y.at ? 1 : 0)) };
+  return { ev: out, conflict: true };
+}
+
+/** Historie der Gewinnerin `w`, ergänzt um ältere Fassungen und Konflikt-Fassungen aus `l` (nach Revision, ohne Doppel). */
+function withHistory(w: LageEvent, l: LageEvent): LageEvent {
+  const wh = w.history ?? [];
+  const extra = (l.history ?? []).filter((r) => (r.conflict ? r.rev <= w.rev && !wh.some((x) => sameRevision(x, r)) : r.rev < w.rev && !wh.some((x) => x.rev === r.rev && !x.conflict)));
+  if (!extra.length) return w;
+  return { ...w, history: [...wh, ...extra].sort((x, y) => x.rev - y.rev || (x.at < y.at ? -1 : x.at > y.at ? 1 : 0)) };
 }
 
 function wins(x: LageEvent, y: LageEvent): boolean {
   if (x.rev !== y.rev) return x.rev > y.rev;
+  const cx = x.correctedAt ?? "", cy = y.correctedAt ?? "";
+  if (cx !== cy) return cx > cy;
   if (x.updatedAt !== y.updatedAt) return x.updatedAt > y.updatedAt;
   return x.device > y.device;
 }

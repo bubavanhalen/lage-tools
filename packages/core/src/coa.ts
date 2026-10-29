@@ -57,8 +57,10 @@ export interface RedCoa {
   kind: CoaKind;
   /** Einordnung: wahrscheinlichste, gefährlichste, weitere */
   label: "wahrscheinlichste" | "gefaehrlichste" | "weitere";
-  /** z. B. «Überfall auf Stao H05 (AQ11)» */
+  /** z. B. «Überfall auf Stao H05 (AQ11)» – bleibt für CSV/PDF/Tests */
   title: string;
+  /** Klartext-Titel (Kap. 4.3), z. B. «Rot könnte Stao H05 überfallen (AQ11)»; Paket D – sonst `coaHeadline` */
+  headline?: string;
   /** Ziel der Aktion */
   target?: { pos: LV95; unit?: string; cell?: string; nai?: string };
   /** erwartete Annäherung (Achse) in LV95, Ausgangspunkt zuerst */
@@ -202,6 +204,8 @@ interface Cand {
   kind: CoaKind;
   key: string;
   title: string;
+  /** Klartext-Titel (Spez. MVP 1, Kap. 4.3) */
+  headline: string;
   target?: RedCoa["target"];
   approach?: LV95[];
   approachText?: string;
@@ -462,7 +466,7 @@ function ueberfall(c: Ctx): Cand[] {
       "Reserve bereit",
     ];
     const cand: Cand = {
-      kind: "ueberfall", key: o.name, title: `Überfall auf Stao ${o.name} (${o.cell})`,
+      kind: "ueberfall", key: o.name, title: `Überfall auf Stao ${o.name} (${o.cell})`, headline: `Rot könnte Stao ${o.name} überfallen (${o.cell})`,
       target: { pos: P, unit: o.name, cell: o.cell }, ind: inds, check,
     };
     if (start && dist(start, P) > 100) {
@@ -520,13 +524,15 @@ function hinterhalt(c: Ctx): Cand[] {
   for (const tg of targets) {
     const near = (p: LV95 | undefined, m: number) => !!p && (tg.ring ? distToRing(p, tg.ring) <= m : dist(p, tg.pos) <= m);
     const best = tg.c5[0];
+    // gebündelte gleiche Hinweise zählen einzeln (`Hint.bundled`)
+    const n5 = tg.c5.reduce((n, h) => n + (h.bundled ?? 1), 0);
     const c5e = tg.c5.flatMap((h) => evsOf(c, h));
     // Auslöser: neuestes Hindernis bzw. neueste Meldung der stärksten C5
     const bevs = best ? evsOf(c, best).filter((v) => v.side === "rot") : [];
     const b0 = lastOf(bevs.filter((v) => v.cat?.category === "Hindernisse" || OBSTACLE_IED.has(v.e.sym) || BLOCK_RE.test(v.e.text))) ?? lastOf(bevs);
     const what = b0 ? (b0.cat?.category === "Hindernisse" || BLOCK_RE.test(b0.e.text) ? b0.cat?.category === "Hindernisse" ? b0.cat.noun ?? b0.cat.name : "Hindernis" : b0.cat?.noun ?? b0.cat?.name ?? "Hindernis") : "Hindernis";
     const i1 = best
-      ? ind(`${what} ${tg.label} ${hmOf(b0?.ms ?? hms(best))} (C5${tg.c5.length > 1 ? `, ${tg.c5.length}×` : ""})`, true, tg.engnis ? w.hindernis_engnis : w.hindernis,
+      ? ind(`${what} ${tg.label} ${hmOf(b0?.ms ?? hms(best))} (C5${n5 > 1 ? `, ${n5}×` : ""})`, true, tg.engnis ? w.hindernis_engnis : w.hindernis,
         { ...fromHint(best, c), events: uniq(c5e.map((v) => v.id)), ms: Math.max(...c5e.map((v) => v.ms), hms(best)), key: true, persistent: true })
       : ind(`Hindernis/Halt im Engnis ${tg.label} – nicht gemeldet`, false, w.hindernis_engnis, { key: true, rule: "C5" });
     const c3 = c.hints.filter((h) => h.rule === "C3" && active(c, h, T.RECON_MIN) &&
@@ -557,6 +563,7 @@ function hinterhalt(c: Ctx): Cand[] {
     out.push({
       kind: "hinterhalt", key: tg.key,
       title: tg.engnis ? `Hinterhalt an Engnis ${tg.label} auf eigene Verschiebung` : `Hinterhalt an Strasse ${tg.label} auf eigene Verschiebung`,
+      headline: `Rot könnte bei ${tg.label} einen Hinterhalt legen – eigene Verschiebung dort meiden`,
       target: { pos: best?.pos && !tg.engnis ? best.pos : tg.pos, cell: c.cell(tg.pos), nai: tg.area?.name },
       ind: inds,
       check: [`Verschiebungen nicht über ${tg.label}`, `${tg.label} überwachen${trupp ? ` (${trupp})` : ""}`, "Umgehung erkunden"],
@@ -605,7 +612,7 @@ function sperren(c: Ctx): Cand[] {
       ? ind(`Feuerunterstützung ${f0.cat?.noun ?? f0.cat?.name ?? ""} ${c.cell(f0.pos)}`.replace(/\s+/g, " "), true, w.feuer, { events: fire.map((v) => v.id), rule: "feuer", ms: f0.ms })
       : ind("Feuerunterstützung (Kpz, Mg, Pzaw) bei Sperre – nicht gemeldet", false, w.feuer, { rule: "feuer" });
     out.push({
-      kind: "sperren", key: g[0]!.id, title: `Sperren/Kanalisieren im Raum ${label}`,
+      kind: "sperren", key: g[0]!.id, title: `Sperren/Kanalisieren im Raum ${label}`, headline: `Rot könnte den Raum ${label} sperren und uns umleiten`,
       target: { pos, cell: c.cell(pos), nai: g.find((v) => v.nais.length)?.nais[0] }, ind: [i1, i2, i3, i4, i5],
       check: ["Umgehung erkunden", "Hindernis nur gesichert räumen", own ? `Verbindung ${own.o.name} prüfen` : "Achsen offenhalten"],
     });
@@ -654,6 +661,7 @@ function versorgung(c: Ctx): Cand[] {
     out.push({
       kind: "versorgung", key: p.id,
       title: `Versorgung/Übergabe Pendel ${ends[0]!.l} ↔ ${ends[1]!.l}${next ? ` (nächste ca. ${hmOf(next)})` : ""}`,
+      headline: `Rot versorgt sich vermutlich zwischen ${ends[0]!.l} und ${ends[1]!.l}`,
       target: { pos: tEnd.v.pos!, cell: tEnd.l.startsWith("NAI") ? c.cell(tEnd.v.pos) : tEnd.l, nai: tEnd.v.nais[0] },
       approach: [ends[0]!.v.pos!, ends[1]!.v.pos!], approachText: `Pendel ${ends[0]!.l} ↔ ${ends[1]!.l}`,
       ind: [i1, i2, i3, i4],
@@ -694,6 +702,7 @@ function aufklaerung(c: Ctx): Cand[] {
       : ind("Beobachter/Handy – nicht gemeldet", false, w.beobachter, { rule: "beobachter" });
     out.push({
       kind: "aufklaerung", key: t.key, title: `Aufklärung ${t.unit ? `Stao ${t.unit}` : t.label} zur Vorbereitung einer Aktion`,
+      headline: `Rot klärt ${t.unit ? `Stao ${t.unit}` : t.label} auf – eine Aktion dort ist möglich`,
       target: { pos: t.pos, unit: t.unit, cell: c.cell(t.pos), nai: t.nai }, ind: [i1, i2, i3, i4],
       check: [t.unit ? `Tarnung und Stellung ${t.unit} prüfen` : `${t.label} überwachen`, "Gegenaufklärung (Drohne, Beobachter melden)", "Aktion im Raum erwarten"],
     });
@@ -723,7 +732,7 @@ function infiltration(c: Ctx): Cand[] {
     const b3 = c.hints.find((h) => (h.rule === "B3" || h.rule === "B2") && active(c, h) && h.pos && distToRing(h.pos, a.ring) <= 1500);
     const i4 = b3 ? ind(`${b3.title} (${b3.rule})`, true, w.ausweichen, fromHint(b3, c)) : ind("Ausweichen vor Checkpoint – nicht gemeldet", false, w.ausweichen, { rule: "B3" });
     out.push({
-      kind: "infiltration", key: a.name, title: `Infiltration durch ${a.name}`,
+      kind: "infiltration", key: a.name, title: `Infiltration durch ${a.name}`, headline: `Rot könnte unbemerkt durch ${a.name} durchsickern`,
       target: { pos: areaCenter(a), cell: c.cell(areaCenter(a)), nai: a.name }, ind: [i1, i2, i3, i4],
       check: [`${a.name} besetzen`, a.trupp ? `Verbindung ${a.trupp} prüfen` : "Trupp zuteilen", "Reserve bereit"],
     });
@@ -770,6 +779,7 @@ function absetzen(c: Ctx): Cand[] {
   if (!pos) return [];
   return [{
     kind: "absetzen", key: "rot", title: `Absetzen/Ausweichen von Rot${dirTxt ? ` Rtg ${dirTxt}` : ""}`,
+    headline: dirTxt ? `Rot zieht sich vermutlich Rtg ${dirTxt} zurück` : "Rot zieht sich vermutlich zurück",
     target: { pos, cell: c.cell(pos) }, ind: inds,
     check: ["Kontakt halten (Beobachtung nachführen)", `Ausweichachse${dirTxt ? ` Rtg ${dirTxt}` : ""} überwachen`, "Lage an Vorgesetzte melden"],
   }];
@@ -830,7 +840,7 @@ function score(c: Ctx, cand: Cand, rotOfInd: Map<Ind, string[]>): Scored | null 
   });
   const events = uniq(cand.ind.filter((i) => i.met && (counted.has(i) || i.against)).flatMap((i) => i.events ?? []));
   const r: Omit<RedCoa, "label"> = {
-    id: `${cand.kind}:${cand.key}`, kind: cand.kind, title: cand.title, target: cand.target, indicators,
+    id: `${cand.kind}:${cand.key}`, kind: cand.kind, title: cand.title, headline: cand.headline, target: cand.target, indicators,
     score: Math.round(now.s * 1000) / 1000, danger: COA_DANGER[cand.kind], check: cand.check, events,
   };
   if (r.target) for (const k of Object.keys(r.target) as Array<keyof NonNullable<RedCoa["target"]>>) if (r.target[k] === undefined) delete r.target[k];

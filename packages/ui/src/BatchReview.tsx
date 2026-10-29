@@ -3,18 +3,24 @@
  * langen Sprachmemo). Je Zeile: Text bearbeiten, Vorschau wie im Meldungsfeld, übernehmen oder verwerfen.
  * Eingetragen wird über den gleichen Weg wie Enter im Meldungsfeld (`onCommit` → `commitTexts` in commit.ts).
  *
+ * Gleiche Regeln wie das Meldungsfeld (`entryState`, Nachbesserung K2): jede Zeile ist grün «bereit», gelb «bitte
+ * prüfen» (erstes «Übernehmen»/Enter fragt, zweites trägt ein) oder rot «geht nicht» (gesperrt, mit Grund und Ausweg,
+ * z. B. «15:35 liegt in der Zukunft – meintest du 07:35?» mit Knopf «07:35 einsetzen»). Vorab angehakt und von
+ * «Alle übernehmen» erfasst werden nur grüne Zeilen; gelbe nur einzeln.
+ *
  * Tastatur: ↑/↓ = Zeile wechseln · Enter = Zeile übernehmen · Esc = schliessen (mit offenen Vorschlägen: Rückfrage,
  * nochmals Esc = verwerfen).
  */
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { parseMeldung, symbolDef, type Attachment, type Draft, type Exercise, type Kind } from "@lage/core";
+import { parseMeldung, symbolDef, type Attachment, type Draft, type EntryState, type Exercise, type Kind } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { dayLabel } from "./Timeline";
 import { defaultDay, journalCtx } from "./commit";
 import { getBlob } from "./store";
 import { initialRows, pqDoubt, type BatchItem, type BatchRow } from "./batchRows";
-import { BlockNote, ProblemChips } from "./DraftProblems";
+import { dayTitle, genericWhat, replaceToken } from "./entry/labels";
+import { stateOf } from "./entry/stateOptions";
 import "./batch.css";
 
 export type { BatchItem } from "./batchRows";
@@ -44,44 +50,72 @@ const compass = (deg: number) => COMPASS[Math.round(deg / 45) % 8]!;
 export function DraftPreview({ draft, days, posDoubt }: { draft: Draft; days: string[]; /** Ort nur vermutet (z. B. PQ nicht in der Meldung) */ posDoubt?: string }) {
   const problems = draft.problems ?? [];
   const ortProblem = problems.some((p) => p.kind === "ort");
+  const note = draft.kindHint === "notiz";
+  const what = draft.desc ?? genericWhat(draft.sym, draft.side, draft.unit || draft.melder) ?? symbolDef(draft.sym).name;
   const sym = useMemo(() => ({ __html: iconSvg(draft.sym, draft.aff, 16, { sidc: draft.sidc, status: draft.status }).svg }), [draft.sym, draft.aff, draft.sidc, draft.status]);
   const kind = draft.side === "blau" ? "eigen" : draft.aff === "N" ? "neutral" : draft.kind;
   return (
     <div className="preview br-preview">
-      <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}>{dayLabel(draft.t, days)} {draft.t.slice(11, 16)}</span>
-      {draft.melder ? <span className="chip" title="eigenes Element, das meldet">Melder <b>{draft.melder}</b></span>
-        : <span className="chip warnsoft" title="Wer meldet? z. B. «H04» an den Anfang">Melder fehlt</span>}
-      <span className={"chip br-kind k-" + kind}>{kind === "neutral" ? "Neutral" : KIND_LABEL[draft.kind]}</span>
-      {draft.kind !== "eigen" && draft.unit && draft.unit !== draft.melder && <span className="chip"><b>{draft.unit}</b></span>}
-      <span className="chip"><span className="symmini" dangerouslySetInnerHTML={sym} />{draft.desc ?? symbolDef(draft.sym).name}{!draft.desc && draft.count && draft.count > 1 ? ` ×${draft.count}` : ""}</span>
+      <span className={"chip" + (draft.timeFromText ? "" : " soft")} title={`${dayTitle(draft.t, days)} · ${draft.timeFromText ? "Zeit aus der Meldung" : "keine Zeit genannt – jetzt"}`}>{dayLabel(draft.t, days)} {draft.t.slice(11, 16)}</span>
+      {draft.melder ? <span className="chip" title="Trupp, der meldet"><b>{draft.melder}</b> meldet</span>
+        : !note && <span className="chip warnsoft" title="Wer meldet? z. B. «H04» an den Anfang">Wer meldet? fehlt</span>}
+      {note ? <span className="chip">Notiz – ohne Zeichen</span> : <>
+        <span className={"chip br-kind k-" + kind}>{kind === "neutral" ? "Neutral" : KIND_LABEL[draft.kind]}</span>
+        {draft.kind !== "eigen" && draft.unit && draft.unit !== draft.melder && <span className="chip"><b>{draft.unit}</b></span>}
+        <span className="chip"><span className="symmini" dangerouslySetInnerHTML={sym} />{what}{!draft.desc && draft.count && draft.count > 1 ? ` ×${draft.count}` : ""}</span>
+      </>}
       {(draft.dir !== undefined || draft.dirLabel) && <span className="chip" title="Bewegungsrichtung">{draft.dirLabel ?? `Rtg ${compass(draft.dir!)}`}</span>}
-      <ProblemChips problems={problems} />
-      {ortProblem ? null : draft.pos ? (posDoubt
+      {note || ortProblem ? null : draft.pos ? (posDoubt
         ? <span className="chip warnsoft posdoubt" title={`${posDoubt} – Ort nur vermutet`}>📍 {draft.where?.label} · vermutet, prüfen</span>
         : <span className="chip where">📍 {draft.where?.label}</span>)
-        : <span className="chip warn">kein Ort{draft.placeQuery ? ` («${draft.placeQuery}»)` : ""}</span>}
+        : <span className="chip warn">{draft.placeQuery ? `Ort «${draft.placeQuery}» nicht gefunden` : "Ort fehlt"}</span>}
     </div>
   );
 }
 
 const coarse = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
 
+type RowLevel = EntryState["level"];
+/** Ausweg ohne Bedienelemente des Meldungsfelds (keine Trupp-Knöpfe, keine Karte im Dialog) */
+const batchHint = (h: string) => h.replace(/^Trupp oben antippen oder an den Anfang schreiben\.$/, "Trupp an den Anfang schreiben, z. B. H04.")
+  .replace(/ oder Ort auf Karte setzen/g, "").replace(/Nochmals Enter/g, "Nochmals «Übernehmen»");
+/** Frage des Felds («… eintragen? Nochmals Enter.») in der Sprache der Übersicht: hier bedient man «Übernehmen» */
+const batchAsk = (a: string) => a.replace(/ eintragen\?/g, " übernehmen?").replace(/Nochmals Enter\./g, "Nochmals «Übernehmen».");
+const LEVEL_TEXT: Record<RowLevel, string> = { bereit: "Bereit", pruefen: "Bitte prüfen", "geht-nicht": "Geht nicht" };
+
+/** Zustand einer Zeile: `entryState` wie im Feld; KI-Zeilen mit unsicheren Teilen sind mindestens gelb */
+function rowState(dr: Draft | null, doubt: string[] | undefined, ex: Exercise, online: boolean): EntryState | null {
+  if (!dr) return null;
+  const st = stateOf(dr, ex, { online });
+  if (!doubt?.length || st.level === "geht-nicht") return st;
+  const r = { code: "ort" as const, text: `Unsicher gelesen: ${doubt.join(" · ")}`, hint: "Text mit dem Foto vergleichen und korrigieren.", ask: "So übernehmen? Nochmals «Übernehmen»." };
+  return { level: "pruefen", reasons: [r, ...st.reasons] };
+}
+
 export function BatchReview({ items, attachment, ex, onCommit, onClose, day, notice, title }: BatchReviewProps) {
-  // Zeilen mit Problem (unbekannter Ort, ungültige Zeit) sind nicht vorab angehakt
+  const online = typeof navigator === "undefined" || navigator.onLine;
+  // nur grüne Zeilen sind vorab angehakt (gelbe einzeln bestätigen, rote erst nach Korrektur)
   const [rows, setRows] = useState<BatchRow[]>(() => {
     const c0 = journalCtx(ex, day ?? defaultDay(ex));
-    return initialRows(items, (t) => !!t.trim() && !!parseMeldung(t.replace(/\s*\n\s*/g, " "), c0).problems?.length);
+    return initialRows(items, (t) => {
+      if (!t.trim()) return false;
+      const dr = parseMeldung(t.replace(/\s*\n\s*/g, " "), c0);
+      return stateOf(dr, ex, { online }).level !== "bereit";
+    });
   });
   const [cur, setCur] = useState(0);
   const [raw, setRaw] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1100 && !!attachment);
   const [url, setUrl] = useState<string | null>(null);
   /** Rückfrage «n Vorschläge verwerfen?» beim Schliessen */
   const [ask, setAsk] = useState(false);
+  /** gelbe Zeile: Text, zu dem das erste «Übernehmen» gefragt hat (je Zeilenschlüssel) */
+  const [armed, setArmed] = useState<Record<number, string>>({});
   const askRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const d = day ?? defaultDay(ex);
   const ctx = useMemo(() => journalCtx(ex, d), [ex, d]);
   const drafts = useMemo(() => rows.map((r) => (r.text.trim() ? parseMeldung(r.text.replace(/\s*\n\s*/g, " "), ctx) : null)), [rows, ctx]);
+  const states = useMemo(() => drafts.map((dr, i) => rowState(dr, rows[i]!.doubt, ex, online)), [drafts, rows, ex, online]);
 
   // Bild bzw. Memo zum Einblenden
   useEffect(() => {
@@ -99,17 +133,24 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
   useEffect(() => { if (!coarse() && window.innerWidth >= 860) window.setTimeout(() => focusRow(0), 30); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = rows.filter((r) => r.state === "offen");
-  /** Zeile i hat ein Problem im Entwurf: nicht eintragen, nur nach Korrektur */
-  const blocked = (i: number) => !!drafts[i]?.problems?.length;
-  const chosen = open.filter((r) => r.on && r.text.trim() && !blocked(rows.indexOf(r)));
+  const levelOf = (i: number): RowLevel | null => states[i]?.level ?? null;
+  /** «Alle übernehmen»: nur angehakte grüne Zeilen */
+  const chosen = open.filter((r) => r.on && r.text.trim() && levelOf(rows.indexOf(r)) === "bereit");
+  const toCheck = open.filter((r) => r.text.trim() && levelOf(rows.indexOf(r)) !== "bereit").length;
   const nextOpen = (from: number, list = rows) => {
     for (let k = 1; k <= list.length; k++) { const j = (from + k) % list.length; if (list[j]!.state === "offen") return j; }
     return -1;
   };
 
+  const setText = (i: number, text: string) => setRows(rows.map((x, j) => (j === i ? { ...x, text } : x)));
   const take = (i: number) => {
     const r = rows[i];
-    if (!r || r.state !== "offen" || !r.text.trim() || blocked(i)) return;
+    const lvl = levelOf(i);
+    if (!r || r.state !== "offen" || !r.text.trim() || !lvl) return;
+    // nie still falsch: «geht nicht» trägt nie ein
+    if (lvl === "geht-nicht") { focusRow(i); return; }
+    // gelb: erstes Übernehmen fragt, zweites (ohne Textänderung) trägt ein
+    if (lvl === "pruefen" && armed[r.key] !== r.text) { setArmed({ ...armed, [r.key]: r.text }); return; }
     onCommit([r.text.trim()], attachment?.id);
     const next = rows.map((x, j) => (j === i ? { ...x, state: "eingetragen" as const } : x));
     setRows(next);
@@ -126,7 +167,12 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
   const takeAll = () => {
     if (!chosen.length) return;
     onCommit(chosen.map((r) => r.text.trim()), attachment?.id);
-    onClose();
+    const keys = new Set(chosen.map((r) => r.key));
+    const next = rows.map((x) => (keys.has(x.key) ? { ...x, state: "eingetragen" as const } : x));
+    setRows(next);
+    // gelbe/rote Zeilen bleiben offen zum Prüfen; sonst fertig
+    if (!next.some((x) => x.state === "offen" && x.text.trim())) onClose();
+    else { const n = next.findIndex((x) => x.state === "offen"); if (n >= 0) { setCur(n); window.setTimeout(() => focusRow(n), 0); } }
   };
 
   /** offene Vorschläge mit Text (würden beim Schliessen verworfen) */
@@ -148,6 +194,7 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
   const done = rows.filter((r) => r.state === "eingetragen").length;
   const head = title ?? (items.length === 1 ? "1 Meldung erkannt" : `${items.length} Meldungen erkannt`);
   const isAudio = attachment?.kind === "audio";
+  const allGreen = chosen.length === open.length;
 
   return createPortal(
     <div className="br-back" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
@@ -182,17 +229,27 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
                 </li>
               );
               const k = dr ? (dr.side === "blau" ? "eigen" : dr.aff === "N" ? "neutral" : dr.kind) : "leer";
+              const st = states[i];
+              const lvl = st?.level ?? null;
+              const r0 = st?.reasons[0];
+              const asked = lvl === "pruefen" && armed[r.key] === r.text;
+              const green = lvl === "bereit";
+              const offer = st?.reasons.find((x) => x.code === "zukunft" && x.suggest && x.token);
+              const wasOffer = st?.reasons.find((x) => x.code === "was" && x.token) && dr?.unknownWord?.suggestLabel ? dr.unknownWord : undefined;
               return (
-                <li key={r.key} className={`br-row k-${k}` + (i === cur ? " cur" : "") + (r.on ? "" : " off")} onFocus={() => setCur(i)}>
-                  <label className="br-check" title="übernehmen">
-                    <input type="checkbox" checked={r.on} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, on: e.target.checked } : x)))} aria-label={`Zeile ${i + 1} übernehmen`} />
+                <li key={r.key} className={`br-row k-${k}` + (i === cur ? " cur" : "") + (r.on && green ? "" : " off") + (lvl ? ` lvl-${lvl}` : "")} onFocus={() => setCur(i)} data-zustand={lvl ?? undefined}>
+                  <label className="br-check" title={green ? "bei «Alle übernehmen» mitnehmen" : "einzeln prüfen und übernehmen"}>
+                    <input type="checkbox" checked={r.on && green} disabled={!green}
+                      onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, on: e.target.checked } : x)))}
+                      aria-label={green ? `Zeile ${i + 1} bei «Alle übernehmen» mitnehmen` : `Zeile ${i + 1}: einzeln prüfen und übernehmen`} />
                   </label>
                   <div className="br-main">
                     {r.origin && <span className="br-origin">{r.origin}</span>}
-                    {r.doubt && <span className="br-doubt" role="note"><b>bitte prüfen:</b> {r.doubt.join(" · ")}</span>}
                     <textarea className="br-text" data-i={i} rows={1} value={r.text} spellCheck={false} aria-label={`Meldung ${i + 1}`}
+                      autoCorrect="off" autoCapitalize="off" enterKeyHint="send"
+                      aria-invalid={lvl === "geht-nicht" || undefined}
                       ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight + 2, 120) + "px"; } }}
-                      onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, text: e.target.value.replace(/\n/g, " ") } : x)))}
+                      onChange={(e) => setText(i, e.target.value.replace(/\n/g, " "))}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); take(i); }
                         else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -202,12 +259,30 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
                           }
                         }
                       }} />
+                    {st && lvl && (
+                      <div className={`br-st s-${lvl}${asked ? " asked" : ""}`} role={lvl === "bereit" ? undefined : "note"}>
+                        {lvl === "bereit" ? <p className="br-st-h"><span aria-hidden="true">✓ </span>Bereit</p>
+                          : asked ? <p className="br-st-h"><span aria-hidden="true">⚠ </span>{r0?.ask ? batchAsk(r0.ask) : "Trotzdem übernehmen? Nochmals «Übernehmen»."}</p>
+                          : <>
+                            <p className="br-st-h"><span aria-hidden="true">{lvl === "pruefen" ? "⚠ " : "⛔ "}</span>{LEVEL_TEXT[lvl]}: {r0?.text}{st.reasons.length > 1 && <span className="br-more"> +{st.reasons.length - 1}</span>}</p>
+                            {r0?.hint && <p className="br-st-t">{batchHint(r0.hint)}</p>}
+                          </>}
+                        {(offer || wasOffer) && (
+                          <span className="br-st-acts">
+                            {offer && <button type="button" className="chipbtn" onClick={() => setText(i, replaceToken(r.text, offer.token!, offer.suggest!))}>{offer.suggest!.slice(0, 2)}:{offer.suggest!.slice(2)} einsetzen</button>}
+                            {wasOffer && <button type="button" className="chipbtn" onClick={() => setText(i, replaceToken(r.text, wasOffer.token, wasOffer.suggestLabel!))}>«{wasOffer.suggestLabel}» einsetzen</button>}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {dr ? <DraftPreview draft={dr} days={ex.days} posDoubt={pqDoubt(r.doubt)} /> : <span className="help">leer – verwerfen oder Text ergänzen</span>}
                     {dr?.normalized && dr.normalized !== dr.text && <span className="help br-read">gelesen als: <span className="mono">{dr.normalized}</span></span>}
-                    {dr && <BlockNote problems={dr.problems ?? []} verb="Übernehmen" />}
                   </div>
                   <div className="br-acts">
-                    <button className="br-take" onClick={() => take(i)} disabled={!r.text.trim() || blocked(i)} title={blocked(i) ? "Zuerst korrigieren (Problem in der Meldung)" : "Diese Meldung eintragen (Enter)"}>✓<span> Übernehmen</span></button>
+                    <button className="br-take" onClick={() => take(i)} disabled={!r.text.trim() || lvl === "geht-nicht"}
+                      title={lvl === "geht-nicht" ? "Geht nicht – zuerst korrigieren (siehe Grund)" : lvl === "pruefen" ? "Bitte prüfen – zweimal «Übernehmen» trägt ein" : "Diese Meldung eintragen (Enter)"}>
+                      ✓<span> {asked ? "Trotzdem übernehmen" : "Übernehmen"}</span>
+                    </button>
                     <button className="br-drop" onClick={() => drop(i)} title="Verwerfen" aria-label={`Zeile ${i + 1} verwerfen`}>✕</button>
                   </div>
                 </li>
@@ -224,9 +299,12 @@ export function BatchReview({ items, attachment, ex, onCommit, onClose, day, not
           </footer>
         ) : (
           <footer className="br-foot">
-            <span className="help br-keys"><b>↑/↓</b> Zeile · <b>Enter</b> Zeile übernehmen · <b>Esc</b> schliessen</span>
+            <span className="help br-keys">
+              {toCheck > 0 ? <><b>{toCheck}</b> {toCheck === 1 ? "Zeile" : "Zeilen"} einzeln prüfen bzw. korrigieren · </> : null}
+              <b>↑/↓</b> Zeile · <b>Enter</b> Zeile übernehmen · <b>Esc</b> schliessen
+            </span>
             <button onClick={requestClose}>{open.length ? "Schliessen" : "Fertig"}</button>
-            <button className="primary" disabled={!chosen.length} onClick={takeAll}>{chosen.length === open.length ? "Alle übernehmen" : "Gewählte übernehmen"} ({chosen.length})</button>
+            <button className="primary" disabled={!chosen.length} onClick={takeAll}>{allGreen ? "Alle übernehmen" : "Alle grünen übernehmen"} ({chosen.length})</button>
           </footer>
         )}
       </div>

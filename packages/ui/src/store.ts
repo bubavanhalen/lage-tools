@@ -179,8 +179,9 @@ export async function writeExercise(ex: Exercise, opts: { replace?: boolean } = 
   const stored = opts.replace ? new Map<string, LageEvent>() : new Map(((await es.getAll(eventRange(ex.id))) as EventRec[]).map((r) => [r.id, r.ev]));
   for (const ev of ex.events ?? []) {
     const cur = stored.get(ev.id);
-    if (cur && mergeEvents([ev], [cur])[0] === cur && JSON.stringify(cur) !== JSON.stringify(ev)) continue;
-    void es.put({ exId: ex.id, id: ev.id, ev } satisfies EventRec);
+    // gespeicherte Fassung gewinnt bzw. Konflikt: zusammengeführt speichern (nichts geht verloren)
+    const m = cur && JSON.stringify(cur) !== JSON.stringify(ev) ? mergeEvents([cur], [ev])[0]! : ev;
+    void es.put({ exId: ex.id, id: ev.id, ev: m } satisfies EventRec);
   }
   // Altbestand der Meldungen in der Hülle (falls noch vorhanden) mitnehmen
   if (!opts.replace) for (const ev of old?.events ?? []) if (!stored.has(ev.id) && !(ex.events ?? []).some((x) => x.id === ev.id)) void es.put({ exId: ex.id, id: ev.id, ev } satisfies EventRec);

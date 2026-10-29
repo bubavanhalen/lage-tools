@@ -1,18 +1,18 @@
 /**
  * Korrektur: geänderten Meldungstext neu lesen (ohne Browser testbar) – siehe editReparse.tsx für die Anzeige.
  */
-import { lastPosition, parseMeldung, type Draft, type Exercise, type JournalContext, type LageEvent } from "@lage/core";
+import { lastPosition, parseMeldung, type Draft, type Exercise, type JournalContext, type Kind, type LageEvent } from "@lage/core";
 
 /** Zeichenwahl (wie SymbolChoice in SymbolPicker.tsx) */
 interface Choice { key: string; sidc: string; aff: Draft["aff"]; echelon?: Draft["echelon"]; status?: Draft["status"] }
 
 /** Text der Korrektur neu lesen (Tag und «jetzt» = Zeit des Eintrags; «bei H04» = Lage des Melders vor dem Eintrag) */
-export function reparseEdit(e: LageEvent, text: string, ex: Exercise): Draft | null {
+export function reparseEdit(e: LageEvent, text: string, ex: Exercise, kind?: Kind): Draft | null {
   if (!text.trim()) return null;
   const day = e.t.slice(0, 10);
   const others = (ex.events ?? []).filter((x) => x.id !== e.id);
   const ctx: JournalContext = {
-    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [],
+    sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind,
     days: ex.days.includes(day) ? ex.days : [...ex.days, day].sort(), day,
     now: new Date(`${e.t}:00`),
     lastPos: (u, s) => lastPosition(others, s, u, e.t),

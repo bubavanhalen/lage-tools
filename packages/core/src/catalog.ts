@@ -924,3 +924,68 @@ export function searchTactical(q: string, limit = 40): TacticalSearch {
   }
   return { entries: entries.slice(0, limit), echelon, aff, status, rest };
 }
+
+// ---------- Unbekannte Wörter (Tippfehler, verstümmelte Begriffe)
+
+/**
+ * Ist das Wort ein bekannter Begriff (Zeichen, Stufe, Zugehörigkeit, Status, Tätigkeit, Füllwort) – genau oder mit
+ * Beugungsendung («Panzern», «Fahrzeuge»)? Wortteile zählen nicht («schützenpnzr» enthält «schützen», ist aber kein Begriff).
+ */
+export function isKnownTerm(word: string): boolean {
+  const n = normTerm(word);
+  if (!n) return false;
+  if (DICT.has(n) || DICT.has(umlautFree(n))) return true;
+  for (const suf of SUFFIXES) {
+    if (n.endsWith(suf) && n.length - suf.length >= 2) {
+      const k = n.slice(0, -suf.length);
+      if (DICT.has(k) || DICT.has(umlautFree(k))) return true;
+    }
+  }
+  return false;
+}
+
+/** Editierdistanz (Levenshtein mit Vertauschung benachbarter Zeichen), abgebrochen über `max` */
+function editDistance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array<number>(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0]![j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let rowMin = Infinity;
+    for (let j = 1; j <= b.length; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(d[i - 1]![j]! + 1, d[i]![j - 1]! + 1, d[i - 1]![j - 1]! + c);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, d[i - 2]![j - 2]! + 1);
+      d[i]![j] = v;
+      rowMin = Math.min(rowMin, v);
+    }
+    if (rowMin > max) return max + 1;
+  }
+  return d[a.length]![b.length]!;
+}
+
+/** Zeichen-Begriffe (ein Wort, ≥ 4 Zeichen) für die unscharfe Suche */
+let FUZZY: Array<[string, CatalogEntry]> | undefined;
+
+/**
+ * Nächster Katalogbegriff zu einem unbekannten Wort («schützenpnzr» → Schützenpanzer, «lastwgen» → Lastwagen) – nur als
+ * Vorschlag (die Erkennung übernimmt ihn nie still). Erlaubte Distanz: 1 bis 7 Zeichen, 2 bis 13, sonst 3; der erste
+ * Buchstabe muss stimmen. Kurze Wörter (< 4 Zeichen), bekannte Begriffe und blosse Beugungen («zivile» → «ziviler»)
+ * liefern nichts.
+ */
+export function closestTerm(word: string): { entry: CatalogEntry; term: string; dist: number } | undefined {
+  const w = umlautFree(normTerm(word)).replace(/\s+/g, "");
+  if (w.length < 4 || /\d/.test(w) || isKnownTerm(word)) return undefined;
+  FUZZY ??= [...DICT.entries()].flatMap(([k, hs]) => {
+    const e = hs.find((h) => h.t === "e") as { e: CatalogEntry } | undefined;
+    return e && !k.includes(" ") && k.length >= 4 && !e.e.hidden ? [[umlautFree(k), e.e] as [string, CatalogEntry]] : [];
+  });
+  const max = w.length <= 7 ? 1 : w.length <= 13 ? 2 : 3;
+  let best: { entry: CatalogEntry; term: string; dist: number } | undefined;
+  for (const [k, e] of FUZZY) {
+    if (k[0] !== w[0] || k.startsWith(w) || w.startsWith(k)) continue;
+    const dd = editDistance(w, k, best ? Math.min(best.dist, max) : max);
+    if (dd > max) continue;
+    if (!best || dd < best.dist || (dd === best.dist && k.length > best.term.length)) best = { entry: e, term: k, dist: dd };
+  }
+  return best;
+}

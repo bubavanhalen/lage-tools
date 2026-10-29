@@ -26,6 +26,7 @@ import {
   type Status,
   type Echelon,
 } from "@lage/core";
+import { stateOf } from "./entry/stateOptions";
 
 // gleich wie `shapeFits`/`shapePatch` in ShapeDraw.tsx (hier ohne Leaflet, damit der Eintrage-Weg ohne Browser testbar bleibt)
 const shapeFits = (shape: EventShape, sym: string) => geometryOf(sym) === shape.kind;
@@ -146,7 +147,7 @@ export interface CommitTextsOptions {
   attachment?: Attachment;
   /** Texte stammen aus einem KI-Vorschlag (Standard: wenn der Anhang von der KI gelesen wurde) */
   via?: LageEvent["via"];
-  /** Texte mit Problem im Entwurf (unbekannter Ort, ungültige Zeit) werden nie eingetragen – hier gemeldet */
+  /** Texte mit Problem im Entwurf bzw. «geht nicht» (unbekannter Ort, ungültige Zeit, Zeit in der Zukunft) werden nie eingetragen – hier gemeldet */
   onSkipped?: (texts: string[]) => void;
 }
 
@@ -172,8 +173,9 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
     if (!text) return;
     const now = new Date(base + i);
     const draft = parseMeldung(text, journalCtx(work, day, undefined, now));
-    // nie still falsch: mit Problem (z. B. «AK77» gibt es nicht) nicht eintragen – nur nach Korrektur
-    if (draft.problems?.length) { skipped.push(text); return; }
+    // nie still falsch: mit Problem (z. B. «AK77» gibt es nicht) oder «geht nicht» nach denselben Regeln wie das
+    // Meldungsfeld (z. B. Zeit in der Zukunft ohne Tagesangabe) nicht eintragen – nur nach Korrektur
+    if (draft.problems?.length || stateOf(draft, work, { now }).level === "geht-nicht") { skipped.push(text); return; }
     const ev = buildEvent(draft, o.device, work, { attachments: attId ? [attId] : undefined, source: src, via }, now);
     out.push(ev);
     work = addEvents(work, [ev]);
@@ -182,4 +184,38 @@ export function commitTexts(texts: string[], o: CommitTextsOptions): LageEvent[]
   if (!out.length && !o.attachment) return out;
   o.update((x) => addEvents(x, out, { attachments: o.attachment ? [o.attachment] : undefined }));
   return out;
+}
+
+// ---------- Korrektur (Spez. MVP 1, Kap. 3.3) ----------
+
+/** Ort einer Meldung (bleibt bei einer Korrektur, wenn der neue Text keinen Ort nennt) */
+const PLACE_KEYS = ["pos", "where", "cells", "nai", "angle", "road", "roadNone", "shape"] as const;
+/** Zeichen und Einordnung (bleiben, solange der Text unverändert ist und nichts von Hand gewählt wurde) */
+const SYMBOL_KEYS = ["side", "unit", "aff", "sym", "sidc", "echelon", "status", "desc", "count", "label"] as const;
+/** übrige Inhalte, die der neu gelesene Text bestimmt */
+const TEXT_KEYS = ["melder", "text", "dir", "from", "fromLabel", "roadHint", "via"] as const;
+
+/**
+ * Änderung für `correctEvent` aus der neu gelesenen Fassung `cand` (`buildEvent` aus dem Korrekturtext):
+ * nur Felder, die sich gegenüber `base` wirklich ändern (leer = keine Änderung). `keepPlace`: Ort der Meldung bleibt
+ * (Text nennt keinen Ort, Ort von Hand gesetzt); `keepSymbol`: Zeichen/Einordnung bleiben; `keepTime`: Zeit bleibt.
+ */
+export function correctionPatch(base: LageEvent, cand: LageEvent, o: { keepPlace: boolean; keepSymbol: boolean; keepTime: boolean }): Partial<LageEvent> {
+  const out: Record<string, unknown> = {};
+  const take = (keys: readonly (keyof LageEvent)[], from: LageEvent) => {
+    for (const k of keys) if (JSON.stringify(from[k]) !== JSON.stringify(base[k])) out[k] = from[k];
+  };
+  take(TEXT_KEYS, cand);
+  if (!o.keepPlace) take(PLACE_KEYS, cand);
+  if (!o.keepSymbol) take(SYMBOL_KEYS, cand);
+  if (!o.keepTime && cand.t !== base.t) out.t = cand.t;
+  return out as Partial<LageEvent>;
+}
+
+/** Melder/Element einer korrigierten Meldung in der Übung merken (wie `addEvents`) */
+export function rememberUnits(x: Exercise, ev: Pick<LageEvent, "melder" | "unit" | "side">): Exercise {
+  const remember = (side: Side, u?: string) => { if (u && !x.units[side].some((v) => v.toLowerCase() === u.toLowerCase())) x.units = { ...x.units, [side]: [...x.units[side], u] }; };
+  remember("blau", ev.melder);
+  remember(ev.side, ev.unit);
+  return x;
 }

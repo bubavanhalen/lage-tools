@@ -14,6 +14,8 @@ import { eventShape, geometryOf, shapeShortName, shapeStyleOf, type Area, type E
 import { escapeHtml, isAnticipated, toLatLng } from "@lage/map";
 import { KIND_COLOR, kindOf, kindText, type ItemKind } from "./journalLayer";
 import type { LayerFlags } from "./layers";
+import { quietShapeOpacity } from "./map/quiet";
+import { LAGE_KARTE } from "./colors";
 import "./shapes.css";
 
 export interface ShapeLayerOptions {
@@ -28,6 +30,8 @@ export interface ShapeLayerOptions {
   onClick?: (e: LageEvent) => void;
   /** Meldungen jünger als so viele Minuten kräftig, ältere blass (Standard 30, wie die Zeichen) */
   recentMin?: number;
+  /** MVP 1: ruhige Karte der Grundansicht (ältere 55 % wie die Zeichen, map/quiet.ts); fehlt = Experte */
+  quiet?: boolean;
 }
 
 export interface ShapeItem {
@@ -64,7 +68,7 @@ export function shapeItems(events: LageEvent[], o: Omit<ShapeLayerOptions, "onCl
     const age = (Date.parse(o.t) - Date.parse(e.t)) / 60000;
     out.push({
       e, shape, style: shapeStyleOf(e.sym), kind, color: KIND_COLOR[kind].line, dashed: isAnticipated(e.sidc, e.status), selected,
-      opacity: kind === "eigen" || selected || age <= recent ? 1 : 0.55,
+      opacity: quietShapeOpacity({ kind, ageMin: age, selected }, { quiet: !!o.quiet, neuMin: recent }),
       label: shapeShortName(e.sym, e.side),
     });
   }
@@ -194,7 +198,8 @@ class ShapeLayer extends L.LayerGroup {
       const dash = it.dashed ? "9 6" : it.style === "grenze" ? "16 5 3 5" : undefined;
       let hit: L.Path;
       if (it.shape.kind === "flaeche") {
-        if (it.selected) L.polygon(ll, this.base({ color: "#F2B705", weight: 9, opacity: 0.55, fill: false })).addTo(g);
+        // gewählt: dunkler Rahmen (Auswahl = Tinte, Kap. 5.1)
+        if (it.selected) L.polygon(ll, this.base({ color: LAGE_KARTE.ink, weight: 9, opacity: 0.3, fill: false })).addTo(g);
         L.polygon(ll, this.base({ color: "#fff", weight: 5 + w, opacity: 0.75 * op, fill: false })).addTo(g);
         const pattern = it.style === "minen" || it.style === "abc" ? `url(#lt-pat-${it.style}-${it.kind})` : undefined;
         hit = L.polygon(ll, this.base({
@@ -203,7 +208,7 @@ class ShapeLayer extends L.LayerGroup {
           interactive: !!this.o.onClick, bubblingMouseEvents: false, className: "lt-shape",
         })).addTo(g);
       } else {
-        if (it.selected) L.polyline(ll, this.base({ color: "#F2B705", weight: 11, opacity: 0.55 })).addTo(g);
+        if (it.selected) L.polyline(ll, this.base({ color: LAGE_KARTE.ink, weight: 11, opacity: 0.3 })).addTo(g);
         const heavy = it.style === "achse" ? 3.5 : 2.6;
         L.polyline(ll, this.base({ color: "#fff", weight: heavy + 4 + w, opacity: 0.8 * op, lineCap: "round", lineJoin: "round" })).addTo(g);
         L.polyline(ll, this.base({ color: it.color, weight: heavy + w, opacity: op, dashArray: dash, lineCap: it.style === "achse" ? "butt" : "round", lineJoin: "round" })).addTo(g);

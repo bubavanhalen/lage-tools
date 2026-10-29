@@ -4,6 +4,8 @@
  * - Randbeschriftung auf allen vier Seiten (Plex Mono 600 13px, weisser Halo), bei kleinen Feldern ausgedünnt.
  * - Grosse Feldbeschriftung in jedem Feld, skaliert mit dem Zoom (≈ 14,5 % der Feldhöhe), halbtransparent.
  * - Bei grossem Zoom zusätzlich Unterquadranten A B / D C (feines Kreuz + kleine Buchstaben).
+ * Leise (`quiet`, MVP 1 Grundansicht, Spez. 5.4): alle Linien 1 px rgba(17,17,17,.35) ohne weisse Unterlage, Beschriftung
+ * am Rand, grosse Feldbeschriftung erst ab 120 px Feldhöhe (blasser).
  * Beschriftungen werden nur für den sichtbaren Ausschnitt gezeichnet (eine SVG, neu nach Verschieben/Zoom).
  * Während einer Zoom-Bewegung folgt die SVG der Karte per CSS-Transform wie Leaflets Vektor-Renderer:
  * `zoomanim` (Mausrad, +/−, Doppelklick) und `zoom` in jedem Bild (Kamerafahrt `flyTo`, Pinch-Zoom).
@@ -21,7 +23,12 @@ export interface RasterLayerOptions {
   quadrantMinPx?: number;
   /** grösste Schrift der Feldbezeichnung in px (Standard 56) */
   cellLabelMaxPx?: number;
+  /** leise: feine Linien, Feldnamen erst ab 120 px (Standard aus) */
+  quiet?: boolean;
 }
+
+/** Linienfarbe «Raster leise» (Spez. 5.4) */
+export const RASTER_LEISE = "rgba(17,17,17,.35)";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const PANE = "ltRasterLabels";
@@ -42,11 +49,16 @@ export function rasterLayer(map: L.Map, sheet: RasterSheet, opts: RasterLayerOpt
     const n = b.maxN - r * sheet.cellH;
     (r % 5 === 0 || r === rows ? major : minor).push([toLatLng({ e: b.minE, n }), toLatLng({ e: b.maxE, n })]);
   }
-  // weisse Unterlage: Linien bleiben auch auf der dichten Stadtkarte lesbar
-  L.polyline([...minor, ...major], { color: "#fff", weight: 3, opacity: 0.55, interactive: false, className: "lt-grid-casing" }).addTo(group);
-  if (minor.length) L.polyline(minor, { color, weight: 1, opacity: 0.45, interactive: false, className: "lt-grid" }).addTo(group);
-  L.polyline(major, { color, weight: 1.6, opacity: 0.75, interactive: false, className: "lt-grid" }).addTo(group);
-  group.addLayer(new RasterLabels(sheet, opts));
+  if (opts.quiet) {
+    // leise: eine feine Linie für alle Feldgrenzen (Standardfarbe #111111 mit 35 % = RASTER_LEISE)
+    L.polyline([...minor, ...major], { color, weight: 1, opacity: 0.35, interactive: false, className: "lt-grid quiet" }).addTo(group);
+  } else {
+    // weisse Unterlage: Linien bleiben auch auf der dichten Stadtkarte lesbar
+    L.polyline([...minor, ...major], { color: "#fff", weight: 3, opacity: 0.55, interactive: false, className: "lt-grid-casing" }).addTo(group);
+    if (minor.length) L.polyline(minor, { color, weight: 1, opacity: 0.45, interactive: false, className: "lt-grid" }).addTo(group);
+    L.polyline(major, { color, weight: 1.6, opacity: 0.75, interactive: false, className: "lt-grid" }).addTo(group);
+  }
+  group.addLayer(new RasterLabels(sheet, opts.quiet ? { cellLabelMinPx: 120, ...opts } : opts));
   void map;
   return group;
 }
@@ -71,7 +83,7 @@ class RasterLabels extends L.Layer {
       pane.style.pointerEvents = "none";
     }
     const svg = (this.svg = document.createElementNS(SVG_NS, "svg"));
-    svg.setAttribute("class", `lt-raster-lbl ${map.options.zoomAnimation && L.Browser.any3d ? "leaflet-zoom-animated" : "leaflet-zoom-hide"}`);
+    svg.setAttribute("class", `lt-raster-lbl${this.o.quiet ? " quiet" : ""} ${map.options.zoomAnimation && L.Browser.any3d ? "leaflet-zoom-animated" : "leaflet-zoom-hide"}`);
     svg.style.position = "absolute";
     svg.style.overflow = "visible";
     map.getPane(PANE)!.appendChild(svg);

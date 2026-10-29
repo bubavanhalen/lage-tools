@@ -9,6 +9,7 @@ import type { LayerFlags } from "./layers";
 import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
 import { getSituationLayout, subscribeSituationLayout } from "./situationLayer";
 import { dayLabel } from "./Timeline";
+import { LAGE_KARTE } from "./colors";
 import "./mapoverlays.css";
 
 const UNIT_VAR = { eigen: "var(--blau)", feind: "var(--rot)", unklar: "var(--unklar)", neutral: "var(--ok)", ul: "var(--muted)" } as const;
@@ -24,7 +25,7 @@ export interface EventBannerProps {
   event: LageEvent | null;
   days: string[];
   onClose: () => void;
-  /** optional: Knopf «Bearbeiten» */
+  /** optional: Knopf «Korrigieren» (lädt die Meldung ins Meldungsfeld, Spez. MVP 1 Kap. 3.3) */
   onEdit?: (e: LageEvent) => void;
   /** optional: Anhänge (Miniatur/Büroklammer) nach dem Meldungstext */
   extra?: ReactNode;
@@ -56,7 +57,9 @@ export function EventBanner({ event, days, onClose, onEdit, extra }: EventBanner
         const o = box.querySelector<HTMLElement>(sel);
         if (o && o.offsetHeight) bottom = Math.min(bottom, o.getBoundingClientRect().top - b.top);
       }
-      setPlace({ maxW, top, maxH: Math.max(48, bottom - top - 8) });
+      // im Rückblick liegt oben das gelbe Band (--rb-oben, Paket C): darunter rücken
+      const rb = parseFloat(getComputedStyle(box).getPropertyValue("--rb-oben")) || 0;
+      setPlace({ maxW, top, maxH: Math.max(48, bottom - top - rb - 8) });
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -87,18 +90,18 @@ export function EventBanner({ event, days, onClose, onEdit, extra }: EventBanner
   const unit = event.unit || (kind === "eigen" ? event.melder ?? "" : "");
   return (
     <div ref={ref} className="mo-banner" role="status" aria-label="Gewählte Meldung"
-      style={{ maxWidth: place.maxW, top: place.top, maxHeight: place.maxH }}>
+      style={{ maxWidth: place.maxW, top: place.top !== undefined ? `calc(${place.top}px + var(--rb-oben, 0px))` : undefined, maxHeight: place.maxH }}>
       <span className="mo-time tnum">{time}</span>
       <span className={`mo-kind k-${kind}`}>{kindText(event)}</span>
       <Sym k={event.sym} aff={event.aff} size={14} sidc={event.sidc} status={event.status} />
       {unit && <span className="mo-unit" style={{ color: UNIT_VAR[kind] }}>{unit}</span>}
-      {kind !== "eigen" && event.melder && <span className="mo-via">via {event.melder}</span>}
+      {kind !== "eigen" && event.melder && <span className="mo-via">von {event.melder}</span>}
       {where && <span className="mo-pq tnum">{where}</span>}
       {event.road && <span className="mo-road">auf {event.road}</span>}
       {event.desc && <span className="mo-desc">{event.desc}</span>}
       <span className="mo-msg">{event.text}</span>
       {extra}
-      {onEdit && <button className="mo-btn" onClick={() => onEdit(event)} title="Meldung bearbeiten">✎ Bearbeiten</button>}
+      {onEdit && <button className="mo-btn" onClick={() => onEdit(event)} aria-label="Diese Meldung korrigieren">Korrigieren</button>}
       <button className="mo-x" onClick={onClose} aria-label="Auswahl aufheben" title="Schliessen (Esc)">×</button>
     </div>
   );
@@ -189,22 +192,22 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
     if (ant) out.push({ key: "vermutet", icon: <Sym k={ant.sym} aff={ant.aff} size={16} sidc={ant.sidc} status="anticipated" />, label: "gestrichelt = vermutet" });
     if (model.items.some((i) => i.road === "sperre")) out.push({
       key: "sperre",
-      icon: <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M3 9 L6 4 L9 9 L12 4 L15 9 L18 4 L21 9" fill="none" stroke="#D3262D" strokeWidth="1.4" /><path d="M2 9 H22" stroke="#D3262D" strokeWidth="3" /></svg>,
+      icon: <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M3 9 L6 4 L9 9 L12 4 L15 9 L18 4 L21 9" fill="none" stroke={LAGE_KARTE.feind} strokeWidth="1.4" /><path d="M2 9 H22" stroke={LAGE_KARTE.feind} strokeWidth="3" /></svg>,
       label: "Sperre quer zur Strasse",
     });
     if (model.tracks.some((x) => x.side === "blau")) out.push({ key: "spur-b", icon: <LineSample color="#1F5FB8" dash="5 3" dots width={2} />, label: "Spur eigene" });
-    if (model.tracks.some((x) => x.side !== "blau")) out.push({ key: "spur-r", icon: <LineSample color="#D3262D" dash="5 3" dots width={2} />, label: "Spur Feind" });
+    if (model.tracks.some((x) => x.side !== "blau")) out.push({ key: "spur-r", icon: <LineSample color={LAGE_KARTE.feind} dash="5 3" dots width={2} />, label: "Spur Feind" });
     if (flags.nai && areas?.length) {
       if (areas.some((a) => a.kind === "nai" || a.kind === "other")) out.push({ key: "nai", icon: <AreaSample color="#1F78D1" fill="#1F78D1" />, label: "NAI" });
       if (areas.some((a) => a.kind === "ao")) out.push({ key: "ao", icon: <AreaSample color="#0B3D91" dash="4 3" />, label: "AO" });
-      if (areas.some((a) => a.kind === "stao")) out.push({ key: "stao", icon: <AreaSample color="#B3242A" dash="3 2" fill="#D3262D" />, label: "Stao" });
+      if (areas.some((a) => a.kind === "stao")) out.push({ key: "stao", icon: <AreaSample color={LAGE_KARTE.feind} dash="3 2" fill={LAGE_KARTE.feind} />, label: "Stao" });
     }
     if (model.items.some((i) => i.showTime)) out.push({ key: "zeit", icon: <span className="mo-tl tnum">hh:mm</span>, label: `Meldung jünger als ${recentMin} min` });
     if (model.items.some((i) => i.opacity < 1)) {
       const old = model.items.find((i) => i.opacity < 1)!;
       out.push({ key: "blass", icon: <span style={{ opacity: 0.45 }}><Sym k={old.sym} aff={old.aff} size={16} /></span>, label: `blass = älter als ${recentMin} min` });
     }
-    if (model.items.some((i) => i.kind === "eigen" && i.isUnit && i.silentMin > STALE_MIN)) out.push({ key: "alt", icon: <span className="mo-tl tnum">75′</span>, label: `keine Meldung seit über ${STALE_MIN} min` });
+    if (model.items.some((i) => i.kind === "eigen" && i.isUnit && i.silentMin > STALE_MIN)) out.push({ key: "alt", icon: <span className="mo-tl tnum">75 min</span>, label: `keine Meldung seit über ${STALE_MIN} min` });
     if (layout.stacks > 0) out.push({
       key: "stapel",
       icon: (

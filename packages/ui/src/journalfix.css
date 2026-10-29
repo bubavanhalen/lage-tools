@@ -4,7 +4,7 @@
 .blocknote { margin: 6px 0 0; font-size: 13px; line-height: 1.35; color: var(--rot); font-weight: 500; }
 .entry .btnrow button.primary:disabled { opacity: .55; }
 
-.editpreview { margin: 2px 0 4px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 6px; background: var(--paper); }
+.editpreview { margin: 2px 0 4px; padding: 6px 8px; border: 1px dashed var(--line-soft); border-radius: 6px; background: var(--paper); }
 .editpreview .help { margin: 0 2px 0 0; font-size: 12px; }
 .editpreview .chip.kind-eigen { color: var(--blau); border-color: var(--blau); }
 .editpreview .chip.kind-feind { color: var(--rot); border-color: var(--rot); }

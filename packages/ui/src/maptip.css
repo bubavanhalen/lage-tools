@@ -1,7 +1,7 @@
 /* Kleines Blatt über der Karte (Handy): Hinweis bzw. Aktion Rot nach Tipp auf das Fähnchen */
 .maptip {
   position: absolute; left: 8px; right: 8px; bottom: 34px; z-index: 1200;
-  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-left: 5px solid var(--warn);
+  background: var(--card); color: var(--ink); border: 1px solid var(--line-soft); border-left: 5px solid var(--warn);
   border-radius: 8px; padding: 10px 12px 10px; box-shadow: 0 6px 24px rgb(0 0 0 / .22);
   max-height: 45%; overflow: auto; font: 400 14px/1.35 var(--f-body);
 }

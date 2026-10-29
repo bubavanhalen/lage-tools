@@ -4,11 +4,15 @@
  * Mehrere Hinweise am selben Ort teilen sich ein Fähnchen. Pendelverkehr (C2) als gestrichelte Route mit Pfeilen,
  * D1 als Kreis 500 m um den eigenen Stao. Der gewählte Hinweis umrandet PQ/NAI; die Zeichen der Auslöser bleiben
  * kräftig, alle anderen werden blass (Klasse `lt-hintsel` am Kartencontainer, `hl` an den Zeichen).
+ * MVP 1: Fähnchen ohne Regel-Code (⚠ hoch, • sonst; Klartext `headline` als Tooltip), Auswahl in Tinte statt Gelb;
+ * Grundansicht (`onlySelected`) zeigt nur den gewählten Hinweis.
  */
 import L from "leaflet";
 import { cellBounds, findCells, lastPosition, type Bounds, type Exercise, type Hint, type LV95 } from "@lage/core";
 import { escapeHtml, toLatLng } from "@lage/map";
 import { decisionOf, isOver, nextLabel } from "./hintsData";
+import { LAGE_KARTE } from "./colors";
+import { onlySelectedFilter } from "./map/quiet";
 import "./hints.css";
 
 export interface HintLayerOptions {
@@ -20,12 +24,14 @@ export interface HintLayerOptions {
   /** gewählten Hinweis hervorheben (übrige Zeichen blass) */
   focus: boolean;
   onClick: (h: Hint) => void;
+  /** MVP 1 Grundansicht: nur den gewählten Hinweis zeigen (ohne Wahl nichts) */
+  onlySelected?: boolean;
 }
 
-/** Kartenfarben (Karte bleibt auch im Dunkelmodus hell) – entsprechen --m-flash, --m-rot, --m-ink */
-const FLASH = "#F2B705";
-const ROT = "#D3262D";
-const INK = "#101414";
+/** Kartenfarben (Karte bleibt auch im Dunkelmodus hell, colors.ts) */
+const ROT = LAGE_KARTE.feind;
+const INK = LAGE_KARTE.ink;
+const HALO = LAGE_KARTE.halo;
 const D1_RADIUS = 500;
 const MAX_PILLS = 3;
 const LEVEL_RANK = { hoch: 0, mittel: 1, info: 2 } as const;
@@ -80,7 +86,7 @@ export function hintLayer(map: L.Map, o: HintLayerOptions): L.LayerGroup {
   const { ex } = o;
   const sel = o.hints.find((h) => h.id === o.selectedId) ?? null;
   // auf der Karte: offene und bestätigte Hinweise, die noch gelten (gewählter immer)
-  const shown = o.hints.filter((h) => h === sel || (h.level !== "info" && decisionOf(ex, h) !== "verworfen" && !isOver(h, o.t)));
+  const shown = onlySelectedFilter(o.hints.filter((h) => h === sel || (h.level !== "info" && decisionOf(ex, h) !== "verworfen" && !isOver(h, o.t))), o.selectedId, !!o.onlySelected);
 
   // gewählt: Planquadrate und NAI umrandet (weisser Saum, gestrichelt in Signalgelb)
   if (sel) {
@@ -88,8 +94,8 @@ export function hintLayer(map: L.Map, o: HintLayerOptions): L.LayerGroup {
     const a = naiOf(sel, ex);
     if (a) rings.push(a.ring.map(toLatLng));
     for (const r of rings) {
-      L.polygon(r, { pane: GEO_PANE, color: "#fff", weight: 6, opacity: 0.9, fill: false, interactive: false }).addTo(g);
-      L.polygon(r, { pane: GEO_PANE, color: INK, weight: 2.5, opacity: 1, dashArray: "8 5", fillColor: FLASH, fillOpacity: 0.16, interactive: false }).addTo(g);
+      L.polygon(r, { pane: GEO_PANE, color: HALO, weight: 6, opacity: 0.9, fill: false, interactive: false }).addTo(g);
+      L.polygon(r, { pane: GEO_PANE, color: INK, weight: 2.5, opacity: 1, dashArray: "8 5", fillColor: INK, fillOpacity: 0.08, interactive: false }).addTo(g);
     }
   }
 
@@ -136,7 +142,7 @@ export function hintLayer(map: L.Map, o: HintLayerOptions): L.LayerGroup {
         const r = h.radius ?? D1_RADIUS;
         const ring = Array.from({ length: 72 }, (_, i) => toLatLng({ e: st.e + r * Math.cos((i / 72) * 2 * Math.PI), n: st.n + r * Math.sin((i / 72) * 2 * Math.PI) }));
         L.polygon(ring, { pane: GEO_PANE, color: "#fff", weight: on ? 5 : 4, opacity: on ? 0.9 : 0.6, fill: false, interactive: false }).addTo(g);
-        L.polygon(ring, { pane: GEO_PANE, color: INK, weight: on ? 2.2 : 1.5, opacity: on ? 1 : 0.7, dashArray: "3 5", fillColor: FLASH, fillOpacity: on ? 0.1 : 0.05, interactive: false }).addTo(g);
+        L.polygon(ring, { pane: GEO_PANE, color: INK, weight: on ? 2.2 : 1.5, opacity: on ? 1 : 0.7, dashArray: "3 5", fillColor: INK, fillOpacity: on ? 0.06 : 0.03, interactive: false }).addTo(g);
       }
     }
   }
@@ -178,9 +184,11 @@ export function hintLayer(map: L.Map, o: HintLayerOptions): L.LayerGroup {
     const rest = hs.slice(vis.length);
     const pills = vis.map((h) => {
       const st = decisionOf(ex, h);
-      const title = `${h.title} (Regel ${h.rule}${st === "bestaetigt" ? ", bestätigt" : ""})`;
-      return `<span class="lt-hb-pill l-${h.level} d-${st}${h === sel ? " sel" : ""}" data-h="${escapeHtml(h.id)}" tabindex="0" role="button" title="${escapeHtml(title)}" aria-label="Hinweis ${escapeHtml(title)}"><i></i>${escapeHtml(h.rule)}</span>`;
-    }).join("") + (rest.length ? `<span class="lt-hb-pill more" data-h="${escapeHtml(rest[0]!.id)}" tabindex="0" role="button" title="${escapeHtml(rest.map((h) => `${h.rule}: ${h.title}`).join("\n"))}">+${rest.length}</span>` : "");
+      // Klartext statt Regel-Code (Kap. 4.1: keine Codes auf der Karte)
+      const title = `${h.headline ?? h.title}${st === "bestaetigt" ? " (trifft zu)" : ""}`;
+      const mark = h.level === "hoch" ? "⚠" : "•";
+      return `<span class="lt-hb-pill l-${h.level} d-${st}${h === sel ? " sel" : ""}" data-h="${escapeHtml(h.id)}" tabindex="0" role="button" title="${escapeHtml(title)}" aria-label="Hinweis: ${escapeHtml(title)}"><i></i>${mark}</span>`;
+    }).join("") + (rest.length ? `<span class="lt-hb-pill more" data-h="${escapeHtml(rest[0]!.id)}" tabindex="0" role="button" title="${escapeHtml(rest.map((h) => h.headline ?? h.title).join("\n"))}" aria-label="${rest.length} weitere Hinweise">+${rest.length}</span>` : "");
     const m = L.marker(toLatLng(gr.at), {
       pane: BADGE_PANE, keyboard: false, zIndexOffset: sel && hs.includes(sel) ? 1000 : 0,
       icon: L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="lt-hb" style="${gr.point ? "margin:-12px 0 0 -10px" : "margin:-3px 0 0 -3px"}">${pills}</div>` }),

@@ -6,14 +6,14 @@
  */
 import { pointInRing, ringCentroid } from "./geo";
 import { findCoordinates, type LV95 } from "./lv95";
-import { newEventId, type Area, type LageEvent, type Place, type RoadHint, type Side } from "./model";
+import { newEventId, revisionOf, type Area, type LageEvent, type Place, type RoadHint, type Side } from "./model";
 import { boundsCenter, cellBounds, findCells, type RasterSheet } from "./raster";
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
 import { addDays, compareEvents, localDay, localIso, nearestDay, offsetFor } from "./clock";
 import { autoShape, shapeCenter } from "./shapes";
-import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeTyped, observedOwn, partPlaces, pickTime, placeProblems, placeSpans, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, vagueAmount } from "./erkennung";
+import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeMelder, normalizeTyped, noteIntent, observedOwn, ownDirection, partPlaces, pickTime, placeProblems, placeSpans, sameUnitName, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, unknownSubject, vagueAmount, type UnknownWord } from "./erkennung";
 
 export interface JournalContext {
   sheets: RasterSheet[];
@@ -49,6 +49,10 @@ export interface Draft {
   /** ISO lokal, z. B. «2026-10-20T10:15» */
   t: string;
   timeFromText: boolean;
+  /** Tag ausdrücklich genannt («T2 1535») – dann ist eine Zeit in der Zukunft nur «bitte prüfen», sonst «geht nicht» */
+  dayFromText?: boolean;
+  /** Zeitangabe wie getippt («1535», «15:35», «vor 10 min») – zum Markieren im Text */
+  timeToken?: string;
   kind: Kind;
   /** wie wurde eingeordnet (für die Vorschau) */
   kindFrom: "text" | "inhalt" | "vorgabe";
@@ -103,6 +107,21 @@ export interface Draft {
    * Die UI zeigt `text` als roten Chip und sperrt Enter/Eintragen (Ausweg: Ort auf Karte setzen, Text korrigieren).
    */
   problems?: DraftProblem[];
+  /**
+   * Vorschlag der Erkennung, die Meldung **nicht** als Lage einzutragen: «notiz» = Rückfrage, Auftrag, Befehl oder Frage
+   * («H04 Rückfrage: Standort Det 2?», «Auftrag an H01: Beo NAI 1», Text endet mit «?»). Dann hat der Entwurf kein Zeichen
+   * und verschiebt nichts: `pos`, `where`, `cells`, `nai`, `unit`, `count`, `dir` fehlen, `side` = blau, `sym` = einheit;
+   * Ortsprobleme entfallen; «Auftrag an H01» → `melder` leer. `entryState` meldet gelb «Als Notiz ohne Zeichen?»
+   * (Code `notiz`); 2. Enter trägt als Notiz ein (`eventFromDraft` setzt `LageEvent.notiz`). Ausweg «doch als Lage»:
+   * Einordnung von Hand wählen (`JournalContext.kind`) – dann gibt es keinen Hinweis und die Meldung wird normal gelesen.
+   */
+  kindHint?: "notiz";
+  /**
+   * Unbekanntes/verstümmeltes Wort an der Stelle des Gesehenen («2 schützenpnzr»): keine geratene Art – `sym` = einheit,
+   * Einordnung unklar (ausser ausdrücklich «Feind»/«gn» bzw. von Hand gewählt), `desc` = «2 ? («schützenpnzr»)».
+   * `suggest`/`suggestLabel` = nächster Katalogbegriff (nur Vorschlag). `entryState`: gelb, Code `was`.
+   */
+  unknownWord?: UnknownWord;
 }
 
 /** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
@@ -201,11 +220,13 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const problems: DraftProblem[] = [];
   // ---- Tag und Zeit am Anfang (Tag folgt der Uhr, wenn `dayFromClock`)
   let day = ctx.dayFromClock ? localDay(ctx.now) : ctx.day;
+  let dayFromText = false;
   const dm = /^T\s?(\d)\b[\s,:]*/i.exec(rest);
   if (dm) {
     const n = +dm[1]!;
     const d = ctx.days[n - 1];
     const last = ctx.days[ctx.days.length - 1];
+    dayFromText = true;
     if (d) day = d;
     // nächster, noch nicht angelegter Tag («T2» in der ersten Nacht) – wird beim Eintragen angelegt
     else if (last && n === ctx.days.length + 1) day = addDays(last, 1);
@@ -223,9 +244,11 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   if (loose) problems.push(...loose.problems);
   /** Meldungstext für das Journal (eine Zeit mitten im Satz bleibt stehen); `rest` = Text für die Erkennung */
   let shownRest = rest;
+  let timeToken: string | undefined;
   if (tp.used) {
     minutes = tp.used.minutes;
     timeFromText = true;
+    timeToken = tp.used.raw.trim();
     const [a, b] = tp.span!;
     if (tp.lead) {
       const head = rest.slice(0, a).replace(/\s+$/, "");
@@ -238,6 +261,7 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   if (loose?.used) {
     minutes = loose.used.minutes;
     timeFromText = true;
+    timeToken = loose.used.raw.trim();
     rest = blank(rest, loose.span![0], loose.span![1]);
     if (loose.used.relative) {
       relDay = true;
@@ -255,6 +279,11 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   }
   const explicit = kind !== null;
   const shown = shownRest.trim();
+  // Rückfrage / Auftrag / Frage: Vorschlag «Notiz ohne Zeichen» (nicht bei von Hand gewählter Einordnung)
+  const note = ctx.kind ? undefined : noteIntent(shown);
+  // «Rtg eigene Stellung»: Ziel einer Bewegung – weder Ort noch Zeichen, macht die Meldung nicht zur eigenen Lage
+  const ownDir = ownDirection(rest);
+  if (ownDir) rest = blank(rest, ownDir.span[0], ownDir.span[1]);
   // Anzahl in Worten nur für die Erkennung («ein Panzer» → «1 Panzer», «ein Dutzend» → «12»)
   const text = countWords(rest.trim());
 
@@ -284,6 +313,9 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const elementBefore = (i: number) => hits.some((h) => h.index < i) || UNIT_RE.test(text.slice(0, i));
   let reading = readTactical(text, { skip: [...skip, ...placeSpans(text, elementBefore)] });
   if (isNeedNote(text, reading)) reading = null;
+  // unbekanntes / verstümmeltes Wort an der Stelle des Gesehenen («2 schützenpnzr»): keine geratene Art
+  const unknown = note ? undefined : unknownSubject(text, reading, skip, (w) => SIGHT_RE.test(`1 ${w}`));
+  if (unknown) reading = null;
   for (const m of text.matchAll(new RegExp(UNIT_RE.source, "gi"))) {
     if (reading?.spans.some(([a, b]) => m.index! >= a && m.index! < b)) continue;
     const u = m[1]!.replace(/\.\s?|\s+/g, " ").replace(/^(\D+?)\s?(\d)/, (_, a: string, d: string) => (a.length > 1 ? `${a} ${d}` : a + d)).trim();
@@ -292,13 +324,14 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   hits.sort((a, b) => a.index - b.index);
   const melderHit = hits.find((h) => h.side !== "rot");
   const enemyHit = hits.find((h) => h.side === "rot");
-  const melder = melderHit?.u ?? "";
+  // Melder in der Schreibweise der Übung («h3» → «H03»)
+  const melder = melderHit ? (melderHit.side === null ? normalizeMelder(melderHit.u, ctx.units.blau) : melderHit.u) : "";
   // eigenes Element, das es in der Übung nicht gibt («H13» bei H01–H05): Problem statt still neuer Trupp
   problems.push(...melderProblems(hits.filter((h) => h.side === null).map((h) => h.u), ctx.units.blau));
 
   // ---- Sichtung ohne Katalogbegriff («1 weisser Lieferwagen AO2»): Anzahl und allgemeines Zeichen
   let sight: { count: number; sym: string; civil: boolean } | undefined;
-  if (!reading) {
+  if (!reading && !unknown) {
     const m = SIGHT_RE.exec(text);
     if (m && !skip.some(([a, b]) => m.index < b && m.index + m[1]!.length > a)) {
       sight = { count: +m[1]!, sym: SIGHT_SYM(m[2]!), civil: SIGHT_CIVIL_RE.test(m[2]!) };
@@ -320,10 +353,13 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   }
   // Aufzählung («1 Auto 1 Lw und 3 Pers»): alle Teile in den Sinn, keine irreführende Einzelanzahl
   let parts = reading?.parts ? undefined : listParts(text, skip);
-  const count = parts ? undefined : reading?.count ?? cmCount ?? sight?.count ?? stueckCount(text);
+  if (unknown) parts = undefined;
+  const count = unknown ? unknown.count : parts ? undefined : reading?.count ?? cmCount ?? sight?.count ?? stueckCount(text);
   let kindFrom: Draft["kindFrom"] = explicit ? "text" : "inhalt";
   if (ctx.kind) { kind = ctx.kind; kindFrom = "vorgabe"; }
   if (!kind) kind = kindOf(text, reading, entry, { melder, enemy: !!enemyHit, count: count ?? (parts ? 2 : undefined), civil: sight?.civil });
+  // unbekanntes Wort: Zugehörigkeit nicht raten (ausser «gn», «Feind» im Text oder bekanntes Feindelement)
+  if (unknown && kindFrom === "inhalt" && !enemyHit && !STRONG_ENEMY_RE.test(text) && !ENEMY_RE.test(text)) kind = "unklar";
   // «H02 sieht H04 in AK9»: das gesehene eigene Element ist am Ort, nicht der Melder
   const seenOwn = observedOwn(text, hits, ctx.units.blau);
   let side = sideOf(kind);
@@ -354,6 +390,7 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     const m = re.exec(locText);
     if (m) { roadHint ??= h; locText = blank(locText, m.index, m.index + m[0].length); }
   }
+  if (ownDir && dir === undefined && !dirLabel) dirLabel = ownDir.label;
 
   // ---- Ort
   let pos: LV95 | undefined;
@@ -450,13 +487,28 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   const desc0 = parts && !parts.split(", ").every((p) => new RegExp(`(?<!\\d)${p.split(" ")[0]}(?!\\d)`).test(baseDesc ?? "")) ? parts : baseDesc;
   // unbestimmte Menge («ein paar Soldaten»): keine Anzahl, aber im Sinn behalten
   const vague = count === undefined && !parts ? vagueAmount(text) : undefined;
-  const desc = vague && desc0 && !desc0.toLowerCase().includes(vague) ? `${vague} ${desc0}` : desc0;
-  return {
-    minutes, day, t: isoOf(day, minutes), timeFromText, kind, kindFrom, side, melder, unit, sym, aff, sidc, echelon, status, desc, count,
+  const desc1 = vague && desc0 && !desc0.toLowerCase().includes(vague) ? `${vague} ${desc0}` : desc0;
+  const desc = unknown ? `${unknown.count ? `${unknown.count} ` : ""}? («${unknown.token}»)` : desc1;
+  const out: Draft = {
+    minutes, day, t: isoOf(day, minutes), timeFromText, ...(dayFromText ? { dayFromText } : {}), ...(timeToken ? { timeToken } : {}), kind, kindFrom, side, melder, unit, sym, aff, sidc, echelon, status, desc, count,
     dir, dirLabel, from, fromLabel, roadHint, pos, where, cells, nai, placeQuery,
     // Originaltext bleibt erhalten; die Lesart der Funk-/Sprechsprache steht in `normalized`
     text: typed.changed ? stripLead(input) || input.trim() : shown || input.trim(),
     ...(typed.changed ? { normalized: typed.text } : {}),
+    ...(problems.length ? { problems } : {}),
+    ...(unknown ? { unknownWord: unknown } : {}),
+  };
+  return note ? asNoteDraft(out, note.to) : out;
+}
+
+/** Entwurf als Notiz ohne Zeichen (siehe `Draft.kindHint`): nichts auf der Karte, nichts verschoben */
+function asNoteDraft(d: Draft, to?: string): Draft {
+  const problems = (d.problems ?? []).filter((p) => p.kind !== "ort" && p.kind !== "orte");
+  const melder = to && d.melder && sameUnitName(to, d.melder) ? "" : d.melder;
+  const e = catalogEntry("einheit")!;
+  const { pos: _p, where: _w, cells: _c, nai: _n, count: _k, dir: _d, dirLabel: _dl, from: _f, fromLabel: _fl, roadHint: _r, placeQuery: _q, echelon: _e, desc: _ds, unknownWord: _u, problems: _pr, ...rest } = d;
+  return {
+    ...rest, kind: "eigen", side: "blau", aff: "F", unit: "", melder, sym: "einheit", sidc: buildSidc(e, "F"), status: "present", kindHint: "notiz",
     ...(problems.length ? { problems } : {}),
   };
 }
@@ -565,8 +617,9 @@ export function lastPosition(events: LageEvent[], side: Side, unit: string, befo
 
 // ---------- Export ----------
 
-/** «Eigene», «Feind», «Unklar» (bzw. «UL») */
-export function kindLabel(e: Pick<LageEvent, "side" | "aff">): string {
+/** «Eigene», «Feind», «Unklar» (bzw. «UL»); Notiz ohne Zeichen («Rückfrage …») → «Notiz» */
+export function kindLabel(e: Pick<LageEvent, "side" | "aff"> & { notiz?: boolean }): string {
+  if (e.notiz) return "Notiz";
   if (e.side === "blau") return "Eigene";
   if (e.side === "ul") return "UL";
   return e.aff === "U" ? "Unklar" : e.aff === "N" ? "Neutral" : "Feind";
@@ -583,15 +636,41 @@ function shapeCsv(e: LageEvent): string {
   return `${word}: ${e.shape.pts.map((p) => `${Math.round(p.e)} ${Math.round(p.n)}`).join(", ")}`;
 }
 
-export function journalToCsv(events: LageEvent[], days: string[]): string {
-  const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Form"];
-  const rows = events.filter((e) => !e.deleted).sort(compareEvents).map((e) => {
+/** «hh:mm» lokal zu einem Zeitpunkt (ISO UTC) */
+const localHhmm = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+
+/** Status einer Meldung für Journal-Export und Liste: «gestrichen» (gelöscht), «korrigiert 07:34» oder leer */
+export function journalStatus(e: Pick<LageEvent, "deleted" | "history" | "correctedAt">): string {
+  if (e.deleted) return "gestrichen";
+  if (e.history?.length) return e.correctedAt ? `korrigiert ${localHhmm(e.correctedAt)}` : "korrigiert";
+  return "";
+}
+
+/** frühere Fassungen in einer Zeile, z. B. «vorher: 1 Fz in NAI 2 Rtg N (NAI 2)»; Konflikt-Fassungen mit «Konflikt, nicht übernommen: …» */
+export function historyText(e: Pick<LageEvent, "history">): string {
+  const line = (r: NonNullable<LageEvent["history"]>[number]) => { const p = placeLabel(r); return `${r.t.slice(11, 16)} ${r.text}${p ? ` (${p})` : ""}`; };
+  const h = (e.history ?? []).filter((r) => !r.deleted && !r.conflict);
+  const k = (e.history ?? []).filter((r) => !r.deleted && r.conflict);
+  const parts: string[] = [];
+  if (h.length) parts.push("vorher: " + h.map(line).join(" | "));
+  // Konflikt beim Zusammenführen: unterlegene Fassung des anderen Geräts (nichts geht verloren)
+  if (k.length) parts.push("Konflikt, nicht übernommen: " + k.map(line).join(" | "));
+  return parts.join(" · ");
+}
+
+/**
+ * Journal als CSV (Excel, «;»). Gelöschte Meldungen erscheinen als «gestrichen» (Journalführung: nichts verschwindet),
+ * korrigierte mit «korrigiert hh:mm» und den früheren Fassungen (`gestrichen: false` lässt Gelöschte weg).
+ */
+export function journalToCsv(events: LageEvent[], days: string[], o: { gestrichen?: boolean } = {}): string {
+  const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Status", "Fassungen", "Form"];
+  const rows = events.filter((e) => !e.deleted || o.gestrichen !== false).sort(compareEvents).map((e) => {
     const d = e.t.slice(0, 10);
     const tag = days.indexOf(d) >= 0 ? `T${days.indexOf(d) + 1}` : d;
     return [tag, e.t.slice(11, 16), kindLabel(e), e.unit, e.melder ?? "", e.text, e.sym, e.where ?? "", (e.cells ?? []).join(" "), e.nai ?? "",
-      e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", shapeCsv(e)];
+      e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", journalStatus(e), historyText(e), shapeCsv(e)];
   });
-  return "﻿" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
+  return "\uFEFF" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
 }
 
 /**
@@ -630,6 +709,7 @@ export function eventFromDraft(d: Draft, device: string, now = new Date()): Lage
     where: d.where?.label,
     source: { kind: "text" },
     confirmed: true,
+    ...(d.kindHint === "notiz" ? { notiz: true } : {}),
   };
 }
 
@@ -638,4 +718,43 @@ export function reviseEvent(e: LageEvent, patch: Partial<LageEvent>, device: str
   // neue Ereigniszeit: Offset dazu neu bestimmen (Sommerzeit), ausser er wird mitgegeben
   const off = patch.t && patch.t !== e.t && !("tOffset" in patch) ? { tOffset: offsetFor(patch.t, now) } : {};
   return { ...e, ...patch, ...off, rev: e.rev + 1, device, updatedAt: now.toISOString() };
+}
+
+/**
+ * Korrektur einer Meldung (Spez. MVP 1, Kap. 3.3): alte Fassung kommt in `history` (älteste zuerst), Revision steigt,
+ * `correctedAt` = jetzt. Die Ereigniszeit `t` bleibt, ausser `patch.t` nennt eine neue; Eingang (`tReported`,
+ * `createdAt`) und ID ändern nie. Rückgängig unmittelbar danach: `undoCorrection`.
+ */
+export function correctEvent(e: LageEvent, patch: Partial<LageEvent>, device: string, now = new Date()): LageEvent {
+  const { id: _id, rev: _rev, history: _h, createdAt: _c, tReported: _r, device: _d, updatedAt: _u, correctedAt: _k, ...rest } = patch;
+  const history = [...(e.history ?? []), revisionOf(e)];
+  return { ...reviseEvent(e, rest, device, now), history, correctedAt: now.toISOString() };
+}
+
+/**
+ * Rückgängig einer eben gespeicherten Korrektur (Leiste «Korrigiert: … · Rückgängig»): die Fassung `before` gilt
+ * wieder – mit ihrer Historie, aber höherer Revision als `cur` (damit sie beim Zusammenführen gewinnt).
+ */
+export function undoCorrection(cur: LageEvent, before: LageEvent, device: string, now = new Date()): LageEvent {
+  return { ...before, rev: Math.max(cur.rev, before.rev) + 1, device, updatedAt: now.toISOString() };
+}
+
+/** Ort einer Meldung in Worten (für «vorher NAI 2», «NAI 2 → AK9»), z. B. «AK9», «NAI 2», «Karte (AK9)» */
+export function placeLabel(e: Pick<LageEvent, "where" | "cells" | "nai" | "pos">): string {
+  if (e.where === "Karte") return e.cells?.[0] ? `Karte (${e.cells[0]})` : "Karte";
+  return e.where ?? e.cells?.[0] ?? e.nai ?? (e.pos ? "Koordinate" : "");
+}
+
+/** Was hat eine Korrektur geändert? Kurz in Worten, z. B. «NAI 2 → AK9» (höchstens zwei Teile), sonst «Text geändert». */
+export function correctionSummary(before: Pick<LageEvent, "text" | "t" | "side" | "aff" | "melder" | "where" | "cells" | "nai" | "pos" | "sym" | "count">, after: typeof before): string {
+  const out: string[] = [];
+  const pb = placeLabel(before) || "ohne Ort", pa = placeLabel(after) || "ohne Ort";
+  if (pb !== pa) out.push(`${pb} → ${pa}`);
+  if (before.t !== after.t) out.push(`${before.t.slice(11, 16)} → ${after.t.slice(11, 16)}`);
+  const kb = kindLabel(before), ka = kindLabel(after);
+  if (kb !== ka) out.push(`${kb} → ${ka}`);
+  if ((before.melder ?? "") !== (after.melder ?? "")) out.push(`von ${before.melder || "?"} → ${after.melder || "?"}`);
+  if (!out.length && (before.count ?? 0) !== (after.count ?? 0)) out.push(`Anzahl ${before.count ?? "–"} → ${after.count ?? "–"}`);
+  if (!out.length) out.push(before.text !== after.text ? "Text geändert" : "Zeichen geändert");
+  return out.slice(0, 2).join(" · ");
 }

@@ -9,34 +9,101 @@
 @import "@fontsource/ibm-plex-mono/latin-500.css";
 @import "@fontsource/ibm-plex-mono/latin-600.css";
 
+/*
+ * Farbvertrag MVP 1 (Spez. Kap. 5.1) – die einzigen Grundfarben der Oberfläche. JS-Spiegel für Leaflet: colors.ts
+ * (muss gleich bleiben, Test packages/ui/test/tokens.test.ts). Regeln: APP-6-Farben (--feind --eigen --unklar
+ * --neutral --zivil) nur für die Lage, nie für Bedienung; Rot genau einmal (#C62828), ausserhalb der Lage nur mit ⛔;
+ * Auswahl = dunkler Rahmen (--sel); Löschen nie rot.
+ * Die Blöcke zwischen «vertrag:…» und «vertrag:ende» liest der Token-Test – Format «--name: #RRGGBB;» bzw. «var(--x)».
+ */
 :root {
-  --f-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  /* vertrag:hell */
+  --bg: #EEF0EB;          /* Seite */
+  --surface: #F9FAF7;     /* Spalte, Popover */
+  --ink: #1B2320;         /* Text, Auswahl, Primärknopf */
+  --muted: #4F5953;       /* Nebentext */
+  --line: #7F8882;        /* Rahmen von Bedienelementen (≥ 3:1) */
+  --line-soft: #D2D7CF;   /* nur Trennlinien ohne Bedeutung */
+  --sel: var(--ink);      /* Auswahl: 2 px Rahmen */
+  --warn-bg: #FFF4D6;     /* «bitte prüfen» */
+  --warn-ink: #1B2320;
+  --warn-sym: #8A5A00;    /* Symbol ⚠ */
+  --stop: #C62828;        /* «geht nicht», «nicht gespeichert» – nur mit ⛔ */
+  --stop-bg: #FDECEA;
+  --ok: #1E6B3A;          /* «✓ bereit», «✓ gespeichert» – nur mit ✓ */
+  --ok-bg: #E6F2EA;
+  --rueckblick: #F2B705;  /* Rückblick-Band und -Rahmen */
+  --rueckblick-ink: #1B2320;
+  --focus-ring: #1B2320;  /* Fokus: 3 px Ring … */
+  --focus-gap: #FFFFFF;   /* … mit 2 px Abstand */
+  --feind: #C62828;       /* Lage: Feind ◆, durchgezogen */
+  --eigen: #1F5FB8;       /* Lage: Eigene ● */
+  --unklar: #8A5A00;      /* Lage: Unklar ■ (Text), gestrichelt */
+  --unklar-fill: #F2C200; /* Lage: Unklar, Füllung */
+  --neutral: #2E7D32;     /* Lage: Neutral ▲ (Text nur auf --surface) */
+  --zivil: #6A1B9A;       /* Lage: Zivil */
+  /* vertrag:ende */
+
+  /* Typografie (Kap. 5.2): nur diese Grössen, Minimum 12 */
+  --f-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif; /* nur Abschnittstitel in Grossbuchstaben */
   --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;            /* Eingabe, Zeiten, PQ, Koordinaten */
+  --fs-12: 12px;  /* Meta, Kartenbeschriftung */
+  --fs-14: 14px;  /* Liste, Popover, Menü, Knöpfe (Laptop) */
+  --fs-16: 16px;  /* Meldungsfeld, «Verstanden», Kopf-Name, Knöpfe unter pointer:coarse */
+  --fs-20: 20px;  /* Abschnittstitel, Rückblick-Band, Möglichkeit-Titel */
+  --fs-28: 28px;  /* Zeit im Live-Band, Präsentation-Kopf */
 
-  --paper: #EEF0EB;   /* Seitenhintergrund, leicht grünliches Grau */
-  --card: #F9FAF7;    /* Panels, Chips, Kacheln */
-  --ink: #1B2320;     /* Text, aktive Schalter */
-  --muted: #5B655F;
-  --line: #D2D7CF;
-  --grid: #E3E6E0;    /* Nebenlinien, Hover */
+  /* Abstände, Radien, Grössen (Kap. 5.3) */
+  --sp-4: 4px; --sp-8: 8px; --sp-12: 12px; --sp-16: 16px; --sp-24: 24px; --sp-32: 32px;
+  --r-4: 4px;      /* Chips, Felder */
+  --r-8: 8px;      /* Karten, Popover */
+  --r-pill: 999px; /* Status-Pillen */
+  --hit: 44px;     /* Mindestgrösse Bedienelemente; MVP 2: 48px unter pointer:coarse */
+  --kopf-h: 48px;
+  --band-h: 56px;
+  --rueckblick-h: 44px;
+  --spalte-w: clamp(360px, 30vw, 440px);
+  --spalte-pad: 16px;
+  --focus-shadow: 0 0 0 2px var(--focus-gap), 0 0 0 5px var(--focus-ring);
+
+  /*
+   * Übergang (vor MVP 1): alte Namen, bis die Pakete A–D sie ersetzt haben – in neuem Code nicht mehr verwenden.
+   * --paper/--card zeigen auf den Vertrag; die übrigen Werte bleiben, damit sich das Aussehen erst mit A–D ändert.
+   */
+  --paper: var(--bg);
+  --card: var(--surface);
+  --grid: #E3E6E0;    /* Nebenlinien, Hover → --line-soft */
   --hi: #FFF1BF;      /* Aufblitzen */
-  --rot: #B8292F;
-  --rot-soft: #F6E1E0;
-  --blau: #2457A6;
+  --rot: #B8292F;     /* → --feind bzw. --stop */
+  --rot-soft: #F6E1E0; /* → --stop-bg */
+  --blau: #2457A6;    /* → --eigen bzw. --ink (Bedienung) */
   --blau-soft: #E0E8F5;
-  --ok: #2D7A4B;
-  --warn: #A86F12;
-  --unklar: #A86F12;
+  --warn: #A86F12;    /* → --warn-sym */
 
-  /* Karte (bleibt auch im Dunkelmodus hell) */
-  --m-rot: #D3262D;
-  --m-blau: #1F5FB8;
-  --m-ink: #101414;
+  /*
+   * Karte (fest, bleibt auch im Dunkelmodus hell, Kap. 5.4): helle Werte des Vertrags – hier NICHT im Dunkelblock
+   * überschreiben. Spiegel: packages/map/src/kartenfarben.ts (KARTE) und colors.ts (LAGE_KARTE). Ein Rot: Feind.
+   */
+  --karte-feind: #C62828;
+  --karte-eigen: #1F5FB8;
+  --karte-unklar: #8A5A00;
+  --karte-unklar-fill: #F2C200;
+  --karte-neutral: #2E7D32;
+  --karte-zivil: #6A1B9A;
+  --karte-ink: #1B2320;
+  --karte-halo: #FFFFFF;
+  --karte-nai: #1F78D1;
+  --karte-ao: #0B3D91;
+  --karte-flash: #F2B705;
+  /* alte Namen (→ --karte-*) */
+  --m-rot: var(--karte-feind);
+  --m-blau: var(--karte-eigen);
+  --m-ink: var(--karte-ink);
   --m-grid: #111111;
-  --m-nai: #1F78D1;
-  --m-ao: #0B3D91;
-  --m-flash: #F2B705;
+  --m-nai: var(--karte-nai);
+  --m-ao: var(--karte-ao);
+  --m-flash: var(--karte-flash);
 
   /* ältere Namen */
   --soft: var(--grid);
@@ -47,17 +114,69 @@
   font-size: 15px;
   line-height: 1.5;
   color: var(--ink);
-  background: var(--paper);
+  background: var(--bg);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #111614; --card: #181F1C; --ink: #E3E8E3; --muted: #98A39C; --line: #2C3531; --grid: #212925; --hi: #3A3418;
-    --rot: #F07A7E; --rot-soft: #3A1F21; --blau: #86AEEA; --blau-soft: #1C2740; --ok: #6CC795; --warn: #E1AE4E; --unklar: #E1AE4E;
+    /* vertrag:dunkel */
+    --bg: #111614;
+    --surface: #181F1C;
+    --ink: #E3E8E3;
+    --muted: #A3AEA7;
+    --line: #6B7771;
+    --line-soft: #2C3531;
+    --sel: var(--ink);
+    --warn-bg: #3A3418;
+    --warn-ink: #F5E6B8;
+    --warn-sym: #E1AE4E;
+    --stop: #FF8A80;
+    --stop-bg: #3A1F21;
+    --ok: #6CC795;
+    --ok-bg: #1A2B21;
+    --rueckblick: #F2B705;
+    --rueckblick-ink: #111614;
+    --focus-ring: #E3E8E3;
+    --focus-gap: #111614;
+    --feind: #FF8A80;
+    --eigen: #8AB4F8;
+    --unklar: #E1AE4E;
+    --unklar-fill: #F2C200;
+    --neutral: #81C784;
+    --zivil: #CE93D8;
+    /* vertrag:ende */
+    --grid: #212925; --hi: #3A3418;
+    --rot: #F07A7E; --rot-soft: #3A1F21; --blau: #86AEEA; --blau-soft: #1C2740; --warn: #E1AE4E;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #111614; --card: #181F1C; --ink: #E3E8E3; --muted: #98A39C; --line: #2C3531; --grid: #212925; --hi: #3A3418;
-  --rot: #F07A7E; --rot-soft: #3A1F21; --blau: #86AEEA; --blau-soft: #1C2740; --ok: #6CC795; --warn: #E1AE4E; --unklar: #E1AE4E;
+  /* vertrag:dunkel */
+  --bg: #111614;
+  --surface: #181F1C;
+  --ink: #E3E8E3;
+  --muted: #A3AEA7;
+  --line: #6B7771;
+  --line-soft: #2C3531;
+  --sel: var(--ink);
+  --warn-bg: #3A3418;
+  --warn-ink: #F5E6B8;
+  --warn-sym: #E1AE4E;
+  --stop: #FF8A80;
+  --stop-bg: #3A1F21;
+  --ok: #6CC795;
+  --ok-bg: #1A2B21;
+  --rueckblick: #F2B705;
+  --rueckblick-ink: #111614;
+  --focus-ring: #E3E8E3;
+  --focus-gap: #111614;
+  --feind: #FF8A80;
+  --eigen: #8AB4F8;
+  --unklar: #E1AE4E;
+  --unklar-fill: #F2C200;
+  --neutral: #81C784;
+  --zivil: #CE93D8;
+  /* vertrag:ende */
+  --grid: #212925; --hi: #3A3418;
+  --rot: #F07A7E; --rot-soft: #3A1F21; --blau: #86AEEA; --blau-soft: #1C2740; --warn: #E1AE4E;
 }
 .mono, .tnum { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 .display { font-family: var(--f-display); }
