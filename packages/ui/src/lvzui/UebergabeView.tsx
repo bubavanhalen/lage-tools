@@ -34,6 +34,9 @@ export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
 
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
+    // modal: die App dahinter ist nicht bedienbar (Tab bleibt im Blatt, Screenreader liest nur die Übergabe)
+    const app = document.querySelector<HTMLElement>(".app");
+    app?.setAttribute("inert", "");
     box.current?.focus();
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
@@ -42,7 +45,7 @@ export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
       e.preventDefault(); e.stopPropagation(); closeRef.current();
     };
     document.addEventListener("keydown", key, true);
-    return () => { document.removeEventListener("keydown", key, true); back?.focus?.(); };
+    return () => { document.removeEventListener("keydown", key, true); app?.removeAttribute("inert"); back?.focus?.(); };
   }, []);
 
   const abschliessen = () => {

@@ -155,7 +155,10 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const [picking, setPicking] = useState(false);
   const [pendingAtt, setPendingAtt] = useState<Attachment | null>(null);
   /** «bitte prüfen»: Text, zu dem das erste Enter gefragt hat */
-  const [armed, setArmed] = useState<string | null>(null);
+  const [armed, setArmedState] = useState<string | null>(null);
+  // auch als Ref: ein zweites Enter kurz nach dem ersten (Seite beschäftigt, noch nicht neu gezeichnet) trägt ein
+  const armedRef = useRef<string | null>(null);
+  const setArmed = (v: string | null) => { armedRef.current = v; setArmedState(v); };
   /** «geht nicht» + Enter: Zustandszeile erneut ansagen / Konfliktband hervorheben */
   const [announce, setAnnounce] = useState(0);
   const [nudge, setNudge] = useState(0);
@@ -189,7 +192,9 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     if (t) setNotice(null);
     if (!t) { setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setAskKuerzel(false); kiTaken.current = false; }
   }, []);
-  useEffect(() => { setArmed(null); }, [text]);
+  // Text geändert → nicht mehr «bestätigt». Nur wenn die Bestätigung zu einem anderen Text gehört: läuft dieser
+  // Effekt verspätet (Seite beschäftigt) erst nach dem ersten Enter, darf er dessen Bestätigung nicht löschen
+  useEffect(() => { if (armedRef.current !== null && armedRef.current !== text) setArmed(null); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- Korrektur: Start, Ende, Neuladen
   const korrId = mode.art === "korrektur" ? mode.id : null;
@@ -513,7 +518,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     const drawn = takeDrawing(korr.current ? `korr:${korr.current.id}` : "neu");
     if (drawn === "unfertig") { tell("Fläche/Linie noch nicht fertig – weitere Punkte setzen, dann «Fertig» (oder Esc)."); return; }
     if (drawn) setShapeDraft(drawn);
-    if (state.level === "pruefen" && armed !== text && !askKuerzel) { setArmed(text); setAnnounce((n) => n + 1); return; }
+    if (state.level === "pruefen" && armedRef.current !== text && !askKuerzel) { setArmed(text); setAnnounce((n) => n + 1); return; }
     if (korrNow) { setArmed(null); saveKorrektur(draft, force, drawn); return; }
     // (MVP 3) einmal pro Gerät und Übung: «Wer erfasst?» – die Meldung bleibt im Feld (Kap. 2.3)
     const sch = p.schicht;
