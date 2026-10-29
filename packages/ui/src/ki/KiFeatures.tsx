@@ -3,7 +3,7 @@
  * Lagebericht entwerfen. Alles als Vorschlag – nie automatisch eintragen.
  */
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildCoaExplainRequest, buildHandwritingRequest, buildHintExplainRequest, buildLageberichtRequest, buildMeldungRequest,
   parseExplainResponse, parseHandwritingResponse, parseLageberichtResponse, parseMeldung, parseMeldungResponse,
@@ -181,9 +181,18 @@ const clock = () => { const d = new Date(); return `${String(d.getHours()).padSt
 
 interface Bericht { text: string; model: string; at: string; t: string }
 
-/** Knopf «Lagebericht entwerfen» (Lage Rot) mit Dialog */
-export function KiLageberichtButton({ hints, coas }: { hints: Hint[]; coas: RedCoa[] }) {
+/**
+ * (MVP 3, Kap. 3.11) «Als Notiz ins Journal»: Hülle trägt den geprüften Entwurf als Notiz ein (`art: notiz`, `via: ki`,
+ * `t` = Lagezeit des Entwurfs) und gibt die Nummer zurück (null = nicht eingetragen). Ohne Anbieter kein Knopf.
+ */
+export type KiNotizFn = (text: string, t: string) => string | null;
+export const KiNotizCtx = createContext<KiNotizFn | null>(null);
+
+/** Knopf «Lagebericht entwerfen» (Lage Rot, Übergabe) mit Dialog */
+export function KiLageberichtButton({ hints, coas, onNotiz }: { hints: Hint[]; coas: RedCoa[]; onNotiz?: KiNotizFn | null }) {
   const ki = useKi();
+  const ctxNotiz = useContext(KiNotizCtx);
+  const notiz = onNotiz ?? ctxNotiz;
   const [open, setOpen] = useState(false);
   if (!ki || ki.state === "aus") return null;
   const has = !!ki.memo<Bericht>("lagebericht");
@@ -192,7 +201,7 @@ export function KiLageberichtButton({ hints, coas }: { hints: Hint[]; coas: RedC
       <button className="chipbtn ki-btn subtle ki-lbbtn" onClick={() => setOpen(true)} title="Entwurf für Rapport oder Übergabe – du siehst vor dem Senden, was an Claude geht">
         <KiMark />{has ? "Lagebericht (Entwurf)" : "Lagebericht entwerfen"}
       </button>
-      {open && <LageberichtDialog hints={hints} coas={coas} onClose={() => setOpen(false)} />}
+      {open && <LageberichtDialog hints={hints} coas={coas} onClose={() => setOpen(false)} onNotiz={notiz} />}
     </>
   );
 }
@@ -206,7 +215,7 @@ function isoMinus(iso: string, min: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function LageberichtDialog({ hints, coas, onClose }: { hints: Hint[]; coas: RedCoa[]; onClose: () => void }) {
+function LageberichtDialog({ hints, coas, onClose, onNotiz }: { hints: Hint[]; coas: RedCoa[]; onClose: () => void; onNotiz?: KiNotizFn | null }) {
   const ki = useKi()!;
   const b = ki.memo<Bericht>("lagebericht");
   const [text, setText] = useState(b?.text ?? "");
@@ -259,6 +268,7 @@ function LageberichtDialog({ hints, coas, onClose }: { hints: Hint[]; coas: RedC
         <footer className="ki-foot">
           {b && <button onClick={copy}>{copied ? "Kopiert ✓" : "Kopieren"}</button>}
           {b && <button onClick={file} title="Als Textdatei speichern">Als Datei</button>}
+          {b && onNotiz && text.trim() && <button onClick={() => { if (onNotiz(text.trim(), b.t) !== null) onClose(); }} title="Geprüften Entwurf als Notiz ins Journal (kein Zeichen, nichts auf der Karte)">Als Notiz ins Journal</button>}
           <button className={b ? "primary" : ""} onClick={onClose}>Schliessen</button>
         </footer>
       </div>

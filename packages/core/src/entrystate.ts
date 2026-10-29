@@ -18,11 +18,24 @@
  */
 import type { Draft, DraftProblem } from "./journal";
 import { sameUnitName } from "./erkennung";
+import { ART_LABEL } from "./arten";
+import { catalogEntry } from "./catalog";
 import type { Area } from "./model";
 import type { RasterSheet } from "./raster";
 
 export type EntryLevel = "bereit" | "pruefen" | "geht-nicht";
-export type EntryReasonCode = "melder" | "ort" | "ort-bei-trupp" | "zukunft" | "einordnung" | "ort-suche" | "ort-offline" | "kein-raster" | "problem" | "trupp-neu" | "notiz" | "was";
+export type EntryReasonCode = "melder" | "ort" | "ort-bei-trupp" | "zukunft" | "einordnung" | "ort-suche" | "ort-offline" | "kein-raster" | "problem" | "trupp-neu" | "notiz" | "was"
+  /**
+   * MVP 3 (Spez. MVP 3, Kap. 3.1; Paket A setzt um): `art-schwach` schwacher Art-Hinweis («Als Rückfrage ohne Zeichen?»,
+   * ersetzt `notiz`, das als Alias bleibt) · `an` Empfänger fehlt · `bezug` unbekannte Nummer · `aufheben` kein/mehrere
+   * Ziele · `tag-fremd` heute ist kein Tag der Übung (E17). Alle gelb.
+   */
+  | "art-schwach" | "an" | "bezug" | "aufheben" | "tag-fremd"
+  /**
+   * MVP 3 Fix 3 (gelb): `unscharf` Art/Aufheben nur aus einem unscharfen Wort («Auftrag gemeint? «Auftarg»») · `sichtung`
+   * Antwort mit Sichtung und Ort («Sichtung in der Antwort – als Meldung eintragen?»).
+   */
+  | "unscharf" | "sichtung";
 
 export interface EntryReason {
   code: EntryReasonCode;
@@ -76,6 +89,10 @@ export interface EntryStateOptions {
   unitsPrepared?: boolean;
   /** Übungstage (ISO-Datum) – für den Tipp «T1 1535» bei einer Zeit in der Zukunft */
   days?: string[];
+  /** (MVP 3) Tag folgt der Uhr (`clockDay(...).follow`) – sonst ohne Tagesangabe `tag-fremd` (E17) */
+  follow?: boolean;
+  /** (MVP 3) Zeit der letzten Meldung (ISO lokal) – Vorschlag «Als T2 07:26 eintragen» (letzte + 1 min) */
+  lastReport?: string | null;
 }
 
 /** «AK7», «AK 77 C» – Planquadrat-ähnliche Textstelle */
@@ -169,19 +186,38 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
     stop.push(problemReason(p, o));
   }
 
-  const note = d.kindHint === "notiz";
+  // (MVP 3) Nicht-Meldung (Auftrag, Orientierung, Rückfrage, Vbk, Notiz): kein Zeichen, keine Verschiebung – Ort nie nötig
+  const art = d.art ?? (d.kindHint === "notiz" ? "notiz" : "meldung");
+  const note = art !== "meldung" || d.kindHint === "notiz";
+  const lift = !!d.hebtAuf;
+  // unsicheres Wort: immer zuerst und immer gelb (nie grün ein Zeichen, nie eine Trupp-Verschiebung)
+  if (d.unscharf) check.push(unscharfReason(d, note, lift));
+  if (note && d.notizGrund) check.push(notizGrundReason(d));
+  else if (note && !d.unscharf && (d.kindHint === "notiz" || d.artStark === false)) {
+    // schwacher Hinweis («… ?», «befohlen»): einmal fragen (Code `art-schwach`; MVP 1 hiess er `notiz`)
+    const w = ART_LABEL[art === "meldung" ? "notiz" : art];
+    check.push({ code: "art-schwach", text: `Als ${w} ohne Zeichen?`, hint: `Nochmals Enter trägt als ${w} ein. Ist es eine Lage: Feind, Eigene oder Unklar wählen.`, ask: `Als ${w} ohne Zeichen eintragen? Nochmals Enter.` });
+  }
   if (note) {
-    // Rückfrage / Auftrag / Frage: kein Zeichen, keine Verschiebung – Ort und Melder sind dann nicht nötig
-    check.push({ code: "notiz", text: "Rückfrage oder Auftrag? Als Notiz ohne Zeichen?", hint: "Nochmals Enter trägt als Notiz ein. Ist es eine Lage: Einordnung wählen.", ask: "Als Notiz ohne Zeichen eintragen? Nochmals Enter." });
-  } else if (!d.melder.trim()) {
+    if (art === "auftrag" && !d.an) check.push({ code: "an", text: "An wen? Trupp nennen, z. B. «Auftrag an H01».", hint: "Trupp im Text nennen oder so eintragen.", ask: "Ohne Empfänger eintragen? Nochmals Enter." });
+    if (art === "vbk" && !d.melder.trim()) check.push({ code: "melder", text: "Mit welchem Trupp? Trupp oben antippen.", hint: "Trupp oben antippen oder an den Anfang schreiben.", ask: "Ohne Trupp eintragen? Nochmals Enter." });
+  } else if (!d.melder.trim() && !(d.bezug && d.bezugArt === "antwort")) {
     check.push({ code: "melder", text: "Wer meldet? fehlt", hint: "Trupp oben antippen oder an den Anfang schreiben.", ask: "Ohne Trupp eintragen? Nochmals Enter." });
   }
+  if (note && d.sichtung) {
+    check.push({ code: "sichtung", text: "Sichtung in der Antwort – als Meldung eintragen?", hint: "Ja: bei «Was ist es?» Feind, Eigene oder Unklar wählen. Nochmals Enter trägt die Antwort ohne Zeichen ein.", ask: "Als Antwort ohne Zeichen eintragen? Nochmals Enter." });
+  }
+  if (d.bezugFehlt && d.bezugNr) {
+    check.push({ code: "bezug", token: d.bezugNr, text: `Nr ${d.bezugNr} gibt es nicht – ohne Bezug eintragen?`, hint: "Nummer prüfen (steht unter der Zeit in der Liste).", ask: "Ohne Bezug eintragen? Nochmals Enter." });
+  }
+  // Aufheben zeichnet nie neu (Entscheid): mehrere Ziele → rot, bis eines gewählt ist; keines bei gewählter Einordnung → rot
+  if (!note && !lift && d.hebtAufKandidaten) stop.push(aufhebReason(d));
   // unbekannter Trupp, obwohl Trupps vorbereitet sind (nicht bei «H13» – das sperrt schon als Problem)
   const m = d.melder.trim();
   if (m && o.unitsPrepared && o.knownUnits && !o.knownUnits.some((u) => sameUnitName(u, m)) && !(d.problems ?? []).some((p) => p.kind === "melder")) {
     check.push({ code: "trupp-neu", token: m, suggest: m, text: `${m} ist kein Trupp dieser Übung – neu anlegen?`, hint: "Trupp im Text korrigieren oder neu anlegen.", ask: `${m} als neuen Trupp anlegen? Nochmals Enter.` });
   }
-  if (d.unknownWord && !note) {
+  if (d.unknownWord && !note && !lift) {
     const u = d.unknownWord;
     check.push({
       code: "was", token: u.token, ...(u.suggest ? { suggest: u.suggest } : {}),
@@ -193,8 +229,8 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
 
   const hasPlace = o.manualPos || !!o.hasPos || !!d.pos;
   const ortAsk = "Ohne Ort eintragen? Nochmals Enter.";
-  if (note) {
-    // Notiz: ohne Ort
+  if (note || lift) {
+    // Nicht-Meldung bzw. Aufhebung: ohne Ort
   } else if (!hasPlace && !pqOhneRaster && !stop.some((r) => r.problem === "ort" || r.problem === "orte")) {
     if (d.placeQuery && o.placePending) {
       check.push({ code: "ort-suche", text: `Ort «${d.placeQuery}» wird gesucht …`, token: d.placeQuery, hint: "Kurz warten, Planquadrat angeben oder Ort auf Karte setzen.", ask: ortAsk });
@@ -227,7 +263,78 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
     }
   }
 
+  // (MVP 3, E17) Tag folgt nicht der Uhr und heute ist kein Tag der Übung: nie still auf einen erfundenen Zeitpunkt
+  if (o.follow === false && o.days?.length && !d.dayFromText && !o.days.includes(localDayOf(o.now))) check.push(tagFremd(d, o));
+
   if (stop.length) return { level: "geht-nicht", reasons: [...stop, ...check] };
   if (check.length) return { level: "pruefen", reasons: check };
   return { level: "bereit", reasons: [] };
+}
+
+const dm = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}.`;
+
+/** «Heute (29.10.) ist kein Tag dieser Übung (T1 14.05.–T2 15.05.2030).» mit Vorschlag letzte Meldung + 1 min */
+function tagFremd(d: Draft, o: EntryStateOptions): EntryReason {
+  const days = o.days!;
+  const first = days[0]!, last = days[days.length - 1]!;
+  const range = days.length === 1 ? `T1 ${dm(first)}${first.slice(0, 4)}` : `T1 ${dm(first)}–T${days.length} ${dm(last)}${last.slice(0, 4)}`;
+  let suggest: string | undefined;
+  if (o.lastReport) {
+    const ms = Date.parse(o.lastReport) + 60000;
+    const x = new Date(ms);
+    const day = localDayOf(x);
+    const i = days.indexOf(day);
+    if (i >= 0) suggest = `T${i + 1} ${pad2(x.getHours())}${pad2(x.getMinutes())}`;
+  }
+  const ti = days.indexOf(d.day);
+  const jetzt = `${ti >= 0 ? `T${ti + 1}` : dm(d.day)} ${hhmm(d.t)}`;
+  return {
+    code: "tag-fremd", text: `Heute (${dm(localDayOf(o.now))}) ist kein Tag dieser Übung (${range}).`,
+    hint: `Tag und Zeit dazuschreiben, z. B. «${suggest ?? `T${days.length} 0700`}».`, ask: `Trotzdem auf ${jetzt} eintragen? Nochmals Enter.`,
+    ...(suggest ? { suggest } : {}),
+  };
+}
+
+/**
+ * Aufheben mit mehreren Zielen: «Zwei Sperren in AG13 – welche?» (rot, bis gewählt). Ohne Ziel bei gewählter
+ * Einordnung: «Keine aktive Sperre in AA1 – Aufheben zeichnet nie.» (rot). Aufheben erzeugt nie ein neues Zeichen.
+ */
+function aufhebReason(d: Draft): EntryReason {
+  const c = catalogEntry(d.sym);
+  const wort = c?.noun ?? c?.name.replace(/\s*\(.*?\)\s*/g, " ").split(" / ")[0]!.trim() ?? "Sperre";
+  const ort = d.where?.label ?? d.cells?.[0] ?? d.nai ?? "";
+  const bei = ort ? ` in ${ort}` : "";
+  const n = d.hebtAufKandidaten?.length ?? 0;
+  if (!n) {
+    const kein = c?.g === "m" ? "Kein aktiver" : c?.g === "n" ? "Kein aktives" : "Keine aktive";
+    return { code: "aufheben", text: `${kein} ${wort}${bei} – Aufheben zeichnet nie ein neues Zeichen.`, hint: "Ort prüfen, «Notiz» wählen oder das Wort «aufgehoben» aus dem Text nehmen." };
+  }
+  return { code: "aufheben", text: `${n === 2 ? "Zwei" : n} ${c?.pl ?? wort}${bei} – welche aufheben?`, hint: "Die gemeinte Meldung unten wählen." };
+}
+
+/**
+ * Unscharfes Wort (MVP 3 Fix 3): «Auftrag gemeint? «Auftarg»», «Aufheben gemeint? «aufgehobn»» – was Enter dann tut,
+ * steht im Hinweis (Auftrag/Antwort/Orientierung ohne Zeichen; Aufheben ohne neues Zeichen; sonst Meldung mit Zeichen).
+ */
+function unscharfReason(d: Draft, note: boolean, lift: boolean): EntryReason {
+  const u = d.unscharf!;
+  const base = { code: "unscharf" as const, token: u.token, text: `${u.wort} gemeint? «${u.token}»` };
+  const sonst = "Sonst Wort korrigieren oder bei «Was ist es?» die Art wählen.";
+  if (note && d.art !== "notiz") {
+    const bleibt = d.art === "auftrag" && d.an ? `, ${d.an} bleibt, wo er ist` : "";
+    return { ...base, hint: `Nochmals Enter trägt als ${ART_LABEL[d.art]} ein (kein Zeichen${bleibt}). ${sonst}`, ask: `Als ${ART_LABEL[d.art]} ohne Zeichen eintragen? Nochmals Enter.` };
+  }
+  if (note && d.bezugArt === "antwort") return { ...base, hint: `Nochmals Enter trägt als Antwort ein (kein Zeichen). ${sonst}`, ask: "Als Antwort ohne Zeichen eintragen? Nochmals Enter." };
+  if (note) return { ...base, hint: "Nochmals Enter trägt als Notiz ein (kein Zeichen). Sonst Wort korrigieren.", ask: "Als Notiz ohne Zeichen eintragen? Nochmals Enter." };
+  if (lift) return { ...base, hint: "Nochmals Enter hebt das Zeichen auf (kein neues Zeichen). Sonst Wort korrigieren.", ask: "Zeichen aufheben? Nochmals Enter." };
+  return { ...base, hint: `Nochmals Enter trägt die Meldung mit Zeichen ein. Ist «${u.token}» gemeint als «${u.wort.toLowerCase()}»: Wort korrigieren.`, ask: "Mit Zeichen eintragen? Nochmals Enter." };
+}
+
+/** Meldung wurde Notiz (gelb): «Kein Ziel gefunden – als Notiz eintragen?» bzw. «Kein Zeichen? – als Notiz eintragen?» */
+function notizGrundReason(d: Draft): EntryReason {
+  const ask = "Als Notiz ohne Zeichen eintragen? Nochmals Enter.";
+  if (d.notizGrund === "kein-ziel") {
+    return { code: "aufheben", text: "Kein Ziel gefunden – als Notiz eintragen?", hint: "Ort prüfen oder an der gemeinten Zeile «Mehr …» → «Aufgehoben (jetzt)». Nochmals Enter trägt als Notiz ein.", ask };
+  }
+  return { code: "aufheben", text: "Kein Zeichen? – als Notiz eintragen?", hint: "Nochmals Enter trägt als Notiz ein. Ist es eine Lage: Feind, Eigene oder Unklar wählen.", ask };
 }

@@ -51,7 +51,8 @@ const ROWS: Array<[string, Exp]> = [
   ["schwarzer Golf fährt langsam vorbei, AN6, H03", { kind: "unklar", melder: "H03", unit: "", wo: "raster", label: "AN6" }],
   ["Drohne über H05", { kind: "feind", melder: "H05", sym: "drohne", wo: "melder" }],
   ["H04: nichts los, alles ruhig", { kind: "eigen", melder: "H04", wo: "zuletzt" }],
-  ["H02 Verbindungskontrolle i.O.", { kind: "eigen", melder: "H02", wo: "zuletzt" }],
+  // MVP 3: Verbindungskontrolle ist keine Lage (kein Zeichen, kein Standort) – Art «vbk», siehe arten.test.ts
+  ["H02 Verbindungskontrolle i.O.", { kind: "eigen", melder: "H02", unit: "", wo: null }],
   // «bei der Brücke» ist der Ort, nicht das Zeichen
   ["Det 1 gesichtet bei der Brücke", { kind: "feind", melder: "", unit: "Det 1", sym: "einheit", wo: "zuletzt" }],
   ["H04 zwei feindliche Soldaten zu Fuss Richtung Wald", { kind: "feind", melder: "H04", sym: "inf_trp", count: 2, wo: "melder" }],

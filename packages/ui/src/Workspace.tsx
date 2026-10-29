@@ -1,5 +1,8 @@
 /**
- * Arbeitsfläche Lagejournal (MVP 1): nur Zustand und Verdrahtung. Anordnung in `shell/AppShell.tsx`, Kopf und Menü in
+ * Arbeitsfläche Lagejournal (MVP 1, MVP 3 «LVZ-Betrieb»): nur Zustand und Verdrahtung. MVP 3 (Paket C): Schicht und
+ * Kürzel (`lvzui/useSchicht`), Ansicht «Offen» (`lvzui/OffenPanel`), Übergabe-Seite (`lvzui/UebergabeView`, Taste U),
+ * Rückmeldung «Öffnen» unter dem Meldungsfeld (`MergeNotice`), Druck-Dialoge (Paket D), KI-Lagebericht als Notiz,
+ * `cloneForUpdate` (P3) und Messpunkt `lt:bereit` (P1). Anordnung in `shell/AppShell.tsx`, Kopf und Menü in
  * `shell/`, Modus «Vorbereiten» in `prepare/`, Zeit in `time/` (Paket C). Speichern/Abgleich unverändert aus MVP 0
  * (`useExerciseStore`, `persist.ts`), ebenso Speicherbänder, Zusammenführen beim Öffnen und Rückgängig.
  */
@@ -30,6 +33,9 @@ import {
   KI_PURPOSE_LABEL,
   type Hint,
   type RedCoa,
+  newEventId,
+  localIso,
+  type EntryArt,
 } from "@lage/core";
 import {
   AffineImageLayer,
@@ -46,9 +52,11 @@ import {
 } from "@lage/map";
 import { currentExerciseId, downloadText, getBlob, listExercises, onDbNotice, pickFile, safeFileName } from "./store";
 import { lastCurrent, openStored, peekStored, persister, requestPersist } from "./persist";
-import { useExerciseStore } from "./useExerciseStore";
-import { beispielAusUrl, beispielAusUrlEntfernen, beispielUebung } from "./beispiel";
-import { MergeBar, StatusBands, type MergeInfo } from "./SaveBand";
+import { hebeNrZaehler, useExerciseStore } from "./useExerciseStore";
+import { useOffen } from "./analyseClient";
+import { beispielAusUrl, beispielAusUrlEntfernen, beispielSchichtSetzen, beispielUebung } from "./beispiel";
+import { StatusBands, type MergeInfo } from "./SaveBand";
+import { MergeNotice } from "./MergeNotice";
 import { useUndo } from "./undo";
 import { AttachmentChips, ViewerHost, openViewer } from "./Attachments";
 import { RowMemos } from "./VoiceInput";
@@ -87,6 +95,21 @@ import { ExerciseList } from "./shell/ExerciseList";
 import { Dialog } from "./shell/Dialog";
 import { useArbeitsweise } from "./shell/mode";
 import { PrepareMode, type PrepStep } from "./prepare/PrepareMode";
+import { useSchicht, seitText } from "./lvzui/useSchicht";
+import { OffenPanel } from "./lvzui/OffenPanel";
+import { OffenTabLabel } from "./lvzui/OffenTabLabel";
+import { UebergabeView } from "./lvzui/UebergabeView";
+import { KuerzelDialog } from "./lvzui/KuerzelDialog";
+import { KiNotizCtx } from "./ki/KiFeatures";
+import { prefillEntry } from "./entry/useEntryDraft";
+import { HILFE_ANDERE, HILFE_BEISPIELE } from "./entry/HelpPopover";
+import { takeNr } from "./commit";
+import { perfMark } from "./perf";
+import { klassifizierungOf } from "./shell/contracts";
+import { cloneForUpdate } from "./lvzui/clone";
+import { ladeLetzteUebergabe, ladeUebergabePdf, letzteUebergabeText, onLetzteUebergabe } from "./lvzui/letzteUebergabe";
+import { JournalDruckDialog } from "./print/JournalDruckDialog";
+import { LagekarteDialog } from "./print/LagekarteDialog";
 
 /**
  * `f` nach dem nächsten gezeichneten Bild ausführen (rAF → Task): so erscheinen Feld, Liste und Band sofort, die
@@ -96,6 +119,14 @@ function afterPaint(f: () => void): () => void {
   let t: number | undefined;
   const raf = requestAnimationFrame(() => { t = window.setTimeout(f, 0); });
   return () => { cancelAnimationFrame(raf); if (t !== undefined) window.clearTimeout(t); };
+}
+
+/** warten, bis der Browser im Leerlauf ist (höchstens 1.5 s) */
+function leerlauf(): Promise<void> {
+  return new Promise((r) => {
+    const ric = (window as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    if (ric) ric.call(window, () => r(), { timeout: 1500 }); else window.setTimeout(r, 16);
+  });
 }
 
 function deviceId(): string {
@@ -111,7 +142,23 @@ interface Props {
   tagline: string;
 }
 
-type DialogKind = "uebungen" | "hilfe" | "ueber" | "sprache" | null;
+type DialogKind = "uebungen" | "hilfe" | "ueber" | "sprache" | "kuerzel" | "uebergabe" | "journaldruck" | "lagekarte" | null;
+
+/**
+ * Text ins Meldungsfeld (Offen: «Antwort eintragen», «Vbk eintragen»); Rückfall über das Feld selbst.
+ * «Antwort zu 82: » ist ohne Vorgabe eine Notiz mit Bezug (Kern); Feind/Eigene/Unklar nur von Hand in «Was ist es?».
+ */
+function prefill(text: string, art?: EntryArt): void {
+  // «Antwort zu 82: » liest der Kern selbst als Notiz mit Bezug (Antwort); eine Vorgabe nur, wenn ausdrücklich verlangt
+  if (prefillEntry(text, art ? { art } : undefined)) return;
+  const f = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Was wurde gemeldet?"], input[placeholder="Was wurde gemeldet?"]');
+  if (!f) return;
+  const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(f), "value")?.set;
+  set?.call(f, text);
+  f.dispatchEvent(new Event("input", { bubbles: true }));
+  f.focus();
+  f.setSelectionRange?.(text.length, text.length);
+}
 
 export function Workspace({ product, tagline }: Props) {
   const el = useRef<HTMLDivElement>(null);
@@ -123,7 +170,9 @@ export function Workspace({ product, tagline }: Props) {
   const { aw, setModus, setExperte } = useArbeitsweise();
   const experte = aw.experte;
   const lage = aw.modus === "lage";
-  const [sideView, setSideView] = useState<SideView>("journal");
+  const [sideView, setSideViewRaw] = useState<SideView>("journal");
+  /** Wechsel nach «Offen»: Auswahl der Meldung (Kartenband) aufheben – Liste und Karte widersprechen sich sonst (M2) */
+  const setSideView = useCallback((v: SideView) => { setSideViewRaw(v); if (v === "offen") setSelEvent(null); }, []);
   const [prepStep, setPrepStep] = useState<PrepStep | null>(null);
   // ---------- Ebenen und Grundkarte, getrennt für Basis und Experte (pro Gerät)
   const fv: FlagVariant = flagVariant(experte);
@@ -199,10 +248,12 @@ export function Workspace({ product, tagline }: Props) {
   // Übung laden (mit Notfall-Puffer: was beim letzten Mal noch nicht in der Datenbank war)
   useEffect(() => {
     (async () => {
-      // Testzugang ?beispiel / ?beispiel=leer (beispiel.ts): ersetzt nur die Beispielübung, wie «Beispiel ansehen»
+      // Testzugang ?beispiel / ?beispiel=leer / ?beispiel=lang (beispiel.ts): ersetzt nur die Beispielübung, wie «Beispiel ansehen»
       const art = beispielAusUrl();
       if (art) {
         const b = beispielUebung(art);
+        // MVP 3: Schicht «BSP» auf diesem Gerät (leer: keine – dort fragt das Meldungsfeld); noch ohne Anzeige
+        beispielSchichtSetzen(art, b);
         void persister.writeAll(b, true);
         void requestPersist();
         setEx(b);
@@ -303,13 +354,15 @@ export function Workspace({ product, tagline }: Props) {
   const roadDone = useRef(new Set<string>());
   const roadBusy = useRef(new Set<string>());
   const [roadRetry, setRoadRetry] = useState(0);
+  /** P5: erst nach `lt:bereit` und im Leerlauf beginnen (beim Laden zuerst Liste, Feld und Karte) */
+  const [roadGo, setRoadGo] = useState(false);
   useEffect(() => {
     const on = () => setRoadRetry((n) => n + 1);
     window.addEventListener("online", on);
     return () => window.removeEventListener("online", on);
   }, []);
   useEffect(() => {
-    if (!ex) return;
+    if (!ex || !roadGo) return;
     const todo = (ex.events ?? []).filter((e) => !e.deleted && !e.roadNone && e.angle === undefined && !roadDone.current.has(e.id) && !roadBusy.current.has(e.id)
       && (catalogEntry(e.sym)?.placement === "strasse" || !!e.roadHint) && (e.cells?.length || e.nai) && e.where !== "Karte");
     if (!todo.length) return;
@@ -324,8 +377,8 @@ export function Workspace({ product, tagline }: Props) {
         if (!done.size || exRef.current?.id !== exId) { done.clear(); return; }
         const batch = new Map(done);
         done.clear();
-        update((x) => {
-          x.events = (x.events ?? []).map((y) => {
+        // Schnellweg nur Meldungen (keine Kopie der ganzen Übung je Schub), unveränderte bleiben dieselben Objekte
+        updateEvents((evs) => evs.map((y) => {
             const r = batch.get(y.id);
             if (!r) return y;
             const { e, pl } = r;
@@ -337,9 +390,7 @@ export function Workspace({ product, tagline }: Props) {
             // keine Benutzeränderung (sonst stünde jede Meldung des Beispiels als «neu» in der Liste)
             const at = new Date((Date.parse(y.updatedAt) || Date.now()) + 1);
             return reviseEvent(y, { pos: pl.pos, angle: pl.angle, road: pl.road, where: `${y.where ?? ""}${pl.road ? ` · auf ${pl.road}` : ""}`.replace(/^ · /, "") }, device, at);
-          });
-          return x;
-        });
+          }));
       };
       let slice = performance.now(), sinceFlush = performance.now();
       try {
@@ -355,16 +406,17 @@ export function Workspace({ product, tagline }: Props) {
           if (!pl) { if (complete) roadDone.current.add(e.id); continue; }
           roadDone.current.add(e.id);
           done.set(e.id, { e, pl });
-          // höchstens ~40 ms am Stück rechnen, höchstens alle 400 ms eine Änderung
-          if (performance.now() - sinceFlush > 400) { flush(); sinceFlush = performance.now(); }
-          if (performance.now() - slice > 40) { await new Promise((r) => window.setTimeout(r, 16)); slice = performance.now(); }
+          // P5: höchstens ~24 ms am Stück und nur im Leerlauf rechnen (Bedienung geht vor), höchstens alle 8 s eine
+          // Änderung (jede Änderung baut Karte und Hinweise neu)
+          if (performance.now() - sinceFlush > 8000) { flush(); sinceFlush = performance.now(); }
+          if (performance.now() - slice > 24) { await leerlauf(); slice = performance.now(); }
         }
       } finally {
         flush();
         todo.forEach((e) => roadBusy.current.delete(e.id));
       }
     })();
-  }, [ex?.events, ex?.id, roadRetry]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ex?.events, ex?.id, roadRetry, roadGo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lage zum Zeitpunkt (ruhige Karte in der Basis: Beschriftung nur Neues und Gewähltes)
   /** eigene Eingabe (Eintragen/Korrektur): die neuen Meldungen sofort als einfache Zeichen setzen (bis zum Neuaufbau) */
@@ -538,6 +590,26 @@ export function Workspace({ product, tagline }: Props) {
   };
   const selectEventRef = useRef(selectEvent);
   selectEventRef.current = selectEvent;
+  /** «Zur Meldung» (Offen): liegt sie vor «Zeige letzte», alles zeigen; Suche, die sie ausblendet, leeren; Fokus auf die Zeile */
+  const [reveal, setReveal] = useState<{ id: string; n: number } | null>(null);
+  const zurMeldung = (id: string) => {
+    const e = (ex?.events ?? []).find((x) => x.id === id);
+    if (e && winFrom && e.t.slice(0, 16) < winFrom) {
+      zeit.setShowLast(null); zeit.setAb?.(null);
+      say("«Zeige letzte» aufgehoben – alles sichtbar");
+    }
+    setSideView("journal");
+    selectEvent(id);
+    setReveal({ id, n: Date.now() });
+    // Fokus auf die Zeile, sobald sie gezeichnet ist (nie auf BODY)
+    let n = 0;
+    const tryFocus = () => {
+      const li = document.querySelector<HTMLElement>(`.jl li[data-id="${CSS.escape(id)}"]`);
+      if (li) { li.focus({ preventScroll: true }); li.scrollIntoView({ block: "nearest" }); return; }
+      if (++n < 30) window.setTimeout(tryFocus, 50);
+    };
+    window.setTimeout(tryFocus, 0);
+  };
   const correct = (id: string) => {
     setSideView("journal");
     if (lage && requestCorrection(id)) return;
@@ -552,7 +624,7 @@ export function Workspace({ product, tagline }: Props) {
 
   const exportJournal = async (kind: "csv" | "pdf") => {
     if (!ex) return;
-    if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days), "text/csv;charset=utf-8"); return; }
+    if (kind === "csv") { downloadText(`Lagejournal_${safeFileName(ex.name)}.csv`, journalToCsv(ex.events ?? [], ex.days, { schichten: ex.schichten }), "text/csv;charset=utf-8"); return; }
     try {
       const { journalPdf } = await import("./journalpdf");
       const a = document.createElement("a");
@@ -585,7 +657,9 @@ export function Workspace({ product, tagline }: Props) {
   const exRef = useRef<Exercise | null>(null);
   exRef.current = ex;
   // gelöschte Raster/NAI/Bilder bekommen eine Löschmarke (tauchen beim Zusammenführen nicht wieder auf)
-  const update = (f: (x: Exercise) => Exercise) => setEx((x) => (x ? markRemovals(x, f(structuredClone(x))) : x));
+  // P3: Kopie ohne Bilddaten (cloneForUpdate); Schnellweg nur für Meldungen (Eintragen, Löschen, Vermerke)
+  const update = useCallback((f: (x: Exercise) => Exercise) => setEx((x) => (x ? markRemovals(x, f(cloneForUpdate(x))) : x)), []);
+  const updateEvents = useCallback((f: (events: LageEvent[]) => LageEvent[]) => setEx((x) => (x ? { ...x, events: f(x.events ?? []) } : x)), []);
   // Sofort speichern (jede Änderung, auch beim Verlassen der Seite) und mit anderen Fenstern abgleichen;
   // leere Ersatz-Übung bei blockierter Datenbank nicht als «aktuelle Übung» speichern
   useExerciseStore({ ex, exRef, setEx, setSaved, say,
@@ -611,6 +685,67 @@ export function Workspace({ product, tagline }: Props) {
   useAttachmentGc(ex, update);
   // Zeichen auf der Karte verschoben → Ort der Meldung korrigieren (mit Rückgängig)
   const mover = useMoveEvent(update, device, ex);
+
+  // ---------- MVP 3: Schicht/Kürzel, Offen, Übergabe (Paket C)
+  const schicht = useSchicht(ex, device, update, zeit.tLive);
+  /** Konflikte aus dem letzten Zusammenführen (stehen in «Offen», bis «Fassungen ansehen») */
+  const [conflictIds, setConflictIds] = useState<string[]>([]);
+  useEffect(() => setConflictIds([]), [ex?.id]);
+  /** «Offen» rechnet immer mit dem Stand jetzt (LIVE) und der verzögerten Übung */
+  // aus dem Web Worker (P2, Paket D), wenn er genau diesen Stand gerechnet hat, sonst im Hauptfaden
+  const offenItems = useOffen(exLater, zeit.tLive, conflictIds);
+  const [selOffen, setSelOffen] = useState<string | null>(null);
+  const onNr = useCallback(() => takeNr(exRef.current ?? { id: "", events: [] }), []);
+  const lvzRow = useMemo(() => ({ device, kuerzel: schicht.kuerzel, update, onPrefill: prefill }), [device, schicht.kuerzel, update]);
+  const openUebergabe = useCallback(() => { zeit.goLive("knopf"); setDialog("uebergabe"); }, [zeit.goLive]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** «Letzte Übergabe als PDF» (Menü): nach dem Abschliessen auf diesem Gerät gemerkt */
+  const [letzteUeb, setLetzteUeb] = useState(() => (ex ? ladeLetzteUebergabe(ex.id) : null));
+  useEffect(() => { setLetzteUeb(ex ? ladeLetzteUebergabe(ex.id) : null); return onLetzteUebergabe(() => setLetzteUeb(exRef.current ? ladeLetzteUebergabe(exRef.current.id) : null)); }, [ex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Taste U (ausserhalb von Eingabefeldern, ohne Ctrl/Alt/⌘): Übergabe
+  useEffect(() => {
+    const key = (ev: KeyboardEvent) => {
+      if (ev.defaultPrevented || ev.ctrlKey || ev.altKey || ev.metaKey || (ev.key !== "u" && ev.key !== "U")) return;
+      const t = ev.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (dialog !== null || present || !lage) return;
+      ev.preventDefault();
+      openUebergabe();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [dialog, present, lage, openUebergabe]);
+  /** KI-Lagebericht als Notiz (Kap. 3.11): `art: notiz`, `via: ki`, Lagezeit des Entwurfs, Kürzel; gibt die Nummer zurück */
+  const kiNotiz = useCallback((text: string, t: string): string | null => {
+    const cur = exRef.current;
+    if (!cur) return null;
+    const now = new Date();
+    const nr = takeNr(cur);
+    const k = schicht.kuerzel;
+    const ev: LageEvent = {
+      id: newEventId(now.getTime()), rev: 1, device, updatedAt: now.toISOString(), createdAt: now.toISOString(), tReported: localIso(now),
+      t: t.slice(0, 16), side: "blau", unit: "", text: `Lagebericht (KI-Entwurf, geprüft ${k ?? "–"}): ${text}`, sym: "einheit", aff: "F",
+      source: { kind: "text" }, confirmed: true, via: "ki", art: "notiz", notiz: true, nr, von: device, ...(k ? { erfasstVon: k } : {}),
+    };
+    update((x) => ({ ...x, events: [...(x.events ?? []), ev] }));
+    say(`Lagebericht als Notiz Nr ${nr} eingetragen`);
+    return String(nr);
+  }, [device, schicht.kuerzel, update, say]);
+  // P1: erste Liste und Feld bedienbar («lt:bereit»; im Modus Vorbereiten gibt es kein Feld – dann ohne Marke)
+  const bereit = useRef(false);
+  useEffect(() => {
+    if (bereit.current || !ex || !mapReady) return;
+    return afterPaint(() => {
+      if (bereit.current) return;
+      const feld = !!document.querySelector('textarea[placeholder="Was wurde gemeldet?"], input[placeholder="Was wurde gemeldet?"]');
+      if (!feld && lage) return;
+      bereit.current = true;
+      if (feld) perfMark("bereit");
+      // P5: Strassenzuordnung erst danach, im Leerlauf (spätestens nach 3 s)
+      const go = () => setRoadGo(true);
+      const ric = (window as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      if (ric) ric.call(window, go, { timeout: 3000 }); else window.setTimeout(go, 1500);
+    });
+  });
 
   // ---------- Datei ----------
   // mit Anhängen (Fotos, Memos) als .lage.zip, sonst .lage.json
@@ -650,15 +785,20 @@ export function Workspace({ product, tagline }: Props) {
       void requestPersist();
       setSelSheet(null);
       if (!local) {
+        hebeNrZaehler(file);
         switchTo(file, "neu");
         const n = (file.events ?? []).filter((e) => !e.deleted).length;
         setMergeInfo({ name: file.name, text: `${n} ${n === 1 ? "Meldung" : "Meldungen"}, neu auf diesem Gerät${att}`, nurHier: 0, replace: null });
         return;
       }
       const { ex: merged, report } = mergeExercise(local, file);
+      // Entscheid 9.1: dieses Gerät zählt ab der höchsten bekannten Nummer weiter (Nummern ändern nie)
+      hebeNrZaehler(merged);
       void persister.writeAll(merged);
       // inzwischen hier Eingetragenes bleibt (nochmals zusammenführen)
       setEx((x) => (x && x.id === merged.id && x !== local ? mergeExercise(x, merged).ex : merged));
+      // Konflikte werden Punkte in «Offen» (E18)
+      if (report.conflictIds?.length) setConflictIds((c) => [...new Set([...c, ...report.conflictIds])]);
       setMergeInfo({
         name: merged.name, text: mergeReportText(report) + att, nurHier: report.nurHier,
         replace: () => { switchTo(file, "ersetzen"); setMergeInfo(null); say(`«${file.name}» durch die Datei ersetzt`); },
@@ -742,7 +882,12 @@ export function Workspace({ product, tagline }: Props) {
     <WorkspaceMenu exName={ex.name} aw={aw} setModus={setModus} setExperte={setExperte} offlineReady={offline.ready}
       onRename={(name) => update((x) => { x.name = name; return x; })}
       onSwitch={() => setDialog("uebungen")} onNew={() => { switchTo(newExercise(), "neu"); say("Neue Übung angelegt"); }} onDemo={loadDemo}
-      onSaveFile={() => void saveFile()} onOpenFile={() => void openFile()} onPdf={() => void exportJournal("pdf")} onCsv={() => void exportJournal("csv")}
+      onSaveFile={() => void saveFile()} onOpenFile={() => void openFile()} onCsv={() => void exportJournal("csv")}
+      onPdf={() => setDialog("journaldruck")} onLagekarte={() => setDialog("lagekarte")}
+      onUebergabe={openUebergabe} onKuerzel={() => setDialog("kuerzel")}
+      onLetzteUebergabe={letzteUeb ? () => { void ladeUebergabePdf(ex.name, letzteUeb).catch((e) => say("PDF konnte nicht erstellt werden: " + (e as Error).message + ".")); } : undefined}
+      letzteUebergabeNote={letzteUeb ? letzteUebergabeText(letzteUeb) : null}
+      schichtNote={schicht.kuerzel ? `Schicht ${schicht.kuerzel}${seitText(schicht.seitT) ? ` seit ${seitText(schicht.seitT)}` : ""}` : "Kürzel fehlt"}
       night={night} onNight={setNight} onPresent={() => togglePresent(true)}
       onSpeech={() => setDialog("sprache")} onHintsCsv={exportHints} onHelp={() => setDialog("hilfe")} onAbout={() => setDialog("ueber")}
       onOpenChange={suspendMenu("menu")} />
@@ -755,14 +900,28 @@ export function Workspace({ product, tagline }: Props) {
       onEvent={(id) => { setSideView("journal"); selectEvent(id); }} update={update}
       stand={zeit.zeit.kind === "rueckblick" ? zeit.zeit.t : null} />
   );
+  const offenPanel = (
+    <OffenPanel ex={ex} items={offenItems} hints={allHints} selected={selOffen} onSelect={setSelOffen} tLive={zeit.tLive}
+      onEvent={zurMeldung}
+      onCorrect={(id) => correct(id)}
+      onHint={(id) => { setSideView("rot"); setSelHint(id); const h = hints.find((x) => x.id === id); if (h) focusHint(h); }}
+      onPrefill={prefill} onUebergabe={openUebergabe} update={update} device={device} kuerzel={schicht.kuerzel}
+      rueckblick={zeit.zeit.kind === "rueckblick"} say={say} />
+  );
+  // MVP 3 an JournalPanel/EntryBox/JournalList (Paket B nimmt sie an; optional)
+  const mvp3 = { schicht, onNr, lvz: lvzRow, updateEvents, offen: offenPanel };
   const journal = map ? (
-    <JournalPanel ex={ex} map={map} device={device} selected={selEvent} experte={experte} zeit={zeit}
+    <JournalPanel {...mvp3} ex={ex} map={map} device={device} selected={selEvent} experte={experte} zeit={zeit}
       win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => { zeit.setShowLast(null); zeit.setAb?.(null); }}
-      showLast={zeit.showLast} onSelect={selectEvent} reportAt={reportAt}
+      showLast={zeit.showLast} onSelect={selectEvent} reportAt={reportAt} reveal={reveal}
       onCommitted={(ids) => { mapNow.current = ids; zeit.goLive("eintragen"); }}
       onPrepare={() => { setModus("vorbereiten"); setPrepStep(2); }} onDemo={loadDemo} update={update} say={say} quality={quality}
-      between={<SideSwitch view={sideView} onView={setSideView} redLabel={<RedTabLabel badge={badge} />} />}
-      tab={hasEvents ? sideView : "journal"} rot={<div role="tabpanel" aria-label="Was Rot vorhaben könnte" className="sh-redpanel">{red}</div>} />
+      between={<>
+        {mergeInfo && <MergeNotice info={mergeInfo} onClose={() => setMergeInfo(null)} onOffen={mergeInfo.conflictIds?.length ? () => { setModus("lage"); setSideView("offen"); } : undefined} />}
+        <SideSwitch view={sideView} onView={setSideView} redLabel={<RedTabLabel badge={badge} />} offenLabel={<OffenTabLabel n={offenItems.length} />} />
+      </>}
+      tab={hasEvents && sideView !== "journal" ? "rot" : "journal"}
+      rot={sideView === "offen" ? offenPanel : <div role="tabpanel" aria-label="Was Rot vorhaben könnte" className="sh-redpanel">{red}</div>} />
   ) : <div className="panel"><p className="help">Karte wird geladen …</p></div>;
 
   const side = lage ? (
@@ -788,12 +947,13 @@ export function Workspace({ product, tagline }: Props) {
 
   return (
     <KiProvider ex={ex} t={tNow} update={update} say={say}>
+     <KiNotizCtx.Provider value={kiNotiz}>
       <AppShell aw={aw} lagezeit={zeit.zeit.kind} night={night} present={present}
         header={<Header name={ex.name} product={product} save={saveStatus} offline={offline} menu={menu}
+          schicht={{ kuerzel: schicht.kuerzel, seit: seitText(schicht.seitT) }}
           onFixOffline={() => { setModus("vorbereiten"); setPrepStep(6); }} />}
         bands={<>
           <StatusBands ex={ex} dbBlocked={dbBlocked} onSaveFile={saveFile} />
-          {mergeInfo && <MergeBar info={mergeInfo} onClose={() => setMergeInfo(null)} />}
         </>}
         side={side}
         mapTop={lage || present ? <RueckblickBanner zeit={zeit} days={ex.days} /> : undefined}
@@ -846,7 +1006,22 @@ export function Workspace({ product, tagline }: Props) {
         {dialog === "hilfe" && <HelpDialog onClose={() => setDialog(null)} />}
         {dialog === "ueber" && <AboutDialog product={product} tagline={tagline} onClose={() => setDialog(null)} />}
         {dialog === "sprache" && <Dialog title="Spracherkennung" onClose={() => setDialog(null)}><SpeechSettings onClose={() => setDialog(null)} /></Dialog>}
+        {dialog === "kuerzel" && <KuerzelDialog kuerzel={schicht.kuerzel} seit={seitText(schicht.seitT)} onClose={() => setDialog(null)}
+          onSet={(k, neu) => { schicht.setKuerzel(k, { neu }); say(neu ? `Schicht ${k} beginnt jetzt – Neu gilt ab jetzt.` : `Kürzel ${k} gespeichert`); }} />}
+        {dialog === "uebergabe" && (
+          <UebergabeView ex={ex} tLive={zeit.tLive} hints={allHints} lage={lageRot} items={offenItems} schicht={schicht} seitT={schicht.seitT}
+            ki={!!ex.ki?.enabled} onKiNotiz={kiNotiz} onClose={() => setDialog(null)} say={say} />
+        )}
+        {dialog === "journaldruck" && (
+          <JournalDruckDialog ex={ex} hints={allHints} lage={lageRot} tLive={zeit.tLive} kuerzel={schicht.kuerzel} schichtSeit={schicht.seit}
+            device={device} klassifizierung={klassifizierungOf(ex)} kiNote={kiPdfNote(ex, KI_PURPOSE_LABEL)} onClose={() => setDialog(null)} say={say} />
+        )}
+        {dialog === "lagekarte" && (
+          <LagekarteDialog ex={ex} map={map} t={tNow} from={winFrom} live={zeit.zeit.kind === "live"} kuerzel={schicht.kuerzel}
+            klassifizierung={klassifizierungOf(ex)} onClose={() => setDialog(null)} say={say} />
+        )}
       </AppShell>
+     </KiNotizCtx.Provider>
     </KiProvider>
   );
 }
@@ -858,13 +1033,7 @@ function WorkspaceMenu(p: Omit<Parameters<typeof MainMenu>[0], "onKi">) {
 }
 
 /** Hilfe: Beispiele (Kap. 4.4, fiktiv, passen zum Beispiel Bern) und Tastenkürzel */
-const BEISPIELE: Array<[string, string]> = [
-  ["H04 2 Fz in AK7 Rtg N", "Fahrzeuge gesehen"],
-  ["1015 H02 Beo Stao bezogen AJ9", "eigener Trupp"],
-  ["H03 3 Pers unklar bei NAI 2", "unklar"],
-  ["H01 Sperre AF13 auf Hauptstrasse", "Sperre auf der Strasse"],
-  ["H05 Kontakt mit Gegner AP11", "Kontakt"],
-];
+const BEISPIELE: Array<[string, string]> = [...HILFE_BEISPIELE, ...HILFE_ANDERE];
 function HelpDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Beispiele und Tastenkürzel" onClose={onClose}>
@@ -873,7 +1042,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
       <ul className="dlg-ex">
         {BEISPIELE.map(([t, d]) => <li key={t}><code>{t}</code><span>{d}</span></li>)}
       </ul>
-      <p className="dlg-note">Planquadrate gehen erst mit Führungsraster (Vorbereiten). «neu» heisst: in den letzten 10 Minuten gemeldet.</p>
+      <p className="dlg-note">Planquadrate gehen erst mit Führungsraster (Vorbereiten). Neu in deiner Schicht: seit deinem Kürzel bzw. der letzten Übergabe.</p>
       <h3>Tastenkürzel</h3>
       <dl className="dlg-keys">
         <dt><kbd>Enter</kbd></dt><dd>eintragen</dd>
@@ -881,7 +1050,8 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
         <dt><kbd>↑</kbd></dt><dd>im leeren Feld: letzte eigene Meldung korrigieren</dd>
         <dt><kbd>Ctrl+K</kbd></dt><dd>suchen</dd>
         <dt><kbd>L</kbd></dt><dd>zurück zu LIVE</dd>
-        <dt><kbd>Ctrl+Z</kbd></dt><dd>Löschen rückgängig machen</dd>
+        <dt><kbd>U</kbd></dt><dd>Übergabe</dd>
+        <dt><kbd>Ctrl+Z</kbd></dt><dd>Streichen, Korrektur, Vermerk rückgängig machen</dd>
       </dl>
     </Dialog>
   );

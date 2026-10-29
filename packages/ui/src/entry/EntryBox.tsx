@@ -3,6 +3,7 @@
  * Vorschau mit Zustand · Eintragen / Foto / Sprechen. Korrektur im selben Feld (Kopfzeile «✎ Korrektur von T2 07:20 ·
  * H03», Rahmen 2 px Tinte, Enter speichert, Esc bricht ab). Logik in `useEntryDraft`.
  * Vertrag: `EntryBoxProps` (shell/contracts.ts); `onCorrecting` (additiv) meldet die Meldung in Korrektur an die Liste.
+ * MVP 3: Kürzel-Abfrage «Wer erfasst?» über der Vorschau (`KuerzelAsk`), Alt+1/2/3 = Feind/Eigene/Unklar, Alt+4 = «Andere ▾».
  */
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { formatLv95 } from "@lage/core";
@@ -15,10 +16,15 @@ import { JournalUndoBar } from "../journal/journalUndo";
 import { rueckblickInfo } from "../time/RueckblickBanner";
 import type { EntryBoxProps } from "../shell/contracts";
 import { HelpPopover } from "./HelpPopover";
+import { KuerzelAsk } from "./KuerzelAsk";
 import { PreviewLine } from "./PreviewLine";
+import { knopfText } from "./labels";
 import { TruppChips } from "./TruppChips";
 import { lastMelder, truppOrder, useEntryDraft, wideScreen } from "./useEntryDraft";
 import "./entry.css";
+
+/** Finger-Bedienung (Tablet): «Nochmals Enter» heisst dort wie der Knopf */
+const grob = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
 
 /**
  * Vorschau entkoppelt vom Tippen: das Feld zeigt jeden Buchstaben sofort, die Vorschau zeichnet React mit
@@ -89,7 +95,7 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
 
   const lvl = state?.level ?? null;
   const asked = lvl === "pruefen" && d.armed === d.text;
-  const stateText = !state ? "" : lvl === "bereit" ? "Bereit" : asked ? state.reasons[0]?.ask ?? "" : `${lvl === "pruefen" ? "Bitte prüfen" : "Geht nicht"}: ${state.reasons[0]?.text ?? ""}`;
+  const stateText = !state ? "" : lvl === "bereit" ? "Bereit" : asked ? knopfText(state.reasons[0]?.ask ?? "", { coarse: grob(), korr }) : `${lvl === "pruefen" ? "Bitte prüfen" : "Geht nicht"}: ${state.reasons[0]?.text ?? ""}`;
   const live = useLiveText(stateText, d.announce);
   const info = rueckblickInfo(props.zeit);
   const blocked = lvl === "geht-nicht";
@@ -136,6 +142,12 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); d.submit(); }
             else if (e.key === "Escape") { e.preventDefault(); if (help) setHelp(false); else d.escape(); }
             else if (e.key === "ArrowUp" && !d.text && !korr) { if (d.correctLast()) e.preventDefault(); }
+            else if (e.altKey && !e.ctrlKey && !e.metaKey && draft && state?.level !== "geht-nicht" && /^Digit[1-4]$/.test(e.code)) {
+              // Alt+1/2/3 = Feind/Eigene/Unklar, Alt+4 = Menü «Andere» (Kap. 2.2)
+              e.preventDefault();
+              const n = +e.code.slice(5);
+              if (n === 4) d.setArtMenu(true); else d.setKind((["feind", "eigen", "unklar"] as const)[n - 1]!);
+            }
           }} />
         <button ref={helpBtn} type="button" className="eb-helpbtn" aria-label="Hilfe und Beispiele" aria-expanded={help} onClick={() => setHelp(!help)}>?</button>
         {help && <HelpPopover anchor={helpBtn.current} hasRaster={ex.sheets.length > 0}
@@ -146,6 +158,10 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
       <span id="eb-live" className="eb-sr" aria-live="polite">{live}</span>
       {info && <p className="eb-info"><span aria-hidden="true">ⓘ </span>{info}</p>}
       <VoiceStatus v={d.voice} />
+      {d.askKuerzel && draft && (
+        <KuerzelAsk value={d.kuerzelText} onChange={d.setKuerzelText} onSubmit={() => d.submit()} onCancel={d.cancelKuerzel}
+          error={d.kuerzelErr} inputRef={d.kuerzelRef} />
+      )}
       {draft && state ? (
         <div className={`eb-prev lvl-${state.level}`} data-zustand={state.level}>
           <PreviewLine d={d} part="kopf" onAddUnit={addUnit} />

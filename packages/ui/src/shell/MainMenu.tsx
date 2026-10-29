@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent as RKeyboardEven
 import type { Arbeitsweise, Modus } from "./contracts";
 import "./shell.css";
 
-export const APP_VERSION = "MVP 1";
+export const APP_VERSION = "MVP 3";
 
 export interface MainMenuProps {
   exName: string;
@@ -22,8 +22,18 @@ export interface MainMenuProps {
   onDemo(): void;
   onSaveFile(): void;
   onOpenFile(): void;
+  /** «Journal drucken …» (MVP 3: Dialog mit Umfang) */
   onPdf(): void;
   onCsv(): void;
+  /** (MVP 3) «Lagekarte drucken …» */
+  onLagekarte?: () => void;
+  /** (MVP 3) Gruppe «Lage»: «Übergabe …», «Kürzel ändern …» mit Hinweis «Schicht MU seit 22:00» */
+  onUebergabe?: () => void;
+  onKuerzel?: () => void;
+  schichtNote?: string | null;
+  /** «Letzte Übergabe als PDF» (nach dem Abschliessen, Hinweis «06:45 BSP → WMA») */
+  onLetzteUebergabe?: () => void;
+  letzteUebergabeNote?: string | null;
   night: boolean;
   onNight(on: boolean): void;
   /** nur Experte */
@@ -99,10 +109,18 @@ export function MainMenu(p: MainMenuProps) {
             <Item onClick={act(p.onNew)}>Neue Übung</Item>
             <Item onClick={act(p.onDemo)}>Beispiel ansehen (fiktiv, Raum Bern)</Item>
           </Group>
+          {(p.onUebergabe || p.onKuerzel) && (
+            <Group title="Lage">
+              {p.onUebergabe && <Item onClick={act(p.onUebergabe)}>Übergabe …</Item>}
+              {p.onLetzteUebergabe && <Item onClick={act(p.onLetzteUebergabe)}>Letzte Übergabe als PDF{p.letzteUebergabeNote && <span className="mm-note">{p.letzteUebergabeNote}</span>}</Item>}
+              {p.onKuerzel && <Item onClick={act(p.onKuerzel)}>Kürzel ändern …{p.schichtNote && <span className="mm-note">{p.schichtNote}</span>}</Item>}
+            </Group>
+          )}
           <Group title="Daten">
             <Item onClick={act(p.onSaveFile)}>Datei für anderes Gerät …</Item>
             <Item onClick={act(p.onOpenFile)}>Datei öffnen (zusammenführen) …</Item>
-            <Item onClick={act(p.onPdf)}>Journal drucken (PDF)</Item>
+            <Item onClick={act(p.onPdf)}>Journal drucken …</Item>
+            {p.onLagekarte && <Item onClick={act(p.onLagekarte)}>Lagekarte drucken …</Item>}
             <Item onClick={act(p.onCsv)}>Journal als Tabelle (CSV)</Item>
           </Group>
           <Group title="Ansicht">

@@ -912,7 +912,9 @@ function formToText(fields: Array<[string, string]>): string {
   const get = (...k: string[]) => fields.filter(([key]) => k.includes(key)).map(([, v]) => v.trim()).filter(Boolean);
   const dir = get("wohin", "rtg", "richtung").map((v) => (/^(?:rtg|richtung)\b/i.test(v) ? v : `Rtg ${v}`));
   const melder = get("melder", "von");
-  return [...get("zeit", "wann"), ...melder.map((m, i) => (i === melder.length - 1 ? `${m}:` : m)), ...get("wer", "anzahl", "was", "tätigkeit"), ...get("wo", "ort"), ...get("wie"), ...dir, ...get("bemerkung", "bem")]
+  // Bemerkung bleibt im Text, aber als «Bem: …» am Ende – parseMeldung wertet sie nie aus (MVP 3, Kap. 3.2)
+  const bem = get("bemerkung", "bem");
+  return [...get("zeit", "wann"), ...melder.map((m, i) => (i === melder.length - 1 ? `${m}:` : m)), ...get("wer", "anzahl", "was", "tätigkeit"), ...get("wo", "ort"), ...get("wie"), ...dir, ...(bem.length ? [`Bem: ${bem.join(" ")}`] : [])]
     .join(" ");
 }
 

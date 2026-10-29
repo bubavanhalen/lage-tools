@@ -1,10 +1,17 @@
 /**
  * Journal-Liste (Spez. MVP 1, Kap. 2.1, 3.4): neueste zuerst, Stundenköpfe «T2 07:00», je Zeile Zeit · Form + Art
  * (◆ Feind, ● Eigene, ■ Unklar, ▲ Neutral) · Text, darunter «von H05 · AP11 · von 2 Trupps gesehen · korrigiert
- * 07:34 · neu». Klick/Enter = wählen; gewählte Zeile zeigt «Korrigieren» und «Löschen» (Text, 44 px); ↑/↓ wechseln,
- * Entf löscht. «korrigiert 07:34» öffnet die früheren Fassungen. Die Zeile in Korrektur ist dunkel gerahmt.
+ * 07:34 · neu». Klick/Enter = wählen; gewählte Zeile zeigt «Korrigieren», «Mehr …» und «Streichen» (Text, 44 px);
+ * ↑/↓ wechseln, Entf streicht. «korrigiert 07:34» öffnet die früheren Fassungen. Die Zeile in Korrektur ist dunkel gerahmt.
  * Leerzustände Kap. 4.5. Struktur: `.jlist` mit `li` je Meldung (Stundenköpfe stehen ausserhalb, nicht als `li`).
  * Vertrag `JournalListProps`; Ergänzungen (optional) unten.
+ *
+ * MVP 3 (Spez. MVP 3, Kap. 2.1, 2.4, 2.5, 3.3, 3.6): laufende Nummer unter der Zeit (`data-nr`, aria «Nummer 54»),
+ * Art ausgeschrieben mit Form (✎ Auftrag/Rückfrage/Orientierung/Notiz, ⇄ Verbindung; `data-art`), «!» dringend,
+ * Zeile 2 mit Vermerken («dringend · Massnahme: … · weitergemeldet Bat 07:15 · bis 12:00 · offen · beantwortet …»),
+ * «Eingang 07:40» ab 5 min Abstand, Trenner «Neu in deiner Schicht ↑ · seit 06:00 (BSP)» (Klasse `jl-trenner`, kein
+ * `li`) statt der 10-Minuten-Marke «neu», gestrichene Einträge an ihrer Zeit (grau, durchgestrichen, «Zurückholen»),
+ * Link «Gestrichene zeigen (n)» am Ende, gewählte Zeile mit «Mehr …» (`LvzMenu`). Messpunkt P1 `lt:zeile`.
  *
  * Tastatur (Spez. 3.4): die Liste ist **ein** Tab-Stopp (roving tabindex): nur eine Zeile hat `tabIndex=0` (zuletzt
  * fokussiert, sonst gewählt, sonst die oberste); ↑/↓ (Pos1/Ende) wechseln die Zeile, Entf löscht, danach steht der
@@ -13,7 +20,7 @@
  * Vorrat) stehen im DOM, gemessene Höhen werden gemerkt, Platzhalter oben/unten halten die Bildlaufleiste richtig.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { journalStatus, placeLabel, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
+import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, type EventQuality, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { AttachmentChips } from "../Attachments";
 import { attachmentsOf } from "../attachmentStore";
@@ -21,9 +28,11 @@ import { RowMemos } from "../VoiceInput";
 import { KiMark } from "../ki/context";
 import { dayLabel } from "../Timeline";
 import { RueckblickStreifen } from "../time/RueckblickBanner";
-import type { JournalListProps, ZeitApi } from "../shell/contracts";
-import { dayTitle, missLabel } from "../entry/labels";
+import { PERF_MARK, type JournalListProps, type ZeitApi } from "../shell/contracts";
+import { dayTitle, displayText, eingangText, FORM_ZEICHEN, formOf, hm, missLabel, nichtLageText, vermerkTeile, type ZeilenForm } from "../entry/labels";
+import { LvzMenu } from "./LvzMenu";
 import "./journal.css";
+import "./lvz.css";
 
 export interface JournalListExtra {
   /** Meldung, die gerade im Meldungsfeld korrigiert wird (dunkler Rahmen) */
@@ -41,21 +50,21 @@ export interface JournalListExtra {
   /** Leerzustand «erststart»: Knöpfe «Übung vorbereiten», «Beispiel ansehen (fiktiv)» */
   onPrepare?(): void;
   onDemo?(): void;
+  /** (MVP 3) Anzahl gestrichener Einträge im Fenster der Liste (Standard: alle gestrichenen bis zur Lagezeit) */
+  gestricheneN?: number;
+  /** (MVP 3) gestrichenen Eintrag zurückholen (gewählte Zeile, «Zurückholen») */
+  onRestore?(id: string): void;
+  /** (MVP 3) laufende Nummer für «Aufgehoben (jetzt)» */
+  onNr?(): number;
+  /** Übergaben als Zeile «Schichtwechsel 06:45 BSP → WMA» an ihrer Zeit (Prüfung Übergabe M1); fehlt → keine */
+  wechsel?: SchichtWechsel[];
 }
 
-type Shape = "feind" | "eigen" | "unklar" | "neutral" | "notiz";
-const SHAPE: Record<Shape, [string, string]> = { feind: ["◆", "Feind"], eigen: ["●", "Eigene"], unklar: ["■", "Unklar"], neutral: ["▲", "Neutral"], notiz: ["✎", "Notiz"] };
-const shapeOf = (e: Pick<LageEvent, "side" | "aff" | "notiz">): Shape => (e.notiz ? "notiz" : e.side === "blau" ? "eigen" : e.aff === "N" ? "neutral" : e.aff === "U" ? "unklar" : "feind");
-const NEU_MS = 10 * 60000;
+const WORT: Partial<Record<ZeilenForm, string>> = { feind: "Feind", eigen: "Eigene", unklar: "Unklar", neutral: "Neutral", aufheb: "Aufhebung" };
+/** Trennzeichen für Vermerke (Zeichenkette statt Array: Zeilen bleiben `memo`) */
+const SEP = "\u0001";
 
-/** Anzeigetext ohne vorangestellten Melder («H01 4 Pers …» → «4 Pers …»), der Melder steht separat */
-export function displayText(e: Pick<LageEvent, "melder" | "text">): string {
-  const m = e.melder;
-  if (!m) return e.text;
-  const re = new RegExp("^" + m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*") + "\\s*(?:meldet\\s*)?[:,]?\\s*", "i");
-  const t = e.text.replace(re, "");
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : e.text;
-}
+export { displayText, nichtLageText } from "../entry/labels";
 
 function SymbolMini({ e }: { e: LageEvent }) {
   // gleiches Objekt behalten: React setzt innerHTML sonst bei jeder Darstellung neu
@@ -72,7 +81,6 @@ interface RowProps {
   q?: EventQuality;
   /** Anzahl Trupps, die es gesehen haben (≥ 2 = bestätigt), sonst 0 */
   zwei: number;
-  neu: boolean;
   open: boolean;
   onSelect(id: string): void;
   onCorrect(id: string): void;
@@ -82,56 +90,91 @@ interface RowProps {
   tab: 0 | -1;
   /** LIVE: Meldung liegt nach der LIVE-Zeit (bestätigte Zukunftszeit) → «nach LIVE (T2 15:35)», noch nicht auf der Karte */
   spaeter?: string;
+  // ---- MVP 3 (nur Zeichenketten/Zahlen, damit `memo` greift)
+  /** Anzeige-Nummer («54», «12a») */
+  nr: string;
+  /** Art in Worten für Nicht-Meldungen («Auftrag an H03», «Verbindung H02 gut») */
+  artWort: string;
+  /** Vermerke und Bezüge, getrennt mit SEP; dringend zuerst mit «!» */
+  vm: string;
+  dringend: boolean;
+  /** «gestrichen 07:22 von BSP» */
+  del?: string;
+  /** «Mehr …» offen an dieser Zeile */
+  menu: boolean;
+  onMenu(id: string, btn: HTMLElement): void;
+  onRestore?(id: string): void;
+  /** eigene Trupps (für den Art-Hinweis im Text) – gleiches Array, solange sich die Trupps nicht ändern */
+  blau: string[];
 }
 
-const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, neu, open, onSelect, onCorrect, onDelete, onToggle, tab, spaeter }: RowProps) {
-  const sh = shapeOf(e);
-  const [f, word] = SHAPE[sh];
-  const own = sh === "eigen";
-  const note = sh === "notiz";
-  const who = own ? (e.unit || e.melder) : e.unit && e.unit !== e.melder ? e.unit : "";
-  const place = placeLabel(e);
+const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open, onSelect, onCorrect, onDelete, onToggle, tab, spaeter, nr, artWort, vm, dringend, del, menu, onMenu, onRestore, blau }: RowProps) {
+  const form = formOf(e);
+  const art = artOf(e);
+  const lage = art === "meldung" && !e.hebtAuf;
+  const own = form === "eigen";
+  const word = lage || form === "aufheb" ? WORT[form]! : artWort;
+  const who = !lage ? "" : own ? (e.unit || e.melder) : e.unit && e.unit !== e.melder ? e.unit : "";
+  const orte = (e.orte ?? []).join(", ");
+  // Aufhebung: der Ort steht meist schon im Text («Sperre AG13 aufgehoben»)
+  const place = lage ? placeLabel(e) : orte && !(form === "aufheb" && e.text.includes(orte)) ? orte : "";
   const status = journalStatus(e);
-  const missing = note ? [] : (q?.missing ?? []).filter((m) => m !== "Ort" && m !== "Melder").map(missLabel);
+  const missing = !lage ? [] : (q?.missing ?? []).filter((m) => m !== "Ort" && m !== "Melder").map(missLabel);
   const att = e.attachments?.length ? attachmentsOf({ attachments }, e.attachments) : [];
+  // «von H04»: Sichtungen und Rückfragen an jemanden; bei Vbk/Rückfrage von … steht der Trupp schon in der Art
+  const von = e.melder && !own && (lage || form === "aufheb" || (art === "rueckfrage" && !!e.an) || art === "orientierung" || art === "auftrag" || (art === "notiz" && e.bezugArt !== "quittung")) ? e.melder : "";
+  const teile = vm ? vm.split(SEP) : [];
+  const eingang = eingangText(e);
   return (
-    <li data-id={e.id} className={`jl-row k-${sh}${sel ? " sel" : ""}${korr ? " korr" : ""}${flash ? " flash" : ""}`} tabIndex={tab}
+    <li data-id={e.id} data-art={art} data-nr={nr || undefined} className={`jl-row k-${form}${sel ? " sel" : ""}${korr ? " korr" : ""}${flash ? " flash" : ""}${del ? " is-del" : ""}${dringend ? " is-dringend" : ""}`} tabIndex={tab}
       aria-current={sel || undefined}
       onClick={(ev) => { if (!(ev.target as HTMLElement).closest("button")) onSelect(e.id); }}>
-      <span className="jl-t mono">{e.t.slice(11, 16)}</span>
+      <span className="jl-tcol">
+        <span className="jl-t mono">{e.t.slice(11, 16)}</span>
+        {nr && <span className="jl-nr" aria-label={`Nummer ${nr}`} title={`Nummer ${nr}`}>{nr}</span>}
+      </span>
       <span className="jl-body">
         <span className="jl-l1">
-          <span className={`jl-kind k-${sh}`}><span aria-hidden="true">{f}</span> {word}</span>
+          {dringend && !del && <span className="jl-bang" aria-hidden="true" title="dringend">!</span>}
+          <span className={`jl-kind k-${form}`}><span aria-hidden="true">{FORM_ZEICHEN[form]}</span> {word}</span>
           {who && <b className="jl-who">{who}</b>}
-          {!note && <SymbolMini e={e} />}
-          <span className="jl-text">{displayText(e)}</span>
+          {lage && <SymbolMini e={e} />}
+          <span className="jl-text">{lage ? displayText(e) : nichtLageText(e, blau)}</span>
         </span>
         <span className="jl-l2">
+          {del && <span className="jl-del">{del}</span>}
           {spaeter && <span className="jl-spaeter">nach LIVE ({spaeter}) – noch nicht auf der Karte</span>}
-          {!own && e.melder && <span>von {e.melder}</span>}
-          {note ? null : place ? <span className="mono">{place}</span> : <span className="jl-warn">Ort fehlt</span>}
-          {!own && zwei > 1 && <span>von {zwei} Trupps gesehen</span>}
+          {von && <span>von {von}</span>}
+          {place ? <span className="mono">{place}</span> : lage ? <span className="jl-warn">Ort fehlt</span> : null}
+          {teile.map((t) => <span key={t} className={t === "dringend" ? "jl-vm-dringend" : "jl-vm"}>{t}</span>)}
+          {eingang && <span>{eingang}</span>}
+          {lage && zwei > 1 && <span>von {zwei} Trupps gesehen</span>}
           {missing.length > 0 && <span>Fehlt noch: {missing.join(", ")}</span>}
-          {status && <button type="button" className="jl-hist" aria-expanded={open} onClick={() => onToggle(e.id)}>{status}</button>}
+          {status && !(del && !e.history?.length) && <button type="button" className="jl-hist" aria-expanded={open} onClick={() => onToggle(e.id)}>{status}</button>}
           {e.via === "ki" && <span className="jl-ki"><KiMark size={9} />KI</span>}
           {korr && <span className="jl-korr">wird korrigiert</span>}
-          {neu && <span className="jl-neu">neu</span>}
           {att.length > 0 && <><AttachmentChips list={att.filter((a) => a.kind !== "audio")} /><RowMemos list={att} /></>}
         </span>
         {open && e.history?.length ? (
           <ol className="jl-versions" aria-label="Frühere Fassungen">
             {[...e.history].reverse().map((h) => (
               <li key={h.rev}><span className="mono">{h.t.slice(11, 16)}</span> {h.text}{placeLabel(h) ? <span className="mono"> · {placeLabel(h)}</span> : null}
-                <span className="jl-vat"> (Fassung von {new Date(h.at).toTimeString().slice(0, 5)})</span></li>
+                <span className="jl-vat"> (Fassung von {new Date(h.at).toTimeString().slice(0, 5)}{h.von ? ` ${h.von}` : ""})</span></li>
             ))}
           </ol>
         ) : null}
-        {sel && !korr && (
+        {sel && !korr && (del ? (
+          <span className="jl-acts">
+            {onRestore && <button type="button" className="jl-btn" onClick={() => onRestore(e.id)}>Zurückholen</button>}
+          </span>
+        ) : (
           <span className="jl-acts">
             <button type="button" className="jl-btn" onClick={() => onCorrect(e.id)}>Korrigieren</button>
-            <button type="button" className="jl-btn" onClick={() => onDelete(e.id)}>Löschen</button>
+            {/* Tablet: Lücke in der Mitte (CSS), «Streichen» ganz rechts – ein Tipp in die Mitte der Zeile trifft keinen Knopf */}
+            <button type="button" className="jl-btn" aria-haspopup="dialog" aria-expanded={menu} onClick={(ev) => onMenu(e.id, ev.currentTarget)}>Mehr …</button>
+            <button type="button" className="jl-btn" onClick={() => onDelete(e.id)}>Streichen</button>
           </span>
-        )}
+        ))}
       </span>
     </li>
   );
@@ -144,7 +187,11 @@ const VORRAT = 900;
 /** geschätzte Höhen, bis gemessen */
 const H_HEAD = 34, H_ROW = 62;
 
-type Item = { k: "h"; key: string; head: string } | { k: "r"; key: string; e: LageEvent };
+type Item = { k: "h"; key: string; head: string } | { k: "r"; key: string; e: LageEvent } | { k: "t"; key: string; text: string } | { k: "w"; key: string; text: string };
+
+/** «Schichtwechsel 06:45 BSP → WMA (Übergabe)» */
+export const wechselText = (w: Pick<SchichtWechsel, "t" | "von" | "an">) => `Schichtwechsel ${w.t.slice(11, 16)} ${w.von ?? "–"} → ${w.an} (Übergabe)`;
+const H_TRENNER = 34;
 
 const FOCUSABLE = "button, a[href], input, select, textarea, audio[controls], [tabindex]";
 
@@ -173,25 +220,66 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
   const vbox = useRef<HTMLDivElement>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [openHist, setOpenHist] = useState<string | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  /** «Mehr …» offen an dieser Zeile (Knopf als Anker) */
+  const [menu, setMenu] = useState<{ id: string; btn: HTMLElement } | null>(null);
   /** roving tabindex: zuletzt fokussierte Zeile */
   const [rove, setRove] = useState<string | null>(null);
   /** nach dem Darstellen fokussieren (↑/↓, nach Löschen) */
   const focusNext = useRef<string | null>(null);
-  useEffect(() => { const i = window.setInterval(() => setNowMs(Date.now()), 30000); return () => window.clearInterval(i); }, []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => setNowMs(Date.now()), [events]);
+  // «Mehr …» schliesst, wenn eine andere Zeile gewählt wird
+  useEffect(() => { setMenu((m) => (m && m.id !== selected ? null : m)); }, [selected]);
+  // Messpunkt P1 «lt:zeile»: neue Zeile steht im DOM (nach dem letzten «lt:enter»)
+  useLayoutEffect(() => {
+    try {
+      const en = performance.getEntriesByName(PERF_MARK.enter);
+      const last = en[en.length - 1];
+      if (!last) return;
+      const z = performance.getEntriesByName(PERF_MARK.zeile);
+      const lz = z[z.length - 1];
+      if (!lz || lz.startTime < last.startTime) performance.mark(PERF_MARK.zeile);
+    } catch { /* ohne Performance-API */ }
+  }, [events]);
 
+  const seit = p.schichtSeit ?? null;
   const items = useMemo(() => {
     const out: Item[] = [];
     let k = "";
-    for (const e of events) {
-      const h = e.t.slice(0, 13);
-      if (h !== k) { k = h; out.push({ k: "h", key: "h:" + h, head: `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 13)}:00` }); }
+    // Trenner «Neu in deiner Schicht ↑» unter dem ältesten Eintrag, der in der eigenen Schicht erfasst wurde (Kap. 3.6)
+    let lastNew = -2;
+    if (seit) { lastNew = -1; events.forEach((e, i) => { if ((e.createdAt ?? e.updatedAt) >= seit.seit) lastNew = i; }); }
+    const trenner: Item | null = seit ? { k: "t", key: "trenner", text: `Neu in deiner Schicht ↑ · seit ${hm(seit.seit)} (${seit.kuerzel})` } : null;
+    if (trenner && lastNew === -1) out.push(trenner);
+    // Übergaben (neueste zuerst) an ihrer Lagezeit zwischen den Einträgen
+    const ws = [...(p.wechsel ?? [])].filter((w) => w.art === "uebergabe").sort((a, b) => (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
+    let wi = 0;
+    const head = (t: string) => {
+      const h = t.slice(0, 13);
+      if (h !== k) { k = h; out.push({ k: "h", key: "h:" + h, head: `${dayLabel(t, ex.days)} ${t.slice(11, 13)}:00` }); }
+    };
+    /** Wechsel über dem Eintrag `e`: später, oder gleiche Minute und nach dem Erfassen von `e` */
+    const ueber = (w: SchichtWechsel, e: LageEvent | null) => {
+      if (!e) return true;
+      const wt = w.t.slice(0, 16), et = e.t.slice(0, 16);
+      return wt > et || (wt === et && w.at >= (e.createdAt ?? e.updatedAt));
+    };
+    const wechselBis = (e: LageEvent | null) => {
+      while (wi < ws.length && ueber(ws[wi]!, e)) {
+        const w = ws[wi++]!;
+        head(w.t);
+        out.push({ k: "w", key: "w:" + w.id, text: wechselText(w) });
+      }
+    };
+    events.forEach((e, i) => {
+      wechselBis(e);
+      head(e.t);
       out.push({ k: "r", key: e.id, e });
-    }
+      if (trenner && i === lastNew) out.push(trenner);
+    });
+    // ältere Übergaben nur, solange sie im gezeigten Zeitraum liegen (nach dem ältesten Eintrag nicht mehr)
+    if (!events.length) wechselBis(null);
     return out;
-  }, [events, ex.days]);
+  }, [events, ex.days, seit?.seit, seit?.kuerzel, p.wechsel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const idx = useMemo(() => lvzIndex(all), [all]);
   const virt = events.length >= VIRT_AB;
   const index = useMemo(() => new Map(events.map((e, i) => [e.id, i])), [events]);
   const itemIndex = useMemo(() => new Map(items.map((it, i) => [it.key, i])), [items]);
@@ -202,7 +290,7 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
   const offs = useMemo(() => {
     const o = new Array<number>(items.length + 1);
     o[0] = 0;
-    for (let i = 0; i < items.length; i++) { const it = items[i]!; o[i + 1] = o[i]! + (heights.current.get(it.key) ?? (it.k === "h" ? H_HEAD : H_ROW)); }
+    for (let i = 0; i < items.length; i++) { const it = items[i]!; o[i + 1] = o[i]! + (heights.current.get(it.key) ?? (it.k === "h" ? H_HEAD : it.k === "t" || it.k === "w" ? H_TRENNER : H_ROW)); }
     return o;
   }, [items, measured]); // eslint-disable-line react-hooks/exhaustive-deps
   const [range, setRange] = useState<[number, number]>([0, 40]);
@@ -325,11 +413,13 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
   };
 
   // feste Rückrufe für die Zeilen (memo): neue Funktionen der Hülle zeichnen sonst bei jedem Tastendruck alle Zeilen neu
-  const cb = useRef({ onSelect, onCorrect, del });
-  cb.current = { onSelect, onCorrect, del };
+  const cb = useRef({ onSelect, onCorrect, del, onRestore: p.onRestore });
+  cb.current = { onSelect, onCorrect, del, onRestore: p.onRestore };
   const rowSelect = useCallback((id: string) => cb.current.onSelect(id), []);
   const rowCorrect = useCallback((id: string) => cb.current.onCorrect(id), []);
-  const rowDelete = useCallback((id: string) => cb.current.del(id), []);
+  const rowDelete = useCallback((id: string) => { setMenu(null); cb.current.del(id); }, []);
+  const rowRestore = useCallback((id: string) => cb.current.onRestore?.(id), []);
+  const rowMenu = useCallback((id: string, btn: HTMLElement) => setMenu((m) => (m?.id === id ? null : { id, btn })), []);
 
   const onKey = (ev: React.KeyboardEvent) => {
     const li = (ev.target as HTMLElement).closest<HTMLElement>("li[data-id]");
@@ -349,8 +439,21 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
   /** LIVE-Zeit (Minute); Meldungen danach fehlen auf der Karte (Zukunftszeit bestätigt) */
   const liveT = p.zeit?.zeit.kind === "live" && p.zeit.tNow ? p.zeit.tNow.slice(0, 16) : null;
   const strip = p.zeit ? <RueckblickStreifen zeit={p.zeit} days={ex.days} art="liste" /> : null;
+  /** «Gestrichene zeigen (n)» am Listenende (nur wenn es gestrichene gibt) */
+  const nDel = p.gestricheneN ?? all.filter((e) => e.deleted && (!liveT || e.t.slice(0, 16) <= liveT)).length;
+  const endLink = p.onGestrichene && (nDel > 0 || p.gestrichene) ? (
+    <div className="jl-end">
+      <button type="button" className="jl-link" aria-pressed={!!p.gestrichene} onClick={() => p.onGestrichene!(!p.gestrichene)}>
+        {p.gestrichene ? "Gestrichene ausblenden" : `Gestrichene zeigen (${nDel})`}
+      </button>
+    </div>
+  ) : null;
+  const menuEv = menu ? all.find((e) => e.id === menu.id && !e.deleted) : undefined;
+  const lvzMenu = menu && menuEv && p.lvz ? (
+    <LvzMenu e={menuEv} ex={ex} {...p.lvz} anchor={menu.btn} onNr={p.onNr} onClose={() => setMenu(null)} />
+  ) : null;
 
-  if (!events.length) {
+  if (!events.length && !items.length) {
     return (
       <div className="jl" ref={box}>
         {strip}
@@ -383,17 +486,22 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
             <p>Keine Meldungen.</p>
           )}
         </div>
+        {endLink}
       </div>
     );
   }
 
   // gezeichnete Teile zu Stundengruppen zusammenfassen (Kopf nur, wenn er selbst im Fenster liegt)
-  const groups: Array<{ key: string; head?: string; rows: LageEvent[] }> = [];
+  // Trenner teilt eine Stundengruppe in zwei `ol` (er selbst ist kein `li`)
+  type Part = { ol: LageEvent[] } | { trenner: string; wechsel?: boolean; key: string };
+  const groups: Array<{ key: string; head?: string; parts: Part[] }> = [];
+  const lastOl = (g: { parts: Part[] }) => { const l = g.parts[g.parts.length - 1]; if (l && "ol" in l) return l.ol; const n: LageEvent[] = []; g.parts.push({ ol: n }); return n; };
   for (const it of shown) {
-    if (it.k === "h") groups.push({ key: it.key, head: it.head, rows: [] });
-    else if (groups.length) groups[groups.length - 1]!.rows.push(it.e);
+    if (it.k === "h") groups.push({ key: it.key, head: it.head, parts: [] });
+    else if (it.k === "t" || it.k === "w") { if (!groups.length) groups.push({ key: "t:oben", parts: [] }); groups[groups.length - 1]!.parts.push({ trenner: it.text, wechsel: it.k === "w", key: it.key }); }
+    else if (groups.length) lastOl(groups[groups.length - 1]!).push(it.e);
     // Fenster beginnt mitten in einer Stunde: gleicher Schlüssel wie mit Kopf (sonst baut React die Zeilen neu – Fokus weg)
-    else groups.push({ key: "h:" + it.e.t.slice(0, 13), rows: [it.e] });
+    else groups.push({ key: "h:" + it.e.t.slice(0, 13), parts: [{ ol: [it.e] }] });
   }
   const vk = virt ? (k: string) => ({ "data-vk": k }) : () => ({});
 
@@ -405,21 +513,33 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
         {groups.map((g) => (
           <section key={g.key} className="jl-group" aria-label={g.head}>
             {g.head && <h4 className="jl-head mono" title={dayTitle(g.key.slice(2), ex.days)} {...vk(g.key)}>{g.head}</h4>}
-            <ol className="jlist">
-              {g.rows.map((e) => {
-                const c = e.createdAt ? Date.parse(e.createdAt) : NaN;
-                const spaeter = liveT && e.t.slice(0, 16) > liveT ? `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 16)}` : undefined;
-                return (
-                  <Row key={e.id} e={e} attachments={ex.attachments} sel={e.id === selected} korr={e.id === p.correcting} flash={e.id === flashId}
-                    q={quality?.get(e.id)} zwei={zweiOf(e)} neu={nowMs - c >= -60000 && nowMs - c < NEU_MS} open={openHist === e.id}
-                    onSelect={rowSelect} onCorrect={rowCorrect} onDelete={rowDelete} onToggle={toggle} tab={e.id === active ? 0 : -1} spaeter={spaeter} />
-                );
-              })}
-            </ol>
+            {g.parts.map((part, pi) => "trenner" in part
+              ? part.wechsel
+                ? <div key={`w${pi}`} className="jl-wechsel" role="separator" aria-label={part.trenner} {...vk(part.key)}><span aria-hidden="true">⇅ </span>{part.trenner}</div>
+                : <div key={`t${pi}`} className="jl-trenner" role="separator" aria-label={part.trenner} {...vk("trenner")}>{part.trenner}</div>
+              : (
+                <ol key={`o${pi}`} className="jlist">
+                  {part.ol.map((e) => {
+                    const spaeter = liveT && !e.deleted && e.t.slice(0, 16) > liveT ? `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 16)}` : undefined;
+                    const teile = vermerkTeile(e, ex, idx);
+                    return (
+                      <Row key={e.id} e={e} attachments={ex.attachments} sel={e.id === selected} korr={e.id === p.correcting} flash={e.id === flashId}
+                        q={quality?.get(e.id)} zwei={zweiOf(e)} open={openHist === e.id}
+                        onSelect={rowSelect} onCorrect={rowCorrect} onDelete={rowDelete} onToggle={toggle} tab={e.id === active ? 0 : -1} spaeter={spaeter}
+                        nr={nrLabel(e, ex)} artWort={artOf(e) === "meldung" ? "" : artText(e)} vm={teile.map((x) => x.t).join(SEP)}
+                        dringend={teile.some((x) => x.k === "dringend")}
+                        del={e.deleted ? `gestrichen ${hm(e.updatedAt)}${e.geaendertVon ? ` von ${e.geaendertVon}` : ""}` : undefined}
+                        menu={menu?.id === e.id} onMenu={rowMenu} onRestore={p.onRestore ? rowRestore : undefined} blau={ex.units.blau} />
+                    );
+                  })}
+                </ol>
+              ))}
           </section>
         ))}
         {virt && <div aria-hidden="true" style={{ height: offs[items.length]! - offs[b + 1]! }} />}
       </div>
+      {endLink}
+      {lvzMenu}
     </div>
   );
 }

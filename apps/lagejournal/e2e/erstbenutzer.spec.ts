@@ -6,7 +6,7 @@
  * Uhr: T2 07:30 des Beispiels Bern (Tage 2030-05-14/15, siehe demoExercise) – die Spezifikation nennt 2026-05-15,
  * das Beispiel liegt aber im Jahr 2030.
  */
-import { Klm, UHR_T2_0730, antippen, antwortzeit, aufgabe, soll, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
+import { Klm, UHR_T2_0730, antippen, antwortzeit, aufgabe, menue, soll, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
 
 const feld = (s: Session) => s.page.getByPlaceholder("Was wurde gemeldet?");
 const zeilen = (s: Session) => s.page.locator(".jlist li");
@@ -32,6 +32,12 @@ async function geraetLauf(h: Harness, geraet: Geraet): Promise<TestResult[]> {
 
   // ---------- 1–3: leere Vorbereitung ----------
   let s = await h.open({ query: "?beispiel=leer", geraet, uhr: UHR_T2_0730 });
+  // MVP 3 (Kap. 2.3/3.6): Schichtbeginn mit Kürzel gehört nicht zu den Aufgaben – vorher über Menü «Kürzel ändern …»
+  // setzen (sonst fragt das erste Enter «Wer erfasst?»; geprüft in lvz.spec.ts Nr. 5 und inventar.spec.ts)
+  await menue(s, /^Kürzel ändern/);
+  await s.page.getByRole("textbox", { name: "Kürzel", exact: true }).fill("ZZ");
+  await antippen(s, s.page.getByRole("button", { name: /^Neue Schicht beginnen/ }));
+  await s.page.waitForTimeout(200);
   out.push(await aufgabe("1 Erste Meldung", geraet, async (w) => {
     const k = new Klm();
     const vorher = await markerZahl(s);
@@ -59,7 +65,9 @@ async function geraetLauf(h: Harness, geraet: Geraet): Promise<TestResult[]> {
     await eintragen(s, k);
     await s.page.waitForTimeout(300);
     soll((await anzahl(s)) === n0, "1. Enter hat ohne Trupp eingetragen");
-    soll(await s.page.getByText(/Nochmals Enter/).first().isVisible(), "Text «Nochmals Enter» fehlt");
+    // Tablet: Text wie der Knopf («Nochmals «Trotzdem eintragen» tippen», Fix 3), Laptop «Nochmals Enter»
+    const nochmals = geraet === "tablet" ? /Nochmals «Trotzdem eintragen»/ : /Nochmals Enter/;
+    soll(await s.page.getByText(nochmals).first().isVisible(), `Text ${nochmals} fehlt`);
     k.entscheid();
     await antippen(s, knopf(s, "H02")); k.zeigen();
     soll(await zustand(s).getAttribute("data-zustand") === "bereit", "nach Chip nicht «bereit»");
@@ -116,13 +124,13 @@ async function geraetLauf(h: Harness, geraet: Geraet): Promise<TestResult[]> {
     Object.assign(w, k.werte());
     soll(k.aktionen <= 5 && k.sekunden <= 45, `Budget: ${k.aktionen} Aktionen, KLM ${k.sekunden.toFixed(1)} s`);
   }));
-  out.push(await aufgabe("5 Löschen und zurückholen", geraet, async (w) => {
+  out.push(await aufgabe("5 Streichen und zurückholen", geraet, async (w) => {
     const k = new Klm();
     const z = zeilen(s).first();
     const text = await z.innerText();
     const n0 = await anzahl(s);
     await antippen(s, z); k.zeigen();
-    await antippen(s, knopf(s, "Löschen")); k.zeigen();
+    await antippen(s, knopf(s, "Streichen")); k.zeigen();
     soll((await anzahl(s)) === n0 - 1, "Zeile nicht weg");
     await antippen(s, knopf(s, "Rückgängig")); k.zeigen();
     await s.page.waitForTimeout(200);

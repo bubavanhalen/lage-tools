@@ -145,7 +145,8 @@ const ONLINE: Array<{ key: "ortssuche" | "strassen"; label: string; text: string
 ];
 
 function UebungStep({ ex, update }: { ex: Exercise; update(f: (x: Exercise) => Exercise): void }) {
-  const cls = ex.sheets[0]?.classification ?? "";
+  // MVP 3: Klassifizierung gehört der Übung (Ausdrucke), Raster ziehen mit; ohne Raster trotzdem eingebbar
+  const cls = ex.klassifizierung ?? ex.sheets[0]?.classification ?? "";
   const mixed = ex.sheets.some((s) => s.classification !== cls);
   return (
     <div className="pp">
@@ -153,8 +154,8 @@ function UebungStep({ ex, update }: { ex: Exercise; update(f: (x: Exercise) => E
         <input value={ex.name} onChange={(e) => update((x) => { x.name = e.target.value; return x; })} />
       </label>
       <label className="pp-field">Klassifizierung <span className="pp-meta">(gilt für alle Raster und den Ausdruck)</span>
-        <input value={cls} disabled={!ex.sheets.length} placeholder={ex.sheets.length ? "z. B. INTERN" : "zuerst ein Führungsraster anlegen"}
-          onChange={(e) => { const v = e.target.value; update((x) => { x.sheets = x.sheets.map((s) => ({ ...s, classification: v })); return x; }); }} />
+        <input value={cls} placeholder="z. B. INTERN"
+          onChange={(e) => { const v = e.target.value; update((x) => { if (v.trim()) x.klassifizierung = v; else delete x.klassifizierung; x.sheets = x.sheets.map((s) => ({ ...s, classification: v })); return x; }); }} />
       </label>
       {mixed && <p className="pp-note">Die Raster haben verschiedene Klassifizierungen – eine Eingabe setzt sie für alle gleich.</p>}
       <fieldset className="pp-set">

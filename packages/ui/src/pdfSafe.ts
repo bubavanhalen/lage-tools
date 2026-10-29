@@ -56,14 +56,23 @@ export function winAnsi(s: string): string {
 
 const deep = (v: unknown): unknown => (typeof v === "string" ? winAnsi(v) : Array.isArray(v) ? v.map(deep) : v);
 
-/** `text` und `splitTextToSize` des Dokuments machen jeden Text WinAnsi-sicher (einmal je Dokument) */
+/**
+ * `text` und `splitTextToSize` des Dokuments machen jeden Text WinAnsi-sicher (einmal je Dokument). Alle gesetzten
+ * Texte werden zudem in `doc.__zeilen` gesammelt (Testhaken `window.__ltPdfInfo`, perf.ts).
+ */
 export function safePdf<T extends jsPDF>(doc: T): T {
-  const d = doc as T & { __winAnsi?: boolean };
+  const d = doc as T & { __winAnsi?: boolean; __zeilen?: string[] };
   if (d.__winAnsi) return doc;
   d.__winAnsi = true;
+  const zeilen: string[] = (d.__zeilen = []);
   const text = doc.text.bind(doc);
   const split = doc.splitTextToSize.bind(doc);
-  (doc as { text: unknown }).text = (t: unknown, ...rest: unknown[]) => (text as (...a: unknown[]) => jsPDF)(deep(t), ...rest);
+  (doc as { text: unknown }).text = (t: unknown, ...rest: unknown[]) => {
+    const s = deep(t);
+    if (typeof s === "string") zeilen.push(s);
+    else if (Array.isArray(s)) zeilen.push(s.join(" "));
+    return (text as (...a: unknown[]) => jsPDF)(s, ...rest);
+  };
   (doc as { splitTextToSize: unknown }).splitTextToSize = (t: unknown, ...rest: unknown[]) => (split as (...a: unknown[]) => unknown)(deep(t), ...rest);
   return doc;
 }

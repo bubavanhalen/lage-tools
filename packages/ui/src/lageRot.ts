@@ -13,6 +13,7 @@ import {
   type StrengthEstimate, type StrengthRow, type StrengthSpec,
 } from "@lage/core";
 import { hhmm } from "./hintsData";
+import { useAnalyse } from "./analyseClient";
 
 export interface LageRotState {
   /** höchstens drei: wahrscheinlichste, gefährlichste, weitere */
@@ -36,22 +37,32 @@ const EMPTY: RedForce = { rows: [], notSeen: [] };
  * Lage Rot zur Lagezeit `t`; `hints` = alle Hinweise zur Lagezeit (ganzes Journal, nicht nur Zeitfenster),
  * `from` = Anfang des Zeitfensters (nur für «im Fenster»). Entscheide des Zfhr (`ex.hintDecisions`) fliessen ein:
  * verworfene Hinweise zählen nicht, bestätigte stärker.
+ * Gerechnet im Web Worker zusammen mit den Hinweisen (analyseClient.ts, Spez. MVP 3 P2), wenn `hints` die Hinweise
+ * dieser Rechnung sind und kein Zeitfenster gilt; sonst wie bisher im Hauptfaden.
  */
 export function useLageRot(ex: Exercise | null, t: string, hints: Hint[], from: string | null): LageRotState {
+  const { res } = useAnalyse(ex, t, null);
+  const fromWorker = !!res && res.all === hints && from === null;
+  // noch keine Rechnung (Worker läuft): leer statt doppelt im Hauptfaden
+  const pending = !res && !!ex;
+  const local = !fromWorker && !pending;
   const events = ex?.events;
   const fa = ex?.feindannahme;
   const decisions = ex?.hintDecisions;
-  const force = useMemo(() => (ex ? estimateRedForce(ex, t, { from: from ?? undefined }) : EMPTY),
-    [events, ex?.sheets, ex?.areas, ex?.units, t, from]); // eslint-disable-line react-hooks/exhaustive-deps
+  const force = useMemo(() => (ex && local ? estimateRedForce(ex, t, { from: from ?? undefined }) : EMPTY),
+    [local, events, ex?.sheets, ex?.areas, ex?.units, t, from]); // eslint-disable-line react-hooks/exhaustive-deps
   const spec = useMemo(() => (fa?.trim() ? parseStrength(fa) : null), [fa]);
-  const compare = useMemo(() => compareStrength(force, spec), [force, spec]);
+  const compare = useMemo(() => (local ? compareStrength(force, spec) : []), [local, force, spec]);
   const { coas, more } = useMemo(() => {
-    if (!ex) return { coas: [] as RedCoa[], more: [] as RedCoa[] };
+    if (!ex || !local) return { coas: [] as RedCoa[], more: [] as RedCoa[] };
     // einmal rechnen: Auswahl und alle Möglichkeiten
     const r = analyzeRedCoas(ex, { t, hints, decisions });
     const ids = new Set(r.picked.map((c) => c.id));
     return { coas: r.picked, more: r.all.filter((c) => !ids.has(c.id)) };
-  }, [events, ex?.sheets, ex?.areas, ex?.units, t, hints, decisions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [local, events, ex?.sheets, ex?.areas, ex?.units, t, hints, decisions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const empty = useMemo((): LageRotState => ({ coas: [], more: [], force: EMPTY, spec, compare: compareStrength(EMPTY, spec), from, hints }), [spec, from, hints]);
+  if (fromWorker) return res!.lageRot;
+  if (pending) return empty;
   return { coas, more, force, spec, compare, from, hints };
 }
 

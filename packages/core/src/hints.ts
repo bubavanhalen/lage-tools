@@ -30,6 +30,8 @@ import {
   angleDiff, baseCellAt, bearing, centroid, dist, distToRing, sameCell, sameOrNeighbor, type BaseCell,
 } from "./hintgeo";
 import { areaCenter } from "./journal";
+import { isLage, lebenszeichen } from "./arten";
+import { istAufhebbar, liftMap } from "./lvz";
 import type { LV95 } from "./lv95";
 import type { Area, Exercise, HintDecision, LageEvent } from "./model";
 
@@ -447,19 +449,28 @@ function toEv(e: LageEvent, ex: Pick<Exercise, "sheets" | "areas">, nais: Area[]
   };
 }
 
-function prepareEvents(events: LageEvent[], ex: Pick<Exercise, "sheets" | "areas">, tMs: number): Ev[] {
+/**
+ * Lage-Einträge bis `tMs` (MVP 3: nur `isLage` – Art Meldung, nicht gestrichen, keine Aufhebung). Ist `signs` gegeben,
+ * kommen die übrigen Lebenszeichen (Vbk, Rückfrage, Quittung, `lebenszeichen`) dorthin – sie zählen nur für «Trupp
+ * meldet sich» (D3, `reports`), nie als Lage.
+ */
+function prepareEvents(events: LageEvent[], ex: Pick<Exercise, "sheets" | "areas">, tMs: number, signs?: Ev[]): Ev[] {
   const nais = (ex.areas ?? []).filter((a) => a.kind === "nai");
   const out: Ev[] = [];
   for (const e of currentEvents(events)) {
     if (e.deleted) continue;
+    const lage = isLage(e);
+    if (!lage && !(signs && lebenszeichen(e))) continue;
     const ev = toEv(e, ex, nais);
-    if (ev && ev.ms <= tMs) out.push(ev);
+    if (!ev || ev.ms > tMs) continue;
+    if (lage) out.push(ev); else signs!.push(ev);
   }
   return out.sort((a, b) => a.ms - b.ms || a.id.localeCompare(b.id));
 }
 
 function prepare(ex: Exercise, tMs: number): Ctx {
-  const evs = prepareEvents(ex.events ?? [], ex, tMs);
+  const signs: Ev[] = [];
+  const evs = prepareEvents(ex.events ?? [], ex, tMs, signs);
   const blauPos = new Map<string, Ev[]>();
   const reports = new Map<string, Ev[]>();
   const blauName = new Map<string, string>();
@@ -478,6 +489,17 @@ function prepare(ex: Exercise, tMs: number): Ctx {
       push(reports, v.melder, v);
       if (v.e.melder) blauName.set(v.melder, blauName.get(v.melder) ?? v.e.melder);
     }
+  }
+  // Lebenszeichen ohne Lage (Vbk, Rückfrage, Quittung): nur in `reports` (zeitlich einsortiert)
+  if (signs.length) {
+    const touched = new Set<string>();
+    for (const v of signs) {
+      const k = nk(lebenszeichen(v.e)!);
+      push(reports, k, v);
+      touched.add(k);
+      if (!blauName.has(k)) blauName.set(k, v.e.melder!);
+    }
+    for (const k of touched) reports.get(k)!.sort((a, b) => a.ms - b.ms || a.id.localeCompare(b.id));
   }
   return {
     ex, tMs, evs, start: evs[0]?.ms ?? tMs, nais: (ex.areas ?? []).filter((a) => a.kind === "nai"),
@@ -1450,7 +1472,33 @@ export function analyzeJournal(ex: Exercise, o: HintOptions): { hints: Hint[]; q
       else byId.set(h.id, h);
     }
   }
+  liftNachlauf([...byId.values()], ex.events ?? [], tIso);
   return { hints: bundleHints([...byId.values()], tIso).sort(compareHints), quality: c.quality };
+}
+
+/** Regeln, deren Hinweis mit der Aufhebung seiner Auslöser endet (Checkpoint, Ausweichen, Übergabe, Hinterhalt-Gefahr) */
+const NACHLAUF_RULES = new Set(["B2", "B3", "C1", "C5"]);
+
+/**
+ * (MVP 3, Kap. 3.5) Nachlauf bei Aufhebung: Sind alle aufhebbaren Auslöser eines Hinweises (Sperre, Checkpoint …) bis
+ * `t` aufgehoben, endet der Hinweis mit der spätesten Aufhebung (`until`). Ein Hinweis, der schon früher endet, bleibt.
+ */
+function liftNachlauf(hints: Hint[], events: LageEvent[], t: string): void {
+  const lifts = liftMap(events);
+  if (!lifts.size) return;
+  const byId = new Map(events.map((e) => [e.id, e]));
+  for (const h of hints) {
+    if (!NACHLAUF_RULES.has(h.rule)) continue;
+    const trig = h.events.map((id) => byId.get(id)).filter((e): e is LageEvent => !!e && istAufhebbar(e));
+    if (!trig.length) continue;
+    let end = "";
+    for (const e of trig) {
+      const l = lifts.get(e.id);
+      if (!l || l.t > t) { end = ""; break; }
+      if (l.t > end) end = l.t;
+    }
+    if (end && (!h.until || h.until > end)) h.until = end;
+  }
 }
 
 /** Schlüssel «gleicher Hinweis»: gleiche Regel, gleicher Titel (Ort/Bezug) und gleiches NAI, Element, Planquadrate */

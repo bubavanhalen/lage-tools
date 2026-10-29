@@ -232,3 +232,93 @@ export function fokusImBrowser(): { name: string; sichtbar: boolean } | null {
   const shadow = s.boxShadow && s.boxShadow !== "none";
   return { name: (e.getAttribute("aria-label") || e.innerText || (e as HTMLInputElement).placeholder || e.tagName).trim().slice(0, 30), sichtbar: !!(outline || shadow) };
 }
+
+// =====================================================================================================================
+// MVP 3 «LVZ-Betrieb» (Spez. MVP 3, Kap. 8) – gemeinsame Hilfen der neuen Specs
+// =====================================================================================================================
+
+/** Uhr für `?beispiel=lang`: T4 07:30 (Tage 2030-05-15 bis 2030-05-18, Sommerzeit) */
+export const UHR_T4_0730 = "2030-05-18T07:30:00+02:00";
+
+/** Standorte der Trupps im Beispiel Bern um T2 07:30 (Kap. 8.1) */
+export const STANDORTE_T2_0730: Record<string, string> = { H01: "AC6 B", H02: "AL9 A", H03: "AP4 D", H04: "AF12 A", H05: "AQ11 C" };
+
+/** Wochentag deutsch zum ISO-Datum («2030-05-18» → «Samstag») – nicht von Hand in die Specs schreiben */
+export function wochentag(iso: string): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString("de-CH", { weekday: "long", timeZone: "UTC" });
+}
+
+export const feldVon = (s: Session) => s.page.getByPlaceholder("Was wurde gemeldet?");
+export const zeilenVon = (s: Session) => s.page.locator(".jlist li");
+export const markerVon = (s: Session) => s.page.locator(".leaflet-marker-pane > *").count();
+export const zustandVon = async (s: Session): Promise<string | null> => s.page.locator("[data-zustand]").first().getAttribute("data-zustand").catch(() => null);
+export const knopfVon = (s: Session, name: string | RegExp) => s.page.getByRole("button", { name, exact: typeof name === "string" });
+
+/**
+ * Text ins Meldungsfeld und eintragen (Laptop: Enter, gelb: zweites Enter; Tablet: «Eintragen» bzw. «Trotzdem
+ * eintragen»). Gibt den Zustand vor dem ersten Enter zurück und wartet, bis die Liste eine Zeile mehr hat.
+ */
+export async function eintragenText(s: Session, text: string, o: { zweimal?: boolean } = {}): Promise<{ zustand: string | null; zeilen: number }> {
+  const n0 = await zeilenVon(s).count();
+  if (s.geraet === "tablet") await feldVon(s).tap();
+  await feldVon(s).fill(text);
+  await s.page.waitForTimeout(150);
+  const zustand = await zustandVon(s);
+  const enter = async () => {
+    if (s.geraet === "tablet") await antippen(s, knopfVon(s, /^(Eintragen|Trotzdem eintragen)/).first());
+    else await feldVon(s).press("Enter");
+  };
+  await enter();
+  if (zustand === "pruefen" || o.zweimal) {
+    // gelb: erst weiter, wenn das Feld gefragt hat («Trotzdem eintragen») – auf dem Tablet dauert der erste Tipp länger
+    // (Tastatur, Fokus); fester Wartewert war unstabil (e2e arten 2b, Prüfung review4)
+    const gefragt = async () => (await zeilenVon(s).count()) > n0 || (await knopfVon(s, /^Trotzdem eintragen/).count()) > 0
+      || (await s.page.locator(".eb-state.asked").count()) > 0;
+    await antwortzeit(gefragt, 1500);
+    for (let i = 0; i < 2 && (await zeilenVon(s).count()) === n0; i++) {
+      await enter();
+      await antwortzeit(async () => (await zeilenVon(s).count()) > n0, 1200);
+    }
+  }
+  await antwortzeit(async () => (await zeilenVon(s).count()) > n0, 2000);
+  return { zustand, zeilen: await zeilenVon(s).count() };
+}
+
+/** Standort eines Trupps über die Suche (Vorschlag «H01 – zuletzt … · AC6 B»); Suche danach leeren */
+export async function standortVon(s: Session, trupp: string): Promise<string> {
+  const q = s.page.getByPlaceholder(/^Suchen: Trupp/);
+  await q.fill(trupp);
+  const opt = s.page.getByRole("option", { name: new RegExp(`^${trupp}\\b`) }).first();
+  const text = (await opt.innerText({ timeout: 1500 }).catch(() => "")).replace(/\s+/g, " ");
+  await q.fill("");
+  return text;
+}
+
+/** Spaltenansicht wählen («Journal», «Offen», «Was Rot») */
+export async function ansicht(s: Session, name: "Journal" | "Offen" | "Was Rot"): Promise<void> {
+  const re = name === "Was Rot" ? /Was Rot/ : new RegExp(`^${name}`);
+  await antippen(s, s.page.getByRole("tab", { name: re }).first());
+}
+
+/** Menü ☰ öffnen und Eintrag wählen */
+export async function menue(s: Session, eintrag: string | RegExp): Promise<void> {
+  await antippen(s, s.page.getByRole("button", { name: "Menü" }).first());
+  await antippen(s, s.page.getByRole("menuitem", { name: eintrag }).or(s.page.getByRole("button", { name: eintrag })).first());
+}
+
+/** `window.__ltPerf()` (P1) – im Browser */
+export function perfImBrowser(): Record<string, unknown> | null {
+  const f = (window as unknown as { __ltPerf?: () => Record<string, unknown> }).__ltPerf;
+  return f ? f() : null;
+}
+
+/** `window.__ltPdfInfo` (letztes PDF) – im Browser */
+export function pdfInfoImBrowser(): { seiten: number; format: string; quer?: boolean; zeilen: string[] } | null {
+  return (window as unknown as { __ltPdfInfo?: { seiten: number; format: string; quer?: boolean; zeilen: string[] } }).__ltPdfInfo ?? null;
+}
+
+/** Wörter im sichtbaren Text eines Bereichs (Lesezeit Übergabe ≤ 900 Wörter) – im Browser, `sel` als Argument */
+export function woerterImBrowser(sel: string): number {
+  const e = document.querySelector(sel) as HTMLElement | null;
+  return e ? (e.innerText.match(/[\p{L}\p{N}][\p{L}\p{N}'’.:-]*/gu) ?? []).length : -1;
+}

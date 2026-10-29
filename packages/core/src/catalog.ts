@@ -328,6 +328,15 @@ export function catalogEntry(key: string): CatalogEntry | undefined {
   return byKey.get(key);
 }
 
+/**
+ * (MVP 3, Kap. 3.5) Zeichen, die mit «… aufgehoben» bzw. «Aufgehoben (jetzt)» enden können: Hindernisse (Sperre,
+ * Minenfeld, IED, Stacheldraht …), Anlagen (Checkpoint, Verkehrsposten, Stellung …), Räume und Linien sowie der
+ * Hinterhalt. Nicht: Fahrzeuge, Einheiten, punktuelle Tätigkeiten/Ereignisse (Kontakt, Explosion) – die sind vorbei.
+ */
+export const AUFHEBBAR: ReadonlySet<string> = new Set(
+  CATALOG.filter((c) => c.category === "Hindernisse" || c.kind === "anlage" || (!!c.geometry && c.geometry !== "punkt") || c.key === "hinterhalt").map((c) => c.key),
+);
+
 // ---------- Normalisierung / Suche
 
 /** klein, Punkte/Bindestriche/Schrägstriche als Trenner, mehrfache Leerzeichen weg */
@@ -783,7 +792,9 @@ export function readTactical(text: string, o: ReadOptions = {}): TacticalReading
   if (droppedEch && !entry.unit) extras.push(`(${ECHELONS.find((x) => x.key === droppedEch)!.name})`);
   // «mit»: «mit 3 Schützenpanzern», «mit gegnerischer Gruppe», «mit Verletzten» – Gegenstand = erster Begriff nach «mit»,
   // dazu eine Stufe/Truppengattung direkt daneben («mit gn Gr», «mit 2 Pz Gren Zügen»)
-  const mitFirst = [...mitEnts, ...mitEchs].sort((a, b) => a.i - b.i)[0];
+  // Gegenstand nur direkt nach «mit» («mit 3 gn Pz»); «mit Funkgerät zu Fuss» – «Fuss» ist kein Gegenstand
+  const mitFirst0 = [...mitEnts, ...mitEchs].sort((a, b) => a.i - b.i)[0];
+  const mitFirst = mitFirst0 && toks.slice(mitIdx + 1, mitFirst0.i).every((_, k) => isNum(mitIdx + 1 + k) || skipKinds.has(mitIdx + 1 + k)) ? mitFirst0 : undefined;
   const mitE = mitEnts.find((f) => mitFirst && Math.abs(f.i - mitFirst.i) <= 2);
   const mitEch = mitEchs.find((f) => mitFirst && Math.abs(f.i - mitFirst.i) <= 2);
   if (mitE || mitEch) {

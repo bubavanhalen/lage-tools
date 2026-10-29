@@ -1,0 +1,11 @@
+/* Karten und Hinweis-Zeilen «Was Rot» (MVP 3, Paket C): Titel steht im DOM zuerst (Vorlesen, Text der Zeile beginnt mit
+   dem Titel), die Anordnung bleibt wie in red.css – Einordnung/Zeit oben, Titel darunter; Stufe links vom Hinweis. */
+.red-card-btn > .red-kick { grid-row: 1; grid-column: 1; }
+.red-card-btn > .red-when { grid-row: 1; grid-column: 2; }
+.red-card-btn > .red-card-title { grid-row: 2; grid-column: 1 / -1; }
+.red-card-btn > .red-card-sum { grid-row: 3; grid-column: 1 / -1; }
+.red-hint-btn > .red-lvl { grid-row: 1; grid-column: 1; }
+.red-hint-btn > .red-hint-title { grid-row: 1; grid-column: 2; }
+.red-hint-btn > .red-code { grid-row: 1; grid-column: 3; }
+.red-hint-btn > .red-hint-time { grid-row: 1; grid-column: 4; }
+.red-bund { color: var(--muted); font-weight: 400; white-space: nowrap; }

@@ -50,6 +50,61 @@ export interface Attachment {
   cell?: string;
 }
 
+// ---------- MVP 3 «LVZ-Betrieb»: Eintragsarten, Vermerke, Schichten (Spez. MVP 3, Kap. 5.1) ----------
+
+/** Art eines Journaleintrags. Fehlt `art`: «notiz» wenn `notiz === true`, sonst «meldung» (`artOf`, arten.ts). */
+export type EntryArt = "meldung" | "auftrag" | "orientierung" | "rueckfrage" | "vbk" | "notiz";
+export const ENTRY_ARTEN: readonly EntryArt[] = ["meldung", "auftrag", "orientierung", "rueckfrage", "vbk", "notiz"];
+
+/** Wert mit Zeitstempel (Zusammenführen pro Feld: späteres `at` gilt, gleich: grösseres `device`) */
+export interface Stamp<T> {
+  v: T;
+  /** ISO UTC */
+  at: string;
+  device: string;
+  /** Kürzel der Schicht */
+  von?: string;
+}
+
+/** LVZ-Vermerke einer Meldung – ändern `rev` nicht, zählen nie als Konflikt (`contentSig` ohne `lvz`) */
+export interface LvzVermerke {
+  dringend?: Stamp<boolean>;
+  status?: Stamp<"offen" | "erledigt">;
+  massnahme?: Stamp<string>;
+  /** weitergemeldet an wen, wann (ISO lokal); `null` = zurückgenommen */
+  weiter?: Stamp<{ an: string; um: string } | null>;
+}
+
+/** Felder einer Meldung im Schema AEIOU oder als Meldezettel (Wann/Wer/Was/Wo), wie gelesen (felder.ts) */
+export interface MeldeFelder {
+  schema: "aeiou" | "formular";
+  wann?: string;
+  wer?: string;
+  was?: string;
+  wie?: string;
+  wo?: string;
+  /** U / Umwelt / Bemerkung – nie ausgewertet */
+  umwelt?: string;
+  melder?: string;
+}
+
+/** Schichtbeginn oder Übergabe (pro Übung gesammelt, Vereinigung nach ID) */
+export interface SchichtWechsel {
+  id: string;
+  art: "beginn" | "uebergabe";
+  /** ISO UTC */
+  at: string;
+  /** Lagezeit (ISO lokal, Minute) */
+  t: string;
+  /** Kürzel ab jetzt */
+  an: string;
+  /** Übergabe: Kürzel, das übergeben hat */
+  von?: string;
+  device: string;
+  /** Übergabe: Stand beim Abschliessen */
+  stand?: { offen: number; neu: number };
+}
+
 export interface LageEvent {
   id: string;
   /** Revision: steigt bei jeder Änderung */
@@ -138,6 +193,41 @@ export interface LageEvent {
   history?: EventRevision[];
   /** letzte Korrektur (ISO UTC), gesetzt von `correctEvent` – für «korrigiert 07:34» */
   correctedAt?: string;
+
+  // ---- MVP 3 (alle optional, additiv; alte Meldungen: abgeleitet über `artOf`, `nrLabel`, `vermerkeOf`) ----
+  /** Art (fehlt = abgeleitet, `artOf`). Nicht-Meldungen: nie pos/unit/cells/nai/shape, immer `notiz: true` */
+  art?: EntryArt;
+  /**
+   * laufende Nummer (eine gemeinsame Folge für alle Geräte, beim Erfassen vergeben, **nie geändert**). Doppelte aus
+   * parallelem Erfassen offline werden nur in der Anzeige gekennzeichnet («12a», «12b», `nrLabel`, nummer.ts).
+   */
+  nr?: number;
+  /** Gerät, das den Eintrag erfasst hat (ändert nie, anders als `device` = letzte Änderung) */
+  von?: string;
+  /** Kürzel der Schicht beim Erfassen */
+  erfasstVon?: string;
+  /** Kürzel der letzten Korrektur / Streichung */
+  geaendertVon?: string;
+  /** Auftrag/Rückfrage: Empfänger («H01»); Vbk: Trupp steht in `melder` */
+  an?: string;
+  /** Orientierung: Absender («Bat», «Kp») */
+  quelle?: string;
+  /** Auftrag: Frist (ISO lokal) aus «bis 1200» */
+  frist?: string;
+  /** Vbk: Ergebnis */
+  vbk?: "gut" | "schlecht" | "keine";
+  /** ID eines früheren Eintrags: Antwort auf Rückfrage, Quittung/Ausführung eines Auftrags, «zu 42» */
+  bezug?: string;
+  /** Art des Bezugs (für Status): Antwort, Quittung, ausgeführt, Verweis */
+  bezugArt?: "antwort" | "quittung" | "ausgefuehrt" | "verweis";
+  /** diese Meldung hebt die Meldung mit dieser ID auf (Sperre, Checkpoint, Fläche, Linie) */
+  hebtAuf?: string;
+  /** genannte Orte bei Nicht-Meldungen und Aufhebungen – nur Text (Liste, Suche, PDF), nie Karte */
+  orte?: string[];
+  /** AEIOU / Meldezettel, wie gelesen */
+  felder?: MeldeFelder;
+  /** LVZ-Vermerke (dringend, Status, Massnahme, weitergemeldet) – eigenes Zusammenführen pro Feld (`mergeLvz`) */
+  lvz?: LvzVermerke;
 }
 
 /** Eine frühere Fassung einer Meldung (Schnappschuss vor einer Korrektur). */
@@ -169,12 +259,27 @@ export interface EventRevision {
    * neben der gewinnenden Fassung gleicher Revision; nichts geht verloren (`mergeEvents`)
    */
   conflict?: boolean;
+  // ---- MVP 3 ----
+  art?: EntryArt;
+  an?: string;
+  quelle?: string;
+  frist?: string;
+  vbk?: LageEvent["vbk"];
+  bezug?: string;
+  hebtAuf?: string;
+  orte?: string[];
+  /** Kürzel, das diese Fassung geschrieben hat */
+  von?: string;
 }
 
 /** Schnappschuss einer Meldung als `EventRevision` (nur gesetzte Felder). */
 export function revisionOf(e: LageEvent): EventRevision {
   const r: EventRevision = { rev: e.rev, at: e.updatedAt, device: e.device, text: e.text, t: e.t, unit: e.unit, side: e.side, aff: e.aff, sym: e.sym };
-  const opt = { melder: e.melder, sidc: e.sidc, pos: e.pos, cells: e.cells, nai: e.nai, where: e.where, count: e.count, dir: e.dir, desc: e.desc, deleted: e.deleted };
+  const opt = {
+    melder: e.melder, sidc: e.sidc, pos: e.pos, cells: e.cells, nai: e.nai, where: e.where, count: e.count, dir: e.dir, desc: e.desc, deleted: e.deleted,
+    // MVP 3: Art und Bezüge; `von` = Kürzel, das diese Fassung geschrieben hat (letzte Korrektur, sonst Erfassung)
+    art: e.art, an: e.an, quelle: e.quelle, frist: e.frist, vbk: e.vbk, bezug: e.bezug, hebtAuf: e.hebtAuf, orte: e.orte, von: e.geaendertVon ?? e.erfasstVon,
+  };
   for (const [k, v] of Object.entries(opt)) if (v !== undefined) (r as unknown as Record<string, unknown>)[k] = Array.isArray(v) ? [...v] : v && typeof v === "object" ? { ...v } : v;
   return r;
 }
@@ -250,6 +355,11 @@ export interface Exercise {
    * (zweites Fenster, ältere Datei) nicht wieder auf (`mergeHull`, `markRemovals` in sync.ts).
    */
   removed?: Record<string, { at: string; undone?: boolean }>;
+  // ---- MVP 3 (optional, additiv) ----
+  /** Klassifizierung der Übung (Ausdrucke); fehlt → `sheets[0].classification ?? "INTERN"` */
+  klassifizierung?: string;
+  /** Schichtbeginne und Übergaben (schicht.ts) */
+  schichten?: SchichtWechsel[];
 }
 
 /** Entscheid des Benutzers zu einem Hinweis */
@@ -317,9 +427,12 @@ function stableJson(v: unknown): string {
   return JSON.stringify(v) ?? "null";
 }
 
-/** Inhalt einer Meldung (ohne Revision, Zeitstempel, Gerät, Historie) – gleich = kein Konflikt */
+/**
+ * Inhalt einer Meldung (ohne Revision, Zeitstempel, Gerät, Historie, LVZ-Vermerke) – gleich = kein Konflikt.
+ * `lvz` hat eigene Zeitstempel pro Feld (`mergeLvz`); `nr` bleibt Inhalt (ändert nie).
+ */
 function contentSig(e: LageEvent): string {
-  const { rev: _r, updatedAt: _u, device: _d, history: _h, correctedAt: _c, ...rest } = e;
+  const { rev: _r, updatedAt: _u, device: _d, history: _h, correctedAt: _c, lvz: _l, ...rest } = e;
   return stableJson(rest);
 }
 
@@ -330,8 +443,48 @@ function sameRevision(x: EventRevision, y: EventRevision): boolean {
   return stableJson(a) === stableJson(b);
 }
 
-/** Gewinnerin `w` mit der Historie von `l` und – bei Konflikt – der unterlegenen Fassung `l` selbst */
-function mergePair(w: LageEvent, l: LageEvent): { ev: LageEvent; conflict: boolean } {
+/** späterer Stempel gilt (gleiche Zeit: grösseres Gerät); gleiche Stempel → `a` (Identität bleibt) */
+function laterStamp<T>(a: Stamp<T> | undefined, b: Stamp<T> | undefined): Stamp<T> | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  if (b.at !== a.at) return b.at > a.at ? b : a;
+  return b.device > a.device ? b : a;
+}
+
+/**
+ * LVZ-Vermerke zweier Fassungen zusammenführen: pro Feld der spätere Stempel (`at`, gleich: grösseres `device`).
+ * Kommutativ und idempotent; ändert nichts, wenn `b` nichts Neueres hat (gibt dann `a` selbst zurück).
+ * (Steht in model.ts statt lvz.ts, damit `mergeEvents` ohne zyklischen Import auskommt; Spez. MVP 3 Kap. 5.2.)
+ */
+export function mergeLvz(a?: LvzVermerke, b?: LvzVermerke): LvzVermerke | undefined {
+  if (!b) return a;
+  if (!a) return b;
+  const keys = ["dringend", "status", "massnahme", "weiter"] as const;
+  const out: LvzVermerke = {};
+  let fromA = true, fromB = true;
+  for (const k of keys) {
+    const v = laterStamp<unknown>(a[k] as Stamp<unknown> | undefined, b[k] as Stamp<unknown> | undefined);
+    if (v !== a[k]) fromA = false;
+    if (v !== b[k]) fromB = false;
+    if (v) (out as Record<string, unknown>)[k] = v;
+  }
+  return fromA ? a : fromB ? b : out;
+}
+
+/**
+ * Zwei Fassungen genau einer Meldung zusammenführen (wie `mergeEvents` für eine ID) – für `persist.ts` (Abgleich der
+ * Fenster, Schreiben über eine gleich alte Fassung) und Tests. Reihenfolge der Argumente egal.
+ */
+export function mergeEventPair(a: LageEvent, b: LageEvent): { ev: LageEvent; conflict: boolean } {
+  if (a === b) return { ev: a, conflict: false };
+  const [w, l] = wins(a, b) ? [a, b] : [b, a];
+  return mergePair(w, l);
+}
+
+/** Gewinnerin `w` mit der Historie von `l` und – bei Konflikt – der unterlegenen Fassung `l` selbst; LVZ-Vermerke pro Feld */
+function mergePair(w0: LageEvent, l: LageEvent): { ev: LageEvent; conflict: boolean } {
+  const lvz = w0.lvz || l.lvz ? mergeLvz(w0.lvz, l.lvz) : undefined;
+  const w = lvz === w0.lvz ? w0 : { ...w0, lvz };
   let out = withHistory(w, l);
   if (w.rev !== l.rev || contentSig(w) === contentSig(l)) return { ev: out, conflict: false };
   const lost = { ...revisionOf(l), conflict: true };

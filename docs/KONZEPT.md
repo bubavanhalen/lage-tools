@@ -32,6 +32,9 @@
 5. Übungsauswertung: Import, Auswertung, AAR-Regie
 6. vNext: Abgleich Gerät ↔ Gerät
 
+Seit Oktober 2026 wird das Lagejournal in MVPs überarbeitet (Abschnitte am Ende): MVP 0 «Vertrauen» ✅, MVP 1
+«Lage führen» ✅, MVP 3 «LVZ-Betrieb» (in Arbeit).
+
 ## Lagejournal – Lageverfolgung im LVZ (Etappe 3 / 3b)
 Jede Meldung kommt von einem **eigenen Element (Melder)**. Der Inhalt entscheidet, was auf die Karte kommt:
 **eigene Lage** (blau, verschiebt den Melder), **Feindsichtung** (rot, am gemeldeten Ort) oder **unklar** (gelb).
@@ -105,3 +108,54 @@ Oben im Reiter «Hinweise», darunter die Hinweise.
 - **Jeder Aufruf sichtbar:** vor dem Senden «Wird gesendet: …» (Daten zuerst, Anweisung eingeklappt), danach «Gesendet: …» – auch bei «nicht mehr fragen». Datensparsam: keine IDs, Gerätekennung, Übungsname, Kalenderdaten; Koordinaten nur als PQ.
 - **Einsatz:** Handschrift auf Fotos lesen · unklare Meldung deuten (Vorschlag mit Begründung) · Hinweis bzw. mögliche Aktion Rot ausformulieren · Lagebericht für Rapport/Übergabe entwerfen. Alles Vorschläge; unsichere Zeilen sind nicht vorab angehakt; übernommene Meldungen tragen die Marke «KI».
 - Schutz gegen Erfindungen: unbekannte Melder/PQ/NAI, nicht genannte Zeiten/Anzahlen und weggefallene Unsicherheit werden als «unsicher» markiert. Text in Meldungen und auf Fotos gilt als Inhalt, nie als Anweisung.
+
+## Lagejournal – MVP 0 «Vertrauen» ✅
+Ziel: **Das Journal speichert richtig und erkennt nie still falsch.**
+- **Zeit:** «jetzt» wird erst beim Eintragen festgelegt; der Tag folgt der Uhr (nach Mitternacht nächster Übungstag),
+  Zeitzone in der Übung, Ereigniszeit und Eingang getrennt (`t`, `tReported`, `createdAt`), Sommerzeit-Reihenfolge.
+- **Speichern:** jede Änderung sofort (Meldungen einzeln, Notfallpuffer bei `pagehide`), zwei Fenster gleichen sich ab,
+  «Öffnen» führt zusammen statt zu ersetzen (Meldungen nach Revision, Löschmarken für Raster/NAI/Bilder), Speicherfehler
+  als rotes Band, dauerhafter Speicher angefordert, Rückgängig auch für Raster und NAI.
+- **Erkennung nie still falsch:** unbekanntes Planquadrat/NAI, ungültige Zeit, unbekannter Trupp, zwei Orte sperren
+  das Eintragen mit Klartext statt eines Ersatzorts; eine Sichtung verschiebt nie den Melder; Funksprache auch beim
+  Tippen. Regressionstests mit 58 Laien-Sätzen (`laien*.test.ts`) neben den über 120 Meldungen.
+- Korrektur liest den Text neu, Ortssuche pro Übung abschaltbar, Karten-Tipp auf dem Handy ohne Reiterwechsel.
+
+## Lagejournal – MVP 1 «Lage führen» ✅
+Ziel: Ungeschulte führen die Lage mit minimaler Vorbereitung.
+- **Grundansicht mit höchstens 12 Bedienelementen** (gemessen, `e2e/inventar.spec.ts`), Modi «Lage führen» /
+  «Vorbereiten» und «Experte»; Menü ☰ für den Rest. Design-Tokens, Kontrast geprüft (hell/dunkel), Bedienelemente ≥ 44 px.
+- **Meldungsfeld:** feste Trupp-Knöpfe, Vorschau mit Zustand «bereit» / «bitte prüfen» / «geht nicht» (Enter fragt
+  einmal), Korrigieren im Meldungsfeld mit früheren Fassungen und Rückgängig, Zukunftszeiten gesperrt, Rückfrage/Auftrag
+  als «Notiz» ohne Zeichen vorgeschlagen; Foto und Sprache wie das Feld geprüft.
+- **Eine Suche** für Trupp, PQ, NAI, Text; **LIVE** folgt der Geräteuhr, **Rückblick** kehrt von selbst zurück;
+  «Zeige letzte» nur für Karte und Liste; virtualisierte Liste.
+- **Ruhige graue Karte** und **«Was Rot vorhaben könnte»** in Klartext (Hinweise und Möglichkeiten ohne Codes).
+- Zusammenführen meldet Konflikte (gleiche Revision, anderer Inhalt), nichts geht verloren.
+- Abnahme `npm run e2e`: Erstbenutzer (8 Aufgaben, Laptop und Tablet), Inventar, Kontrast.
+
+## Lagejournal – MVP 3 «LVZ-Betrieb» (in Arbeit)
+Ziel: Das Lagejournal trägt einen ganzen Übungstag im LVZ samt Schichtwechsel und Rapport – **ohne Papierjournal als
+Rückfall**. Spezifikation MVP 3 (Entscheide E1–E18 in Kap. 0); Stand: Phase 0 (Verträge) gelegt, Pakete A–D bauen.
+- **Eintragsarten:** Meldung · Auftrag · Orientierung · Rückfrage · Verbindungskontrolle · Notiz, aus dem Text erkannt
+  und in der Vorschau umschaltbar («Was ist es?»). **Nur Meldungen zeichnen** (Karte, Hinweise, Kräfte Rot);
+  Nicht-Meldungen haben nie einen Ort und tragen `notiz: true` (ältere App zeigt sie als «Notiz»). AEIOU und
+  Meldezettel werden feldweise gelesen; U/Bemerkung nie ausgewertet.
+- **LVZ-Felder:** laufende Nummer, Ereignis- und Eingangszeit, «erfasst von» (Kürzel pro Gerät und Übung, keine
+  Anmeldung); Vermerke dringend · Massnahme · weitergemeldet · offen/erledigt mit eigenem Zeitstempel pro Feld (nie ein
+  Konflikt); Korrekturen als Nachtrag, Gestrichene zeigen und zurückholen; Sperren/Checkpoints/Flächen «aufgehoben» als
+  eigene Meldung (Rückblick bleibt richtig).
+- **Offen und Übergabe:** Ansicht «Offen» (dringend, Konflikte, Aufträge, Rückfragen, Verbindung, stille Trupps, ohne
+  Ort); Übergabe-Seite auf eine A4-Seite (Lage Blau, Lage Rot, offene Punkte, neu seit der letzten Übergabe, Zahlen für
+  den Rapport, Visum); «Neu» gilt ab der eigenen Schicht.
+- **Drucken:** Lagekarte A4/A3 quer offline (Abdeckung vor dem Druck geprüft), Journal-PDF pro Schicht/Tag mit Datum,
+  «Seite n von m» und Visum; KI-Lagebericht als Notiz übernehmbar (nur mit KI).
+- **Lange Übung:** ab 200 Meldungen standardmässig «Zeige letzte 6 h» (sichtbarer Chip), gleiche Hinweise gebündelt;
+  Leistung bei 800 Meldungen: Laden ≤ 1,5 s, Enter bis Zeile ≤ 200 ms. Testzugang `?beispiel=lang` (fiktiv, Raum Bern).
+- **Entscheide des Kunden (29.10.2026)**, an einer Stelle im Code (`packages/core/src/entscheide.ts`):
+  1. eine gemeinsame Nummernfolge ohne Gerätebuchstaben; parallel offline vergebene gleiche Nummern bleiben und werden
+     «12a/12b» gekennzeichnet (bis zum echten Abgleich, Etappe 6, alles in `nummer.ts`);
+  2. AEIOU-Feld E ist immer das Gesehene, nie der Melder; 3. Trupp «still» ab 60 min;
+  4. Journal drucken standardmässig die laufende Schicht, ohne Übergabe den ganzen Tag; 5. Quittung = Notiz mit Bezug.
+- Datenmodell rückwärtskompatibel: nur optionale Felder, Dateiformat Version 1, ältere Dateien öffnen ohne Umschreiben.
+

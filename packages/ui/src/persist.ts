@@ -15,7 +15,7 @@
  * 6. Meldungen aus anderen Fenstern werden gemerkt (`noteForeign`): eine offene Bearbeitung zeigt dann den Konflikt
  *    («in einem anderen Fenster geändert/gelöscht», `editConflict`) statt still zu überschreiben oder zu verschwinden.
  */
-import { eventWins, mergeEvents, mergeHull, type Exercise, type LageEvent } from "@lage/core";
+import { eventWins, mergeEventPair, mergeEvents, mergeHull, type Exercise, type LageEvent } from "@lage/core";
 import { EVENT_STORE, db, eventRange, loadExerciseFull, reportStore, retryMemBlobs, writeExercise, type EventRec, type HullRec } from "./store";
 
 const WAL_KEY = "lage-tools.wal";
@@ -35,15 +35,38 @@ export type SyncMsg =
 
 // ---------- Vergleich
 
-const evSig = (e: LageEvent) => JSON.stringify(e);
+/**
+ * Kennung einer Meldung (Inhalt als JSON). Gemerkt je Objekt (P6, Spez. MVP 3 Kap. 3.12): unveränderte Meldungen
+ * behalten beim Eintragen ihr Objekt (`updateEvents`), dann wird nicht jedes Mal die ganze Übung serialisiert.
+ */
+const SIG = new WeakMap<LageEvent, string>();
+const evSig = (e: LageEvent) => { let s = SIG.get(e); if (s === undefined) { s = JSON.stringify(e); SIG.set(e, s); } return s; };
 type Hull = Omit<Exercise, "events">;
 function hullOf(ex: Exercise): Hull {
   const { events: _e, ...h } = ex;
   void _e;
   return h;
 }
-/** Kennung der Hülle; Bilder (Data-URL) nur über Länge und Anfang/Ende – sonst würde jedes Speichern MB vergleichen */
+/**
+ * Kennung der Hülle, gemerkt je Satz von Hüllenteilen (P6): haben sich alle Teile (Raster, NAI, Trupps, Entscheide …)
+ * per Identität nicht geändert – z. B. beim Eintragen –, wird nicht neu serialisiert.
+ */
+const HULL_SIG = new WeakMap<object, { parts: unknown[]; keys: string; sig: string }>();
+let lastHull: { keys: string; parts: unknown[]; sig: string } | null = null;
 function hullSig(ex: Exercise | Hull): string {
+  const keys = Object.keys(ex).filter((k) => k !== "events").sort();
+  const parts = keys.map((k) => (ex as unknown as Record<string, unknown>)[k]);
+  const k = keys.join(",");
+  const hit = HULL_SIG.get(ex) ?? lastHull;
+  if (hit && hit.keys === k && hit.parts.length === parts.length && hit.parts.every((v, i) => v === parts[i])) return hit.sig;
+  const sig = hullSigRaw(ex);
+  const rec = { keys: k, parts, sig };
+  HULL_SIG.set(ex, rec);
+  lastHull = rec;
+  return sig;
+}
+/** Kennung der Hülle; Bilder (Data-URL) nur über Länge und Anfang/Ende – sonst würde jedes Speichern MB vergleichen */
+function hullSigRaw(ex: Exercise | Hull): string {
   const { events: _e, overlays, ...h } = ex as Exercise;
   void _e;
   const ov = (overlays ?? []).map((o) => ({ ...o, dataUrl: `${o.dataUrl.length}:${o.dataUrl.slice(0, 40)}:${o.dataUrl.slice(-40)}` }));
@@ -258,7 +281,7 @@ class Persister {
       if (cur && evSig(cur) !== evSig(ev)) {
         // gespeicherte Fassung (anderes Fenster) mit dieser zusammenführen: Gewinnerin samt Historie, bei Konflikt mit der
         // unterlegenen Fassung (nichts geht verloren); ist sie nicht die hiesige, die Anzeige nachführen
-        const m = mergeEvents([cur], [ev])[0]!;
+        const m = mergeEventPair(cur, ev).ev;
         if (eventWins(cur, ev) || evSig(m) !== evSig(ev)) newer.push(m);
         void es.put({ exId, id: ev.id, ev: m } satisfies EventRec);
         continue;

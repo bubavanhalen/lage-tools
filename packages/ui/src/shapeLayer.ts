@@ -10,7 +10,7 @@
  * Das Punktzeichen am Schwerpunkt zeichnet die Lageebene (`situationLayer`) wie jedes andere Zeichen.
  */
 import L from "leaflet";
-import { eventShape, geometryOf, shapeShortName, shapeStyleOf, type Area, type EventShape, type LageEvent, type LV95, type RasterSheet, type ShapeStyle } from "@lage/core";
+import { eventShape, geometryOf, isLage, liftMap, shapeShortName, shapeStyleOf, type Area, type EventShape, type LageEvent, type LV95, type RasterSheet, type ShapeStyle } from "@lage/core";
 import { escapeHtml, isAnticipated, toLatLng } from "@lage/map";
 import { KIND_COLOR, kindOf, kindText, type ItemKind } from "./journalLayer";
 import type { LayerFlags } from "./layers";
@@ -56,8 +56,12 @@ export function shapeItems(events: LageEvent[], o: Omit<ShapeLayerOptions, "onCl
   const recent = o.recentMin ?? 30;
   const ctx = { sheets: o.sheets, areas: o.areas };
   const out: ShapeItem[] = [];
+  // aufgehoben (Spez. MVP 3, Kap. 3.5): ab der Aufhebung weg, Rückblick davor zeigt die Form; Nicht-Meldungen nie
+  const lifts = liftMap(events);
   for (const e of events) {
-    if (e.deleted || e.t > o.t) continue;
+    if (e.deleted || e.t > o.t || !isLage(e)) continue;
+    const lift = lifts.get(e.id);
+    if (lift && lift.t <= o.t) continue;
     const selected = e.id === o.selectedId;
     if (o.from && e.t < o.from && !selected) continue;
     if (geometryOf(e.sym) === "punkt" && (!e.shape || e.shape.auto)) continue;

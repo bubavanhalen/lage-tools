@@ -1,13 +1,16 @@
 /**
  * Korrektur: geänderten Meldungstext neu lesen (ohne Browser testbar) – siehe editReparse.tsx für die Anzeige.
  */
-import { lastPosition, parseMeldung, type Draft, type Exercise, type JournalContext, type Kind, type LageEvent } from "@lage/core";
+import { lastPosition, parseMeldung, type Draft, type EntryArt, type Exercise, type JournalContext, type Kind, type LageEvent } from "@lage/core";
 
 /** Zeichenwahl (wie SymbolChoice in SymbolPicker.tsx) */
 interface Choice { key: string; sidc: string; aff: Draft["aff"]; echelon?: Draft["echelon"]; status?: Draft["status"] }
 
-/** Text der Korrektur neu lesen (Tag und «jetzt» = Zeit des Eintrags; «bei H04» = Lage des Melders vor dem Eintrag) */
-export function reparseEdit(e: LageEvent, text: string, ex: Exercise, kind?: Kind): Draft | null {
+/**
+ * Text der Korrektur neu lesen (Tag und «jetzt» = Zeit des Eintrags; «bei H04» = Lage des Melders vor dem Eintrag).
+ * MVP 3: `art` = Art von Hand (Auswahl «Was ist es?»); Bezüge/Aufhebungen sehen die übrigen Einträge.
+ */
+export function reparseEdit(e: LageEvent, text: string, ex: Exercise, kind?: Kind, art?: EntryArt): Draft | null {
   if (!text.trim()) return null;
   const day = e.t.slice(0, 10);
   const others = (ex.events ?? []).filter((x) => x.id !== e.id);
@@ -16,6 +19,8 @@ export function reparseEdit(e: LageEvent, text: string, ex: Exercise, kind?: Kin
     days: ex.days.includes(day) ? ex.days : [...ex.days, day].sort(), day,
     now: new Date(`${e.t}:00`),
     lastPos: (u, s) => lastPosition(others, s, u, e.t),
+    ...(art ? { art } : {}),
+    events: others, ex: { events: ex.events ?? [] },
   };
   return parseMeldung(text, ctx);
 }

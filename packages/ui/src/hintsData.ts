@@ -4,9 +4,11 @@
  */
 import { useMemo } from "react";
 import {
-  analyzeJournal, compareHints, decisionFor, hintRule,
+  compareHints, decisionFor, hintRule,
   type EventQuality, type Exercise, type Hint, type HintDecision, type HintGroup, type HintLevel, type HintRule,
 } from "@lage/core";
+import "./perf"; // Messpunkte lt:enter/lt:zeile/lt:bereit und window.__ltPerf (P1)
+import { useAnalyse } from "./analyseClient";
 
 /** IDs aller Hinweise derselben Berechnung – `decisionFor` übernimmt keine Entscheide, die einem anderen aktuellen Hinweis gehören */
 const siblings = new WeakMap<Hint, Set<string>>();
@@ -73,20 +75,17 @@ export function nextLabel(h: Hint, t: string, days: string[]): { text: string; l
 
 /**
  * Hinweise und Meldungsqualität zur Lagezeit `t`; Zeitfenster `from` (ISO lokal, null = alles) blendet ältere
- * Hinweise aus (Referenz-Hinweise bleiben).
+ * Hinweise aus (Referenz-Hinweise bleiben). Gerechnet im Web Worker (analyseClient.ts, Spez. MVP 3 P2); bis das
+ * Ergebnis da ist, gilt das letzte (`useAnalyseLaeuft` meldet nach 300 ms «wird berechnet …»).
  */
 export function useHints(ex: Exercise | null, t: string, from: string | null): HintsState {
-  const events = ex?.events;
-  const areas = ex?.areas;
-  const sheets = ex?.sheets;
+  const { res } = useAnalyse(ex, t, null);
   const all = useMemo(() => {
-    if (!ex) return { list: [] as Hint[], quality: new Map<string, EventQuality>() };
-    // eine Vorbereitung für Hinweise und Qualität
-    const r = analyzeJournal(ex, { t });
-    const ids = new Set(r.hints.map((h) => h.id));
-    for (const h of r.hints) siblings.set(h, ids);
-    return { list: r.hints, quality: r.quality };
-  }, [events, areas, sheets, t]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!res) return { list: NO_HINTS, quality: NO_QUALITY };
+    const ids = new Set(res.all.map((h) => h.id));
+    for (const h of res.all) siblings.set(h, ids);
+    return { list: res.all, quality: res.quality };
+  }, [res]);
   const hints = useMemo(() => {
     // im Zeitfenster: zuletzt ausgelöst (`last ?? t`) bzw. beendet (`until`) im Fenster; Referenz immer
     const vis = all.list.filter((h) => h.level === "info" || !from || (h.until ?? h.last ?? h.t) >= from || (h.next !== undefined && h.next >= from));
@@ -95,6 +94,8 @@ export function useHints(ex: Exercise | null, t: string, from: string | null): H
   }, [all, from, t]);
   return { hints, quality: all.quality, all: all.list };
 }
+const NO_HINTS: Hint[] = [];
+const NO_QUALITY = new Map<string, EventQuality>();
 
 /** Zahl am Reiter: offene Hinweise (hoch/mittel, nicht beendet, nicht entschieden) */
 export function newCount(ex: Exercise, hints: Hint[], t: string): number {

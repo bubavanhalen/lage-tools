@@ -221,7 +221,8 @@ export interface ParseCellOptions {
 
 /**
  * Findet Planquadrat-Bezeichnungen in einem Freitext, z. B. «W18», «PQ: O20 (C)», «G 19 Delta», «UK7 C», «O21,22».
- * Zahlen mit führender Null (H01, H04) werden nicht als Planquadrat gelesen.
+ * Zahlen mit führender Null (H01, H04) werden nicht als Planquadrat gelesen. «AR11, 1 Verwundeter»: die Zahl nach dem
+ * Komma ist eine Anzahl (es folgt ein Wort), kein zweites Planquadrat.
  */
 export function findCells(text: string, sheets: RasterSheet[], opts: ParseCellOptions = {}): FoundCell[] {
   const exclude = new Set((opts.exclude ?? []).map((x) => x.toUpperCase().replace(/\s/g, "")));
@@ -232,7 +233,7 @@ export function findCells(text: string, sheets: RasterSheet[], opts: ParseCellOp
     const letters = s.labelOrder === "col-row" ? s.colLabels : s.rowLabels;
     const numbers = s.labelOrder === "col-row" ? s.rowLabels : s.colLabels;
     const letterAlt = [...letters].sort((a, b) => b.length - a.length).map(escapeRe).join("|");
-    const re = new RegExp(String.raw`(?<![A-ZÄÖÜ0-9])(${letterAlt})\s?-?\s?([1-9]\d?)(?:\s*,\s*([1-9]\d?))?(?![0-9])` + quadRe, "g");
+    const re = new RegExp(String.raw`(?<![A-ZÄÖÜ0-9])(${letterAlt})\s?-?\s?([1-9]\d?)(?:\s*,\s*([1-9]\d?)(?![0-9])(?!\s+(?![ABCD](?![A-ZÄÖÜ]))[A-ZÄÖÜ]{2,}))?(?![0-9])` + quadRe, "g");
     for (const m of upper.matchAll(re)) {
       const letter = m[1]!;
       const nums = [m[2]!, m[3]].filter(Boolean) as string[];

@@ -7,6 +7,11 @@
  * Zustand (`entryState`, Kern): bereit → Enter trägt ein; bitte prüfen → 1. Enter fragt, 2. Enter (ohne Textänderung)
  * trägt ein; geht nicht (`draft.problems`) → Enter trägt nie ein.
  *
+ * MVP 3 (Spez. MVP 3, Kap. 2.2, 2.3, 3.1, 3.3): Art von Hand (Auswahl «Was ist es?», `artOverride` → `ctx.art`, gilt bis
+ * der Text gelöscht wird), Kürzel-Abfrage beim ersten Enter ohne Kürzel (`schicht`), laufende Nummer beim Erfassen
+ * (`onNr`, sonst `takeNr`), `erfasstVon`, Messpunkt `lt:enter`, Wahl des Ziels bei mehreren Aufhebungs-Kandidaten,
+ * Vorschlag «Als T2 07:26 eintragen» (Tag fremd). Text von aussen ins Feld: `prefillEntry` (Offen, «Antwort eintragen»).
+ *
  * Korrigieren = Eintragen: Feld enthält den Meldungstext, «jetzt» = Zeit der Meldung, Trupp fällt auf den der Meldung
  * zurück. Ohne Textänderung bleiben Ort, Zeichen, Strasse; mit Textänderung gilt die neue Erkennung, ausser der Text
  * nennt keinen Ort (dann bleibt der bisherige, auch «Karte»). Speichern über `correctEvent` (alte Fassung in
@@ -17,12 +22,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
-  catalogEntry, cellAtAny, cellBounds, clockDay, correctEvent, correctionSummary, entryState, findCells, isPlaceName,
+  artOf, aufhebDraft, catalogEntry, isLage, cellAtAny, cellBounds, clockDay, correctEvent, entryState, findCells, isPlaceName,
   lastPosition, normalizeMelder, onlineAllowed, parseMeldung, placeLabel, sheetBounds, undoCorrection,
-  type Attachment, type Bounds, type Draft, type EntryState, type Exercise, type Kind, type LageEvent, type LV95, type Side,
+  type Attachment, type Bounds, type Draft, type EntryArt, type EntryState, type Exercise, type Kind, type LageEvent, type LV95, type Side,
 } from "@lage/core";
 import { pickPoint, toLatLng, toLv95 } from "@lage/map";
-import { addEvents, buildEvent, commitTexts, correctionPatch, rememberUnits } from "../commit";
+import { addEvents, buildEvent, commitTexts, correctionPatch, isLageDraft, rememberUnits, takeNr } from "../commit";
 import { useDraftPersist, windowId } from "../draftPersist";
 import { placeFromText, reparseEdit } from "../editReparseCore";
 import { editConflict } from "../persist";
@@ -35,8 +40,10 @@ import { deleteAttachmentBlob } from "../attachmentStore";
 import { DELETED_EVENT } from "../journal/actions";
 import { kindOfEvent } from "../journal/filter";
 import { offerUndo } from "../journal/journalUndo";
-import type { EntryBoxProps } from "../shell/contracts";
-import { entryOptions } from "./stateOptions";
+import { kuerzelNorm, PERF_MARK, type EntryBoxProps } from "../shell/contracts";
+import type { NichtMeldung } from "./ArtSwitch";
+import { ART_NAME, korrekturText } from "./labels";
+import { entryOptions, lastReportOf } from "./stateOptions";
 import { withTrupp } from "./trupp";
 
 export { lastMelder, truppOrder, withTrupp } from "./trupp";
@@ -95,6 +102,26 @@ export function requestCorrection(id: string): boolean {
   return true;
 }
 
+/**
+ * Text ins Meldungsfeld setzen (MVP 3: «Antwort eintragen» → «Antwort zu 57: », «Vbk eintragen» → «H03 Vbk »), Fokus
+ * ans Ende. Ein angefangener Text wird nicht überschrieben, sondern dahinter gesetzt. false = kein Feld eingehängt.
+ */
+let prefillHandler: ((text: string, o?: { art?: EntryArt }) => void) | null = null;
+/** `o.art`: Art vorwählen («Antwort eintragen» → Notiz mit Bezug; der Bediener kann in «Was ist es?» umstellen) */
+export function prefillEntry(text: string, o?: { art?: EntryArt }): boolean {
+  if (!prefillHandler) return false;
+  prefillHandler(text, o);
+  return true;
+}
+
+/** gleiches wie `prefillEntry` (Name, den Paket C verwendet) */
+export const requestPrefill = (text: string): boolean => prefillEntry(text);
+
+/** Messpunkt P1 «lt:enter» (Spez. 3.12) – nie ein Fehler, wenn die Messung fehlt */
+function markEnter(): void {
+  try { performance.mark(PERF_MARK.enter); } catch { /* ohne Performance-API */ }
+}
+
 export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | null) => void }) {
   const { ex, map, device, experte, update, say, onCommitted } = p;
   const events = ex.events ?? [];
@@ -111,6 +138,16 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const korr = useRef<StoredKorr | null>(null);
   const [manualPos, setManualPos] = useState<LV95 | null>(null);
   const [kindOverride, setKindOverride] = useState<Kind | null>(null);
+  /** (MVP 3) Art von Hand: «meldung» = Feind/Eigene/Unklar gewählt, sonst Nicht-Meldung aus «Andere ▾» */
+  const [artOverride, setArtOverride] = useState<EntryArt | null>(null);
+  const [artMenu, setArtMenu] = useState(false);
+  /** (MVP 3) gewähltes Ziel, wenn mehrere Sperren o. ä. aufgehoben werden könnten */
+  const [liftPick, setLiftPick] = useState<string | null>(null);
+  /** (MVP 3) Kürzel-Abfrage (Kap. 2.3) */
+  const [askKuerzel, setAskKuerzel] = useState(false);
+  const [kuerzelText, setKuerzelText] = useState("");
+  const [kuerzelErr, setKuerzelErr] = useState(false);
+  const kuerzelRef = useRef<HTMLInputElement>(null);
   const [symOverride, setSymOverride] = useState<SymbolChoice | null>(null);
   const [roadPick, setRoadPick] = useState<RoadPick | null>(null);
   const [shapeDraft, setShapeDraft] = useState<LageEvent["shape"]>(undefined);
@@ -119,7 +156,10 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const [picking, setPicking] = useState(false);
   const [pendingAtt, setPendingAtt] = useState<Attachment | null>(null);
   /** «bitte prüfen»: Text, zu dem das erste Enter gefragt hat */
-  const [armed, setArmed] = useState<string | null>(null);
+  const [armed, setArmedState] = useState<string | null>(null);
+  // auch als Ref: ein zweites Enter kurz nach dem ersten (Seite beschäftigt, noch nicht neu gezeichnet) trägt ein
+  const armedRef = useRef<string | null>(null);
+  const setArmed = (v: string | null) => { armedRef.current = v; setArmedState(v); };
   /** «geht nicht» + Enter: Zustandszeile erneut ansagen / Konfliktband hervorheben */
   const [announce, setAnnounce] = useState(0);
   const [nudge, setNudge] = useState(0);
@@ -147,13 +187,15 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
    * (z. B. Feld markiert und neu getippt, Diktat) – beim Eintragen kommt er als Text an den Anfang. Gelöscht mit dem Feld.
    */
   const [chosen, setChosen] = useState<string | null>(null);
-  const resetExtras = () => { setChosen(null); setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); };
+  const resetExtras = () => { setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setArtMenu(false); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); setAskKuerzel(false); setKuerzelErr(false); };
   const setText = useCallback((t: string) => {
     setTextState(t);
     if (t) setNotice(null);
-    if (!t) { setChosen(null); setManualPos(null); setKindOverride(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); kiTaken.current = false; }
+    if (!t) { setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setAskKuerzel(false); kiTaken.current = false; }
   }, []);
-  useEffect(() => { setArmed(null); }, [text]);
+  // Text geändert → nicht mehr «bestätigt». Nur wenn die Bestätigung zu einem anderen Text gehört: läuft dieser
+  // Effekt verspätet (Seite beschäftigt) erst nach dem ersten Enter, darf er dessen Bestätigung nicht löschen
+  useEffect(() => { if (armedRef.current !== null && armedRef.current !== text) setArmed(null); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- Korrektur: Start, Ende, Neuladen
   const korrId = mode.art === "korrektur" ? mode.id : null;
@@ -195,6 +237,20 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const startRef = useRef(startKorr);
   startRef.current = startKorr;
   useEffect(() => { const h = (id: string) => startRef.current(id); korrHandler = h; return () => { if (korrHandler === h) korrHandler = null; }; }, []);
+  const prefillRef = useRef<(t: string, o?: { art?: EntryArt }) => void>(() => {});
+  prefillRef.current = (t: string, o?: { art?: EntryArt }) => {
+    if (korr.current) endKorr(true);
+    const cur = (inputRef.current?.value ?? "").trim();
+    const next = t;
+    setText(next);
+    // neue Vorgabe gilt (eine Wahl zum ersetzten Text nicht)
+    setKindOverride(null); setSymOverride(null); setArtOverride(o?.art ?? null);
+    // nichts geht verloren: ein angefangener Text kommt mit Rückgängig zurück
+    if (cur && cur !== t.trim()) offerUndo("Angefangene Meldung ersetzt", () => { setTextState(cur); fitInput(); inputRef.current?.focus(); });
+    fitInput();
+    requestAnimationFrame(() => { const el = inputRef.current; if (el) { el.focus({ preventScroll: true }); el.setSelectionRange(next.length, next.length); el.closest(".ebox")?.scrollIntoView({ block: "nearest" }); } });
+  };
+  useEffect(() => { const h = (t: string, o?: { art?: EntryArt }) => prefillRef.current(t, o); prefillHandler = h; return () => { if (prefillHandler === h) prefillHandler = null; }; }, []);
 
   // Korrekturzustand nach Neuladen / Übungswechsel
   useEffect(() => {
@@ -221,28 +277,41 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const ctx = useMemo(() => ({
     sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now, dayFromClock: clk.follow,
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
-  }), [ex, kindOverride, day, events, now, clk.follow]);
+    ...(artOverride ? { art: artOverride } : {}),
+    events, ex,
+  }), [ex, kindOverride, artOverride, day, events, now, clk.follow]);
   /** Text, der gelesen wird (mit angetipptem Trupp, wenn der Text keinen nennt) */
   const srcText = useMemo(() => {
     if (base || !chosen || !text.trim()) return text;
     const d0 = parseMeldung(text, ctx);
     return d0.melder || d0.problems?.some((x) => x.kind === "melder") ? text : withTrupp(text, chosen);
   }, [text, ctx, base, chosen]);
-  const draft: Draft | null = useMemo(() => {
+  /** Korrektur: eine Nicht-Meldung bleibt Nicht-Meldung, bis die Art von Hand geändert wird (zeichnet nie plötzlich) */
+  const korrArt: EntryArt | undefined = artOverride ?? (base && artOf(base) !== "meldung" ? artOf(base) : undefined);
+  const draft0: Draft | null = useMemo(() => {
     if (!text.trim()) return null;
     if (!base) return parseMeldung(srcText, ctx);
-    const d = reparseEdit(base, text, ex, kindOverride ?? undefined);
+    const d = reparseEdit(base, text, ex, kindOverride ?? undefined, korrArt);
     if (!d) return null;
     // Trupp der Meldung, wenn der Text keinen nennt
     if (!d.melder && base.melder) return { ...d, melder: base.melder, unit: d.side === "blau" && !d.unit ? base.melder : d.unit };
     return d;
-  }, [text, srcText, ctx, base, ex, kindOverride]);
+  }, [text, srcText, ctx, base, ex, kindOverride, korrArt]);
+  /** mehrere Aufhebungs-Ziele: das gewählte gilt (der Grund «aufheben» entfällt dann) */
+  const draft: Draft | null = useMemo(() => {
+    if (!draft0 || !liftPick || !draft0.hebtAufKandidaten?.includes(liftPick)) return draft0;
+    const ziel = events.find((e) => e.id === liftPick);
+    return ziel ? aufhebDraft(draft0, ziel) : draft0;
+  }, [draft0, liftPick, events]);
+  /** Nicht-Meldung (Auftrag, Rückfrage …): kein Zeichen, kein Ort */
+  const nichtLage = !!draft && !isLageDraft(draft);
 
   const textChanged = !!base && normText(text) !== normText(base.text);
   /** Korrektur: Ort der Meldung bleibt (Text unverändert oder nennt keinen eigenen Ort) */
-  const keepPlace = !!base && !manualPos && (!textChanged || (!placeFromText(draft) && !draft?.placeQuery && !(draft?.problems ?? []).some((x) => x.kind === "ort" || x.kind === "orte")));
+  // Basis ohne Ort (Nicht-Meldung, Aufhebung) → nach Wechsel auf Feind/Eigene/Unklar gilt der neu gelesene Ort (Einsatz H3)
+  const keepPlace = !!base && isLage(base) && !base.hebtAuf && !manualPos && (!textChanged || (!placeFromText(draft) && !draft?.placeQuery && !(draft?.problems ?? []).some((x) => x.kind === "ort" || x.kind === "orte")));
   /** Korrektur: Zeichen/Einordnung bleiben (Text unverändert, nichts von Hand gewählt) */
-  const keepSymbol = !!base && !textChanged && !symOverride && !kindOverride;
+  const keepSymbol = !!base && !textChanged && !symOverride && !kindOverride && !artOverride;
 
   // Ortsname online nachschlagen (nur wenn sonst kein Ort erkannt wurde, nur echte Ortsnamen, nur wenn erlaubt)
   const q = draft?.placeQuery;
@@ -269,12 +338,16 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const effKind: Kind | null = !draft ? null : symOverride ? kindOfAff(symOverride.aff) : keepSymbol && base ? kindOfEvent(base) : draft.kind;
   const setKind = (k: Kind) => {
     setKindOverride(k);
+    setArtOverride("meldung");
     if (symOverride) setSymOverride(makeChoice(pickerEntry(symOverride.key) ?? pickerEntry("einheit")!, affOfKind(k, symOverride.aff), symOverride.echelon, symOverride.status));
   };
 
+  /** Nicht-Meldung von Hand wählen (Menü «Andere ▾»): Zeichen und Ort fallen weg */
+  const setArt = (a: NichtMeldung) => { setArtOverride(a); setKindOverride(null); setSymOverride(null); setManualPos(null); setRoadPick(null); setShapeDraft(undefined); };
+
   // ---------- Strasse (Hindernisse, Checkpoint …)
   const roadTarget: RoadTargetInfo | null = (() => {
-    if (!draft || !choice || manualPos) return null;
+    if (!draft || !choice || manualPos || nichtLage || draft.hebtAuf) return null;
     if (keepPlace && base) return eventRoadTarget(base, ex, choice.key);
     const ce = catalogEntry(choice.key);
     if (ce?.placement !== "strasse" && !draft.roadHint) return null;
@@ -308,12 +381,15 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const oldPlace = base ? placeLabel(base) || "ohne Ort" : null;
 
   // gleiche Regeln wie Foto-/Sprach-Übersicht (entryOptions); Korrektur: Trupp der Meldung gilt als bekannt
+  const lastReport = useMemo(() => lastReportOf(ex), [events]); // eslint-disable-line react-hooks/exhaustive-deps
   const state: EntryState | null = draft ? entryState(draft, entryOptions(ex, {
     online: online && onlineAllowed(ex, "ortssuche"),
     placePending: !!q && lookup === q,
     manualPos: !!manualPos,
     hasPos: !!foundPos || (keepPlace && !!base?.pos),
     alsoKnown: base?.melder,
+    follow: !!base || clk.follow,
+    lastReport,
   })) : null;
 
   const pickOnMap = async () => {
@@ -341,7 +417,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   };
 
   // ---------- Eintragen / Korrektur speichern
-  const commitNew = (d: Draft, drawn: LageEvent["shape"] | null) => {
+  const commitNew = (d: Draft, drawn: LageEvent["shape"] | null, kuerzel?: string | null) => {
+    markEnter();
     // Zeit «jetzt» erst jetzt (Enter) festlegen; eine getippte Zeit hat Vorrang
     const at = new Date();
     const clkAt = clockDay(ex.days, at);
@@ -358,15 +435,21 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
       attachments: pendingAtt ? [pendingAtt.id] : undefined,
       source: pendingAtt ? { kind: pendingAtt.kind === "audio" ? "audio" : "image", ref: pendingAtt.id } : undefined,
       via: kiTaken.current ? "ki" : undefined,
+      // laufende Nummer beim Erfassen (Gerätezähler, alle Fenster), Kürzel der Schicht
+      nr: p.onNr ? p.onNr() : takeNr(ex),
+      kuerzel: kuerzel !== undefined ? kuerzel : p.schicht?.kuerzel ?? null,
     }, at);
-    if (manualPos && !sd) { ev.cells = manualCell ? [manualCell] : undefined; ev.nai = undefined; }
+    const lage = isLageDraft(d) && !d.hebtAuf;
+    if (lage && manualPos && !sd) { ev.cells = manualCell ? [manualCell] : undefined; ev.nai = undefined; }
     kiTaken.current = false;
     update((x) => addEvents(x, [ev], { place: found && foundPos ? found : undefined, attachments: pendingAtt ? [pendingAtt] : undefined }));
     setPendingAtt(null);
     setTextState("");
     resetExtras();
     afterCommit(ev);
-    if (ev.notiz) tell("Als Notiz eingetragen – ohne Zeichen auf der Karte.");
+    const art = artOf(ev);
+    if (art !== "meldung") tell(`Als ${ART_NAME[art]} eingetragen – kein Zeichen, nichts auf der Karte.`);
+    else if (ev.hebtAuf) tell("Eingetragen – das Aufgehobene verschwindet ab jetzt von der Karte.");
     else if (!ev.pos) tell("Eingetragen – ohne Ort. Später mit Korrigieren setzen.");
   };
 
@@ -391,7 +474,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
       shape: sd,
       via: kiTaken.current ? "ki" : now0.via,
     });
-    if (manualPos && !sd) { cand.cells = manualCell ? [manualCell] : undefined; cand.nai = undefined; }
+    if (manualPos && !sd && isLageDraft(d) && !d.hebtAuf) { cand.cells = manualCell ? [manualCell] : undefined; cand.nai = undefined; }
     const patch = correctionPatch(now0, cand, { keepPlace: keepPlace && !sd, keepSymbol, keepTime: !textChanged || !d.timeFromText });
     // Korrektur ohne neuen Text, aber mit neuer Strassenwahl
     if (keepPlace && roadPick && roadTarget) {
@@ -405,6 +488,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     const restoreDeleted = force && !!now0.deleted;
     if (restoreDeleted) patch.deleted = false;
     if (!Object.keys(patch).length) { endKorr(); tell("Keine Änderung – Korrektur beendet."); return; }
+    // (MVP 3) Kürzel der Korrektur; die alte Fassung behält ihres in `history`
+    if (p.schicht?.kuerzel) patch.geaendertVon = p.schicht.kuerzel;
     const id = b.id;
     const before = now0;
     update((x) => {
@@ -413,7 +498,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
       if (hold.ev) rememberUnits(x, hold.ev);
       return x;
     });
-    const summary = correctionSummary(before, { ...before, ...patch } as LageEvent);
+    const summary = korrekturText(before, { ...before, ...patch } as LageEvent);
     offerUndo(`Korrigiert: ${summary}`, () => update((x) => { x.events = (x.events ?? []).map((y) => (y.id === id ? undoCorrection(y, before, device) : y)); return x; }));
     if (restoreDeleted) tell("Meldung wiederhergestellt (war in einem anderen Fenster gelöscht) – mit dieser Korrektur gespeichert.");
     kiTaken.current = false;
@@ -429,7 +514,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
       if (korrNow) tell("Text fehlt – Esc bricht die Korrektur ab.");
       return;
     }
-    const dirty = textChanged || !!kindOverride || !!symOverride || !!manualPos || !!roadPick || !!shapeDraft;
+    const dirty = textChanged || !!kindOverride || !!artOverride || !!symOverride || !!manualPos || !!roadPick || !!shapeDraft;
     if (korrNow && !dirty && !force) { endKorr(); tell("Keine Änderung – Korrektur beendet."); return; }
     // nie still falsch: «geht nicht» trägt nie ein
     if (state.level === "geht-nicht") { setAnnounce((n) => n + 1); inputRef.current?.focus(); return; }
@@ -437,10 +522,27 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     const drawn = takeDrawing(korr.current ? `korr:${korr.current.id}` : "neu");
     if (drawn === "unfertig") { tell("Fläche/Linie noch nicht fertig – weitere Punkte setzen, dann «Fertig» (oder Esc)."); return; }
     if (drawn) setShapeDraft(drawn);
-    if (state.level === "pruefen" && armed !== text) { setArmed(text); setAnnounce((n) => n + 1); return; }
+    if (state.level === "pruefen" && armedRef.current !== text && !askKuerzel) { setArmed(text); setAnnounce((n) => n + 1); return; }
+    if (korrNow) { setArmed(null); saveKorrektur(draft, force, drawn); return; }
+    // (MVP 3) einmal pro Gerät und Übung: «Wer erfasst?» – die Meldung bleibt im Feld (Kap. 2.3)
+    const sch = p.schicht;
+    if (askKuerzel) {
+      const v = kuerzelText.trim();
+      const k = v ? kuerzelNorm(v) : null;
+      if (v && !k) { setKuerzelErr(true); kuerzelRef.current?.focus(); return; }
+      if (k && sch) sch.setKuerzel(k, { neu: true });
+      sch?.setGefragt();
+      setAskKuerzel(false); setKuerzelErr(false); setKuerzelText("");
+      setArmed(null);
+      commitNew(draft, drawn, k);
+      return;
+    }
+    if (sch && !sch.kuerzel && !sch.gefragt) { setAskKuerzel(true); setKuerzelErr(false); return; }
     setArmed(null);
-    if (korrNow) saveKorrektur(draft, force, drawn); else commitNew(draft, drawn);
+    commitNew(draft, drawn);
   };
+  /** Kürzel-Abfrage schliessen (Esc): zurück ins Meldungsfeld, nichts eingetragen */
+  const cancelKuerzel = () => { setAskKuerzel(false); setKuerzelErr(false); inputRef.current?.focus(); };
 
   /** Esc: Korrektur abbrechen bzw. Feld leeren mit Rückgängig */
   const escape = () => {
@@ -473,7 +575,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
 
   // ---------- Foto, Sprache
   const commitBatch = (texts: string[], a: Attachment) => {
-    const evs = commitTexts(texts, { ex, device, update, day, attachment: a });
+    const evs = commitTexts(texts, { ex, device, update, day, attachment: a, onNr: p.onNr, kuerzel: p.schicht?.kuerzel ?? null });
     if (evs.length) onCommitted(evs.map((x) => x.id));
   };
   const voice = useVoice({
@@ -488,6 +590,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     draft, state, armed, announce, textChanged, keepPlace, keepSymbol,
     manualPos, setManualPos, picking, pickOnMap, effPos, effWhere, effWhere0, placeText, oldPlace,
     choice, effKind, setKind, symOverride, setSymOverride, kindOverride,
+    artOverride, setArt, artMenu, setArtMenu, nichtLage, liftPick, setLiftPick,
+    askKuerzel, kuerzelText, setKuerzelText, kuerzelErr, kuerzelRef, cancelKuerzel,
     roadTarget, roadShown, roadPick, setRoadPick, road,
     shapeDraft, setShapeDraft, pendingAtt, setPendingAtt, removePending,
     chooseTrupp, addUnit, submit, escape, correctLast, startKorr, endKorr, takeKi,

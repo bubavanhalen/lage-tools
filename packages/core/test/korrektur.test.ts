@@ -87,7 +87,8 @@ describe("Korrektur – Rückgängig, Zusammenfassung, Status (Kap. 3.3)", () =>
     const csv = journalToCsv([c, { ...orig, id: "weg", deleted: true }], ex.days).split("\r\n");
     expect(csv[0]).toContain(";Status;Fassungen;Form");
     expect(csv.some((r) => r.includes(";korrigiert 07:34;vorher: 07:20"))).toBe(true);
-    expect(csv.some((r) => r.includes(";gestrichen;"))).toBe(true);
+    // Fix 3: «gestrichen» mit Zeit
+    expect(csv.some((r) => /;gestrichen \d\d:\d\d;/.test(r))).toBe(true);
     expect(journalToCsv([{ ...orig, deleted: true }], ex.days, { gestrichen: false }).split("\r\n")).toHaveLength(1);
   });
   it("mergeEvents: gelöschte Korrektur behält die Historie", () => {

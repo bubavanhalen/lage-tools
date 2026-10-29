@@ -19,6 +19,7 @@ import {
   type Box, type LageEvent, type LV95, type RasterSheet, type Stack,
 } from "@lage/core";
 import { escapeHtml, iconSvg, symbolSvg, toLatLng, toLv95 } from "@lage/map";
+import { ohneAufgehobene } from "./aufgehoben";
 import { KIND_COLOR, kindText, MAP_INK, SIDE_COLOR, situationModel, type SituationItem } from "./journalLayer";
 import { isLocked, subscribeLock, type LayerFlags } from "./layers";
 import { clickSuppressed, longPress, suppressClick, suppressContextMenu } from "./longpress";
@@ -323,7 +324,7 @@ class SituationLayer extends L.LayerGroup {
 
   private buildItems() {
     const o = this.o;
-    const model = situationModel(this.events, o.t, o.flags, { recentMin: o.recentMin, selectedId: o.selectedId, from: o.from });
+    const model = situationModel(ohneAufgehobene(this.events, o.t), o.t, o.flags, { recentMin: o.recentMin, selectedId: o.selectedId, from: o.from });
     // Beschriftungs- und Deckkraftregel (Grundansicht ruhig, Experte wie bisher)
     for (const it of model.items) {
       const q = quietLook(it, { quiet: !!o.quiet, zeiten: o.flags.zeiten, neuMin: o.recentMin });
@@ -991,6 +992,8 @@ function cellRing(label: string, sheets: RasterSheet[]): L.LatLng[] | null {
   const b = cellBounds(sh, c.col, c.row, c.quadrant);
   return [{ e: b.minE, n: b.maxN }, { e: b.maxE, n: b.maxN }, { e: b.maxE, n: b.minN }, { e: b.minE, n: b.minN }].map(toLatLng);
 }
+
+export { ohneAufgehobene } from "./aufgehoben";
 
 export function situationLayer(map: L.Map, events: LageEvent[], o: SituationOptions): L.LayerGroup {
   return new SituationLayer(map, events, o);

@@ -1,0 +1,95 @@
+/* LVZ in der Journal-Liste (Spez. MVP 3, Kap. 2.1, 2.4, 2.5): «Mehr …», Nummer, Vermerke, Trenner, Gestrichene.
+   Nur Tokens aus theme.css; Bedienelemente ≥ var(--hit). */
+
+/* ---------- Popover «Mehr …» ---------- */
+.lvzm {
+  position: fixed; z-index: 1200; box-sizing: border-box; display: grid; gap: var(--sp-8);
+  padding: var(--sp-12); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-8);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22); font-size: var(--fs-14); max-height: calc(100vh - 16px); overflow: auto;
+}
+.lvzm label { cursor: pointer; }
+.lvzm-check, .lvzm-radio label {
+  min-height: var(--hit); display: inline-flex; align-items: center; gap: var(--sp-8); font-weight: 600;
+}
+/* Kästchen: das echte Feld deckt die ganze Beschriftung (≥ var(--hit)), gezeichnet wird .lvzm-box */
+.lvzm-check, .lvzm-radio label { position: relative; padding-right: var(--sp-8); }
+.lvzm-check input, .lvzm-radio input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.lvzm-box { flex: none; width: 20px; height: 20px; box-sizing: border-box; border: 2px solid var(--ink); border-radius: var(--r-4); background: var(--surface); display: inline-flex; align-items: center; justify-content: center; }
+.lvzm-box.lvzm-rund { border-radius: 50%; }
+.lvzm input:checked + .lvzm-box { background: var(--ink); }
+.lvzm input:checked + .lvzm-box::after { content: ""; width: 8px; height: 8px; background: var(--surface); border-radius: 2px; }
+.lvzm input:checked + .lvzm-rund::after { border-radius: 50%; }
+.lvzm input:focus-visible + .lvzm-box { box-shadow: var(--focus-shadow); }
+.lvzm-radio { display: flex; gap: var(--sp-16); }
+.lvzm-radio label { font-weight: 400; }
+.lvzm-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); }
+.lvzm-row > label { color: var(--muted); }
+.lvzm-in {
+  flex: 1; min-width: 0; min-height: var(--hit); box-sizing: border-box; padding: 0 var(--sp-8);
+  font: 400 var(--fs-14) var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-4);
+}
+.lvzm-in.mono { font-family: var(--f-mono); }
+.lvzm-an { flex: 1 1 5em; }
+.lvzm-um { flex: 0 0 7.5em; }
+/* Platzhalter klar als Beispiel (grau, kursiv, «z. B.»), nie wie ein Wert */
+.lvzm-in::placeholder { color: var(--muted); font-style: italic; opacity: 1; }
+.lvzm-in:focus-visible, .lvzm-btn:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
+.lvzm-btns { display: flex; flex-wrap: wrap; gap: var(--sp-8); }
+.lvzm-btn {
+  min-height: var(--hit); min-width: var(--hit); padding: 0 var(--sp-12); border: 1px solid var(--line); border-radius: var(--r-4);
+  background: var(--surface); color: var(--ink); font-size: var(--fs-14); cursor: pointer;
+}
+.lvzm-btn:hover { border-color: var(--ink); }
+.lvzm-wide { justify-self: start; }
+.lvzm-foot { margin: 0; padding-top: var(--sp-8); border-top: 1px solid var(--line-soft); font-size: var(--fs-12); color: var(--muted); }
+@media (pointer: coarse) { .lvzm, .lvzm-in, .lvzm-btn { font-size: var(--fs-16); } }
+
+/* ---------- Zeile ---------- */
+.jl-tcol { display: flex; flex-direction: column; gap: 2px; padding-top: 1px; }
+.jl-nr { font-size: var(--fs-12); color: var(--muted); font-family: var(--f-mono); }
+.jl-kind.k-vbk, .jl-kind.k-aufheb { color: var(--ink); }
+.jl-kind.k-notiz { color: var(--ink); }
+/* dringend: Tinte fett auf --warn-bg, nie rot (Rot bleibt Feind/⛔) */
+.jl-bang {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 4px;
+  font-weight: 700; color: var(--ink); background: var(--warn-bg); border: 1px solid var(--ink); border-radius: var(--r-4); float: right; margin-right: 0;
+}
+.jl-l2 .jl-vm-dringend { font-weight: 700; color: var(--ink); background: var(--warn-bg); padding: 0 4px; border-radius: var(--r-4); }
+.jl-l2 .jl-vm { color: var(--ink); }
+.jl-l2 .jl-erf { color: var(--muted); }
+
+/* gestrichen: grau, Text durchgestrichen, bleibt an seiner Zeit */
+.jl-row.is-del .jl-text, .jl-row.is-del .jl-kind, .jl-row.is-del .jl-who { text-decoration: line-through; color: var(--muted); }
+.jl-row.is-del .jl-sym { opacity: .5; }
+.jl-row.is-del .jl-t { color: var(--muted); }
+.jl-del { font-weight: 600; color: var(--ink); }
+
+/* Trenner «Neu in deiner Schicht ↑» – kein li, zählt nicht als Zeile */
+.jl-trenner {
+  display: flex; align-items: center; gap: var(--sp-8); margin: var(--sp-8) 0; font-size: var(--fs-12); font-weight: 600; color: var(--ink);
+}
+.jl-trenner::before, .jl-trenner::after { content: ""; flex: 1; border-top: 2px solid var(--ink); }
+
+/* Ende der Liste: «Gestrichene zeigen (n)» */
+.jl-end { display: flex; justify-content: flex-start; padding: var(--sp-12) var(--sp-4); }
+.jl-link {
+  min-height: var(--hit); padding: 0 var(--sp-8); border: 0; background: transparent; color: var(--ink); font-size: var(--fs-14);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer; border-radius: var(--r-4);
+}
+.jl-link:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
+@media (pointer: coarse) { .jl-link { font-size: var(--fs-16); } }
+.lvzm-weiter > label:first-child { flex-basis: 100%; }
+.lvzm-weiter .lvzm-an { flex: 1 1 6em; }
+/* kurz hervorgehobene Zeile (--warn-bg): Rahmen der Knöpfe in Tinte, damit ≥ 3:1 auch im Dunkelmodus */
+.jl-row.flash .jl-btn { border-color: var(--ink); }
+/* drei Knöpfe an der gewählten Zeile: nie umbrechen (Tablet 384 px) */
+.jl-acts .jl-btn { white-space: nowrap; }
+@media (pointer: coarse), (max-width: 1100px) { .jl-acts .jl-btn { padding: 0 var(--sp-12); } }
+/* Tablet/Touch: «Korrigieren» links, «Mehr …» und «Streichen» rechts – in der Mitte der Zeile liegt kein Knopf */
+@media (pointer: coarse) { .jl-row .jl-acts .jl-btn:first-child:not(:only-child) { margin-right: auto; } }
+
+/* Zeile «Schichtwechsel 06:45 BSP → WMA (Übergabe)» an ihrer Zeit – kein li, zählt nicht als Zeile */
+.jl-wechsel {
+  margin: var(--sp-4) 0; padding: var(--sp-4) var(--sp-8); border-left: 3px solid var(--ink); background: var(--surface);
+  font-size: var(--fs-12); font-weight: 600; color: var(--ink);
+}
