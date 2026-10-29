@@ -11,7 +11,15 @@
 .lvzm-check, .lvzm-radio label {
   min-height: var(--hit); display: inline-flex; align-items: center; gap: var(--sp-8); font-weight: 600;
 }
-.lvzm-check input, .lvzm-radio input { width: 20px; height: 20px; margin: 0; accent-color: var(--ink); }
+/* Kästchen: das echte Feld deckt die ganze Beschriftung (≥ var(--hit)), gezeichnet wird .lvzm-box */
+.lvzm-check, .lvzm-radio label { position: relative; padding-right: var(--sp-8); }
+.lvzm-check input, .lvzm-radio input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.lvzm-box { flex: none; width: 20px; height: 20px; box-sizing: border-box; border: 2px solid var(--ink); border-radius: var(--r-4); background: var(--surface); display: inline-flex; align-items: center; justify-content: center; }
+.lvzm-box.lvzm-rund { border-radius: 50%; }
+.lvzm input:checked + .lvzm-box { background: var(--ink); }
+.lvzm input:checked + .lvzm-box::after { content: ""; width: 8px; height: 8px; background: var(--surface); border-radius: 2px; }
+.lvzm input:checked + .lvzm-rund::after { border-radius: 50%; }
+.lvzm input:focus-visible + .lvzm-box { box-shadow: var(--focus-shadow); }
 .lvzm-radio { display: flex; gap: var(--sp-16); }
 .lvzm-radio label { font-weight: 400; }
 .lvzm-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); }
@@ -23,7 +31,7 @@
 .lvzm-in.mono { font-family: var(--f-mono); }
 .lvzm-an { flex: 1 1 5em; }
 .lvzm-um { flex: 0 0 5.5em; }
-.lvzm-in:focus-visible, .lvzm-btn:focus-visible, .lvzm input:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
+.lvzm-in:focus-visible, .lvzm-btn:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
 .lvzm-btns { display: flex; flex-wrap: wrap; gap: var(--sp-8); }
 .lvzm-btn {
   min-height: var(--hit); min-width: var(--hit); padding: 0 var(--sp-12); border: 1px solid var(--line); border-radius: var(--r-4);
@@ -70,3 +78,8 @@
 @media (pointer: coarse) { .jl-link { font-size: var(--fs-16); } }
 .lvzm-weiter > label:first-child { flex-basis: 100%; }
 .lvzm-weiter .lvzm-an { flex: 1 1 6em; }
+/* kurz hervorgehobene Zeile (--warn-bg): Rahmen der Knöpfe in Tinte, damit ≥ 3:1 auch im Dunkelmodus */
+.jl-row.flash .jl-btn { border-color: var(--ink); }
+/* drei Knöpfe an der gewählten Zeile: nie umbrechen (Tablet 384 px) */
+.jl-acts .jl-btn { white-space: nowrap; }
+@media (pointer: coarse), (max-width: 1100px) { .jl-acts .jl-btn { padding: 0 var(--sp-12); } }

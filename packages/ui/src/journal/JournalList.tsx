@@ -168,8 +168,9 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open,
         ) : (
           <span className="jl-acts">
             <button type="button" className="jl-btn" onClick={() => onCorrect(e.id)}>Korrigieren</button>
-            <button type="button" className="jl-btn" onClick={() => onDelete(e.id)}>Löschen</button>
+            {/* «Löschen» zuletzt: ein Tipp in die Mitte der Zeile trifft nie den löschenden Knopf */}
             <button type="button" className="jl-btn" aria-haspopup="dialog" aria-expanded={menu} onClick={(ev) => onMenu(e.id, ev.currentTarget)}>Mehr …</button>
+            <button type="button" className="jl-btn" onClick={() => onDelete(e.id)}>Löschen</button>
           </span>
         ))}
       </span>

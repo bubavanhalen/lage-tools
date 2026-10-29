@@ -123,12 +123,14 @@ export function LvzMenu(p: LvzRowProps & {
       onKeyDown={(ev) => { ev.stopPropagation(); if (ev.key === "Escape") { ev.preventDefault(); flush.current(); close(); } }}>
       <label className="lvzm-check">
         <input type="checkbox" checked={v.dringend} onChange={(ev) => setVermerkUndo(update, ex, e.id, "dringend", ev.target.checked, o)} />
+        <span className="lvzm-box" aria-hidden="true" />
         <span>Dringend</span>
       </label>
       <div className="lvzm-radio" role="radiogroup" aria-label="Status">
         {(["offen", "erledigt"] as const).map((s) => (
           <label key={s}>
             <input type="radio" name={`${id}-st`} checked={v.status === s} onChange={() => setVermerkUndo(update, ex, e.id, "status", s, o)} />
+            <span className="lvzm-box lvzm-rund" aria-hidden="true" />
             <span>{s}</span>
           </label>
         ))}

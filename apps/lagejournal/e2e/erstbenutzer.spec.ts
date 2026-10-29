@@ -33,7 +33,7 @@ async function geraetLauf(h: Harness, geraet: Geraet): Promise<TestResult[]> {
   // ---------- 1–3: leere Vorbereitung ----------
   let s = await h.open({ query: "?beispiel=leer", geraet, uhr: UHR_T2_0730 });
   // MVP 3 (Kap. 2.3/3.6): Schichtbeginn mit Kürzel gehört nicht zu den Aufgaben – vorher über Menü «Kürzel ändern …»
-  // setzen (sonst fragt das erste Enter «Wer erfasst?»; geprüft in lvz.spec.ts Nr. 5 und inventar3.spec.ts)
+  // setzen (sonst fragt das erste Enter «Wer erfasst?»; geprüft in lvz.spec.ts Nr. 5 und inventar.spec.ts)
   await menue(s, /^Kürzel ändern/);
   await s.page.getByRole("textbox", { name: "Kürzel", exact: true }).fill("ZZ");
   await antippen(s, s.page.getByRole("button", { name: /^Neue Schicht beginnen/ }));

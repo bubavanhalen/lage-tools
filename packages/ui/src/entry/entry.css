@@ -61,7 +61,7 @@
   .eb-keys { display: block; visibility: hidden; white-space: normal; line-height: 1.4; }
   .ebox .eb-fieldwrap:has(.eb-field:focus-visible) ~ .eb-keys { visibility: visible; }
 }
-.eb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.eb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; font-size: var(--fs-14); }
 .eb-info { margin: 0; font-size: var(--fs-14); color: var(--ink); padding: var(--sp-8) var(--sp-12); border-radius: var(--r-4); background: var(--bg); border: 1px solid var(--line-soft); }
 
 /* Hilfe */
