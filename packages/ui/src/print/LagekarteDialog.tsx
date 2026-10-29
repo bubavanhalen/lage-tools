@@ -10,8 +10,10 @@ import { Dialog } from "../shell/Dialog";
 import { klassifizierungOf, type LagekarteDruck } from "../shell/contracts";
 import { safeFileName } from "../store";
 import { lagekartePdf, lagekartePlan, mapBounds, rasterBounds, stufeText, type LagekartePlan } from "./lagekarte";
-import { datum, tagKurz } from "./umfang";
+import { datum, druckVorladen, tagKurz } from "./umfang";
 import "./print.css";
+
+druckVorladen();
 
 export interface LagekarteDialogProps {
   ex: Exercise;

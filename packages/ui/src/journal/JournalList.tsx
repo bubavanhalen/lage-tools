@@ -20,7 +20,7 @@
  * Vorrat) stehen im DOM, gemessene Höhen werden gemerkt, Platzhalter oben/unten halten die Bildlaufleiste richtig.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, readArt, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
+import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, type EventQuality, type Exercise, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { AttachmentChips } from "../Attachments";
 import { attachmentsOf } from "../attachmentStore";
@@ -29,7 +29,7 @@ import { KiMark } from "../ki/context";
 import { dayLabel } from "../Timeline";
 import { RueckblickStreifen } from "../time/RueckblickBanner";
 import { PERF_MARK, type JournalListProps, type ZeitApi } from "../shell/contracts";
-import { dayTitle, eingangText, FORM_ZEICHEN, formOf, hm, missLabel, vermerkTeile, type ZeilenForm } from "../entry/labels";
+import { dayTitle, displayText, eingangText, FORM_ZEICHEN, formOf, hm, missLabel, nichtLageText, vermerkTeile, type ZeilenForm } from "../entry/labels";
 import { LvzMenu } from "./LvzMenu";
 import "./journal.css";
 import "./lvz.css";
@@ -62,28 +62,7 @@ const WORT: Partial<Record<ZeilenForm, string>> = { feind: "Feind", eigen: "Eige
 /** Trennzeichen für Vermerke (Zeichenkette statt Array: Zeilen bleiben `memo`) */
 const SEP = "\u0001";
 
-/** Anzeigetext ohne vorangestellten Melder («H01 4 Pers …» → «4 Pers …»), der Melder steht separat */
-export function displayText(e: Pick<LageEvent, "melder" | "text">): string {
-  const m = e.melder;
-  if (!m) return e.text;
-  const re = new RegExp("^" + m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*") + "\\s*(?:meldet\\s*)?[:,]?\\s*", "i");
-  const t = e.text.replace(re, "");
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : e.text;
-}
-
-/**
- * Text einer Nicht-Meldung ohne den Art-Hinweis, den die Art schon ausschreibt («Auftrag an H01: Beo NAI 1» →
- * «Beo NAI 1» neben «✎ Auftrag an H01»). Vbk und Quittung behalten den Text (der Hinweis steht nicht vorne).
- */
-export function nichtLageText(e: Pick<LageEvent, "melder" | "text" | "art" | "notiz" | "bezugArt">, blau: string[]): string {
-  const t = displayText(e);
-  const art = artOf(e);
-  if (art === "meldung" || art === "vbk" || e.bezugArt === "quittung") return t;
-  const tok = readArt(t, { blau }).token;
-  if (!tok || !t.toLowerCase().startsWith(tok.toLowerCase())) return t;
-  const rest = t.slice(tok.length).replace(/^[\s:,–-]+/, "");
-  return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : t;
-}
+export { displayText, nichtLageText } from "../entry/labels";
 
 function SymbolMini({ e }: { e: LageEvent }) {
   // gleiches Objekt behalten: React setzt innerHTML sonst bei jeder Darstellung neu
@@ -134,7 +113,9 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open,
   const own = form === "eigen";
   const word = lage || form === "aufheb" ? WORT[form]! : artWort;
   const who = !lage ? "" : own ? (e.unit || e.melder) : e.unit && e.unit !== e.melder ? e.unit : "";
-  const place = lage ? placeLabel(e) : (e.orte ?? []).join(", ");
+  const orte = (e.orte ?? []).join(", ");
+  // Aufhebung: der Ort steht meist schon im Text («Sperre AG13 aufgehoben»)
+  const place = lage ? placeLabel(e) : orte && !(form === "aufheb" && e.text.includes(orte)) ? orte : "";
   const status = journalStatus(e);
   const missing = !lage ? [] : (q?.missing ?? []).filter((m) => m !== "Ort" && m !== "Melder").map(missLabel);
   const att = e.attachments?.length ? attachmentsOf({ attachments }, e.attachments) : [];
@@ -167,7 +148,7 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open,
           {eingang && <span>{eingang}</span>}
           {lage && zwei > 1 && <span>von {zwei} Trupps gesehen</span>}
           {missing.length > 0 && <span>Fehlt noch: {missing.join(", ")}</span>}
-          {status && <button type="button" className="jl-hist" aria-expanded={open} onClick={() => onToggle(e.id)}>{status}</button>}
+          {status && !(del && !e.history?.length) && <button type="button" className="jl-hist" aria-expanded={open} onClick={() => onToggle(e.id)}>{status}</button>}
           {e.via === "ki" && <span className="jl-ki"><KiMark size={9} />KI</span>}
           {korr && <span className="jl-korr">wird korrigiert</span>}
           {att.length > 0 && <><AttachmentChips list={att.filter((a) => a.kind !== "audio")} /><RowMemos list={att} /></>}

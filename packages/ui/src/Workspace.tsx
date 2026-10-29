@@ -6,7 +6,7 @@
  * `shell/`, Modus «Vorbereiten» in `prepare/`, Zeit in `time/` (Paket C). Speichern/Abgleich unverändert aus MVP 0
  * (`useExerciseStore`, `persist.ts`), ebenso Speicherbänder, Zusammenführen beim Öffnen und Rückgängig.
  */
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
   cellAtAny,
@@ -33,10 +33,8 @@ import {
   KI_PURPOSE_LABEL,
   type Hint,
   type RedCoa,
-  offenePunkte,
   newEventId,
   localIso,
-  STILL_MIN,
 } from "@lage/core";
 import {
   AffineImageLayer,
@@ -53,7 +51,8 @@ import {
 } from "@lage/map";
 import { currentExerciseId, downloadText, getBlob, listExercises, onDbNotice, pickFile, safeFileName } from "./store";
 import { lastCurrent, openStored, peekStored, persister, requestPersist } from "./persist";
-import { useExerciseStore } from "./useExerciseStore";
+import { hebeNrZaehler, useExerciseStore } from "./useExerciseStore";
+import { useOffen } from "./analyseClient";
 import { beispielAusUrl, beispielAusUrlEntfernen, beispielSchichtSetzen, beispielUebung } from "./beispiel";
 import { StatusBands, type MergeInfo } from "./SaveBand";
 import { MergeNotice } from "./MergeNotice";
@@ -105,6 +104,9 @@ import { prefillEntry } from "./entry/useEntryDraft";
 import { takeNr } from "./commit";
 import { perfMark } from "./perf";
 import { klassifizierungOf } from "./shell/contracts";
+import { cloneForUpdate } from "./lvzui/clone";
+import { JournalDruckDialog } from "./print/JournalDruckDialog";
+import { LagekarteDialog } from "./print/LagekarteDialog";
 
 /**
  * `f` nach dem nächsten gezeichneten Bild ausführen (rAF → Task): so erscheinen Feld, Liste und Band sofort, die
@@ -116,14 +118,13 @@ function afterPaint(f: () => void): () => void {
   return () => { cancelAnimationFrame(raf); if (t !== undefined) window.clearTimeout(t); };
 }
 
-/**
- * Druck-Dialoge (Paket D, `print/`): bis sie da sind null – das Menü druckt dann wie bisher direkt (Journal) bzw.
- * zeigt «Lagekarte drucken …» nicht.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const JournalDruckDialog = null as null | ComponentType<any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LagekarteDialog = null as null | ComponentType<any>;
+/** warten, bis der Browser im Leerlauf ist (höchstens 1.5 s) */
+function leerlauf(): Promise<void> {
+  return new Promise((r) => {
+    const ric = (window as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    if (ric) ric.call(window, () => r(), { timeout: 1500 }); else window.setTimeout(r, 16);
+  });
+}
 
 function deviceId(): string {
   try {
@@ -139,20 +140,6 @@ interface Props {
 }
 
 type DialogKind = "uebungen" | "hilfe" | "ueber" | "sprache" | "kuerzel" | "uebergabe" | "journaldruck" | "lagekarte" | null;
-
-/**
- * Kopie der Übung für `update` (P3, Spez. MVP 3 Kap. 3.12): wie `structuredClone`, aber ohne die grossen Bilddaten
- * (`overlays[].dataUrl`) und Anhänge – die werden als Referenz übernommen (nie an Ort und Stelle geändert).
- */
-export function cloneForUpdate(x: Exercise): Exercise {
-  const { overlays, attachments, ...rest } = x;
-  const c = structuredClone(rest) as Exercise;
-  // Bild: alles kopiert ausser der Bilddaten-Zeichenkette (Megabytes, nie an Ort und Stelle geändert)
-  if (overlays) c.overlays = overlays.map((o) => ({ ...structuredClone({ ...o, dataUrl: "" }), dataUrl: o.dataUrl }));
-  // Anhänge: nur Metadaten, flache Felder
-  if (attachments) c.attachments = attachments.map((a) => ({ ...a }));
-  return c;
-}
 
 /** Text ins Meldungsfeld (Offen: «Antwort eintragen», «Vbk eintragen»); Rückfall über das Feld selbst */
 function prefill(text: string): void {
@@ -358,13 +345,15 @@ export function Workspace({ product, tagline }: Props) {
   const roadDone = useRef(new Set<string>());
   const roadBusy = useRef(new Set<string>());
   const [roadRetry, setRoadRetry] = useState(0);
+  /** P5: erst nach `lt:bereit` und im Leerlauf beginnen (beim Laden zuerst Liste, Feld und Karte) */
+  const [roadGo, setRoadGo] = useState(false);
   useEffect(() => {
     const on = () => setRoadRetry((n) => n + 1);
     window.addEventListener("online", on);
     return () => window.removeEventListener("online", on);
   }, []);
   useEffect(() => {
-    if (!ex) return;
+    if (!ex || !roadGo) return;
     const todo = (ex.events ?? []).filter((e) => !e.deleted && !e.roadNone && e.angle === undefined && !roadDone.current.has(e.id) && !roadBusy.current.has(e.id)
       && (catalogEntry(e.sym)?.placement === "strasse" || !!e.roadHint) && (e.cells?.length || e.nai) && e.where !== "Karte");
     if (!todo.length) return;
@@ -379,8 +368,8 @@ export function Workspace({ product, tagline }: Props) {
         if (!done.size || exRef.current?.id !== exId) { done.clear(); return; }
         const batch = new Map(done);
         done.clear();
-        update((x) => {
-          x.events = (x.events ?? []).map((y) => {
+        // Schnellweg nur Meldungen (keine Kopie der ganzen Übung je Schub), unveränderte bleiben dieselben Objekte
+        updateEvents((evs) => evs.map((y) => {
             const r = batch.get(y.id);
             if (!r) return y;
             const { e, pl } = r;
@@ -392,9 +381,7 @@ export function Workspace({ product, tagline }: Props) {
             // keine Benutzeränderung (sonst stünde jede Meldung des Beispiels als «neu» in der Liste)
             const at = new Date((Date.parse(y.updatedAt) || Date.now()) + 1);
             return reviseEvent(y, { pos: pl.pos, angle: pl.angle, road: pl.road, where: `${y.where ?? ""}${pl.road ? ` · auf ${pl.road}` : ""}`.replace(/^ · /, "") }, device, at);
-          });
-          return x;
-        });
+          }));
       };
       let slice = performance.now(), sinceFlush = performance.now();
       try {
@@ -410,16 +397,17 @@ export function Workspace({ product, tagline }: Props) {
           if (!pl) { if (complete) roadDone.current.add(e.id); continue; }
           roadDone.current.add(e.id);
           done.set(e.id, { e, pl });
-          // höchstens ~40 ms am Stück rechnen, höchstens alle 400 ms eine Änderung
-          if (performance.now() - sinceFlush > 400) { flush(); sinceFlush = performance.now(); }
-          if (performance.now() - slice > 40) { await new Promise((r) => window.setTimeout(r, 16)); slice = performance.now(); }
+          // P5: höchstens ~24 ms am Stück und nur im Leerlauf rechnen (Bedienung geht vor), höchstens alle 8 s eine
+          // Änderung (jede Änderung baut Karte und Hinweise neu)
+          if (performance.now() - sinceFlush > 8000) { flush(); sinceFlush = performance.now(); }
+          if (performance.now() - slice > 24) { await leerlauf(); slice = performance.now(); }
         }
       } finally {
         flush();
         todo.forEach((e) => roadBusy.current.delete(e.id));
       }
     })();
-  }, [ex?.events, ex?.id, roadRetry]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ex?.events, ex?.id, roadRetry, roadGo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lage zum Zeitpunkt (ruhige Karte in der Basis: Beschriftung nur Neues und Gewähltes)
   /** eigene Eingabe (Eintragen/Korrektur): die neuen Meldungen sofort als einfache Zeichen setzen (bis zum Neuaufbau) */
@@ -675,7 +663,8 @@ export function Workspace({ product, tagline }: Props) {
   const [conflictIds, setConflictIds] = useState<string[]>([]);
   useEffect(() => setConflictIds([]), [ex?.id]);
   /** «Offen» rechnet immer mit dem Stand jetzt (LIVE) und der verzögerten Übung */
-  const offenItems = useMemo(() => (exLater ? offenePunkte(exLater, zeit.tLive, { conflictIds, stillMin: STILL_MIN }) : []), [exLater, zeit.tLive, conflictIds]);
+  // aus dem Web Worker (P2, Paket D), wenn er genau diesen Stand gerechnet hat, sonst im Hauptfaden
+  const offenItems = useOffen(exLater, zeit.tLive, conflictIds);
   const [selOffen, setSelOffen] = useState<string | null>(null);
   const onNr = useCallback(() => takeNr(exRef.current ?? { id: "", events: [] }), []);
   const lvzRow = useMemo(() => ({ device, kuerzel: schicht.kuerzel, update, onPrefill: prefill }), [device, schicht.kuerzel, update]);
@@ -709,13 +698,20 @@ export function Workspace({ product, tagline }: Props) {
     say(`Lagebericht als Notiz Nr ${nr} eingetragen`);
     return String(nr);
   }, [device, schicht.kuerzel, update, say]);
-  // P1: erste Liste und Feld bedienbar
+  // P1: erste Liste und Feld bedienbar («lt:bereit»; im Modus Vorbereiten gibt es kein Feld – dann ohne Marke)
   const bereit = useRef(false);
   useEffect(() => {
     if (bereit.current || !ex || !mapReady) return;
     return afterPaint(() => {
       if (bereit.current) return;
-      if (document.querySelector('textarea[placeholder="Was wurde gemeldet?"], input[placeholder="Was wurde gemeldet?"]')) { bereit.current = true; perfMark("bereit"); }
+      const feld = !!document.querySelector('textarea[placeholder="Was wurde gemeldet?"], input[placeholder="Was wurde gemeldet?"]');
+      if (!feld && lage) return;
+      bereit.current = true;
+      if (feld) perfMark("bereit");
+      // P5: Strassenzuordnung erst danach, im Leerlauf (spätestens nach 3 s)
+      const go = () => setRoadGo(true);
+      const ric = (window as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      if (ric) ric.call(window, go, { timeout: 3000 }); else window.setTimeout(go, 1500);
     });
   });
 
@@ -757,12 +753,15 @@ export function Workspace({ product, tagline }: Props) {
       void requestPersist();
       setSelSheet(null);
       if (!local) {
+        hebeNrZaehler(file);
         switchTo(file, "neu");
         const n = (file.events ?? []).filter((e) => !e.deleted).length;
         setMergeInfo({ name: file.name, text: `${n} ${n === 1 ? "Meldung" : "Meldungen"}, neu auf diesem Gerät${att}`, nurHier: 0, replace: null });
         return;
       }
       const { ex: merged, report } = mergeExercise(local, file);
+      // Entscheid 9.1: dieses Gerät zählt ab der höchsten bekannten Nummer weiter (Nummern ändern nie)
+      hebeNrZaehler(merged);
       void persister.writeAll(merged);
       // inzwischen hier Eingetragenes bleibt (nochmals zusammenführen)
       setEx((x) => (x && x.id === merged.id && x !== local ? mergeExercise(x, merged).ex : merged));
@@ -852,8 +851,7 @@ export function Workspace({ product, tagline }: Props) {
       onRename={(name) => update((x) => { x.name = name; return x; })}
       onSwitch={() => setDialog("uebungen")} onNew={() => { switchTo(newExercise(), "neu"); say("Neue Übung angelegt"); }} onDemo={loadDemo}
       onSaveFile={() => void saveFile()} onOpenFile={() => void openFile()} onCsv={() => void exportJournal("csv")}
-      onPdf={() => (JournalDruckDialog ? setDialog("journaldruck") : void exportJournal("pdf"))}
-      onLagekarte={LagekarteDialog ? () => setDialog("lagekarte") : undefined}
+      onPdf={() => setDialog("journaldruck")} onLagekarte={() => setDialog("lagekarte")}
       onUebergabe={openUebergabe} onKuerzel={() => setDialog("kuerzel")}
       schichtNote={schicht.kuerzel ? `Schicht ${schicht.kuerzel}${seitText(schicht.seitT) ? ` seit ${seitText(schicht.seitT)}` : ""}` : "Kürzel fehlt"}
       night={night} onNight={setNight} onPresent={() => togglePresent(true)}
@@ -874,7 +872,7 @@ export function Workspace({ product, tagline }: Props) {
       onCorrect={(id) => correct(id)}
       onHint={(id) => { setSideView("rot"); setSelHint(id); const h = hints.find((x) => x.id === id); if (h) focusHint(h); }}
       onPrefill={prefill} onUebergabe={openUebergabe} update={update} device={device} kuerzel={schicht.kuerzel}
-      rueckblick={zeit.zeit.kind === "rueckblick"} offerUndo={undo.offer} say={say} />
+      rueckblick={zeit.zeit.kind === "rueckblick"} say={say} />
   );
   // MVP 3 an JournalPanel/EntryBox/JournalList (Paket B nimmt sie an; optional)
   const mvp3 = { schicht, onNr, lvz: lvzRow, updateEvents, offen: offenPanel };
@@ -980,13 +978,13 @@ export function Workspace({ product, tagline }: Props) {
           <UebergabeView ex={ex} tLive={zeit.tLive} hints={allHints} lage={lageRot} items={offenItems} schicht={schicht} seitT={schicht.seitT}
             ki={!!ex.ki?.enabled} onKiNotiz={kiNotiz} onClose={() => setDialog(null)} say={say} />
         )}
-        {dialog === "journaldruck" && JournalDruckDialog && (
+        {dialog === "journaldruck" && (
           <JournalDruckDialog ex={ex} hints={allHints} lage={lageRot} tLive={zeit.tLive} kuerzel={schicht.kuerzel} schichtSeit={schicht.seit}
-            klassifizierung={klassifizierungOf(ex)} onClose={() => setDialog(null)} say={say} />
+            device={device} klassifizierung={klassifizierungOf(ex)} kiNote={kiPdfNote(ex, KI_PURPOSE_LABEL)} onClose={() => setDialog(null)} say={say} />
         )}
-        {dialog === "lagekarte" && LagekarteDialog && map && (
-          <LagekarteDialog ex={ex} map={map} t={tNow} from={winFrom} kuerzel={schicht.kuerzel} klassifizierung={klassifizierungOf(ex)}
-            onClose={() => setDialog(null)} say={say} />
+        {dialog === "lagekarte" && (
+          <LagekarteDialog ex={ex} map={map} t={tNow} from={winFrom} live={zeit.zeit.kind === "live"} kuerzel={schicht.kuerzel}
+            klassifizierung={klassifizierungOf(ex)} onClose={() => setDialog(null)} say={say} />
         )}
       </AppShell>
      </KiNotizCtx.Provider>

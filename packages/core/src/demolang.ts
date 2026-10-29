@@ -99,6 +99,8 @@ export function demoLang(o: { meldungen?: number; tage?: number; seed?: number }
     lastPos: (u: string, s: LageEvent["side"]) => lastPosition(events, s, u),
   });
   const offeneAuftraege: LageEvent[] = [];
+  let letzteGestrichen = false;
+  let letzteKorrigiert = false;
   const offeneRueckfragen: LageEvent[] = [];
   const sperren: LageEvent[] = [];
   let tagStao = 0;
@@ -204,10 +206,12 @@ export function demoLang(o: { meldungen?: number; tage?: number; seed?: number }
       ev.lvz = { dringend: stamp(true, 1), weiter: stamp({ an: "Bat", um: isoAt(Math.min(end, min + 3), days) }, 3) };
       if (min < end - 360 || r() < 0.3) ev.lvz.status = stamp("erledigt" as const, 15);
       if (r() < 0.5) ev.lvz.massnahme = stamp("Zfhr orientiert", 2);
-    } else if (y < 0.045 && i < total - 3) {
+    } else if ((y < 0.045 || (min >= end - 90 && !letzteGestrichen)) && i < total - 3) {
+      letzteGestrichen ||= min >= end - 90;
       // gestrichen
       ev = { ...ev, deleted: true, rev: 2, updatedAt: utcOf(t, 300), geaendertVon: kuerzel };
-    } else if (y < 0.06 && artOf(ev) === "meldung" && !ev.hebtAuf) {
+    } else if ((y < 0.06 || (min >= end - 90 && !letzteKorrigiert)) && artOf(ev) === "meldung" && !ev.hebtAuf) {
+      letzteKorrigiert ||= min >= end - 90;
       // korrigiert: frühere Fassung in der Historie
       const vorher: EventRevision = { rev: 1, at: createdAt, device: DEMO_LANG_DEVICE, text: ev.text.replace(/\d+ (Pers|Fz)/, (m) => `${+m.split(" ")[0]! + 1} ${m.split(" ")[1]}`), t: ev.t, unit: ev.unit, side: ev.side, aff: ev.aff, sym: ev.sym, von: kuerzel };
       const at = utcOf(t, 240);

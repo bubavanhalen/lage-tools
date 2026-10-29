@@ -145,6 +145,8 @@ export function visumZeilen(ex: Exercise, from: string, to: string): string[] {
   const im = schichtenIm(ex, from, to).filter((s) => s !== vorher && s.t > from);
   const out: string[] = [];
   let k = vorher?.an ?? null, a = from;
+  // vor dem ersten Wechsel unbekannt geführt: Lücke zeigen (Unterschrift nachtragen)
+  if (!vorher && im[0] && im[0].art === "beginn" && im[0].t > from) { out.push(`Geführt von: ________ (${spanne(from, im[0].t, ex.days)})`); a = im[0].t; }
   for (const s of im) {
     if (k || s.art === "uebergabe") out.push(`Geführt von: ${k ?? s.von ?? "________"} (${spanne(a, s.t, ex.days)})${s.art === "uebergabe" ? ` · übergeben an: ${s.an}` : ""}`);
     k = s.an; a = s.t;

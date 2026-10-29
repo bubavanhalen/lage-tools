@@ -10,8 +10,10 @@ import { Dialog } from "../shell/Dialog";
 import { klassifizierungOf, type JournalDruck } from "../shell/contracts";
 import type { LageRotState } from "../lageRot";
 import { safeFileName } from "../store";
-import { datum, eintraegeIm, grenzen, parseTagZeit, schichtAm, tagKurz, tagZeitText, tz } from "./umfang";
+import { datum, druckVorladen, eintraegeIm, grenzen, parseTagZeit, schichtAm, tagKurz, tagZeitText, tz } from "./umfang";
 import "./print.css";
+
+druckVorladen();
 
 export interface JournalDruckDialogProps {
   ex: Exercise;

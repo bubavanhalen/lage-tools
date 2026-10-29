@@ -5,7 +5,7 @@
  * Lage Rot höchstens zwei Möglichkeiten.
  */
 import {
-  artOf, artText, coaHeadline, compareEvents, istStill, isLage, lageBlau, lvzIndex, nrLabel, rapportZahlen, vermerkeOf,
+  artOf, coaHeadline, kurzText, compareEvents, istStill, isLage, lageBlau, lvzIndex, nrLabel, rapportZahlen, vermerkeOf,
   type Exercise, type Hint, type LageEvent, type OffenItem, type RapportZahlen,
 } from "@lage/core";
 import type { LageRotState } from "../lageRot";
@@ -134,7 +134,8 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     return 3;
   };
   const sorted = [...neuList].sort((a, b) => rang(a) - rang(b) || (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
-  const neuZeilen = sorted.slice(0, NEU_MAX).map((e) => `${hhmm(e.t)} ${nrLabel(e, ex)} ${vermerkeOf(e, idx).dringend ? "! " : ""}${artText(e)}: ${kurz(ohneMelder(e), 60)}${e.melder && artOf(e) === "meldung" ? ` (${e.melder})` : ""}`);
+  const blauNamen = ex.units?.blau ?? [];
+  const neuZeilen = sorted.slice(0, NEU_MAX).map((e) => `${hhmm(e.t)} ${nrLabel(e, ex)} ${vermerkeOf(e, idx).dringend ? "! " : ""}${kurz(kurzText(e, blauNamen), 90)}`);
   const neuTitel = neuAb
     ? `Neu seit der letzten Übergabe (${tagZeit(neuAb.t ?? i.seitT ?? t, days)}) – ${neuList.length} ${neuList.length === 1 ? "Eintrag" : "Einträge"}`
     : `Neu (noch keine Übergabe) – ${neuList.length} ${neuList.length === 1 ? "Eintrag" : "Einträge"}`;

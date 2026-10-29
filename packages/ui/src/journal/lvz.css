@@ -68,3 +68,5 @@
 }
 .jl-link:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
 @media (pointer: coarse) { .jl-link { font-size: var(--fs-16); } }
+.lvzm-weiter > label:first-child { flex-basis: 100%; }
+.lvzm-weiter .lvzm-an { flex: 1 1 6em; }

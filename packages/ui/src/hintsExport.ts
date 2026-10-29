@@ -19,7 +19,7 @@ function rows(ex: Exercise, hints: Hint[]) {
       .map((e) => `${e!.t.slice(11, 16)} ${e!.melder ?? ""} ${e!.text}`.replace(/\s+/g, " ").trim());
     return {
       tag: dayOf(h.t, ex.days), zeit: h.t.slice(11, 16), stufe: LEVEL_LABEL[h.level], regel: h.rule, gruppe: GROUP_LABEL[groupOf(h)],
-      titel: h.title, text: h.text, bundled: h.bundled ?? 1, prognose: h.next ? `${dayOf(h.next, ex.days)} ${h.next.slice(11, 16)}` : "",
+      titel: h.title, text: h.text, bundled: h.bundled ?? 1, h, prognose: h.next ? `${dayOf(h.next, ex.days)} ${h.next.slice(11, 16)}` : "",
       ort: [...(h.cells ?? []), h.nai ?? "", h.unit ?? ""].filter(Boolean).join(" "),
       ausloeser: trig, entscheid: DECISION[decisionOf(ex, h)]!, um: d?.at ? `${dayOf(d.at, ex.days)} ${d.at.slice(11, 16)}` : "", quelle: r?.source ?? "",
     };
@@ -67,14 +67,27 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
   header();
   if (k) doc.setFontSize(7.5);
   const all = rows(ex, list);
-  let shown = 0;
-  for (const r of all) {
+  const layoutRow = (r: (typeof all)[number]) => {
     const titel = r.bundled > 1 ? `${r.titel} · ${r.bundled}×` : r.titel;
     const trig = k ? r.ausloeser.slice(-2) : r.ausloeser;
     const main = [titel, r.text, ...(r.prognose ? [`Prognose: ${r.prognose}`] : []), ...trig.map((a) => `· ${a}`), ...(r.quelle && !k ? [`Quelle: ${r.quelle}`] : [])].join("\n");
     const cells = [r.tag, r.zeit, r.stufe, r.regel, main, `${r.entscheid}${r.um ? `\n${r.um}` : ""}`];
     const lines = cells.map((c, i) => doc.splitTextToSize(c, cols[i]!.w - 2) as string[]);
-    const h = Math.max(...lines.map((l) => l.length)) * LH + 1.6;
+    return { r, lines, h: Math.max(...lines.map((l) => l.length)) * LH + 1.6 };
+  };
+  let todo = all.map(layoutRow);
+  if (k) {
+    // eine Seite: offene und wichtige zuerst, dann neueste; gezeigt in zeitlicher Reihenfolge
+    const room = 280 - y - 6;
+    const rank = (x: (typeof todo)[number]) => (nur && isOpen(ex, x.r.h, nur.to) ? 4 : 0) + (x.r.h.level === "hoch" ? 2 : x.r.h.level === "mittel" ? 1 : 0);
+    const order = todo.map((x, i) => ({ x, i })).sort((a, b) => rank(b.x) - rank(a.x) || (a.x.r.h.t < b.x.r.h.t ? 1 : a.x.r.h.t > b.x.r.h.t ? -1 : 0));
+    const keep = new Set<number>();
+    let used = 0;
+    for (const { x, i } of order) { if (used + x.h > room) continue; used += x.h; keep.add(i); }
+    todo = todo.filter((_, i) => keep.has(i));
+  }
+  let shown = 0;
+  for (const { r, lines, h } of todo) {
     if (y + h > (k ? 280 : 285)) header();
     if (voll) break;
     if (r.stufe === LEVEL_LABEL.hoch) { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
@@ -91,7 +104,7 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
   }
   if (shown < all.length) {
     doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80);
-    doc.text(`+ ${all.length - shown} weitere Hinweise – vollständig als Tabelle «Hinweise» (CSV) oder in der App`, M, y + 2);
+    doc.text(`+ ${all.length - shown} weitere (ältere bzw. erledigte) Hinweise – vollständig als Tabelle «Hinweise» (CSV) oder in der App`, M, y + 2);
     doc.setFont("helvetica", "normal"); doc.setTextColor(0);
   }
 }

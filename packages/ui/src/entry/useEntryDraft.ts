@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
-  artOf, catalogEntry, cellAtAny, cellBounds, clockDay, correctEvent, correctionSummary, entryState, findCells, isPlaceName,
+  artOf, aufhebDraft, catalogEntry, cellAtAny, cellBounds, clockDay, correctEvent, correctionSummary, entryState, findCells, isPlaceName,
   lastPosition, normalizeMelder, onlineAllowed, parseMeldung, placeLabel, sheetBounds, undoCorrection,
   type Attachment, type Bounds, type Draft, type EntryArt, type EntryState, type Exercise, type Kind, type LageEvent, type LV95, type Side,
 } from "@lage/core";
@@ -292,8 +292,9 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   /** mehrere Aufhebungs-Ziele: das gewählte gilt (der Grund «aufheben» entfällt dann) */
   const draft: Draft | null = useMemo(() => {
     if (!draft0 || !liftPick || !draft0.hebtAufKandidaten?.includes(liftPick)) return draft0;
-    return { ...draft0, hebtAuf: liftPick, hebtAufKandidaten: [liftPick] };
-  }, [draft0, liftPick]);
+    const ziel = events.find((e) => e.id === liftPick);
+    return ziel ? aufhebDraft(draft0, ziel) : draft0;
+  }, [draft0, liftPick, events]);
   /** Nicht-Meldung (Auftrag, Rückfrage …): kein Zeichen, kein Ort */
   const nichtLage = !!draft && !isLageDraft(draft);
 

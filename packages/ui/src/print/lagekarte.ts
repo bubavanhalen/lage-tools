@@ -18,63 +18,21 @@ import { renderTiles, tileLevel, type Bounds } from "../tiles";
 import { tileCoverage } from "../offline";
 import { situationModel, type SituationItem } from "../journalLayer";
 import { shapeItems } from "../shapeLayer";
-import { ohneAufgehobene } from "../situationLayer";
+import { ohneAufgehobene } from "../aufgehoben";
 import { safePdf } from "../pdfSafe";
 import { pdfInfo } from "../perf";
 import { LAGE_KARTE } from "../colors";
 import type { LagekarteDruck, TileCoverage } from "../shell/contracts";
 import { datum, tagKurz } from "./umfang";
+import { blattLayout, fitAspect, RAND, type BlattLayout } from "./blatt";
 
-// ---------- Blatt
-
-export interface BlattLayout {
-  pw: number; ph: number;
-  /** Kartenfeld (mm) */
-  field: { x: number; y: number; w: number; h: number };
-  /** Legende: A4 Band unten, A3 Spalte rechts */
-  legend: { x: number; y: number; w: number; h: number; band: boolean };
-}
-
-const RAND = 8, KOPF = 9, FUSS = 6, LAB_TOP = 4, LAB_LEFT = 5;
-
-export function blattLayout(paper: LagekarteDruck["paper"]): BlattLayout {
-  if (paper === "A3") {
-    const pw = 420, ph = 297, lw = 60;
-    const x = RAND + LAB_LEFT, y = RAND + KOPF + LAB_TOP;
-    const w = pw - RAND - lw - 4 - x, h = ph - RAND - FUSS - 2 - y;
-    return { pw, ph, field: { x, y, w, h }, legend: { x: pw - RAND - lw, y, w: lw, h, band: false } };
-  }
-  const pw = 297, ph = 210, lh = 13.5;
-  const x = RAND + LAB_LEFT, y = RAND + KOPF + LAB_TOP;
-  const w = pw - RAND - x, h = ph - RAND - FUSS - lh - 2 - y;
-  return { pw, ph, field: { x, y, w, h }, legend: { x: RAND, y: y + h + 1.5, w: pw - 2 * RAND, h: lh, band: true } };
-}
-
-/** Ausschnitt auf das Verhältnis des Kartenfelds erweitern (nie beschneiden), Mitte bleibt */
-export function fitAspect(b: Bounds, aspect: number): Bounds {
-  const w = b.maxE - b.minE, h = b.maxN - b.minN;
-  const cx = (b.minE + b.maxE) / 2, cy = (b.minN + b.maxN) / 2;
-  if (w / h < aspect) { const nw = h * aspect; return { minE: cx - nw / 2, maxE: cx + nw / 2, minN: b.minN, maxN: b.maxN }; }
-  const nh = w / aspect;
-  return { minE: b.minE, maxE: b.maxE, minN: cy - nh / 2, maxN: cy + nh / 2 };
-}
+export { blattLayout, fitAspect, rasterBounds, type BlattLayout } from "./blatt";
 
 /** Ausschnitt der Karte jetzt (LV95) */
 export function mapBounds(map: L.Map): Bounds {
   const lb = map.getBounds();
   const a = toLv95(lb.getSouthWest()), c = toLv95(lb.getNorthEast());
   return { minE: Math.min(a.e, c.e), maxE: Math.max(a.e, c.e), minN: Math.min(a.n, c.n), maxN: Math.max(a.n, c.n) };
-}
-
-/** ganzes Raster (alle Blätter) bzw. NAI, sonst null */
-export function rasterBounds(ex: Pick<Exercise, "sheets" | "areas">): Bounds | null {
-  const bs = ex.sheets.map(sheetBounds);
-  if (!bs.length) {
-    const pts = ex.areas.flatMap((a) => a.ring);
-    if (!pts.length) return null;
-    return { minE: Math.min(...pts.map((p) => p.e)), maxE: Math.max(...pts.map((p) => p.e)), minN: Math.min(...pts.map((p) => p.n)), maxN: Math.max(...pts.map((p) => p.n)) };
-  }
-  return { minE: Math.min(...bs.map((b) => b.minE)), maxE: Math.max(...bs.map((b) => b.maxE)), minN: Math.min(...bs.map((b) => b.minN)), maxN: Math.max(...bs.map((b) => b.maxN)) };
 }
 
 /** Zielauflösung 200 dpi */
@@ -310,15 +268,33 @@ export async function lagekartePdf(ex: Exercise, o: LagekarteDruck & { signal?: 
     if (top[0] < F.x || top[0] > F.x + F.w || top[1] < F.y || top[1] > F.y + F.h) continue;
     haloText(doc, a.trupp ? `${a.name} · ${a.trupp}` : a.name, top[0], Math.max(F.y + 2.5, top[1] - 0.8), { size: o.paper === "A3" ? 7.5 : 6.5, bold: true, color: areaColor(a), align: "center" });
   }
-  // Beschriftung der Zeichen
+  // Beschriftung der Zeichen: freie Stelle neben dem Zeichen (rechts, links, oben, unten …), eigene Trupps zuerst,
+  // dann neueste; ohne freie Stelle keine Beschriftung (auf dem Blatt vermerkt – nie still)
   const fs = o.paper === "A3" ? 6.5 : 6;
-  for (const d of drawn) {
+  const pxMm = F.w / W;
+  type R = { x0: number; y0: number; x1: number; y1: number };
+  const hit = (a: R, b2: R) => a.x0 < b2.x1 && b2.x0 < a.x1 && a.y0 < b2.y1 && b2.y0 < a.y1;
+  const busy: R[] = drawn.map((d) => { const r = (d.w * pxMm) * 0.85; const [x, y] = [F.x + d.x * pxMm, F.y + d.y * pxMm]; return { x0: x - r, y0: y - r, x1: x + r, y1: y + r }; });
+  const prio = [...drawn].sort((a, c) => Number(c.it.kind === "eigen") - Number(a.it.kind === "eigen") || (a.it.e.t < c.it.e.t ? 1 : a.it.e.t > c.it.e.t ? -1 : 0));
+  let ohnePlatz = 0;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(fs);
+  for (const d of prio) {
     const s = itemLabel(d.it, o.t, ex.days);
     if (!s) continue;
-    const [x, y] = [F.x + (d.x / W) * F.w, F.y + (d.y / H) * F.h];
-    const off = (d.w / W) * F.w + 0.6;
+    doc.setFont("helvetica", d.it.kind === "eigen" ? "bold" : "normal"); doc.setFontSize(fs);
+    const tw = doc.getTextWidth(s) + 0.8, th = fs * 0.3528 * 1.15;
+    const [x, y] = [F.x + d.x * pxMm, F.y + d.y * pxMm];
+    const off = d.w * pxMm * 0.85 + 0.4;
+    const cand: Array<[number, number]> = [
+      [x + off, y - th / 2], [x - off - tw, y - th / 2], [x + off * 0.6, y - off - th * 0.6], [x + off * 0.6, y + off * 0.6],
+      [x - off * 0.6 - tw, y - off - th * 0.6], [x - off * 0.6 - tw, y + off * 0.6], [x - tw / 2, y - off - th], [x - tw / 2, y + off],
+    ];
+    const spot = cand.map(([cx, cy]) => ({ x0: cx, y0: cy, x1: cx + tw, y1: cy + th }))
+      .find((r) => r.x0 >= F.x && r.x1 <= F.x + F.w && r.y0 >= F.y && r.y1 <= F.y + F.h && !busy.some((b2) => hit(r, b2)));
+    if (!spot) { ohnePlatz++; continue; }
+    busy.push(spot);
     const col: [number, number, number] = d.it.kind === "eigen" ? rgb(LAGE_KARTE.eigen) : d.it.kind === "unklar" ? rgb(LAGE_KARTE.unklar) : d.it.kind === "neutral" ? rgb(LAGE_KARTE.neutral) : rgb(LAGE_KARTE.feind);
-    haloText(doc, s, x + off, y + 1, { size: fs, bold: d.it.kind === "eigen", color: col });
+    haloText(doc, s, spot.x0 + 0.4, spot.y0 + th * 0.78, { size: fs, bold: d.it.kind === "eigen", color: col });
   }
   doc.restoreGraphicsState();
   ex.sheets.forEach(gridLabels);
@@ -345,11 +321,12 @@ export async function lagekartePdf(ex: Exercise, o: LagekarteDruck & { signal?: 
   doc.text(klass, lay.pw - RAND, y, { align: "right" });
 
   // Legende
-  await legende(doc, lay, items, ex.areas.length > 0, ex.sheets.length > 0, o.paper);
+  await legende(doc, lay, items, ex.areas.length > 0, ex.sheets.length > 0, o.paper, ohnePlatz);
 
   // Fuss: Massstab, Nordpfeil, Quelle, erstellt, Seite
   const mPerMm = (b.maxE - b.minE) / F.w;
-  const scale = Math.round((mPerMm * 1000) / 500) * 500 || Math.round(mPerMm * 1000);
+  const raw = mPerMm * 1000, mag = 10 ** Math.max(2, Math.floor(Math.log10(raw)) - 1);
+  const scale = Math.round(raw / mag) * mag;
   const barM = NICE.reduce((best, n) => (Math.abs(n / mPerMm - 25) < Math.abs(best / mPerMm - 25) ? n : best), NICE[0]!);
   const barMm = barM / mPerMm;
   const fy = lay.ph - RAND + 1;
@@ -379,7 +356,7 @@ export async function lagekartePdf(ex: Exercise, o: LagekarteDruck & { signal?: 
 }
 
 /** Legende: Grundformen, vorkommende Zeichen (≤ 16, sonst «+ n weitere»), NAI/Raster */
-async function legende(doc: jsPDF, lay: BlattLayout, items: SituationItem[], areas: boolean, raster: boolean, paper: LagekarteDruck["paper"]) {
+async function legende(doc: jsPDF, lay: BlattLayout, items: SituationItem[], areas: boolean, raster: boolean, paper: LagekarteDruck["paper"], ohnePlatz = 0) {
   const Lg = lay.legend;
   const entries: Array<{ label: string; draw: (x: number, y: number) => Promise<void> | void }> = [];
   const shape = (kind: "feind" | "unklar" | "eigen") => (x: number, y: number) => {
@@ -417,7 +394,7 @@ async function legende(doc: jsPDF, lay: BlattLayout, items: SituationItem[], are
   const rest = syms.length - Math.min(syms.length, 16, max);
   if (areas) entries.push({ label: "NAI", draw: (x, y) => { doc.setDrawColor(...rgb(KARTE.nai)); doc.setLineWidth(0.45); doc.rect(x, y - 2.4, 3.6, 2.4, "S"); } });
   if (raster) entries.push({ label: "Raster", draw: (x, y) => { doc.setDrawColor(90); doc.setLineWidth(0.12); doc.line(x, y - 1.2, x + 3.6, y - 1.2); doc.line(x + 1.8, y - 2.6, x + 1.8, y + 0.2); } });
-  const extra = items.some((i) => i.kind !== "eigen") ? "Zeit am Zeichen = Meldung" : "";
+  const extra = [items.some((i) => i.kind !== "eigen") ? "Zeit am Zeichen = Meldung" : "", ohnePlatz ? `${ohnePlatz} Zeichen ohne Beschriftung (kein Platz) – Zeiten im Journal` : ""].filter(Boolean).join(" · ");
   doc.setTextColor(0);
   if (Lg.band) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(7.5);

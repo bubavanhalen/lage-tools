@@ -195,3 +195,4 @@
 .eb-kz-f[aria-invalid="true"] { border-color: var(--stop); }
 .eb-kz-h { font-size: var(--fs-12); color: var(--muted); }
 .eb-kz-err { color: var(--stop); }
+.eb-kz-f::placeholder { text-transform: none; color: var(--muted); font-family: var(--f-body); }

@@ -81,3 +81,16 @@ export function parseTagZeit(s: string, days: string[], ref: string): string | n
 }
 /** ISO lokal → «T2 0731» (Eingabefeld Zeitraum) */
 export const tagZeitText = (t: string, days: string[]) => `${tagKurz(t, days)} ${t.slice(11, 13)}${t.slice(14, 16)}`;
+
+/**
+ * jsPDF und das Journal-PDF bald nach dem Start im Leerlauf nachladen: Drucken muss auch offline gehen, wenn der
+ * Service Worker (noch) nicht alles gespeichert hat (erster Besuch, Test ohne Service Worker). Einmal je Sitzung.
+ */
+let vorgeladen = false;
+export function druckVorladen(): void {
+  if (vorgeladen || typeof window === "undefined") return;
+  vorgeladen = true;
+  const go = () => { void import("../journalpdf").catch(() => { vorgeladen = false; }); };
+  const idle = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+  window.setTimeout(() => (idle ? idle(go, { timeout: 600 }) : go()), 700);
+}

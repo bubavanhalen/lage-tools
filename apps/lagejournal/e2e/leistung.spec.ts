@@ -93,7 +93,10 @@ const spec: Spec = {
         const n0 = await zeilenVon(s).count();
         const t0 = Date.now();
         await chip.click();
-        const ms = await antwortzeit(async () => !(await chip.isVisible().catch(() => false)) && (await zeilenVon(s).count()) >= n0, 3000);
+        // ab 120 Einträgen ist die Liste virtualisiert (VIRT_AB): dann sind weniger Zeilen gezeichnet als vorher – «alles»
+        // gilt, sobald der Chip weg ist und die Liste (gezeichnet bzw. virtualisiert) steht
+        const ms = await antwortzeit(async () => !(await chip.isVisible().catch(() => false))
+          && ((await zeilenVon(s).count()) >= n0 || (await s.page.locator(".jl-v > div[aria-hidden=true]").count()) > 0), 3000);
         w.ms = ms === Infinity ? ms : Date.now() - t0;
         soll((w.ms as number) <= 500, `${w.ms} ms`);
       } finally { await s.close(); }

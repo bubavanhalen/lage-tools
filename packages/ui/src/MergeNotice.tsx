@@ -2,8 +2,8 @@
  * Ergebnis von «Datei öffnen (zusammenführen)» als Rückmeldung **unter dem Meldungsfeld** (Spez. MVP 3, Kap. 3.13 Nr. 2,
  * E18) statt als Band über der Karte: nichts verdeckt Karte oder Meldungsband, kein Layoutsprung in der Kartenspalte.
  *
- * - Text wie bisher (`mergeReportText`, inkl. «2 Nummern doppelt – als 12a/12b gekennzeichnet»); Konflikte stehen
- *   zusätzlich als Punkt in «Offen».
+ * - Text aus `mergeReportText` («3 neu · 1 aktualisiert · 1 Konflikt (in Offen)», «2 Nummern doppelt – als 12a/12b
+ *   gekennzeichnet»); Konflikte stehen zusätzlich als Punkt in «Offen» («Offen zeigen»).
  * - Verschwindet nach 6 s von selbst (Maus darüber oder Fokus darin hält sie) – ausser es ist eine Wahl offen:
  *   abweichendes Raster/NAI aus der Datei («hiesige behalten / aus Datei übernehmen») steht dann als Blatt in der Spalte.
  * - «Ersetzen durch Datei …» bleibt der ausdrückliche zweite Weg.
@@ -47,7 +47,7 @@ export function MergeNotice({ info, onClose, onOffen }: { info: MergeInfo; onClo
       <p className="mn-t"><b>«{info.name}»</b> {info.replace ? "zusammengeführt" : "geöffnet"}: {info.text}</p>
       {conflicts.length > 0 && (
         <p className="mn-k">
-          ⚠ {conflicts.length} {conflicts.length === 1 ? "Konflikt" : "Konflikte"} (in Offen) – beide Fassungen bleiben erhalten.
+          ⚠ Auf beiden Geräten verschieden korrigiert – beide Fassungen bleiben erhalten.
           {onOffen && <> <button type="button" className="mn-link" onClick={onOffen}>Offen zeigen</button></>}
         </p>
       )}

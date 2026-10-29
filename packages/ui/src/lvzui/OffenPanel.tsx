@@ -7,9 +7,10 @@
  * und «Zur Meldung». Die Punkte sind `.jlist li` (zählen im Inventar nicht). «Offen» zeigt immer den Stand jetzt (LIVE).
  */
 import { useEffect, useRef, type KeyboardEvent as RKeyboardEvent } from "react";
-import { setVermerk, type Hint, type LageEvent, type OffenArt, type OffenItem } from "@lage/core";
+import { type Hint, type LageEvent, type OffenArt, type OffenItem } from "@lage/core";
 import type { OffenPanelProps } from "../shell/contracts";
 import { isOpen } from "../hintsData";
+import { setVermerkUndo } from "../journal/actions";
 import { hintLine } from "../red/redText";
 import "./lvzui.css";
 
@@ -46,8 +47,6 @@ export function seitLabel(min: number): string {
 }
 
 export interface OffenPanelExtra {
-  /** Rückgängig-Leiste der Hülle («Nr 55 erledigt · Rückgängig») */
-  offerUndo?: (label: string, restore: () => void) => void;
   say?: (t: string) => void;
   /** Lagezeit LIVE (für den Kopf «Stand jetzt») */
   tLive?: string;
@@ -62,13 +61,9 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
 
   const offeneHinweise: Hint[] = p.tLive ? hints.filter((h) => isOpen(ex, h, p.tLive!)) : hints.filter((h) => h.level !== "info" && !h.until);
 
-  const setStatus = (e: LageEvent, v: "offen" | "erledigt", nr?: string) => {
-    const prev = e.lvz?.status?.v;
-    p.update((x) => ({ ...x, events: (x.events ?? []).map((y) => (y.id === e.id ? setVermerk(y, "status", v, { device: p.device, kuerzel: p.kuerzel ?? undefined }) : y)) }));
-    if (v === "erledigt") p.offerUndo?.(`Nr ${nr ?? "?"} erledigt`, () => {
-      p.update((x) => ({ ...x, events: (x.events ?? []).map((y) => (y.id === e.id ? setVermerk(y, "status", prev ?? "offen", { device: p.device, kuerzel: p.kuerzel ?? undefined }) : y)) }));
-    });
-  };
+  // Rückgängig über die gemeinsame Leiste des Journals (eine Leiste für die ganze Seite, journalUndo.tsx)
+  const setStatus = (e: LageEvent, v: "offen" | "erledigt") =>
+    setVermerkUndo(p.update, ex, e.id, "status", v, { device: p.device, kuerzel: p.kuerzel });
 
   const act = (it: OffenItem) => {
     const e = it.eventId ? byId.get(it.eventId) : undefined;
@@ -77,9 +72,9 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
       case "verbindung": case "still": p.onPrefill(`${it.unit ?? ""} Vbk `); return;
       case "ohne-ort": if (e) p.onCorrect(e.id); return;
       case "konflikt":
-        if (e) { setStatus(e, "erledigt", it.nr); p.onEvent(e.id); }
+        if (e) { setStatus(e, "erledigt"); p.onEvent(e.id); }
         return;
-      default: if (e) setStatus(e, "erledigt", it.nr);
+      default: if (e) setStatus(e, "erledigt");
     }
   };
 

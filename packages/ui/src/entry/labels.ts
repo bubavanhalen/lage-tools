@@ -3,7 +3,7 @@
  * Kürzel erklären («T2» = Übungstag 2 mit Datum), «Fehlt noch: was gesehen» statt «Wer», kein «Einheit (allg.)»,
  * Vorschläge der Erkennung in den Text übernehmen. Reine Funktionen, ohne Browser testbar.
  */
-import { artOf, findByNr, nrLabel, parseLocalIso, vermerkeOf, type EntryArt, type Exercise, type LageEvent, type LvzIndex, type MeldeFelder } from "@lage/core";
+import { artOf, findByNr, nrLabel, parseLocalIso, readArt, vermerkeOf, type EntryArt, type Exercise, type LageEvent, type LvzIndex, type MeldeFelder } from "@lage/core";
 
 /** «T2 = Übungstag 2 · Mi., 15.05.2030» (Tooltip/Titel zu «T2»); ausserhalb der Übungstage nur das Datum */
 export function dayTitle(t: string, days: string[]): string {
@@ -56,7 +56,7 @@ export function formOf(e: Pick<LageEvent, "side" | "aff" | "notiz" | "art" | "he
   if (e.hebtAuf) return "aufheb";
   return e.side === "blau" ? "eigen" : e.aff === "N" ? "neutral" : e.aff === "U" ? "unklar" : "feind";
 }
-export const FORM_ZEICHEN: Record<ZeilenForm, string> = { feind: "◆", eigen: "●", unklar: "■", neutral: "▲", notiz: "✎", vbk: "⇄", aufheb: "✕" };
+export const FORM_ZEICHEN: Record<ZeilenForm, string> = { feind: "◆", eigen: "●", unklar: "■", neutral: "▲", notiz: "✎", vbk: "⇄", aufheb: "⊘" };
 
 /** «07:40» aus ISO lokal bzw. ISO UTC (mit «Z») */
 export function hm(t: string | undefined): string {
@@ -133,3 +133,29 @@ export function bezugLabel(ex: Pick<Exercise, "events">, id: string | undefined,
   if (nr) { const e = findByNr(ex, nr); if (e) return nrLabel(e, ex); }
   return null;
 }
+
+/** Anzeigetext ohne vorangestellten Melder («H01 4 Pers …» → «4 Pers …»), der Melder steht separat */
+export function displayText(e: Pick<LageEvent, "melder" | "text">): string {
+  const m = e.melder;
+  if (!m) return e.text;
+  const re = new RegExp("^" + m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*") + "\\s*(?:meldet\\s*)?[:,]?\\s*", "i");
+  const t = e.text.replace(re, "");
+  // Originaltext bleibt (keine Grossschreibung: «um 0723 …», «keine Verbindung» wie getippt)
+  return t || e.text;
+}
+
+/**
+ * Text einer Nicht-Meldung ohne den Art-Hinweis, den die Art schon ausschreibt («Auftrag an H01: Beo NAI 1» →
+ * «Beo NAI 1» neben «✎ Auftrag an H01»). Vbk und Quittung behalten den Text (der Hinweis steht nicht vorne).
+ */
+export function nichtLageText(e: Pick<LageEvent, "melder" | "text" | "art" | "notiz" | "bezugArt">, blau: string[]): string {
+  const t = displayText(e);
+  const art = artOf(e);
+  if (art === "meldung" || art === "vbk" || e.bezugArt === "quittung") return t;
+  // Notiz nur mit «Notiz:»/«NB:»/«Bem:» vorne (eine Quittung o. ä. behält den ganzen Text)
+  if (art === "notiz" && !/^(notiz|nb|bem)\s*:/i.test(t)) return t;
+  const rest = readArt(t, { blau }).rest.trim();
+  if (!rest || rest.length >= t.length || !t.endsWith(rest)) return t;
+  return rest || t;
+}
+

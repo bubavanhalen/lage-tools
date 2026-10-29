@@ -4,10 +4,10 @@
  * Änderung mit Rückgängig-Leiste. Löschen ist eine Revision mit `deleted` (geht beim Zusammenführen mit), nie rot.
  * Vermerke ändern `rev` nicht (`setVermerk`, Kern) und zählen nie als Konflikt.
  *
- * Die reinen Teile (`aufhebEvent`, `aufhebText`, `vermerkText`, `mapEvent`) sind ohne Browser testbar.
+ * Die reinen Teile (`aufhebJetztEvent`, `aufhebText`, `vermerkText`, `mapEvent`) sind ohne Browser testbar.
  */
 import {
-  buildSidc, catalogEntry, clockDay, compareEvents, localIso, newEventId, nrLabel, offsetFor, parseLocalIso, reviseEvent, setVermerk,
+  aufhebEvent, catalogEntry, clockDay, compareEvents, localIso, lvzIndex, nrLabel, parseLocalIso, reviseEvent, setVermerk, vermerkeOf,
   type Exercise, type LageEvent, type LvzVermerke,
 } from "@lage/core";
 import { offerUndo } from "./journalUndo";
@@ -83,10 +83,20 @@ export function setVermerkUndo<K extends VermerkKey>(update: Update, ex: Exercis
   const prev = e.lvz?.[key];
   update((x) => mapEvent(x, id, (y) => setVermerk(y, key, v, { device: o.device, ...(o.kuerzel ? { kuerzel: o.kuerzel } : {}) })));
   offerUndo(o.label ?? vermerkText(key, v, nrLabel(e, ex)), () => update((x) => mapEvent(x, id, (y) => {
-    const lvz: LvzVermerke = { ...(y.lvz ?? {}) };
-    if (prev) (lvz as Record<string, unknown>)[key] = prev; else delete lvz[key];
-    const out: LageEvent = { ...y, updatedAt: new Date().toISOString() };
-    if (Object.keys(lvz).length) out.lvz = lvz; else delete out.lvz;
+    // Der Vorzustand bekommt einen **neuen** Zeitstempel: beim Zusammenführen pro Feld (Fenster, Datei) gewinnt sonst der
+    // spätere Stempel der rückgängig gemachten Änderung. «Nicht gesetzt» wird als neutraler Wert geschrieben.
+    const so = { device: o.device, ...(o.kuerzel ? { kuerzel: o.kuerzel } : {}) };
+    if (prev) return setVermerk(y, key, prev.v as VermerkWert<K>, so);
+    if (key === "dringend") return setVermerk(y, "dringend", false, so);
+    if (key === "massnahme") return setVermerk(y, "massnahme", "", so);
+    if (key === "weiter") return setVermerk(y, "weiter", null, so);
+    // Status: abgeleiteter Stand ohne Stempel (Auftrag/Rückfrage offen/erledigt, dringend offen); sonst entfernen
+    const { status: _s, ...rest } = y.lvz ?? {};
+    const ohne: LageEvent = { ...y, lvz: rest };
+    const abgeleitet = vermerkeOf(ohne, lvzIndex(x.events ?? [])).status;
+    if (abgeleitet) return setVermerk(y, "status", abgeleitet, so);
+    const out: LageEvent = { ...ohne, updatedAt: new Date().toISOString() };
+    if (!Object.keys(rest).length) delete out.lvz;
     return out;
   })));
 }
@@ -116,30 +126,19 @@ export function jetztT(ex: Pick<Exercise, "days" | "events">, now = new Date(), 
 }
 
 /**
- * Aufhebende Meldung für «Aufgehoben (jetzt)» (Kap. 3.5): Art Meldung, ohne Ort/Element (zeichnet nie, auch nicht in
- * MVP 1), `sym: einheit`, `desc` «Sperre aufgehoben», Ort nur in `orte`, Melder leer, `hebtAuf` = Ziel.
+ * Aufhebende Meldung für «Aufgehoben (jetzt)» (Kap. 3.5) über den Kern (`aufhebEvent`): Art Meldung, ohne Ort/Element
+ * (zeichnet nie, auch nicht in MVP 1), Ort nur in `orte`, Melder leer, `hebtAuf` = Ziel; Lagezeit `jetztT`.
  */
-export function aufhebEvent(target: LageEvent, ex: Pick<Exercise, "days" | "events">, o: { device: string; kuerzel?: string | null; nr?: number; now?: Date }): LageEvent {
+export function aufhebJetztEvent(target: LageEvent, ex: Pick<Exercise, "days" | "events">, o: { device: string; kuerzel?: string | null; nr?: number; now?: Date }): LageEvent {
   const now = o.now ?? new Date();
-  const t = jetztT(ex, now, target.t);
-  const ce = catalogEntry("einheit")!;
-  const name = catalogEntry(target.sym)?.name ?? target.desc ?? "Sperre";
-  const ort = ortKurz(target);
-  return {
-    id: newEventId(now.getTime()), rev: 1, device: o.device, updatedAt: now.toISOString(), createdAt: now.toISOString(),
-    tReported: localIso(now), t, tOffset: offsetFor(t, now),
-    side: "blau", unit: "", text: aufhebText(target), sym: "einheit", aff: "F", sidc: buildSidc(ce, "F"),
-    desc: `${name} aufgehoben`, source: { kind: "text" }, confirmed: true,
-    art: "meldung", hebtAuf: target.id, ...(ort ? { orte: [ort] } : {}),
-    ...(o.nr !== undefined ? { nr: o.nr, von: o.device } : {}), ...(o.kuerzel ? { erfasstVon: o.kuerzel } : {}),
-  };
+  return aufhebEvent(target, o.device, now, { t: jetztT(ex, now, target.t), ...(o.nr !== undefined ? { nr: o.nr } : {}), ...(o.kuerzel ? { kuerzel: o.kuerzel } : {}) });
 }
 
 /** «Aufgehoben (jetzt)»: aufhebende Meldung eintragen, Leiste «Sperre AG13 aufgehoben · Rückgängig» (= streichen) */
 export function aufhebenJetzt(update: Update, ex: Exercise, id: string, o: { device: string; kuerzel?: string | null; nr?: number }): LageEvent | null {
   const target = (ex.events ?? []).find((x) => x.id === id);
   if (!target || target.deleted) return null;
-  const ev = aufhebEvent(target, ex, o);
+  const ev = aufhebJetztEvent(target, ex, o);
   update((x) => { x.events = [...(x.events ?? []), ev]; return x; });
   offerUndo(ev.text, () => update((x) => mapEvent(x, ev.id, (y) => reviseEvent(y, { deleted: true, ...(o.kuerzel ? { geaendertVon: o.kuerzel } : {}) }, o.device))));
   return ev;

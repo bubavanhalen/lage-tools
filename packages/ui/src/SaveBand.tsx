@@ -9,7 +9,8 @@
  *   · Zeitzone des Geräts ≠ Zeitzone der Übung (beim Start, beim Öffnen einer Datei oder einer gespeicherten Übung).
  *   · Datenbank blockiert durch ein altes Lagejournal-Fenster bzw. Update-Notiz nach dem Aktualisieren der Datenbank
  *     («alte Lagejournal-Fenster schliessen»).
- * - `MergeBar`: Ergebnis von «Öffnen» (Zusammenführen), pro abweichendem Raster/NAI die Wahl «hiesige behalten / aus
+ * - `MergeBar` (bis MVP 1; ab MVP 3 zeigt die Hülle das Ergebnis als `MergeNotice` unter dem Meldungsfeld, E18 – hier
+ *   bleiben nur die Typen `MergeInfo`/`HullChoice` in Gebrauch): Ergebnis von «Öffnen» (Zusammenführen), pro abweichendem Raster/NAI die Wahl «hiesige behalten / aus
  *   Datei übernehmen», und der ausdrückliche zweite Weg «Ersetzen durch Datei». Steht als Band im Fluss (verdeckt weder
  *   Live-Band noch Rückblick-Leiste) und verschwindet nach 8 s selbst – ausser bei einem Konflikt («1 Konflikt –
  *   ansehen») oder abweichendem Raster/NAI (dort ist eine Wahl offen).

@@ -251,6 +251,8 @@ export function correctionPatch(base: LageEvent, cand: LageEvent, o: { keepPlace
     for (const k of keys) if (JSON.stringify(from[k]) !== JSON.stringify(base[k])) out[k] = from[k];
   };
   take(TEXT_KEYS, cand);
+  // Art immer ausdrücklich, wenn sie wechselt (auch «meldung»: eventFromDraft setzt `art` nur bei Nicht-Meldungen)
+  if (artOf(cand) !== artOf(base)) { out.art = artOf(cand); if (artOf(cand) === "meldung" && base.notiz) out.notiz = undefined; }
   if (!o.keepPlace) take(PLACE_KEYS, cand);
   if (!o.keepSymbol) take(SYMBOL_KEYS, cand);
   if (!o.keepTime && cand.t !== base.t) out.t = cand.t;

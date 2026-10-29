@@ -19,7 +19,7 @@ export function KuerzelAsk({ value, onChange, onSubmit, onCancel, error, inputRe
   const id = useId();
   useEffect(() => { inputRef.current?.focus({ preventScroll: true }); }, [inputRef]);
   return (
-    <div className="eb-kuerzel" role="group" aria-labelledby={`${id}-q`}>
+    <div className="eb-kuerzel" role="group" aria-label="Wer erfasst?">
       <p className="eb-kz-q" id={`${id}-q`}><b>Wer erfasst?</b> Dein Kürzel steht im Journal und bei der Übergabe.</p>
       <div className="eb-kz-row">
         <label className="eb-kz-l" htmlFor={`${id}-k`}>Kürzel</label>
