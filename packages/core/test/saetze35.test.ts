@@ -33,6 +33,9 @@ const ABWEICHUNG: Record<string, string> = {
   "neu30-15": "C1/Kap. 5.4: Vorschlag bei `was` ist das Ersatzwort («Panzer») statt des Katalogschlüssels («pz»)",
   "s02-61": "C7: eigene Verwundete ohne neues Zeichen, Ort «bei H05», Begehren Sanität (wie #20–#22)",
   "s12-17": "C7: eigene Verwundete ohne neues Zeichen, Ort «bei H05», Begehren Sanität (wie #20–#22)",
+  // MVP 3.5 Nachbesserung (Review 6, Entscheid «Vollzug schliesst Auftrag»): Vorschau «schliesst Auftrag Nr … ab» mit «nicht abschliessen»
+  "s02-13": "Fix M1/H1: «Auftrag ausgeführt» zeigt den Abschluss (`Draft.abschluss`) des einzigen offenen Auftrags an H05",
+  "s16-03": "Fix M1/H1: «Auftrag erfüllt» zeigt den Abschluss (`Draft.abschluss`) des einzigen offenen Auftrags an H03",
 };
 
 const ergebnisse = alleAuswerten(SAETZE35);

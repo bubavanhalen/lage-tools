@@ -141,7 +141,7 @@ export function auswerten(f: SatzFall, ex: Exercise): SatzErgebnis {
   });
   const vor = lage(ex, now);
   const blau0 = [...ex.units.blau];
-  const d = parseMeldung(mitTrupp(f.satz, f.truppKnopf), ctxOf(ex, now));
+  const d = parseMeldung(mitTrupp(f.satz, f.truppKnopf), { ...ctxOf(ex, now), ...(f.kontext ?? {}) });
   const st = entryState(d, optsOf(ex, now));
   let ev: LageEvent | null = null;
   // «geht nicht» trägt nie ein; gelb: zweites Enter trägt den Entwurf ein, wie er ist

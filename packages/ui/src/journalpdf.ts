@@ -47,9 +47,27 @@ export type JournalPdfRow =
   };
 
 export const JOURNAL_COLS = [
-  { h: "Nr", w: 9 }, { h: "Zeit", w: 9 }, { h: "Eing.", w: 9 }, { h: "Art", w: 16 }, { h: "von/an", w: 17 },
-  { h: "Meldung", w: 74 }, { h: "Ort", w: 36 }, { h: "Erf.", w: 10 },
+  // Art 17.5 mm: «Orientierung» (8 pt, 15.4 mm) passt in eine Zeile – vorher «Orientierun-g» (Review 6, Einsatz N)
+  { h: "Nr", w: 9 }, { h: "Zeit", w: 9 }, { h: "Eing.", w: 9 }, { h: "Art", w: 17.5 }, { h: "von/an", w: 17 },
+  { h: "Meldung", w: 72.5 }, { h: "Ort", w: 36 }, { h: "Erf.", w: 10 },
 ] as const;
+
+/**
+ * Zeilen der Spalte «Art»: Wörter nie trennen. Ein Wort, das nicht in die Spalte passt, wird gekürzt («Verbindungs-
+ * kontrolle» → «Vbk» steht schon so in ART_KURZ; sonst Punkt-Abkürzung «Orient.»), nie «Orientierun-g».
+ */
+export function artZeilen(doc: { getTextWidth(t: string): number }, c: string, w: number): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (const wort of c.split(/\s+/).filter(Boolean)) {
+    let wt = wort;
+    while (doc.getTextWidth(wt) > w && wt.length > 4) wt = wt.replace(/\.?$/, "").slice(0, -1) + ".";
+    const probe = cur ? `${cur} ${wt}` : wt;
+    if (cur && doc.getTextWidth(probe) > w) { out.push(cur); cur = wt; } else cur = probe;
+  }
+  if (cur) out.push(cur);
+  return out.length ? out : [""];
+}
 
 /** wie `kindText` (journalLayer.ts, ohne Leaflet): Zugehörigkeit N heisst «Neutral» */
 const kindText = (e: LageEvent) => (e.side !== "blau" && e.side !== "ul" && e.aff === "N" ? "Neutral" : kindLabel(e));
@@ -244,7 +262,8 @@ function layout(ex: Exercise, o: JournalDruck, extra: JournalPdfExtra): jsPDF {
     doc.setFont("helvetica", r.dringend ? "bold" : "normal"); doc.setFontSize(FS);
     // Spalte «Nr» bei dringend: Platz für das Vektorzeichen ⚠
     // Zeit: «02:45 MESZ» (doppelte Stunde) als zwei Zeilen «02:45» / «MESZ», nie mitten im Wort getrennt (Paket E)
-    const lines = r.cells.map((c, i) => (i === 1 ? c.split(" ") : doc.splitTextToSize(c, JOURNAL_COLS[i]!.w - 1.4 - (i === 0 && r.dringend ? 3 : 0)) as string[]));
+    // Art (Spalte 3): nur an Leerschlägen umbrechen, nie mitten im Wort («Verbindungskontrolle» → kleinere Schrift)
+    const lines = r.cells.map((c, i) => (i === 1 ? c.split(" ") : i === 3 ? artZeilen(doc, c, JOURNAL_COLS[3].w - 1.4) : doc.splitTextToSize(c, JOURNAL_COLS[i]!.w - 1.4 - (i === 0 && r.dringend ? 3 : 0)) as string[]));
     doc.setFont("helvetica", "italic");
     const verm = r.vermerke.length ? doc.splitTextToSize(r.vermerke.join(" · "), JOURNAL_COLS[5].w - 1.4) as string[] : [];
     doc.setFont("helvetica", "normal");

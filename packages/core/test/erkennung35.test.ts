@@ -148,7 +148,8 @@ describe("C6 Zwei Orte", () => {
     const r = st.reasons.find((x) => x.code === "zwei-orte")!;
     expect(r.text).toBe("Zwei Orte – Feind in AK10, H02 nach AK11?");
     expect(r.ask).toBe("Nochmals Enter: nur den Feind in AK10 eintragen (H02 bleibt in AL9 A).");
-    expect(d).toMatchObject({ kind: "feind", sym: "kontakt", count: 4, where: { label: "AK10" }, melder: "H02" });
+    // MVP 3.5 Nachbesserung (Review 6): «Kontakt mit 4 Pers» = Infanterie (kein Waffen-Zeichen), Kontakt im Sinn
+    expect(d).toMatchObject({ kind: "feind", sym: "inf_trp", count: 4, desc: "4 gegnerische Personen (Kontakt)", where: { label: "AK10" }, melder: "H02" });
     expect(d.text).toBe("H02 wir weichen aus nach AK11, Kontakt mit 4 Pers AK10");
     expect(d.teile).toEqual(["H02 wir weichen aus nach AK11", "H02 Kontakt mit 4 Pers AK10"]);
     const { vor, nach } = trage(ex, d);

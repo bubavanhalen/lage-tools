@@ -16,7 +16,7 @@
  */
 import { createPortal } from "react-dom";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
-import { artOf, catalogEntry, cellAtAny, describeTactical, lastPosition, nrLabel, zeitMs, zeitText, type Draft, type Kind, type LageEvent } from "@lage/core";
+import { LIVE_TOLERANZ_MIN, artOf, catalogEntry, cellAtAny, describeTactical, lastPosition, nrLabel, zeitMs, zeitText, type Draft, type Kind, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { LAGE_KARTE } from "../colors";
 import { useDraftMissing } from "../QualityMarks";
@@ -43,14 +43,23 @@ function choiceText(c: SymbolChoice, count?: number): string {
 /** Art in Worten für «Verstanden: …» (Nicht-Meldungen; Kap. 2.2, 4) */
 function artVerstanden(d: Draft): string {
   switch (d.art) {
-    case "auftrag": return d.an ? `Auftrag an ${d.an}` : "Auftrag – an wen?";
+    // Meldeauftrag von oben («Bat: Standort H02 melden bis 0800»): Auftrag von Bat, kein Empfänger-Trupp
+    case "auftrag": return d.an ? `Auftrag an ${d.an}` : d.quelle ? `Auftrag von ${d.quelle}` : "Auftrag – an wen?";
     case "orientierung": return d.quelle ? `Orientierung von ${d.quelle}` : "Orientierung";
-    case "rueckfrage": return d.an ? `Rückfrage an ${d.an}` : d.melder ? `Rückfrage von ${d.melder}` : "Rückfrage";
+    // Review 6 (Einsatz N): «Bat fragt …» ist nie «Rückfrage von H02» – der genannte Trupp ist Inhalt
+    case "rueckfrage": return d.quelle ? `Rückfrage von ${d.quelle}` : d.an ? `Rückfrage an ${d.an}` : d.melder ? `Rückfrage von ${d.melder}` : "Rückfrage";
+    // Review 6 (Einsatz N): Ausgang immer «Ausgang an Bat» (vorher leer: «Verstanden: · ·»)
+    case "ausgang": return `Ausgang an ${d.an || d.quelle || "Bat"}`;
     case "vbk": return `Verbindung ${d.melder || "?"}${d.vbk ? ` · ${d.vbk === "keine" ? "keine – kommt in Offen" : d.vbk}` : ""}`;
     case "notiz": return d.bezugArt === "quittung" ? `Quittung${d.melder ? ` von ${d.melder}` : ""}`
       : d.bezugArt === "antwort" ? (d.an ? `Antwort an ${d.an}` : d.melder ? `Antwort von ${d.melder}` : "Antwort") : "Notiz";
     default: return d.melder ? `${d.melder} meldet` : "";
   }
+}
+
+/** Wort vor der Nummer des Bezugs («Antwort auf Nr 57», «zu Nr 54») */
+function bezugWort(a: Draft["bezugArt"]): string {
+  return a === "quittung" ? "Quittung zu" : a === "ausgefuehrt" ? "ausgeführt zu" : a === "weiter" || a === "verweis" ? "zu" : "Antwort auf";
 }
 
 /** Name des aufgehobenen Zeichens mit Ort («Sperre AG13») */
@@ -100,7 +109,12 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
   // MVP 3.5 (S22, S23): getippte Zeit nach der Uhr «(4 min nach jetzt – Uhr des Melders?)»; doppelte Stunde «02:55 MESZ (vor 15 min)»
   const zt = zeitText({ t: draft.t, tOffset: draft.tOffset });
   const abst = draft.timeFromText ? Math.round((zeitMs({ t: draft.t, tOffset: draft.tOffset }) - Math.floor(d.now.getTime() / 60000) * 60000) / 60000) : 0;
-  const zusatz = korr ? "" : !draft.timeFromText ? " (jetzt)" : abst > 0 ? ` (${abst} min nach jetzt – Uhr des Melders?)` : zt.length > 5 && abst < 0 ? ` (vor ${-abst} min)` : "";
+  // Review 6 (Erstbenutzer N): rot «liegt in der Zukunft» ohne Zusatz (der Grund nennt es schon); «Uhr des Melders?» nur
+  // im Toleranzbereich (≤ 10 min), sonst «3 h 20 min nach jetzt» – nie «63090 min»
+  const zukunftRot = lvl === "geht-nicht" && state.reasons.some((x) => x.code === "zukunft");
+  const nachJetzt = (m: number) => (m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${Math.round(m / 1440)} Tage`);
+  const zusatz = korr ? "" : !draft.timeFromText ? " (jetzt)" : zukunftRot ? ""
+    : abst > 0 ? ` (${nachJetzt(abst)} nach jetzt${abst <= LIVE_TOLERANZ_MIN ? " – Uhr des Melders?" : ""})` : zt.length > 5 && abst < 0 ? ` (vor ${-abst} min)` : "";
   const time = `${dayLabel(draft.t, ex.days)} ${zt}${zusatz}`;
   const timeChanged = korr && base && draft.timeFromText && draft.t !== base.t;
   const what = d.keepSymbol && base ? base.desc : d.symOverride ? choiceText(d.symOverride, draft.count) : draft.desc;
@@ -112,6 +126,8 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
   const liftKand = !draft.hebtAuf && (draft.hebtAufKandidaten?.length ?? 0) > 1
     ? draft.hebtAufKandidaten!.map((id) => (ex.events ?? []).find((e) => e.id === id)).filter((e): e is LageEvent => !!e) : [];
   const bezugNr = draft.bezug || draft.bezugNr ? bezugLabel(ex, draft.bezug, draft.bezugNr) : null;
+  /** (Review 6, Einsatz H1) fester Bezug aus Offen (Kern `Draft.bezugFest`) */
+  const fest = (draft as Draft & { bezugFest?: { id: string; nr: string; text?: string } }).bezugFest ?? null;
   const zeitInhalt = note && draft.art === "orientierung" && !draft.timeFromText && /(?<![\p{L}\d])\d{1,2}[:.]?\d{2}(?![\p{L}\d])/u.test(draft.text);
   const generic = what ? null : genericWhat(d.choice?.key ?? draft.sym, kindNow === "eigen" ? "blau" : "rot", draft.unit || draft.melder);
   const whatText = what ?? generic ?? (pickerEntry(d.choice?.key ?? draft.sym)?.name ?? draft.sym) + (draft.count && draft.count > 1 ? ` ×${draft.count}` : "");
@@ -191,9 +207,12 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
         {note ? <span className="eb-art-v">{artVerstanden(draft)}</span>
           : draft.melder ? <span>{draft.melder} meldet</span> : <span className="eb-q">Trupp ?</span>}
         {note && draft.art === "auftrag" && draft.frist && <span> · bis {draft.frist.slice(11, 16)}</span>}
-        {note && draft.art === "rueckfrage" && draft.artStark && <span> · offen bis Antwort</span>}
+        {note && draft.art === "rueckfrage" && draft.artStark && <span> · offen bis Antwort{draft.quelle ? ` («Antwort an ${draft.quelle}: …»)` : ""}</span>}
         {zeitInhalt && <span> · Zeiten im Text sind Inhalt</span>}
-        {bezugNr && !draft.abschluss && <span> · {draft.bezugArt === "quittung" ? "Quittung zu" : draft.bezugArt === "ausgefuehrt" ? "ausgeführt zu" : draft.bezugArt === "weiter" ? "zu" : "Antwort auf"} Nr {bezugNr}</span>}
+        {/* fester Bezug aus Offen («Antwort eintragen»): «Antwort auf Nr 57 (Standort H02?)» */}
+        {fest && !draft.abschluss && <span> · {bezugWort(draft.bezugArt)} Nr {fest.nr}{fest.text ? ` (${fest.text})` : ""}</span>}
+        {/* offene Wahl (64a/64b, welche Rückfrage): kein «zu Nr 57a» daneben – erst die Wahl setzt den Bezug */}
+        {!fest && bezugNr && !draft.abschluss && !(wahl && !d.bezugWahl) && <span> · {bezugWort(draft.bezugArt)} Nr {bezugNr}</span>}
         {draft.abschluss && !d.abschlussAus && <span> · schliesst Auftrag Nr {draft.abschluss.nr} ab{draft.abschluss.text ? ` (${draft.abschluss.text})` : ""}</span>}
         {draft.begehren && <span> · Begehren: {draft.begehren.was} – kommt in Offen</span>}
         {draft.dringend && <span className="eb-dringend"> · dringend</span>}

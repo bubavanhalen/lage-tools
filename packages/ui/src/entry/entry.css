@@ -61,13 +61,15 @@
   /* nie abgeschnitten (1280×720): bricht bei schmaler Spalte um statt «…» */
   .eb-keys { display: block; visibility: hidden; white-space: normal; line-height: 1.4; }
   .ebox .eb-fieldwrap:has(.eb-field:focus-visible) ~ .eb-keys { visibility: visible; }
+  /* Review 6 (Erstbenutzer M1, 1366×768): bei offener Vorschau keine Tastenzeile – der Platz gehört der Vorschau */
+  .ebox:has(.eb-prev) .eb-keys { display: none; }
 }
 .eb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; font-size: var(--fs-14); }
 .eb-info { margin: 0; font-size: var(--fs-14); color: var(--ink); padding: var(--sp-8) var(--sp-12); border-radius: var(--r-4); background: var(--bg); border: 1px solid var(--line-soft); }
 
 /* Hilfe */
 .eb-help {
-  position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px);
+  position: absolute; z-index: var(--z-spalte-pop); left: 0; right: 0; top: calc(100% + 4px);
   border: 1px solid var(--line); border-radius: var(--r-8); background: var(--surface); padding: var(--sp-12);
   box-shadow: 0 6px 18px rgba(0, 0, 0, .18); font-size: var(--fs-14); display: grid; gap: var(--sp-8);
   max-height: min(72vh, 680px); overflow-y: auto; overscroll-behavior: contain;
@@ -223,6 +225,14 @@
 .eb-kzz-t.is-err { color: var(--stop); font-weight: 600; padding: var(--sp-4) var(--sp-8); border: 2px solid var(--stop); border-radius: var(--r-4); }
 /* Hinweise mit Knöpfen (Entwurf wiederhergestellt, Schutz) */
 .eb-notice.eb-restored, .eb-notice.eb-schutz { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); }
-.eb-notice.eb-restored > span, .eb-notice.eb-schutz > span { flex: 1 1 12em; }
+.eb-notice.eb-restored > span { flex: 1 1 12em; }
+/* Schutzhinweis eine Zeile: Text · «So geht’s» (als Link) · ✕ */
+.eb-notice.eb-schutz { flex-wrap: nowrap; padding-top: 0; padding-bottom: 0; }
+.eb-notice.eb-schutz > span { flex: 1 1 auto; min-width: 0; }
+.ebox .eb-schutz .eb-link { border-color: transparent; background: transparent; text-decoration: underline; padding: 0 var(--sp-4); white-space: nowrap; }
+.ebox .eb-schutz .eb-x { border-color: transparent; background: transparent; padding: 0; flex: none; }
 /* «Andere ▾» als Portal (fest über allem, nie von der scrollenden Vorschau abgeschnitten) */
 .eb-artmenu.eb-artmenu-fix { position: fixed; z-index: 1250; right: auto; top: auto; min-width: 0; overflow: auto; }
+
+/* Review 6 (Feld H3, M2): Schutzhinweis bei offener Bildschirmtastatur ausgeblendet (JournalPanel setzt data-tastatur) */
+:root[data-tastatur] .ebox .eb-schutz { display: none; }

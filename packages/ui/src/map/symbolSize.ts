@@ -25,6 +25,18 @@ export function symbolGrundmass(mPerPx: number, g: ZeichenGroesse): number {
 /** Linienstärken der Zeichen (milsymbol-Einheiten, V4): Rahmen 7, Halo 8 */
 export const ZEICHEN_STRICH = { strokeWidth: ZEICHEN.strokeWidth, outlineWidth: ZEICHEN.outlineWidth } as const;
 
+/** dünnste Linie eines Zeichens auf dem Bildschirm (px; Review 6 Erstbenutzer N: S bei 20 m/px war 1.4 px) */
+export const LINIE_MIN_PX = 1.5;
+/**
+ * Linienstärken für ein Zeichen von `px` Grundmass: milsymbol rechnet in Einheiten von `px`/100 – Rahmen 7 ergibt bei
+ * 20 px nur 1.4 px. Darunter wird der Rahmen so verstärkt, dass er `LINIE_MIN_PX` sicher erreicht (+2 %, auf 0.1 auf).
+ */
+export function zeichenStrich(px: number): { strokeWidth: number; outlineWidth: number } {
+  // 2 % Reserve: milsymbol rundet die Bildgrösse, der Massstab ist nicht genau px/100
+  const min = Math.ceil(((LINIE_MIN_PX * 1.02 * 100) / Math.max(1, px)) * 10) / 10;
+  return min > ZEICHEN.strokeWidth ? { strokeWidth: min, outlineWidth: ZEICHEN.outlineWidth } : ZEICHEN_STRICH;
+}
+
 /** Schriftgrösse von Zusatz und Zeitfähnchen: 12 px, in der Präsentation 16 px */
 export function beschriftungPx(g: ZeichenGroesse | undefined): number {
   return g?.praesentation ? ZEICHEN.beschriftungPraesentationPx : ZEICHEN.beschriftungPx;

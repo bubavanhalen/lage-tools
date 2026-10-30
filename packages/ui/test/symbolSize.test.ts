@@ -52,3 +52,15 @@ describe("Beschriftung und Massstab", () => {
     expect(mPerPxOf({ getZoom: () => 20, options: { crs: { scale: () => 0.1 } } })).toBe(10);
   });
 });
+
+describe("Linie ≥ 1.5 px (Review 6 Erstbenutzer N)", () => {
+  it("S bei 20 m/px (20 px): Rahmen ≥ 1.5 px; ab 22 px Standard 7", async () => {
+    const { zeichenStrich, symbolGrundmass, LINIE_MIN_PX } = await import("../src/map/symbolSize");
+    for (const m of [20, 12, 7, 3]) for (const stufe of ["S", "M", "L"] as const) {
+      const px = symbolGrundmass(m, { stufe, praesentation: false });
+      expect((zeichenStrich(px).strokeWidth * px) / 100).toBeGreaterThanOrEqual(LINIE_MIN_PX);
+    }
+    expect(zeichenStrich(20).strokeWidth).toBe(7.7);
+    expect(zeichenStrich(28).strokeWidth).toBe(7);
+  });
+});

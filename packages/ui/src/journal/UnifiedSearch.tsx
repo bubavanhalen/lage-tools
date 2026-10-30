@@ -177,7 +177,7 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
           {list.map((h, i) => (
             <li key={`${h.kind}-${h.label}-${i}`} id={`${listId}-${i}`} role="option" aria-selected={i === active} className={i === active ? "act" : ""}
               onPointerDown={(e) => e.preventDefault()} onClick={() => pick(h)}>
-              {hitText(h, p.today, h.kind === "element" ? repOf(h.label) : undefined)}{"online" in h ? <span className="us-online"> · online</span> : null}
+              {hitText(h, p.today, h.kind === "element" ? repOf(h.label) : undefined)}{"online" in h ? <span className="us-online">{"\u00a0· online"}</span> : null}
             </li>
           ))}
           {gestrZeile && (
@@ -187,7 +187,7 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
           )}
           {onlineZeile && !online!.laeuft && (
             <li role="option" aria-selected={false} className="us-online-q" onPointerDown={(e) => e.preventDefault()} onClick={() => online!.suchen()}>
-              ‹{q}› bei swisstopo suchen
+              ‹{q}› bei swisstopo suchen <span className="us-online-n">· Ortsname und Übungsraum gehen ans Internet</span>
             </li>
           )}
           {(loading || online?.laeuft) && <li className="us-load" aria-hidden="true">Ortssuche …</li>}

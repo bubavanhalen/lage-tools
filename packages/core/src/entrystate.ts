@@ -114,6 +114,8 @@ export interface EntryStateOptions {
 const PQ_TOKEN = /^[A-Z]{2}\s?\d{1,3}(?:\s?[ABCD])?$/;
 /** Zeit mehr als 10 min nach jetzt → «bitte prüfen» */
 const FUTURE_MS = 10 * 60000;
+/** (MVP 3.5 Fix) ab hier ist eine Zeit in der Zukunft immer rot (auch mit Tagesangabe) */
+const ZUKUNFT_ROT_MS = 12 * 3600000;
 
 const hhmm = (t: string) => t.slice(11, 16);
 
@@ -217,7 +219,8 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
     check.push({ code: "art-schwach", text: `Als ${w} ohne Zeichen?`, hint: `Nochmals Enter trägt als ${w} ein. Ist es eine Lage: Feind, Eigene oder Unklar wählen.`, ask: `Als ${w} ohne Zeichen eintragen? Nochmals Enter.` });
   }
   if (note) {
-    if (art === "auftrag" && !d.an) check.push({ code: "an", text: "An wen? Trupp nennen, z. B. «Auftrag an H01».", hint: "Trupp im Text nennen oder so eintragen.", ask: "Ohne Empfänger eintragen? Nochmals Enter." });
+    // Auftrag von oben ohne Trupp («Bat verlangt Lagemeldung bis 0800», Fix M3) braucht keinen Empfänger – er gilt dem LVZ
+    if (art === "auftrag" && !d.an && !d.quelle) check.push({ code: "an", text: "An wen? Trupp nennen, z. B. «Auftrag an H01».", hint: "Trupp im Text nennen oder so eintragen.", ask: "Ohne Empfänger eintragen? Nochmals Enter." });
     if (art === "vbk" && !d.melder.trim()) check.push({ code: "melder", text: "Mit welchem Trupp? Trupp oben antippen.", hint: "Trupp oben antippen oder an den Anfang schreiben.", ask: "Ohne Trupp eintragen? Nochmals Enter." });
   } else if (!d.melder.trim() && !d.truppNeu && !(d.bezug && d.bezugArt === "antwort")) {
     check.push({ code: "melder", text: "Wer meldet? fehlt", hint: "Trupp oben antippen oder an den Anfang schreiben.", ask: "Ohne Trupp eintragen? Nochmals Enter." });
@@ -255,6 +258,11 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
       hint: wort ? `Wort korrigieren (z. B. «${wort}») oder so eintragen (Art unklar).` : "Wort korrigieren oder so eintragen (Art unklar).",
       ask: `Nochmals Enter trägt «${u.count !== undefined ? `${u.count} ` : ""}?» als Unklar ein.`,
     });
+  }
+  // (MVP 3.5 Fix, Erstbenutzer H4) «H3» ist Trupp und Planquadrat: als Trupp gelesen, einmal fragen
+  if (d.hnFrage && !lift) {
+    const { token, trupp } = d.hnFrage;
+    check.push({ code: "einordnung", token, text: `«${token}»: Trupp ${trupp} oder Planquadrat ${token}?`, hint: `Planquadrat: «in ${token}» schreiben. Trupp: an den Anfang schreiben.`, ask: `Nochmals Enter: als Trupp ${trupp} eintragen.` });
   }
   // (MVP 3.5, C5) eigener Trupp ohne Standortverb an einen Ort: «H01 selbst nach AC5?»
   if (d.seiteFrage && !note && !lift) {
@@ -302,11 +310,22 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
     stop.push({ code: "zeit-fehlt", ...(d.timeToken ? { token: d.timeToken } : {}), suggest: z.vorschlag, text: `${z.zeit} gibt es heute nicht (Uhr um ${z.von} auf ${z.bis} vorgestellt).`, hint: `Zeit korrigieren, z. B. ${z.vorschlag}.` });
   }
   const dt = d.zeitFehlt ? 0 : zeitMs({ t: d.t, tOffset: d.tOffset }, o.zone) - o.now.getTime();
-  if (dt > FUTURE_MS && Math.abs(dayDiff(d.day, localDayOf(o.now))) <= 1) {
-    const g = d.dayFromText ? undefined : futureGuess(d.minutes, o.now);
+  // (MVP 3.5 Fix) mehr als 12 h voraus ist immer rot – auch mit Tag und auch weit weg vom heutigen Tag («44 Tage voraus»),
+  // ausser die ganze Übung liegt noch in der Zukunft (Beispiel 2030 mit heutiger Uhr)
+  const heute = localDayOf(o.now);
+  const uebungLaeuft = !o.days?.length || dayDiff(o.days[0]!, heute) <= 1;
+  const weit = dt > ZUKUNFT_ROT_MS && uebungLaeuft;
+  if (dt > FUTURE_MS && (Math.abs(dayDiff(d.day, heute)) <= 1 || weit)) {
+    const g = d.dayFromText || weit ? undefined : futureGuess(d.minutes, o.now);
     const ti = o.days?.indexOf(d.day) ?? -1;
     const tag = ti > 0 ? `T${ti} ${hhmm(d.t).replace(":", "")}` : `T1 ${hhmm(d.t).replace(":", "")}`;
-    if (d.dayFromText) {
+    const tage = dayDiff(d.day, heute);
+    if (weit && tage > 1) {
+      stop.push({
+        code: "zukunft", ...(d.timeToken ? { token: d.timeToken } : {}),
+        text: `${dm(d.day)} ${hhmm(d.t)} liegt ${tage} Tage in der Zukunft.`, hint: "Tag und Zeit prüfen (T1, T2 … = Tage der Übung).",
+      });
+    } else if (d.dayFromText && !weit) {
       check.push({ code: "zukunft", text: `${hhmm(d.t)} liegt in der Zukunft.`, hint: "Zeit und Tag prüfen.", ask: "Trotzdem so eintragen? Nochmals Enter." });
     } else {
       stop.push({

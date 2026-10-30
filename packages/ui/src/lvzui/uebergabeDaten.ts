@@ -105,14 +105,17 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     ? `Schicht ${i.kuerzel}${i.seitT ? ` seit ${tagZeit(i.seitT, days)} (${dauerText(minutes(i.seitT, t))})` : ""} · ${neuList.length} ${neuList.length === 1 ? "Eintrag" : "Einträge"} in der Schicht`
     : "Kürzel fehlt – keine Schicht auf diesem Gerät";
 
+  /** Ereignisse nach ID (Zone «MESZ/MEZ» in der doppelten Stunde) */
+  const byIdEv = new Map((ex.events ?? []).map((e) => [e.id, e]));
   // 1 Lage Blau
   const blau = lageBlau(ex, t).map((z): UebergabeZeileBlau => ({
     trupp: z.trupp,
     ort: z.ort ?? "–",
     seit: z.seit ? tagZeit(z.seit, days) : "–",
-    letzte: z.letzteMeldung ? `${zeitKurz(z.letzteMeldung.t, t, days)} ${kurz(ohneMelder({ melder: z.trupp, text: z.letzteMeldung.text }), 38)}` : "–",
-    vbk: z.letzteVbk ? `${zeitKurz(z.letzteVbk.t, t, days)} ${z.letzteVbk.ergebnis}` : "–",
-    offen: z.offen.map((o) => `${o.art === "auftrag" ? "Auftrag" : "Rückfrage"} ${o.nr}${o.ueberfaellig ? " ⚠" : ""}`).join(", "),
+    letzte: z.letzteMeldung ? `${zeitKurz(z.letzteMeldung.t, t, days, byIdEv.get((z.letzteMeldung as { id?: string }).id ?? ""))} ${kurz(ohneMelder({ melder: z.trupp, text: z.letzteMeldung.text }), 38)}` : "–",
+    vbk: z.letzteVbk ? `${zeitKurz(z.letzteVbk.t, t, days, byIdEv.get((z.letzteVbk as { id?: string }).id ?? ""))} ${z.letzteVbk.ergebnis}` : "–",
+    // Klartext statt «⚠» (im PDF wurde daraus «Auftrag 65 Achtung:» ohne Rest, Review 6 Einsatz N)
+    offen: z.offen.map((o) => `${o.art === "auftrag" ? "Auftrag" : "Rückfrage"} ${o.nr}${o.ueberfaellig ? " (Frist vorbei)" : ""}`).join(", "),
     still: istStill(z) ? `${z.stillMin} min still` : null,
   }));
 
@@ -149,8 +152,8 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
 
   // 3 Offene Punkte
   const offen = items.slice(0, OFFEN_MAX).map((it): UebergabeZeileOffen => ({
-    key: it.key, mark: MARK[it.art], t: it.art === "still" ? "" : zeitKurz(it.t, t, days), nr: it.nr ?? "", text: textMitTag(it.text, it.t, t, days),
-    meta: it.art === "auftrag" ? (it.ueberfaellig ? "⚠ Frist vorbei" : `seit ${dauerText(it.seitMin)}`) : it.art === "rueckfrage" || it.art === "rueckfrage-oben" || it.art === "begehren" ? `seit ${dauerText(it.seitMin)}` : "",
+    key: it.key, mark: MARK[it.art], t: it.art === "still" ? "" : zeitKurz(it.t, t, days, it.eventId ? byIdEv.get(it.eventId) : null), nr: it.nr ?? "", text: textMitTag(it.text, it.t, t, days),
+    meta: it.ueberfaellig ? "⚠ Frist vorbei" : it.art === "auftrag" || it.art === "rueckfrage" || it.art === "rueckfrage-oben" || it.art === "begehren" ? `seit ${dauerText(it.seitMin)}` : "",
   }));
 
   // 4 Neu: dringend → Feind → Auftrag/Rückfrage → Rest, je jüngste zuerst
@@ -173,7 +176,7 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     return teile.join(" · ");
   };
   const zeile = (e: LageEvent, n = 90): UebergabeZeileNeu => ({
-    key: e.id, t: zeitKurz(e.t, t, days), nr: nrLabel(e, ex), bang: vermerkeOf(e, idx).dringend, text: kurz(kurzText(e, blauNamen), n), meta: status(e),
+    key: e.id, t: zeitKurz(e.t, t, days, e), nr: nrLabel(e, ex), bang: vermerkeOf(e, idx).dringend, text: kurz(kurzText(e, blauNamen), n), meta: status(e),
   });
   const neuZeilen = sorted.slice(0, NEU_MAX).map((e) => zeile(e));
   const n = `${neuList.length} ${neuList.length === 1 ? "Eintrag" : "Einträge"}`;
@@ -193,7 +196,7 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     const e = byId.get(z.id);
     // Fix 3: Abgelaufenes nie als gültig – «Lagerapport 1000 im KP · (vorbei 10:00)»
     const meta = [z.vorbei && z.termin ? `(vorbei ${zeitKurz(z.termin, t, days)})` : "", e ? status(e) : ""].filter(Boolean).join(" · ");
-    return { key: z.id, t: zeitKurz(z.t, t, days), nr: z.nr, bang: !!e && vermerkeOf(e, idx).dringend, text: kurz(zeitenLesbar(`${z.quelle ? `${z.quelle}: ` : ""}${z.text}`), 140), meta };
+    return { key: z.id, t: zeitKurz(z.t, t, days, e), nr: z.nr, bang: !!e && vermerkeOf(e, idx).dringend, text: kurz(zeitenLesbar(mitQuelle(z.quelle, z.text)), 140), meta };
   });
 
   // 5 Zahlen
@@ -221,4 +224,15 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     neu: { titel: neuTitel, zeilen: neuZeilen, weitere: Math.max(0, neuList.length - NEU_MAX), total: neuList.length },
     zahlen, von: i.kuerzel,
   };
+}
+
+/**
+ * «Kdt: an H05: sofort Stellungswechsel …» – Absender genau einmal (Review 6, Einsatz N: vorher «Kdt: an H05: Kdt: …»).
+ * Steht der Absender schon im Text (am Anfang bzw. nach «an H05:»), wird er dort weggelassen.
+ */
+export function mitQuelle(quelle: string, text: string): string {
+  if (!quelle) return text;
+  const q = quelle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const ohne = text.replace(new RegExp(`^${q}\\s*:\\s*`, "i"), "").replace(new RegExp(`^(an\\s+\\S+:\\s*)${q}\\s*:\\s*`, "i"), "$1");
+  return `${quelle}: ${ohne}`;
 }

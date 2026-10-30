@@ -79,8 +79,9 @@ export function OfflinePopover(p: OfflinePopoverProps) {
       </div>
       <div role="list">
         {zeile("App", s.app, s.app ? "auf dem Gerät" : "noch nicht geladen", !s.app && <span className="bt-zusatz">wird beim Öffnen mit Netz gespeichert – danach einmal neu laden</span>)}
-        {zeile("Karte", k.ok, k.text, fortschritt && <span className="bt-zusatz bt-prog" role="status"><span className="bt-bar" aria-hidden="true"><span style={{ width: `${Math.round((laden!.done / Math.max(1, laden!.total)) * 100)}%` }} /></span>{fortschritt}</span>)}
-        {zeile("Ortsnamen", null, s.online.ortssuche ? "an – Ortsnamen gehen an swisstopo" : "aus – nichts geht ans Netz", !s.online.ortssuche && <span className="bt-zusatz">einschalten: Vorbereiten → Übung</span>)}
+        {zeile("Karte", k.ok, k.text, fortschritt ? <span className="bt-zusatz bt-prog" role="status"><span className="bt-bar" aria-hidden="true"><span style={{ width: `${Math.round((laden!.done / Math.max(1, laden!.total)) * 100)}%` }} /></span>{fortschritt}</span>
+          : k.zusatz && <span className="bt-zusatz bt-abbruch">{k.zusatz}</span>)}
+        {zeile("Ortsnamen", null, s.online.ortssuche ? "an – Ortsname und Übungsraum gehen an swisstopo" : "aus – nichts geht ans Netz", !s.online.ortssuche && <span className="bt-zusatz">einschalten: Vorbereiten → Übung</span>)}
         {zeile("Speicher", s.speicher, s.speicher ? "geschützt" : "nicht geschützt – der Browser darf Daten löschen")}
         {zeile("Installiert", s.installiert, "", !s.installiert && (
           <>

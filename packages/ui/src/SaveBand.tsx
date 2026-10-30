@@ -104,6 +104,11 @@ export interface MergeInfo {
   conflictIds?: string[];
   /** «ansehen»: Meldung des Konflikts zeigen */
   onShowConflict?: (id: string) => void;
+  /**
+   * (MVP 3.5 Nachbesserung, Feld H2) Übung aus einer Datei startet immer mit Online-Diensten **aus**; waren in der Datei
+   * welche an, einmalige Frage «In der Datei waren Ortsnamen/Strassen an – hier einschalten?»
+   */
+  online?: { namen: string; einschalten: () => void };
 }
 
 /** so lange steht das Ergebnis «Öffnen», wenn nichts zu entscheiden ist */

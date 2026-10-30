@@ -60,3 +60,40 @@ describe("verwaisten Entwurf übernehmen (S26)", () => {
     expect(localStorage.getItem(LEBT_KEY(windowId()))).toBe(String(T0));
   });
 });
+
+describe("Absturz und Neustart nach < 30 s (Review 6, Feld N)", () => {
+  it("dauerhafter Spiegel (IndexedDB) und Web Locks: Entwurf eines toten Fensters wird übernommen, eines lebenden nie", async () => {
+    const { IDBFactory } = await import("fake-indexeddb");
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const held = new Set<string>(["lage-tools.fenster.offen"]);
+    vi.stubGlobal("navigator", { locks: { request: () => new Promise(() => {}), query: async () => ({ held: [...held].map((name) => ({ name })) }) } });
+    const m = await import("../src/draftPersist");
+    // ein abgestürztes Fenster «tot1» (Lebenszeichen vor 5 s – ohne Web Locks wäre es noch «lebendig») und ein offenes
+    entwurf("tot1", "H03 2 Pers AK7", T0 - 5000);
+    lebt("tot1", T0 - 5000);
+    entwurf("offen", "H01 1 Fz", T0);
+    lebt("offen", T0);
+    const r = await m.wiederherstellen(EX, T0);
+    expect(r?.v.t).toBe("H03 2 Pers AK7");
+    expect(r?.eigen).toBe(false);
+    expect(localStorage.getItem(`lage-tools.entwurf.${EX}.offen`)).not.toBeNull();
+    expect(m.loadDraftText(EX)).toBe("H03 2 Pers AK7");
+  });
+  it("nur im Spiegel (localStorage hatte den Stand beim Absturz noch nicht): wird wiederhergestellt", async () => {
+    const { IDBFactory } = await import("fake-indexeddb");
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    vi.stubGlobal("navigator", { locks: { request: () => new Promise(() => {}), query: async () => ({ held: [] }) } });
+    vi.stubGlobal("document", { addEventListener() { /* egal */ }, visibilityState: "visible" });
+    vi.stubGlobal("window", { addEventListener() { /* egal */ } });
+    const m = await import("../src/draftPersist");
+    m.saveDraftText(EX, "H05 Kontakt AQ11");
+    await m.spiegelJetzt();
+    // Absturz: localStorage verliert den letzten Stand, neues Fenster (andere Kennung)
+    vi.stubGlobal("localStorage", speicher());
+    vi.resetModules();
+    const sess = speicher(); sess.setItem("lage-tools.fenster", "neu2"); vi.stubGlobal("sessionStorage", sess);
+    const m2 = await import("../src/draftPersist");
+    const r = await m2.wiederherstellen(EX, Date.now());
+    expect(r?.v.t).toBe("H05 Kontakt AQ11");
+  });
+});

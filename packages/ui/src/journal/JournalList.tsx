@@ -258,7 +258,8 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     // Trenner «Neu in deiner Schicht ↑» unter dem ältesten Eintrag, der in der eigenen Schicht erfasst wurde (Kap. 3.6)
     let lastNew = -2;
     if (seit) { lastNew = -1; events.forEach((e, i) => { if ((e.createdAt ?? e.updatedAt) >= seit.seit) lastNew = i; }); }
-    const trenner: Item | null = seit ? { k: "t", key: "trenner", text: `Neu in deiner Schicht ↑ · seit ${hm(seit.seit)} (${seit.kuerzel})` } : null;
+    // nur mit Einträgen (Erstbenutzer H3): ohne Einträge bleibt der Leerzustand mit «Übung vorbereiten»/«Beispiel» stehen
+    const trenner: Item | null = seit && events.length ? { k: "t", key: "trenner", text: `Neu in deiner Schicht ↑ · seit ${hm(seit.seit)} (${seit.kuerzel})` } : null;
     if (trenner && lastNew === -1) out.push(trenner);
     // Übergaben (neueste zuerst) an ihrer Lagezeit zwischen den Einträgen
     const ws = [...(p.wechsel ?? [])].filter((w) => w.art === "uebergabe").sort((a, b) => zeitCmp(b.t, a.t));

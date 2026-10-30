@@ -93,9 +93,90 @@ export function basemapTileUrl(kind: Basemap): string {
   return `https://wmts.geo.admin.ch/1.0.0/${l.id}/default/current/2056/{z}/{x}/{y}.${l.ext}`;
 }
 
+/** Kachel-Zwischenspeicher (Service Worker, «Alles für offline laden»; gleich wie `ui/src/offline.ts`) */
+export const KACHEL_CACHE = "lt-tiles-v1";
+/** so viele Stufen gröber sucht der Ersatz höchstens (2 m → 20 m sind 4 Stufen; 0.25 m → 2 m sind 5) */
+const ERSATZ_STUFEN = 8;
+
+interface KachelTile extends HTMLImageElement { _ltc?: L.Coords; _ltErsatz?: string }
+
+/**
+ * Ersatz für eine fehlende Kachel (Review 6 Feld H1, «gröber statt weiss»): die feinste gröbere Stufe aus dem
+ * Kachel-Zwischenspeicher, auf das Feld der fehlenden Kachel vergrössert. Nur Cache-Abfragen, kein Netz. Die Stufen der
+ * Kachelmatrix 2056 sind keine Zweierpotenzen – das Feld wird über die Koordinaten (m) zugeschnitten, es kann 1–4
+ * gröbere Kacheln berühren. null = keine gröbere Stufe vollständig vorhanden.
+ */
+export async function ersatzKachel(url: (z: number, x: number, y: number) => string, c: { x: number; y: number; z: number }, size = 256): Promise<Blob | null> {
+  if (typeof caches === "undefined" || typeof createImageBitmap === "undefined") return null;
+  let cache: Cache;
+  try { cache = await caches.open(KACHEL_CACHE); } catch { return null; }
+  const r = RESOLUTIONS[c.z];
+  if (r === undefined) return null;
+  // Feld der fehlenden Kachel in m (E nach rechts, N nach unten als Abstand vom Ursprung)
+  const e0 = c.x * size * r, e1 = e0 + size * r, s0 = c.y * size * r, s1 = s0 + size * r;
+  for (let z = c.z - 1; z >= Math.max(0, c.z - ERSATZ_STUFEN); z--) {
+    const rr = RESOLUTIONS[z]!, t = size * rr;
+    const xs: number[] = [], ys: number[] = [];
+    for (let x = Math.floor(e0 / t); x * t < e1 - 1e-6; x++) xs.push(x);
+    for (let y = Math.floor(s0 / t); y * t < s1 - 1e-6; y++) ys.push(y);
+    const teile: Array<{ x: number; y: number; res: Response }> = [];
+    let alle = true;
+    for (const y of ys) for (const x of xs) {
+      const res = await cache.match(url(z, x, y)).catch(() => undefined);
+      if (!res || !res.ok) { alle = false; break; }
+      teile.push({ x, y, res });
+    }
+    if (!alle || !teile.length) continue;
+    try {
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = size;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return null;
+      const k = rr / r; // Pixel der fehlenden Stufe je Pixel der gröberen
+      ctx.imageSmoothingQuality = "high";
+      for (const tl of teile) {
+        const bmp = await createImageBitmap(await tl.res.blob());
+        ctx.drawImage(bmp, (tl.x * t - e0) / r, (tl.y * t - s0) / r, size * k, size * k);
+        bmp.close?.();
+      }
+      return await new Promise<Blob | null>((ok) => cv.toBlob(ok, "image/jpeg", 0.85));
+    } catch { continue; }
+  }
+  return null;
+}
+
+/**
+ * swisstopo-Kachelebene mit Ersatz: Lädt eine Kachel nicht (offline, Teil fehlt im Zwischenspeicher, Netz hängt), zeigt
+ * die Ebene statt Weiss die feinste vorhandene gröbere Stufe vergrössert (`ersatzKachel`). Feld H1 (Review 6).
+ */
+const KachelEbene = L.TileLayer.extend({
+  createTile(this: L.TileLayer, coords: L.Coords, done: L.DoneCallback): HTMLElement {
+    const tile = (L.TileLayer.prototype as unknown as { createTile(c: L.Coords, d: L.DoneCallback): KachelTile }).createTile.call(this, coords, done);
+    tile._ltc = coords;
+    return tile;
+  },
+  _tileOnError(this: L.TileLayer & { _url: string }, done: L.DoneCallback, tile: KachelTile, e: Error) {
+    const c = tile._ltc;
+    const fail = () => (L.TileLayer.prototype as unknown as { _tileOnError(d: L.DoneCallback, t: HTMLElement, e: Error): void })._tileOnError.call(this, done, tile, e);
+    if (!c || tile._ltErsatz) { fail(); return; }
+    tile._ltErsatz = "…";
+    const tpl = this._url, opts = this.options;
+    const z = c.z; // Stufe der Kachel (ohne zoomOffset/zoomReverse; LAYERS setzt keines)
+    void ersatzKachel((zz, x, y) => L.Util.template(tpl, { ...opts, z: zz, x, y } as unknown as Record<string, string>), { x: c.x, y: c.y, z }).then((blob) => {
+      if (!blob) { fail(); return; }
+      const u = URL.createObjectURL(blob);
+      tile._ltErsatz = u;
+      tile.classList.add("lt-ersatz");
+      // `load` ruft Leaflets `_tileOnLoad` → done(null, tile); die Adresse danach freigeben
+      tile.addEventListener("load", () => URL.revokeObjectURL(u), { once: true });
+      tile.src = u;
+    }, fail);
+  },
+}) as unknown as new (url: string, o: L.TileLayerOptions) => L.TileLayer;
+
 export function swisstopoLayer(kind: Basemap): L.TileLayer {
   const l = LAYERS[kind];
-  return L.tileLayer(basemapTileUrl(kind), {
+  return new KachelEbene(basemapTileUrl(kind), {
     className: l.className ?? "",
     maxNativeZoom: l.max,
     maxZoom: 28,

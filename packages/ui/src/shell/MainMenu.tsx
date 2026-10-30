@@ -145,7 +145,8 @@ export function MainMenu(p: MainMenuProps) {
               const note = wachHinweis(w);
               return (
                 <Item role="menuitemcheckbox" checked={w.unterstuetzt && w.an} disabled={!w.unterstuetzt} onClick={() => w.setAn(!w.an)}>
-                  <Check on={w.unterstuetzt && w.an} /> <span className="mm-wach">Bildschirm bleibt an{note && <span className="mm-sub"> – {note}</span>}</span>
+                  {/* gleiche Form wie «Nacht» (Schalter), Review 6 Erstbenutzer N */}
+                  <span className="mm-wach">Bildschirm bleibt an{note && <span className="mm-sub"> – {note}</span>}</span> <Switch on={w.unterstuetzt && w.an} />
                 </Item>
               );
             })()}

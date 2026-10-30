@@ -3,7 +3,7 @@
 
 /* ---------- Kopf: «Schicht BSP seit 06:00» (Text, kein Bedienelement) ---------- */
 .hd-schicht { white-space: nowrap; color: var(--muted); font-size: var(--fs-14); font-variant-numeric: tabular-nums; }
-.hd-schicht.fehlt { color: var(--ink); font-weight: 600; }
+.hd-schicht.fehlt { color: var(--ink); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 860px) {
   .hd-schicht .hd-long { display: none; }
   .hd-schicht .hd-short { display: inline; }
@@ -13,12 +13,9 @@
 .sw-box { container-type: inline-size; min-width: 0; }
 .sw2.sw3 { grid-template-columns: auto auto minmax(0, 1fr); }
 .sw2.sw3 button { padding: 0 var(--sp-12); }
-.red-tab-s { display: none; }
-@container (max-width: 470px) {
-  /* schmale Spalte: «Was Rot» sichtbar, voller Name bleibt für Screenreader */
-  .sw2.sw3 .red-tab-l { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .sw2.sw3 .red-tab-s { display: inline; }
-}
+/* überall gleich «Was Rot» + Zahl (Review 6, Design M1): «vorhaben könnte» nur für Screenreader und im Tooltip */
+.red-tab-s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.red-tab-s .red-tab-l { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .of-badge { margin-left: var(--sp-4); }
 
 /* ---------- Ansicht Offen ---------- */
@@ -71,6 +68,9 @@
 }
 .mn-link:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
 .mn-acts { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-12); flex-wrap: wrap; }
+.mn-online { display: grid; gap: var(--sp-8); }
+.mn-online-b { display: flex; flex-wrap: wrap; gap: var(--sp-8); }
+.mn-sub { font-weight: 400; color: var(--muted); font-size: var(--fs-14); }
 .mn-diffs ul { list-style: none; margin: var(--sp-4) 0 0; padding: 0; display: grid; gap: var(--sp-8); }
 .mn-diffs li { display: grid; gap: var(--sp-4); }
 .mn-seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-4); overflow: hidden; }

@@ -157,7 +157,7 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
                     onPointerEnter={() => setActive(hits.length)} onPointerDown={(e) => e.preventDefault()} onClick={() => online.suchen()}>
                     <span className="nav-badge b-ort"><IconGlobe /></span>
                     <span className="nav-lbl">{swisstopoVorschlag(q)}</span>
-                    <span className="nav-det">Text geht ans Internet</span>
+                    <span className="nav-det">Ortsname und Übungsraum gehen ans Internet</span>
                   </li>
                 )}
               </ul>

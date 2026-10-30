@@ -4,7 +4,7 @@ Grundlage: Spezifikation MVP 3.5 (Kap. 5 Verträge, 6.2 Pakete, 8 Abnahme), Kund
 die drei offenen Kundenfragen (Kap. 9, Vorschlag gilt bis zur Antwort) – alle als Konstanten in
 `packages/core/src/entscheide.ts` (Abschnitt «MVP 3.5»). Phase 0 hat Verträge, Migrationen und das Abnahme-Gerüst gelegt;
 die Pakete A–E bauen parallel. Absprachen: `<scratchpad>/mvp35-notizen.md` (je Paket ein Abschnitt, anhängen).
-Build-Ordner `<scratchpad>/mvp35-<paket>/site`, Ports A 9301, B 9302, C 9303, D 9304, E 9305.
+Build-Ordner `<scratchpad>/mvp35-<paket>/site`, Ports A 9211, B 9212, C 9213, D 9214, E 9215 (Prüfungen 93xx).
 
 ## Wer besitzt welche Dateien (Kap. 6.2, strikt; fremde Dateien nur kleine Edits, vorher neu lesen, im Bericht nennen)
 
@@ -74,9 +74,9 @@ Build-Ordner `<scratchpad>/mvp35-<paket>/site`, Ports A 9301, B 9302, C 9303, D 
 | `.lc-list` | Scroll-Behälter der Liste (E) | – |
 
 - `npm run e2e` (alle Specs). Neu und bis Phase 2 rot erlaubt: `betrieb` (A), `karte` (B), `lvz35`, `druck35` (D/B),
-  `konsistenz`, `touch` (E/B), `sommerzeit` (C/E), `inventar35` (Zustände, die erst mit den Paketen entstehen; Phase 2
-  übernimmt E sie in `inventar`). Bestehende Specs bleiben grün (`inventar` misst neu «bereit» und «echt»; bekannt rot
-  seit 52d951d: `arten` 2b AEIOU mit Trupp in E).
+  `konsistenz`, `touch` (E/B), `sommerzeit` (C/E). Die Fälle von `inventar35` sind in Phase 2 nach `inventar.spec.ts`
+  übernommen (Datei gelöscht); `inventar` misst «bereit» und «echt» (einmaliger Schutzhinweis im «echt»-Lauf als
+  gesehen vorbelegt, eigener Fall). Stand a627a5c: alle Specs grün, `arten` 2b sporadisch (in Untersuchung).
 - Geräte `tablet-touch`/`handy-touch` mit echtem `pointer: coarse` (eigener Chromium, run.mjs), Gesten `cdpTippen`;
   alle Kontexte `Europe/Zurich`, `de-CH`. `--sw-netz` für den Service-Worker-Test (braucht `sw.js` in der e2e-Kopie –
   Paket A), Optionen `sw`, `userAgent`, `lokal`, `vorLaden`, `viewport` in `h.open`, `s.anfragen` (alle URLs).

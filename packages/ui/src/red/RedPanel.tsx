@@ -210,8 +210,8 @@ export function RedTabLabel({ badge }: { badge: RedBadge }) {
   useEffect(() => { if (badge.n > prev.current) setPulse((n) => n + 1); prev.current = badge.n; }, [badge.n]);
   return (
     <>
-      <span className="red-tab-l">Was Rot vorhaben könnte</span>
-      <span className="red-tab-s" aria-hidden="true">Was Rot</span>
+      {/* überall gleich «Was Rot» + Zahl (Review 6): Langform nur als Tooltip und für Screenreader */}
+      <span className="red-tab-s" title="Was Rot vorhaben könnte">Was Rot<span className="red-tab-l"> vorhaben könnte</span></span>
       {badge.n > 0 && <span key={pulse} className={"red-badge" + (pulse ? " pulse" : "")} aria-label={badge.aria}>{badge.text}</span>}
     </>
   );

@@ -112,9 +112,14 @@ export function requestCorrection(id: string): boolean {
  * Text ins Meldungsfeld setzen (MVP 3: «Antwort eintragen» → «Antwort zu 57: », «Vbk eintragen» → «H03 Vbk »), Fokus
  * ans Ende. Ein angefangener Text wird nicht überschrieben, sondern dahinter gesetzt. false = kein Feld eingehängt.
  */
-let prefillHandler: ((text: string, o?: { art?: EntryArt }) => void) | null = null;
-/** `o.art`: Art vorwählen («Antwort eintragen» → Notiz mit Bezug; der Bediener kann in «Was ist es?» umstellen) */
-export function prefillEntry(text: string, o?: { art?: EntryArt }): boolean {
+/** Vorgaben von aussen: Art, fester Bezug (Review 6, Einsatz H1: Nummer aus Offen, nie neu raten) */
+export interface PrefillVorgabe { art?: EntryArt; bezugNr?: string }
+let prefillHandler: ((text: string, o?: PrefillVorgabe) => void) | null = null;
+/**
+ * `o.art`: Art vorwählen («Antwort eintragen» → Notiz mit Bezug; der Bediener kann in «Was ist es?» umstellen).
+ * `o.bezugNr`: fester Bezug («Antwort eintragen»/«Erledigt» aus Offen, Nummer wie angezeigt) – gilt, bis der Text leer ist.
+ */
+export function prefillEntry(text: string, o?: PrefillVorgabe): boolean {
   if (!prefillHandler) return false;
   prefillHandler(text, o);
   return true;
@@ -165,6 +170,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   /** (MVP 3.5, D2) «nicht abschliessen» gewählt; gewählter Bezug bei «64a/64b» bzw. «Welcher Auftrag ist erledigt?» */
   const [abschlussAus, setAbschlussAus] = useState(false);
   const [bezugWahl, setBezugWahl] = useState<string | null>(null);
+  /** (Review 6, Einsatz H1) fester Bezug aus Offen (`JournalContext.bezugNr`), bis der Text gelöscht wird */
+  const [bezugFestNr, setBezugFestNr] = useState<string | null>(null);
   const [roadPick, setRoadPick] = useState<RoadPick | null>(null);
   const [shapeDraft, setShapeDraft] = useState<LageEvent["shape"]>(undefined);
   const [found, setFound] = useState<{ q: string; name: string; pos: LV95 } | null>(null);
@@ -203,11 +210,11 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
    * (z. B. Feld markiert und neu getippt, Diktat) – beim Eintragen kommt er als Text an den Anfang. Gelöscht mit dem Feld.
    */
   const [chosen, setChosen] = useState<string | null>(null);
-  const resetExtras = () => { setAbschlussAus(false); setBezugWahl(null); setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setArtMenu(false); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); setAskKuerzel(false); setKuerzelErr(false); };
+  const resetExtras = () => { setAbschlussAus(false); setBezugWahl(null); setBezugFestNr(null); setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setArtMenu(false); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); setAskKuerzel(false); setKuerzelErr(false); };
   const setText = useCallback((t: string) => {
     setTextState(t);
     if (t) setNotice(null);
-    if (!t) { setAbschlussAus(false); setBezugWahl(null); setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setAskKuerzel(false); kiTaken.current = false; }
+    if (!t) { setAbschlussAus(false); setBezugWahl(null); setBezugFestNr(null); setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setAskKuerzel(false); kiTaken.current = false; }
   }, []);
   // Text geändert → nicht mehr «bestätigt». Nur wenn die Bestätigung zu einem anderen Text gehört: läuft dieser
   // Effekt verspätet (Seite beschäftigt) erst nach dem ersten Enter, darf er dessen Bestätigung nicht löschen
@@ -253,20 +260,21 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const startRef = useRef(startKorr);
   startRef.current = startKorr;
   useEffect(() => { const h = (id: string) => startRef.current(id); korrHandler = h; return () => { if (korrHandler === h) korrHandler = null; }; }, []);
-  const prefillRef = useRef<(t: string, o?: { art?: EntryArt }) => void>(() => {});
-  prefillRef.current = (t: string, o?: { art?: EntryArt }) => {
+  const prefillRef = useRef<(t: string, o?: PrefillVorgabe) => void>(() => {});
+  prefillRef.current = (t: string, o?: PrefillVorgabe) => {
     if (korr.current) endKorr(true);
     const cur = (inputRef.current?.value ?? "").trim();
     const next = t;
     setText(next);
     // neue Vorgabe gilt (eine Wahl zum ersetzten Text nicht)
     setKindOverride(null); setSymOverride(null); setArtOverride(o?.art ?? null);
+    setBezugWahl(null); setBezugFestNr(o?.bezugNr ?? null);
     // nichts geht verloren: ein angefangener Text kommt mit Rückgängig zurück
     if (cur && cur !== t.trim()) offerUndo("Angefangene Meldung ersetzt", () => { setTextState(cur); fitInput(); inputRef.current?.focus(); });
     fitInput();
     requestAnimationFrame(() => { const el = inputRef.current; if (el) { el.focus({ preventScroll: true }); el.setSelectionRange(next.length, next.length); el.closest(".ebox")?.scrollIntoView({ block: "nearest" }); } });
   };
-  useEffect(() => { const h = (t: string, o?: { art?: EntryArt }) => prefillRef.current(t, o); prefillHandler = h; return () => { if (prefillHandler === h) prefillHandler = null; }; }, []);
+  useEffect(() => { const h = (t: string, o?: PrefillVorgabe) => prefillRef.current(t, o); prefillHandler = h; return () => { if (prefillHandler === h) prefillHandler = null; }; }, []);
 
   // Korrekturzustand nach Neuladen / Übungswechsel
   useEffect(() => {
@@ -297,8 +305,9 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     ...(artOverride ? { art: artOverride } : {}),
     ...(abschlussAus ? { abschlussAus: true } : {}),
     ...(bezugWahl ? { bezugWahl } : {}),
+    ...(bezugFestNr ? { bezugNr: bezugFestNr } : {}),
     events, ex,
-  }), [ex, kindOverride, artOverride, day, events, now, clk.follow, abschlussAus, bezugWahl]);
+  }), [ex, kindOverride, artOverride, day, events, now, clk.follow, abschlussAus, bezugWahl, bezugFestNr]);
   /** Text, der gelesen wird (mit angetipptem Trupp, wenn der Text keinen nennt) */
   const srcText = useMemo(() => {
     if (base || !chosen || !text.trim()) return text;

@@ -15,10 +15,10 @@ import { boundsCenter, cellAtAny, cellBounds, findCells, type FoundCell, type Ra
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
-import { addDays, compareEvents, lesart, localDay, localIso, nearestDay, offsetFor, offsetsAt, umstellTage, zeitBis, zeitCmp, zeitMs, zeitTeile } from "./clock";
+import { addDays, compareEvents, lesart, localDay, localIso, nearestDay, offsetFor, offsetOf, offsetsAt, umstellTage, zeitBis, zeitCmp, zeitMs, zeitTeile } from "./clock";
 import { schichtZuordnung } from "./schichtwahl";
 import { autoShape, shapeCenter } from "./shapes";
-import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeMelder, normalizeTyped, observedOwn, ownDirection, partPlaces, pickTime, placeProblems, placeSpans, sameUnitName, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, unknownSubject, vagueAmount, type UnknownWord } from "./erkennung";
+import { countWords, hourTimes, meldetStandort, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeMelder, normalizeTyped, observedOwn, ownDirection, partPlaces, pickTime, placeProblems, placeSpans, sameUnitName, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, unknownSubject, vagueAmount, type UnknownWord } from "./erkennung";
 
 export interface JournalContext {
   sheets: RasterSheet[];
@@ -57,6 +57,11 @@ export interface JournalContext {
   abschlussAus?: boolean;
   /** gewählter Bezug (ID) bei mehreren Kandidaten («64a …» / «Nr 66 …» angetippt) – D2 */
   bezugWahl?: string;
+  /**
+   * (MVP 3.5 Fix, H1) fester Bezug aus Offen («Antwort eintragen», «Erledigt»): Nummer wie angezeigt («57», «57a»,
+   * `OffenItem.nr`) oder Event-ID. Gewinnt immer gegen Nummer im Text, Raten und Wahl; gilt bis der Text gelöscht wird.
+   */
+  bezugNr?: string;
 }
 
 export type WhereKind = "koordinate" | "raster" | "nai" | "ort" | "zuletzt" | "melder" | "karte";
@@ -206,6 +211,13 @@ export interface Draft {
   truppNeu?: string;
   /** (D2, additiv) Wahl-Knöpfe zu `bezugKandidaten` (Grund, Text, Beschriftungen) – `entryState` → `EntryReason.choices` */
   wahl?: BezugWahl;
+  /**
+   * (MVP 3.5 Fix, H1) fester Bezug aus Offen (`JournalContext.bezugNr`): Vorschau «Antwort auf Nr 57 (Standort H02?)» –
+   * `nr` wie angezeigt, `text` Inhalt des Ziels. `bezug`/`bezugNr`/`bezugArt` sind gesetzt.
+   */
+  bezugFest?: { id: string; nr: string; text: string };
+  /** (Fix N) weitere Bezüge («Nr 55 und 56 an Bat weitergemeldet»): IDs ausser `bezug` */
+  bezugAuch?: string[];
 
   // ---- MVP 3.5, Paket C (additiv): Gründe der Erkennung für die Vorschau (`entryState`, Texte Kap. 4) ----
   /**
@@ -217,7 +229,7 @@ export interface Draft {
    * C7/C11: eigene Meldung ohne neues Zeichen – «verwundet» (eigene Verwundete, Ort nur als Text) bzw. «begehren»
    * (Nachschub, Mun-Stand): Trupp bleibt, kein «Ort fehlt», nie ein Zeichen auf der Karte.
    */
-  ohneZeichen?: "verwundet" | "begehren";
+  ohneZeichen?: "verwundet" | "begehren" | "verneint";
   /** C13: genannter, aber unbekannter Ort («erreicht Checkpoint 2», «bei der Brücke») – kein Ersatzort, gelb `ort` */
   ortUnbekannt?: string;
   /** C5: eigener Trupp ohne Standortverb an einen Ort («H01 Rückzug nach AC5») – gelb `seite` «H01 selbst nach AC5?» */
@@ -226,6 +238,11 @@ export interface Draft {
   zweiOrte?: { trupp: string; ziel: string; sicht: string; seite: string; bleibt?: string };
   /** S23: getippte Uhrzeit gibt es an diesem Tag nicht (Uhr vorgestellt) – rot `zeit-fehlt`, Vorschlag «0330» */
   zeitFehlt?: { zeit: string; vorschlag: string; von: string; bis: string };
+  /**
+   * (MVP 3.5 Fix, Erstbenutzer H4) «H3» ist Trupp (H03) und Planquadrat im Raster, Stellung im Satz sagt nichts: gelesen als
+   * Trupp – gelb «H3: Trupp H03 oder Planquadrat?» (Ausweg «in H3» schreiben)
+   */
+  hnFrage?: { token: string; trupp: string };
 }
 
 /** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
@@ -254,7 +271,7 @@ const MAYBE_RE = new RegExp(`(?<!${W})(zivil\\??|evtl|eventuell|vermutlich|vmtl|
  * einer Sperre, nicht eigene Lage des Melders (eigene Lage nur mit Stellungsbegriffen oder «eig»).
  */
 const BLOCKADE_RE = new RegExp(`(?<!${W})(blockiert\\w*|blockier\\w*|blockade\\w*|versperrt\\w*|verbarrikadiert\\w*|baumstämme\\w*|baumstamm\\w*)(?!${W})`, "i");
-const ENEMY_RE = new RegExp(`(?<!${W})(gegner|feind|fe|rot|bewaffnet\\w*|fremde?)(?!${W})`, "i");
+const ENEMY_RE = new RegExp(`(?<!${W})(gegner|feind(?:e|en|es)?|fe|rot|bewaffnet\\w*|fremde?)(?!${W})`, "i");
 const sideOf = (k: Kind): Side => (k === "eigen" ? "blau" : "rot");
 
 /** Gängige Elementbezeichnungen: H04, Det 2, Zug 1, Gr 3, Trp 2, Pat 1, Kp, Zfhr … */
@@ -314,6 +331,18 @@ const RUECKZUG_RE = /(?<![\p{L}])(rückzug|zurück\p{L}*|weich\p{L}*\s+(?:\p{L}+
 const EINZEL_TYP = new Set(["golf", "passat"]);
 /** C13: Ort mit Präposition und Artikel bzw. Gattungswort («bei der Brücke», «beim Waldrand») – genannt, aber kein Ortsname */
 const ORT_PHRASE_RE = /(?<![\p{L}])(?:bei|beim|an|am|auf|vor|hinter|neben|nahe|im|in)\s+(?:der|dem|den|die|das)\s+([\p{L}][\p{L}\-]+(?:\s+\d{1,3})?)/iu;
+
+/** (Fix M4) Verneinung: «kein(e) X», «ohne X» (mit «in Sicht», «gesehen», «mehr» dahinter) */
+const NEG_RE = /(?<![\p{L}])(?:kein(?:e|en|er|em|es)?|ohne)\s+(?:(?:eigenen?|eigene[rs]?|gegnerischen?|feindlichen?|weiteren?|neuen?)\s+)?([\p{L}][\p{L}\-]*)(?:\s+(?:mehr\s+)?(?:in\s+sicht|gesehen|festgestellt|beobachtet|erkannt|erkennbar|feststellbar|sichtbar|vorhanden))?/giu;
+/** bleibt stehen: eigene Regeln dafür («keine Sicht» C3, «keine Verbindung» Vbk) */
+const NEG_BLEIBT = /^(?:sicht|verbindung|funkverbindung|bewegung)$/iu;
+/** (Fix N) «Kontakt mit 4 Pers»: das Gesehene ist die Infanterie bzw. das Fahrzeug, nicht das Waffen-Zeichen «Kontakt» */
+const KONTAKT_MIT_RE = /(?<![\p{L}])(?:kontakt|feuerkontakt|sichtkontakt)\s+mit\s+((?:ca\.?\s+)?\d{1,3}\s+(?:gn\s+|gegn\.?\s+|bewaffneten?\s+)?(?:pers(?:onen)?\.?|mann|männer|leute|soldaten|typen|fz|fahrzeuge?|pw|lw|kpz|spz|pz)(?![\p{L}\d]))/iu;
+/** (Fix N) eigene Verluste ohne Sanität/«bei uns»: «H05 1 Gefallener», «H02 2 Tote» */
+const GEFALLEN_RE = /^gefallen/iu;
+
+/** (Fix H4) Präposition vor einem Ort («in H3», «Rtg H4») */
+const ORT_VOR_RE = /(?<![\p{L}])(?:in|im|bei|beim|nach|rtg|richtung|von|aus|ab|bis|auf|zu|zum|raum|pq|planquadrat)\.?\s*$/iu;
 
 /** Elementnamen, die immer Namen sind (nie Anzahl/Stufe): «H05», «Det 2» */
 const NAME_ALWAYS_RE = /^(?:H\d|Det)/i;
@@ -466,7 +495,11 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
   const ownDir = ownDirection(rest);
   if (ownDir) rest = blank(rest, ownDir.span[0], ownDir.span[1]);
   // Anzahl in Worten nur für die Erkennung («ein Panzer» → «1 Panzer», «ein Dutzend» → «12»)
-  const text = countWords(rest.trim());
+  // (MVP 3.5 Fix, M4) Verneinung erzeugt keinen Inhalt: «keine Verluste», «kein Feind», «keine Fz gesehen» – die Stelle wird
+  // für die Erkennung ausgeblendet (Länge bleibt); «keine Sicht» bleibt für C3 («Kein neues Zeichen?»)
+  const text0 = countWords(rest.trim());
+  const text = text0.replace(NEG_RE, (m: string, w: string) => (NEG_BLEIBT.test(w) ? m : " ".repeat(m.length)));
+  const verneint = text !== text0;
 
   // ---- Elemente: Melder (eigen) und ggf. bekanntes Feindelement
   const known: Array<[string, Side]> = [
@@ -474,9 +507,22 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
     ...ctx.units.blau.map((u) => [u, "blau"] as [string, Side]),
   ].sort((a, b) => b[0].length - a[0].length);
   const hits: Array<{ u: string; side: Side | null; index: number; len: number }> = [];
+  // (MVP 3.5 Fix, Erstbenutzer H4) Rasterzeile H: «H3» ist im Feld-Raster ein Planquadrat. Kein vorbereiteter Trupp → Ort;
+  // ist es auch ein Trupp (H03): am Satzanfang Trupp, nach «in/bei/nach/Rtg …» Ort, sonst Trupp und gelb fragen
+  const hZelle = (raw: string) => /^h\s?[1-9]\d?$/i.test(raw.trim()) && findCells(raw.trim(), ctx.sheets).some((f) => !f.quadrant && f.label.replace(/\s/g, "").toUpperCase() === raw.replace(/\s/g, "").toUpperCase());
+  const satzAnfang = /^[\s,:]*/.exec(text)![0].length;
+  /** Textstellen, die kein Planquadrat sind (Trupp «H3» am Satzanfang) */
+  const keinPq: Array<[number, number]> = [];
+  let hnFrage: Draft["hnFrage"];
   for (const [u, sd] of known) {
     const m = flexRe(u).exec(text);
-    if (m && !hits.some((h) => m.index >= h.index && m.index < h.index + h.len)) hits.push({ u, side: sd, index: m.index, len: m[0].length });
+    if (!m || hits.some((h) => m.index >= h.index && m.index < h.index + h.len)) continue;
+    if (sd === "blau" && hZelle(m[0])) {
+      if (m.index !== satzAnfang && ORT_VOR_RE.test(text.slice(0, m.index))) continue; // Ort
+      keinPq.push([m.index, m.index + m[0].length]);
+      if (m.index !== satzAnfang) hnFrage = { token: m[0].trim(), trupp: u };
+    }
+    hits.push({ u, side: sd, index: m.index, len: m[0].length });
   }
   // Elementnamen mit Nummer sind keine Anzahl: «H05 Drohne» ≠ 5 Drohnen, «Det 2 Patrouille», «Zug 1», «Gr 3».
   // Ausnahme: Zahl vor einer Einheit / einem Gerät («Pat 3 Pers» = Patrouille mit 3 Personen).
@@ -495,6 +541,17 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
   const ortSpans = placeSpans(text, elementBefore);
   let reading = readTactical(text, { skip: [...skip, ...ortSpans] });
   if (isNeedNote(text, reading)) reading = null;
+  // (Fix N) «Kontakt mit 4 Pers»: Zeichen = das Gesehene (Infanterie, Fahrzeug), Kontakt bleibt im Sinn und für «bei H02»
+  let kontaktMit = false;
+  const km = reading && (reading.key === "kontakt" || reading.key === "beschuss") ? KONTAKT_MIT_RE.exec(text) : null;
+  if (km) {
+    const r2 = readTactical(km[1]!.replace(/^ca\.?\s+/i, ""), {});
+    if (r2 && (catalogEntry(r2.key)?.kind === "einheit" || catalogEntry(r2.key)?.kind === "geraet")) {
+      const off = km.index + km[0].length - km[1]!.length;
+      reading = { ...r2, spans: r2.spans.map(([a, b]) => [a + off, b + off] as [number, number]) };
+      kontaktMit = true;
+    }
+  }
   // unbekanntes / verstümmeltes Wort an der Stelle des Gesehenen («2 schützenpnzr»): keine geratene Art
   // (MVP 3.5, C1) auch ohne Anzahl, wenn sonst nichts Gesehenes da ist – nicht bei Begehren, Wahrnehmung, Verneinung
   const ohneAnzahl = !SIGHT_RE.test(text) && !BLOCKADE_RE.test(text) && !BEGEHREN_RE.test(text) && !HOER_RE.test(text) && !KEIN_ZEICHEN_RE.test(text);
@@ -503,6 +560,8 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
   for (const m of text.matchAll(new RegExp(UNIT_RE.source, "gi"))) {
     if (reading?.spans.some(([a, b]) => m.index! >= a && m.index! < b)) continue;
     const u = m[1]!.replace(/\.\s?|\s+/g, " ").replace(/^(\D+?)\s?(\d)/, (_, a: string, d: string) => (a.length > 1 ? `${a} ${d}` : a + d)).trim();
+    // gültiges Planquadrat «H12» ohne vorbereiteten Trupp: Ort, nie Trupp (kein «H12 als Trupp aufnehmen»)
+    if (hZelle(m[1]!) && (!ctx.units.blau.some((b) => sameUnitName(b, u)) || (m.index! !== satzAnfang && ORT_VOR_RE.test(text.slice(0, m.index!))))) continue;
     if (!hits.some((h) => Math.abs(h.index - m.index!) < 2 || norm(h.u) === norm(u))) hits.push({ u, side: null, index: m.index!, len: m[1]!.length });
   }
   hits.sort((a, b) => a.index - b.index);
@@ -524,7 +583,9 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
     // «H02 2 Verletzte» allein bleibt eine Sichtung (unklar)
     const san = SAN_WORT_RE.test(text) && ANFORDERN_RE.test(text);
     const beiUns = EIGEN_BEZUG_RE.test(text) || new RegExp(`(?<![\\p{L}])(?:bei|beim)\\s+${melder.replace(/\s/g, "\\s?")}(?![\\p{L}\\d])`, "iu").test(text);
-    if (reading?.key === "verletzte" && (san || beiUns) && !/(?<![\p{L}])ziv/iu.test(text) && !SICHT_VERB_RE.test(text)) {
+    // (Fix N) «H05 1 Gefallener», «H02 2 Tote»: eigene Verluste wie Verwundete (dringend, ohne Zeichen)
+    const gefallen = reading?.key === "verletzte" && GEFALLEN_RE.test(reading.word ?? "");
+    if (reading?.key === "verletzte" && (san || beiUns || gefallen) && !/(?<![\p{L}])ziv/iu.test(text) && !SICHT_VERB_RE.test(text)) {
       ohneZeichen = "verwundet";
       if (san) begehren = { was: "Sanität" };
     } else if (BEGEHREN_RE.test(text) && (!reading || begehrenArt(reading.key))) {
@@ -532,6 +593,9 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
       reading = null;
       unknown = undefined;
       begehren = { was: begehrenWas(text, hits) || "Nachschub" };
+    } else if (verneint && !reading && !unknown && !SIGHT_RE.test(text) && !BLOCKADE_RE.test(text) && ![...text.matchAll(COUNT_RE)].length && !meldetStandort(text)) {
+      // (Fix M4) nur Verneintes («H02 kein Feind in AK9», «H04 keine Fz gesehen»): Lebenszeichen, kein Zeichen, Trupp bleibt
+      ohneZeichen = "verneint";
     }
   }
 
@@ -618,7 +682,7 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
     where = { kind: "koordinate", label: "Koordinate" };
   }
   const exclude = [...known.map(([u]) => u), ...hits.map((h) => h.u)].map((u) => u.replace(/\s/g, ""));
-  const found = findCells(locText, ctx.sheets, { exclude });
+  const found = findCells(locText, ctx.sheets, { exclude }).filter((f) => !keinPq.some(([a, b]) => f.index >= a && f.index < b));
   // (MVP 3.5, C9) «von AK7 nach AM9»: eine Bewegung – Ort AK7, Richtung = Peilung AK7 → AM9, Zusatz «nach AM9»
   let vonNach: [FoundCell, FoundCell] | undefined;
   for (let i = 0; i + 1 < found.length; i++) {
@@ -707,7 +771,7 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
       else if (atMelder) {
         pos = atMelder; where = { kind: "melder", label: `bei ${melder}` };
         // (C8) Kontakt, Beschuss, Angriff am meldenden Trupp: der Ort ist sicher – Wahrnehmung («hört Schüsse») bleibt gelb
-        if ((sym === "kontakt" || sym === "beschuss") && KONTAKT_AM_RE.test(text) && !HOER_RE.test(text)) amTrupp = true;
+        if ((sym === "kontakt" || sym === "beschuss" || kontaktMit) && KONTAKT_AM_RE.test(text) && !HOER_RE.test(text)) amTrupp = true;
         // «Drohne über uns», «2 Pers bei uns»: ausdrücklich beim meldenden Trupp
         if (/(?<![\p{L}])(?:über|bei|beim)\s+uns(?![\p{L}])/iu.test(text) && !HOER_RE.test(text)) amTrupp = true;
       } else if (ortGenannt) ortUnbekannt = ortGenannt;
@@ -726,7 +790,7 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
     if (genannt.length) orte = genannt;
     const last = ctx.lastPos?.(melder, "blau");
     kind = "eigen"; side = "blau"; unit = melder;
-    // Verwundete: kein Ort (nichts auf der Karte, Standort des Trupps bleibt unberührt); Begehren: bisheriger Standort
+    // Verwundete: kein Ort (nichts auf der Karte, Standort des Trupps bleibt unberührt); Begehren, Verneintes: bisheriger Standort
     pos = ohneZeichen === "verwundet" ? undefined : last;
     // Ort: «bei H02», wo Hilfe hin muss (Sanität angefordert, «bei H02»/«bei uns»), sonst der bisherige Standort in Worten
     const beiTrupp = ohneZeichen === "verwundet" && (!!begehren || /(?<![\p{L}])bei\s+(?:uns|h\s?\d)/iu.test(text));
@@ -753,9 +817,11 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
   const desc1 = vague && desc0 && !desc0.toLowerCase().includes(vague) ? `${vague} ${desc0}` : desc0;
   const desc2 = unknown ? `${unknown.count ? `${unknown.count} ` : ""}? («${unknown.token}»)` : desc1;
   // (C9) Ziel der Bewegung als Zusatz («2 gegnerische Fahrzeuge nach AM9»)
-  const desc = vonNach && !ohneZeichen ? `${desc2 ?? catalogEntry(sym)?.name ?? ""} nach ${vonNach[1].label}`.trim() : desc2;
+  const desc3 = vonNach && !ohneZeichen ? `${desc2 ?? catalogEntry(sym)?.name ?? ""} nach ${vonNach[1].label}`.trim() : desc2;
+  // (Fix N) «Kontakt mit 4 Pers»: «4 gegnerische Personen (Kontakt)»
+  const desc = kontaktMit && desc3 ? `${desc3} (Kontakt)` : desc3;
   // (C8/C10) Kontakt am eigenen Trupp, Feuerkampf, Gefecht: dringend (Wahrnehmung «hört Schüsse» nicht)
-  const dringend = (sym === "kontakt" || sym === "beschuss") && !HOER_RE.test(text) && GEFECHT_RE.test(text);
+  const dringend = (sym === "kontakt" || sym === "beschuss" || kontaktMit) && !HOER_RE.test(text) && GEFECHT_RE.test(text);
   const { tOffset, zeitFehlt } = zeitLesart(day, minutes, timeFromText, ctx);
   const out: Draft = {
     minutes, day, t: isoOf(day, minutes), timeFromText, ...(dayFromText ? { dayFromText } : {}), ...(timeToken ? { timeToken } : {}), kind, kindFrom, side, melder, unit, sym, aff, sidc, echelon, status, desc, count,
@@ -772,6 +838,7 @@ function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } =
     ...(tOffset ? { tOffset } : {}), ...(zeitFehlt ? { zeitFehlt } : {}),
     ...(amTrupp ? { amTrupp } : {}), ...(ohneZeichen ? { ohneZeichen } : {}), ...(begehren ? { begehren } : {}), ...(orte ? { orte } : {}),
     ...(ortUnbekannt ? { ortUnbekannt } : {}), ...(seiteFrage ? { seiteFrage } : {}), ...(dringend ? { dringend } : {}),
+    ...(hnFrage ? { hnFrage } : {}),
   };
   const core: CoreParse = { d: out, lead: !!tp.used && tp.lead, start: !!tp.used && tp.lead && tp.used.index <= 2, zeitWahl };
   return o.teilen === false ? core : zweiOrteTeilen(core, input, text, locText, found, areaHits.map((x) => ({ index: x.m!.index, len: x.m![0].length, label: x.a.name })), vonNach, melder, melderBekannt, ctx);
@@ -947,12 +1014,29 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
   // MVP 3.5 (Phase 0 verdrahtet, Paket D baut `bezugAufloesen` aus): Nummer mit mehreren Einträgen, Abschluss eines
   // Auftrags («H03 erledigt»), «Antwort an Bat» ohne Nummer
   // (nur wenn die gelesene Art gilt – bei gewählter anderer Art kein Bezug aus dem Art-Hinweis)
-  if (events && lesung.art === d.art) {
-    const b = lvzBezugAufloesen(lesung, { events, ex: ctx.ex, melder: d.melder, t: d.t, abschlussAus: ctx.abschlussAus, bezugWahl: ctx.bezugWahl, blau });
-    if (b.bezug) d = { ...d, bezug: b.bezug, ...(b.bezugArt ? { bezugArt: b.bezugArt } : {}), bezugFehlt: undefined };
-    // mehrere Kandidaten: noch kein Bezug (gelb mit Wahl-Knöpfen, 2. Enter trägt ohne Bezug ein)
-    if (b.kandidaten?.length) { const { bezug: _b, ...r } = d; d = { ...r, bezugKandidaten: b.kandidaten, ...(b.wahl ? { wahl: b.wahl } : {}) }; }
+  // (Fix) Korrektur eines Ausgangs zu «Antwort zu 64: …» (Art Ausgang bleibt gewählt): Bezug wie bei einem Ausgang lesen
+  const lesungB: ArtLesung = d.art === "ausgang" && lesung.art !== "ausgang" && lesung.bezugNr
+    ? { ...lesung, art: "ausgang", bezugArt: lesung.bezugArt === "antwort" ? "antwort" : "weiter" } : lesung;
+  if (events && (lesungB.art === d.art || ctx.bezugNr)) {
+    const orteM = d.art === "meldung" ? [...(d.cells ?? []), ...(d.nai ? [d.nai] : []), ...(d.where?.kind === "ort" ? [d.where.label] : [])] : [];
+    const b = lvzBezugAufloesen(lesungB, { events, ex: ctx.ex, melder: d.melder, t: d.t, abschlussAus: ctx.abschlussAus, bezugWahl: ctx.bezugWahl, blau, bezugNr: ctx.bezugNr, orte: orteM, text: ohnePraefix || ohneBezug });
+    if (b.bezug) {
+      const z = events.find((e) => e.id === b.bezug);
+      d = { ...d, bezug: b.bezug, ...(b.bezugArt ? { bezugArt: b.bezugArt } : {}), ...(z ? { bezugNr: nrLabel(z, ctx.ex ?? { events }) } : {}), bezugFehlt: undefined, bezugKandidaten: undefined, wahl: undefined };
+      // Antwort an/von einem Trupp nach Wahl bzw. festem Bezug: Melder/Empfänger wie bei der Nummer
+      if (z && d.bezugArt === "antwort" && d.art !== "ausgang") d = antwortMelder(d, z, lesungB);
+      // Ausgang ohne Empfänger auf eine Frage/einen Auftrag von oben: Antwort geht an den Absender (Korrektur behält «an Bat»)
+      if (z && d.art === "ausgang" && !d.an && z.quelle) d = { ...d, an: z.quelle };
+    }
+    if (b.fest) d = { ...d, bezugFest: b.fest };
+    if (b.auch?.length) d = { ...d, bezugAuch: b.auch.filter((x) => x !== d.bezug) };
+    // mehrere Kandidaten: noch kein Bezug (gelb mit Wahl-Knöpfen, 2. Enter trägt ohne Bezug ein) – nie still der jüngste
+    if (b.kandidaten?.length) { const { bezug: _b, bezugNr: _n, ...r } = d; d = { ...r, bezugKandidaten: b.kandidaten, ...(b.wahl ? { wahl: b.wahl } : {}), ...(lesungB.bezugNr ? { bezugNr: lesungB.bezugNr } : {}) }; }
     if (b.abschluss !== undefined) d = { ...d, abschluss: b.abschluss };
+    // «nicht abschliessen» bzw. «keiner»: Bezug aus dem Raten (jüngster Auftrag) fällt weg
+    if (b.abschluss === null && !b.bezug && d.bezugArt === "ausgefuehrt" && !lesungB.bezugNr) { const { bezug: _b, bezugNr: _n, ...r } = d; d = r; }
+    // (Fix M1) Vollzug eines Auftrags: die auftragsgemässe Sperre/Stellung ist eigen, nie Feind
+    if (b.abschluss && d.art === "meldung" && d.kind !== "eigen" && d.kindFrom === "inhalt" && d.melder) d = alsEigen(d);
   }
   if (ctx.abschlussAus) d = { ...d, abschlussAus: true };
   const melderEigen = !!d.melder && blau.some((u) => sameUnitName(u, d.melder));
@@ -1035,7 +1119,28 @@ function bezugAufloesen(d: Draft, l: ArtLesung, ctx: JournalContext, events: Lag
   return { ...d, bezug: z.id, bezugNr: nrLabel(z, ctx.ex ?? { events }), bezugArt: l.bezugArt };
 }
 
+/** (Fix M1) eigene Lage statt Sichtung (Vollzug eines Auftrags: «H05 Sperre AQ12 errichtet» nach «an H05: Sperre AQ12 errichten») */
+function alsEigen(d: Draft): Draft {
+  const e = catalogEntry(d.sym) ?? catalogEntry("einheit")!;
+  const desc = d.desc?.replace(/(?<![\p{L}])gegnerische[nrs]?\s+/giu, "");
+  return { ...d, kind: "eigen", side: "blau", aff: "F", unit: d.melder, sidc: buildSidc(e, "F", { echelon: d.echelon, status: d.status }), ...(desc !== undefined ? { desc } : {}) };
+}
+
+/** Antwort mit Bezug `z` (Rückfrage): ging sie an den Trupp, kommt die Antwort von ihm; kam sie vom Trupp, geht sie an ihn */
+function antwortMelder(d: Draft, z: LageEvent, l: ArtLesung): Draft {
+  if (artOf(z) !== "rueckfrage") return d;
+  let out = d;
+  if (out.an && out.melder && sameUnitName(out.an, out.melder)) out = { ...out, melder: "" };
+  if (out.melder) return out;
+  if (z.an && !l.an) out = { ...out, melder: z.an };
+  else if (!z.an && z.melder) out = { ...out, melder: "", ...(!out.an ? { an: z.melder } : {}) };
+  if (out.melder && out.kind === "eigen" && out.art === "meldung" && !out.unit) out = { ...out, unit: out.melder };
+  return out;
+}
+
 function meldungBezug(d: Draft, l: ArtLesung, ctx: JournalContext, events: LageEvent[] | undefined): Draft {
+  // «H03 Auftrag ausgeführt» ohne Nummer: `bezugAufloesen` (lvz.ts) – mehrere offene Aufträge → Wahl, nie still der jüngste
+  if (l.bezugArt === "ausgefuehrt" && !l.bezugNr && events) return { ...d, bezugArt: "ausgefuehrt" };
   if (l.bezugArt === "ausgefuehrt") return bezugAufloesen(d, l, ctx, events, "auftrag");
   if (l.bezugArt === "antwort") return antwortBezug(d, l, ctx, events);
   if (l.bezugNr) return bezugAufloesen(d, l, ctx, events);
@@ -1087,7 +1192,10 @@ function asNonLageDraft(d: Draft, l: ArtLesung, core: CoreParse, ctx: JournalCon
   problems = problems.filter((p) => !core.zeitWahl.includes(p));
   const an = same ? lesung.an : undefined;
   let melder = d.melder;
-  if (art === "orientierung") melder = "";
+  // (MVP 3.5 Fix, H2) Melder nur bei echten Meldungen eines Trupps: Ausgang, Orientierung und alles von oben (Rückfrage,
+  // Auftrag mit `quelle`) setzen nie einen Melder – ein genannter Trupp ist Inhalt bzw. Empfänger
+  const vonOben = same && !!lesung.quelle && (art === "rueckfrage" || art === "auftrag");
+  if (art === "orientierung" || art === "ausgang" || vonOben) melder = "";
   else if ((art === "auftrag" || art === "rueckfrage") && an && melder && sameUnitName(an, melder) && !/erhalt/i.test(d.text)) melder = "";
   else if (art === "vbk" && !melder && an) melder = an;
   const e = catalogEntry("einheit")!;
@@ -1099,7 +1207,8 @@ function asNonLageDraft(d: Draft, l: ArtLesung, core: CoreParse, ctx: JournalCon
   let out: Draft = {
     ...rest, ...time, kind: "eigen", kindFrom: d.kindFrom === "vorgabe" ? "vorgabe" : "inhalt", side: "blau", aff: "F", unit: "", melder, sym: "einheit",
     sidc: buildSidc(e, "F"), status: "present",
-    ...(an && art !== "vbk" ? { an } : {}),
+    // Vbk: `an` = betroffener Trupp, wenn ein anderer meldet («H03 keine Verbindung zu H04», Fix N)
+    ...(an && (art !== "vbk" || (!!melder && !sameUnitName(an, melder))) ? { an } : {}),
     ...(same && lesung.quelle ? { quelle: lesung.quelle } : {}),
     ...(same && lesung.frist && art === "auftrag" ? { frist: fristIso(day, t, lesung.frist) } : {}),
     ...(art === "vbk" && same && lesung.vbk ? { vbk: lesung.vbk } : {}),
@@ -1112,7 +1221,8 @@ function asNonLageDraft(d: Draft, l: ArtLesung, core: CoreParse, ctx: JournalCon
   const events = ctx.events ?? ctx.ex?.events;
   // Quittung ohne Nummer → jüngster offener Auftrag an diesen Trupp (Entscheid 5); «Quittung 42» → Nr 42
   if (same && lesung.bezugArt === "quittung") out = bezugAufloesen(out, lesung, ctx, events, "auftrag");
-  else if (same && lesung.bezugArt === "antwort") out = antwortBezug(out, lesung, ctx, events);
+  // Ausgang «Antwort an Bat: …»: Bezug löst `bezugAufloesen` (lvz.ts) – nie die Rückfrage eines Trupps, nie ein Melder
+  else if (same && lesung.bezugArt === "antwort" && art !== "ausgang") out = antwortBezug(out, lesung, ctx, events);
   else if (same && lesung.bezugNr) out = bezugAufloesen(out, lesung, ctx, events);
   return out;
 }
@@ -1330,6 +1440,9 @@ export function kindLabel(e: Pick<LageEvent, "side" | "aff"> & { notiz?: boolean
   return e.aff === "U" ? "Unklar" : e.aff === "N" ? "Neutral" : "Feind";
 }
 
+/** «+02:00» → «MESZ», «+01:00» → «MEZ», sonst der Offset */
+const zoneLabel = (off: string) => (off === "+02:00" ? "MESZ" : off === "+01:00" ? "MEZ" : off);
+
 const csvCell = (v: string) => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
 /** Form für den CSV-Export: gezeichnet mit Eckpunkten (LV95, gerundet), sonst «Fläche (aus Ort)» */
@@ -1375,7 +1488,9 @@ export function journalToCsv(events: LageEvent[], days: string[], o: { gestriche
   const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Status", "Fassungen", "Form",
     "Nr", "Eingang", "An/Quelle", "Erfasst von", "Dringend", "Stand", "Massnahme", "Weitergemeldet", "Bezug", "Hebt auf", "Schicht",
     // MVP 3.5 (Kap. 5.8): «Begehren» hinten angefügt (Nachschub, Sanität …; leer ohne Begehren)
-    "Begehren"];
+    "Begehren",
+    // MVP 3.5 Nachbesserung: Zeitzone der Lagezeit («MESZ»/«MEZ», sonst Offset «+05:00») – doppelte Stunde eindeutig
+    "Zeitzone"];
   // Spalte «Schicht»: dieselbe Zuordnung wie Übergabe und Druck (`schichtEintraege`: erfasst ab Schichtbeginn bis zum Wechsel)
   const schichtVon = schichtZuordnung({ schichten: o.schichten });
   const ex = { events };
@@ -1396,7 +1511,7 @@ export function journalToCsv(events: LageEvent[], days: string[], o: { gestriche
       // «gestrichen 08:12 BSP» (Zeit des Streichens = letzte Änderung)
       e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", `${journalStatus(e)}${e.deleted ? ` ${localHhmm(e.updatedAt)}` : ""}${e.deleted && e.geaendertVon ? ` ${e.geaendertVon}` : ""}`, historyText(e), shapeCsv(e),
       nrLabel(e, ex), eingang, e.an ?? e.quelle ?? "", e.erfasstVon ?? "", v.dringend ? "dringend" : "", stand, v.massnahme ?? "",
-      v.weiter ? `${v.weiter.an} ${v.weiter.um.slice(11, 16)}` : "", nrOfId(e.bezug), nrOfId(e.hebtAuf), schichtVon(e)?.an ?? "", e.begehren?.was ?? ""];
+      v.weiter ? `${v.weiter.an} ${v.weiter.um.slice(11, 16)}` : "", nrOfId(e.bezug), nrOfId(e.hebtAuf), schichtVon(e)?.an ?? "", e.begehren?.was ?? "", zoneLabel(offsetOf(e))];
   });
   return "\uFEFF" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
 }
@@ -1418,6 +1533,7 @@ export function eventFromDraft(d: Draft, device: string, now = new Date(), o: { 
     ...(o.kuerzel ? { erfasstVon: o.kuerzel } : {}),
     ...(d.an ? { an: d.an } : {}), ...(d.quelle ? { quelle: d.quelle } : {}), ...(d.frist ? { frist: d.frist } : {}), ...(d.vbk ? { vbk: d.vbk } : {}),
     ...(d.bezug ? { bezug: d.bezug, ...(d.bezugArt ? { bezugArt: d.bezugArt } : {}) } : d.bezugArt === "antwort" && art === "notiz" ? { bezugArt: d.bezugArt } : {}),
+    ...(d.bezug && d.bezugAuch?.length ? { bezugAuch: [...d.bezugAuch] } : {}),
     ...(d.hebtAuf ? { hebtAuf: d.hebtAuf } : {}), ...(d.orte?.length ? { orte: [...d.orte] } : {}), ...(d.felder ? { felder: { ...d.felder } } : {}),
     ...(d.dringend ? { lvz: { dringend: { v: true, at: now.toISOString(), device, ...(o.kuerzel ? { von: o.kuerzel } : {}) } } } : {}),
     ...(d.begehren ? { begehren: { ...d.begehren } } : {}),

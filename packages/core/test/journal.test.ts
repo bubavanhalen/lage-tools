@@ -155,8 +155,9 @@ describe("Lage zum Zeitpunkt", () => {
     const mit = { ...evs[3]!, id: "beg", begehren: { was: "Mun Nachschub" } };
     const rows = journalToCsv([evs[0]!, mit], ["2030-05-14", "2030-05-15"]).replace(/^\uFEFF/, "").split("\r\n").map((r) => r.split(";"));
     const head = rows[0]!;
-    expect(head[head.length - 1]).toBe("Begehren");
-    const col = head.length - 1;
+    expect(head[head.length - 1]).toBe("Zeitzone");
+    expect(head[head.length - 2]).toBe("Begehren");
+    const col = head.length - 2;
     expect(rows.slice(1).map((r) => r[col])).toEqual(expect.arrayContaining(["", "Mun Nachschub"]));
     expect(rows.slice(1).every((r) => r.length === head.length)).toBe(true);
   });

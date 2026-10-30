@@ -6,7 +6,7 @@
  */
 import { useState, type ReactNode } from "react";
 import L from "leaflet";
-import { onlineAllowed, type Area, type Exercise } from "@lage/core";
+import { onlineAllowed, type Area, type Exercise, type OnlineDienst } from "@lage/core";
 import { NaiPanel } from "../NaiPanel";
 import { GeorefPane } from "../GeorefPane";
 import type { Candidate } from "../imageimport";
@@ -16,6 +16,7 @@ import { TruppsPanel } from "./TruppsPanel";
 import { FeindannahmeEdit } from "./FeindannahmeEdit";
 import { OfflineStep, offlinePartsText } from "./OfflineStep";
 import { PlaceSearch } from "../journal/UnifiedSearch";
+import { browserSttAvailable, setSpeechPrefs } from "../stt";
 import "./prepare.css";
 
 export type PrepStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -49,7 +50,8 @@ export function prepMarks(ex: Pick<Exercise, "name" | "sheets" | "areas" | "unit
     3: ex.areas.length ? "ok" : "fehlt",
     4: ex.units.blau.length ? "ok" : "offen",
     5: ex.feindannahme?.trim() ? "ok" : "offen",
-    6: offlineReady ? "ok" : "fehlt",
+    // ohne Raster kein Kartengebiet: nie «offline bereit» (Review 6, Erstbenutzer M4)
+    6: offlineReady && ex.sheets.length ? "ok" : "fehlt",
   };
 }
 
@@ -104,7 +106,7 @@ export function PrepareMode(p: PrepareModeProps) {
       ) : <p className="pp-note">Karte lädt …</p>) },
     { n: 4, title: ex.units.blau.length ? `Trupps (${truppRange(ex.units.blau)})` : "Trupps", sub: ex.units.blau.length ? "" : "empfohlen", body: () => <TruppsPanel ex={ex} update={update} offerUndo={offerUndo} /> },
     { n: 5, title: "Erwartete Kräfte Rot", sub: ex.feindannahme?.trim() ? ex.feindannahme.trim() : "empfohlen", body: () => <FeindannahmeEdit ex={ex} update={update} /> },
-    { n: 6, title: "Offline bereit", sub: offlinePartsText(offline), body: () => (map ? <OfflineStep ex={ex} map={map} status={offline} /> : <p className="pp-note">Karte lädt …</p>) },
+    { n: 6, title: "Offline bereit", sub: offlinePartsText(offline, ex.sheets.length > 0), body: () => (map ? <OfflineStep ex={ex} map={map} status={offline} /> : <p className="pp-note">Karte lädt …</p>) },
   ];
 
   return (
@@ -140,9 +142,12 @@ export function PrepareMode(p: PrepareModeProps) {
 }
 
 /** Online-Dienste (Spez. MVP 3.5, Kap. 2.8, K2): Standard aus, Texte sagen, was ans Internet geht */
-export const ONLINE_DIENSTE: Array<{ key: "ortssuche" | "strassen"; label: string; text: string }> = [
-  { key: "ortssuche", label: "Ortsnamen bei swisstopo nachschlagen", text: "(der getippte Ortsname geht ans Internet)" },
+export const ONLINE_DIENSTE: Array<{ key: OnlineDienst; label: string; text: string }> = [
+  // Review 6 (Feld M3): neben dem Ortsnamen geht auch der Übungsraum (Suchgebiet) hinaus
+  { key: "ortssuche", label: "Ortsnamen bei swisstopo nachschlagen", text: "(Ortsname und Übungsraum gehen ans Internet)" },
   { key: "strassen", label: "Strassen für Sperren und Checkpoints laden", text: "(Kartenausschnitte gehen ans Internet)" },
+  // Review 6 (Feld M1): Spracherkennung des Browsers ist ein Online-Dienst der Übung, nicht des Geräts
+  { key: "sprache", label: "Spracherkennung des Browsers (Text schon beim Sprechen)", text: "(der Ton geht an Google/Apple/Microsoft)" },
 ];
 
 function UebungStep({ ex, update }: { ex: Exercise; update(f: (x: Exercise) => Exercise): void }) {
@@ -168,13 +173,17 @@ function UebungStep({ ex, update }: { ex: Exercise; update(f: (x: Exercise) => E
           const on = onlineAllowed(ex, o.key);
           return (
             <label key={o.key} className="pp-check">
-              <input type="checkbox" checked={on} onChange={() => update((x) => { x.onlineDienste = { ...(x.onlineDienste ?? {}), [o.key]: !on, at: new Date().toISOString() }; return x; })} />
-              <span><b>{o.label}</b> <span className="pp-meta">{o.text}</span></span>
+              <input type="checkbox" checked={on} onChange={() => {
+                update((x) => { x.onlineDienste = { ...(x.onlineDienste ?? {}), [o.key]: !on, at: new Date().toISOString() }; return x; });
+                // eingeschaltet = ausdrücklich erlaubt: «Sprechen» nutzt dann die Browser-Erkennung (auf diesem Gerät)
+                if (o.key === "sprache" && !on) setSpeechPrefs({ browserOk: true, mode: "browser" });
+              }} />
+              <span><b>{o.label}</b> <span className="pp-meta">{o.text}{o.key === "sprache" && !browserSttAvailable() ? " – in diesem Browser nicht vorhanden" : ""}</span></span>
             </label>
           );
         })}
         <p className={geschuetzt ? "pp-warn" : "pp-note"}>Klassifizierung INTERN oder höher: ⚠ Nur einschalten, wenn der Befehl es erlaubt.</p>
-        <p className="pp-note">Ohne Online-Dienste fehlen: Ortsnamen («beim Gasthof Bären») und die Lage auf der Strasse. Die Karte selbst lädt weiterhin von swisstopo (enthält keine Meldung).</p>
+        <p className="pp-note">Ohne Online-Dienste fehlen: Ortsnamen («beim Gasthof Bären»), die Lage auf der Strasse und Text schon beim Sprechen (Sprachmemos werden offline erkannt). Die Karte selbst lädt weiterhin von swisstopo (enthält keine Meldung).</p>
       </fieldset>
     </div>
   );

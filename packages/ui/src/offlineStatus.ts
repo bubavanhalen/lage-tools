@@ -4,14 +4,14 @@
  * (`storage.persisted()`) ist nur eine Empfehlung (Entscheid MVP 1-Nachbesserung M1, MVP 3.5 Frage 9.2): ein dauerhaftes
  * ✗ im Kopf würde man übersehen lernen. Er steht in `parts.speicher` und `recommend`, nicht in `missing`.
  *
- * MVP 3.5: Die Karte wird vollständig geprüft (`areaTileCoverage`, keine Stichprobe), aber **nur auf Ereignis** – beim
+ * MVP 3.5: Die Karte wird vollständig geprüft (`areaTileCoverage` bis zur Ladestufe 2 m, keine Stichprobe), aber **nur auf Ereignis** – beim
  * Start, bei Raster-Änderung, nach dem Laden für offline (`notifyOfflineChanged`) und bei `online`; das Ergebnis wird pro
  * Raster-Schlüssel gemerkt. App, Netz und Speicher prüft der Kopf zusätzlich alle 60 s. Keine Netzanfragen – nur Cache
  * und Browser-Zustand. `abdeckung` liefert die Teilezahlen für das Offline-Popover («96 % (933 von 971 Teilen)»).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sheetBounds, type Exercise } from "@lage/core";
-import { areaTileCoverage, offlineReady } from "./offline";
+import { areaTileCoverage, offlineReady, OFFLINE_FEINSTE_M, type TeileZahl } from "./offline";
 import type { OfflineStatus } from "./shell/contracts";
 import type { Bounds } from "./tiles";
 
@@ -21,8 +21,12 @@ export const OFFLINE_GRUND = {
   app: "App noch nicht offline geladen",
 } as const;
 
-/** Kartenabdeckung des Raster-Gebiets (bis 5 m/px); `geprueft` = vollständig geprüft */
-export interface KartenAbdeckung { share: number; total: number; cached: number; geprueft: boolean }
+/**
+ * Kartenabdeckung des Raster-Gebiets über **alle Stufen bis zur Ladestufe** (2 m/px, Review 6 Feld H1); `geprueft` =
+ * vollständig geprüft. `uebersicht`/`detail`: Teilezahlen der Stufen ≥ bzw. < 10 m/px (Ampel «Übersicht ✓ · Detail 25 %»),
+ * `feinsteZ`: feinste lückenlos vorhandene Stufe.
+ */
+export interface KartenAbdeckung { share: number; total: number; cached: number; geprueft: boolean; uebersicht?: TeileZahl; detail?: TeileZahl; feinsteZ?: number | null }
 /** `OfflineStatus` mit Teilezahlen der Karte (für `useBetriebStatus`) */
 export type OfflineStatusVoll = OfflineStatus & { checked?: boolean; recommend?: string[]; abdeckung?: KartenAbdeckung };
 
@@ -96,7 +100,7 @@ export function useOfflineStatus(ex: Pick<Exercise, "id" | "sheets"> | null): Of
     let ab = abRef.current;
     if (!area) ab = KEIN_RASTER;
     else if (karte || !gemerkt.has(key)) {
-      const c = await areaTileCoverage(area);
+      const c = await areaTileCoverage(area, OFFLINE_FEINSTE_M);
       ab = { ...c, geprueft: true };
       gemerkt.set(key, ab);
     } else ab = gemerkt.get(key)!;

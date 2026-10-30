@@ -36,7 +36,8 @@ export function isPlaceName(query: string | undefined | null): boolean {
   return true;
 }
 
-export type OnlineDienst = "ortssuche" | "strassen";
+/** «sprache» (MVP 3.5 Nachbesserung): Spracherkennung des Browsers – Ton geht ans Internet (UI: `stt`) */
+export type OnlineDienst = "ortssuche" | "strassen" | "sprache";
 
 /**
  * Ist der Online-Dienst für diese Übung erlaubt? MVP 3.5 (Entscheid K2): nur bei ausdrücklichem `true`; fehlt die Wahl

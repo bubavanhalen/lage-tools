@@ -10,6 +10,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { KUERZEL_HINWEIS, kuerzelNorm, type KuerzelZeileProps } from "../shell/contracts";
 
+/** feste ID des Kürzel-Felds: der Kopf-Text «Kürzel fehlt» ist sein Label (Klick setzt den Fokus hinein, Review 6) */
+export const KUERZEL_FELD_ID = "eb-kuerzel-feld";
+
 export function KuerzelZeile({ exId, onSet, autoFocus }: KuerzelZeileProps & { autoFocus?: boolean }) {
   const id = useId();
   const [v, setV] = useState("");
@@ -26,8 +29,8 @@ export function KuerzelZeile({ exId, onSet, autoFocus }: KuerzelZeileProps & { a
     <div className="eb-kzz" role="group" aria-labelledby={`${id}-h`}>
       <p className="eb-kzz-h" id={`${id}-h`}>Wer führt das Journal?</p>
       <div className="eb-kzz-row">
-        <label className="eb-kzz-l" htmlFor={`${id}-k`}>Dein Kürzel</label>
-        <input ref={inp} id={`${id}-k`} className="eb-kzz-f mono" value={v} placeholder="z. B. MU"
+        <label className="eb-kzz-l" htmlFor={KUERZEL_FELD_ID}>Dein Kürzel</label>
+        <input ref={inp} id={KUERZEL_FELD_ID} className="eb-kzz-f mono" value={v} placeholder="z. B. MU"
           autoComplete="off" autoCorrect="off" autoCapitalize="characters" spellCheck={false} enterKeyHint="done"
           aria-invalid={fehler || undefined} aria-describedby={`${id}-t`}
           onChange={(e) => { setV(e.target.value); setFehler(false); }}

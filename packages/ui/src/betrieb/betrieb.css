@@ -35,7 +35,11 @@
 .hd button.hd-off.fix.laedt { color: var(--ink); background: var(--surface); font-variant-numeric: tabular-nums; }
 .hd .hd-off.online { color: var(--muted); font-size: var(--fs-14); white-space: nowrap; }
 @media (max-width: 860px) {
-  .hd button.hd-off.fix { white-space: normal; max-width: 92px; padding: var(--sp-4) var(--sp-8); font-size: var(--fs-12); }
+  /* Tablet hoch: eine Zeile (Review 6, Erstbenutzer N); erst auf dem Handy darf der Text umbrechen */
+  .hd button.hd-off.fix { padding: var(--sp-4) var(--sp-8); font-size: var(--fs-12); }
+}
+@media (max-width: 560px) {
+  .hd button.hd-off.fix { white-space: normal; max-width: 92px; }
   .hd .hd-off.online { display: none; }
 }
 

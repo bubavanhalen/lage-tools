@@ -167,12 +167,15 @@ class RasterLabels extends L.Layer {
     const inX = (x: number) => x > -60 && x < W + 60;
     const inY = (y: number) => y > -60 && y < H + 60;
 
-    // ---- Randbeschriftung (auch bei kleinen Feldern, dann ausgedünnt)
-    const colW = Math.max(...sh.colLabels.map((s) => s.length)) * 8 + 6;
+    // ---- Randbeschriftung (auch bei kleinen Feldern, dann ausgedünnt). Präsentation: 16 px statt 13 (Review 6
+    // Erstbenutzer M5 / Design H7; Schrift über map.css `.present .lt-edge-t`), Platzbedarf entsprechend grösser
+    const big = !!map.getContainer().closest(".present");
+    const zw = big ? 10 : 8; // Breite je Zeichen (Plex Mono 600 ≈ 0.6 em)
+    const colW = Math.max(...sh.colLabels.map((s) => s.length)) * zw + 6;
     const colStep = niceStep(colW / cw);
-    const rowStep = niceStep(17 / ch);
-    const offV = Math.max(0.45 * ch, 12);
-    const rowW = Math.max(...sh.rowLabels.map((s) => s.length)) * 8;
+    const rowStep = niceStep((big ? 21 : 17) / ch);
+    const offV = Math.max(0.45 * ch, big ? 15 : 12);
+    const rowW = Math.max(...sh.rowLabels.map((s) => s.length)) * zw;
     const offH = Math.max(0.45 * cw, rowW / 2 + 7);
     const edge = (x: number, y: number, t: string) => parts.push(`<text class="lt-edge-t" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${esc(t)}</text>`);
     for (let c = 0; c < cols; c++) {
@@ -211,7 +214,7 @@ class RasterLabels extends L.Layer {
             );
           }
       }
-      const fs = Math.min(this.o.cellLabelMaxPx ?? 56, Math.max(11, 0.145 * ch));
+      const fs = Math.min(this.o.cellLabelMaxPx ?? 56, Math.max(big ? 16 : 11, 0.145 * ch));
       const dx = Math.min(0.044 * cw, fs * 0.3);
       const dy = fs * 1.17;
       const sw = Math.max(2.5, fs / 6);

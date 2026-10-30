@@ -17,7 +17,7 @@ import type { Hint } from "./hints";
 import { newEventId } from "./model";
 import { offeneHinweise } from "./zaehlen";
 import { isErsatzOrt, placeLabel, situationAt, unitKey } from "./journal";
-import { inhaltText, lvzIndex, offenePunkte, vermerkeOf } from "./lvz";
+import { eingangMs, inhaltText, lvzIndex, offenePunkte, vermerkeOf } from "./lvz";
 import type { Exercise, LageEvent, SchichtWechsel } from "./model";
 import { nrLabel } from "./nummer";
 import { schichtEintraege } from "./schichtwahl";
@@ -57,7 +57,6 @@ export interface LageBlauZeile {
   offen: Array<{ nr: string; art: "auftrag" | "rueckfrage"; text: string; frist?: string; ueberfaellig: boolean }>;
 }
 
-const minutesBetween = (a: Parameters<typeof zeitMs>[0], b: Parameters<typeof zeitMs>[0]) => Math.max(0, Math.round((zeitMs(b) - zeitMs(a)) / 60000));
 
 /** Lage Blau zur Lagezeit `t` (Übergabe-Seite, Abschnitt 1) – in der Reihenfolge von `ex.units.blau` */
 export function lageBlau(ex: Exercise, t: string): LageBlauZeile[] {
@@ -81,16 +80,19 @@ export function lageBlau(ex: Exercise, t: string): LageBlauZeile[] {
         if (l && !isErsatzOrt(l)) ort = l;
       }
     }
+    // letztes Lebenszeichen nach Eingang (Fix N: nachgemeldet «0255» um 03:10 = Lebenszeichen 03:10); nur echte Meldungen
+    // eines Trupps (nie Ausgang, Rückfrage/Auftrag von oben – `lebenszeichen`)
     const signs = events.filter((e) => lebenszeichen(e) === trupp);
-    const last = signs[signs.length - 1];
-    const vbk = events.filter((e) => artOf(e) === "vbk" && e.melder === trupp && e.vbk).pop();
+    const last = signs.reduce<LageEvent | undefined>((a, e) => (!a || eingangMs(e) >= eingangMs(a) ? e : a), undefined);
+    // Vbk des Trupps: betroffen ist `an` («H03 keine Verbindung zu H04» → H04), sonst der Melder
+    const vbk = events.filter((e) => artOf(e) === "vbk" && (e.an ?? e.melder) === trupp && e.vbk).pop();
     return {
       trupp,
       ort: st ? ort ?? (isErsatzOrt(placeLabel(st.event)) ? null : placeLabel(st.event) || null) : null,
       seit,
       ...(last ? { letzteMeldung: { t: last.t, text: artOf(last) === "meldung" ? inhaltText(last, blau) : `${last.bezugArt === "antwort" ? "Antwort" : ART_LABEL[artOf(last)]} ${inhaltText(last, blau)}`, nr: nrLabel(last, ex) } } : {}),
       ...(vbk ? { letzteVbk: { t: vbk.t, ergebnis: vbk.vbk! } } : {}),
-      stillMin: last ? minutesBetween(last, t) : null,
+      stillMin: last ? Math.max(0, Math.round((zeitMs(t) - eingangMs(last)) / 60000)) : null,
       offen: offen
         .filter((o) => o.eventId && (o.art === "auftrag" || o.art === "rueckfrage"))
         .filter((o) => { const e = events.find((x) => x.id === o.eventId)!; return o.art === "auftrag" ? e.an === trupp : e.melder === trupp || e.an === trupp; })
@@ -181,7 +183,9 @@ export function vonOben(ex: Pick<Exercise, "events" | "units">, t: string, n = I
     .sort((a, b) => compareEvents(b, a))
     .map((e): VonObenZeile => {
       const auftrag = artOf(e) === "auftrag";
-      const text = auftrag ? `an ${e.an ?? "?"}: ${inhaltText(e, blau)}${e.frist ? ` bis ${e.frist.slice(11, 16).replace(":", "")}` : ""}` : inhaltText(e, blau);
+      // (Fix M3) Auftrag von oben ohne Trupp («Bat verlangt Lagemeldung bis 0800»): ohne «an ?:»
+      const frist = e.frist ? ` bis ${e.frist.slice(11, 16).replace(":", "")}` : "";
+      const text = auftrag ? (e.an ? `an ${e.an}: ${inhaltText(e, blau)}${frist}` : `${inhaltText(e, blau)}${frist}`) : inhaltText(e, blau);
       const info = auftrag ? (e.frist ? { termin: e.frist, art: "bis" as const } : null) : terminInfo(e, text);
       return {
         id: e.id, nr: nrLabel(e, ex), t: e.t, quelle: e.quelle ?? "", text, art: auftrag ? "auftrag" : "orientierung",

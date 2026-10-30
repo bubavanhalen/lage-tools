@@ -46,6 +46,7 @@ import {
   zeitCmp,
   mitOffset,
   offsetOf,
+  onlineAllowed,
 } from "@lage/core";
 import {
   AffineImageLayer,
@@ -127,6 +128,7 @@ import { OfflinePopover } from "./betrieb/OfflinePopover";
 import { onSchutzAnleitung, useBetriebStatus, useSchutzHinweis } from "./betrieb/status";
 import { useWakeLock } from "./betrieb/wakeLock";
 import { dateiText, markDateiGesichert, useDateiGesichert } from "./betrieb/dateiSichern";
+import { ohneOnline } from "./betrieb/dateiOnline";
 import { mPerPxOf, symbolGrundmass, useZeichenGroesse } from "./map/symbolSize";
 
 /**
@@ -166,9 +168,10 @@ type DialogKind = "uebungen" | "hilfe" | "ueber" | "sprache" | "kuerzel" | "uebe
  * Text ins Meldungsfeld (Offen: «Antwort eintragen», «Vbk eintragen»); Rückfall über das Feld selbst.
  * «Antwort zu 82: » ist ohne Vorgabe eine Notiz mit Bezug (Kern); Feind/Eigene/Unklar nur von Hand in «Was ist es?».
  */
-function prefill(text: string, art?: EntryArt): void {
-  // «Antwort zu 82: » liest der Kern selbst als Notiz mit Bezug (Antwort); eine Vorgabe nur, wenn ausdrücklich verlangt
-  if (prefillEntry(text, art ? { art } : undefined)) return;
+function prefill(text: string, art?: EntryArt, bezugNr?: string): void {
+  // «Antwort zu 82: » liest der Kern selbst als Notiz mit Bezug (Antwort); eine Vorgabe nur, wenn ausdrücklich verlangt.
+  // Review 6 (Einsatz H1): aus Offen kommt die gewählte Nummer als fester Bezug mit (nie neu raten)
+  if (prefillEntry(text, art || bezugNr ? { ...(art ? { art } : {}), ...(bezugNr ? { bezugNr } : {}) } : undefined)) return;
   const f = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Was wurde gemeldet?"], input[placeholder="Was wurde gemeldet?"]');
   if (!f) return;
   const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(f), "value")?.set;
@@ -815,8 +818,11 @@ export function Workspace({ product, tagline }: Props) {
     try {
       const { exerciseFromAny } = await import("./exportZip");
       // Anhang nicht ablegbar (Speicher voll): Übung trotzdem öffnen, Fehler zeigt das rote Band
-      const { ex: file, files } = await exerciseFromAny(f, (id, b) => putAttachmentBlob(id, b).catch(() => { /* gemeldet */ }));
+      const { ex: geoeffnet, files } = await exerciseFromAny(f, (id, b) => putAttachmentBlob(id, b).catch(() => { /* gemeldet */ }));
       forgetBlobUrls();
+      // MVP 3.5 Nachbesserung (Feld H2): eine Übung aus einer Datei startet immer mit Online-Diensten aus (nie still ein);
+      // waren in der Datei welche an, fragt die Rückmeldung einmal «… hier einschalten?»
+      const { file, online } = ohneOnline(geoeffnet);
       const att = files ? ` (${files} ${files === 1 ? "Anhang" : "Anhänge"})` : "";
       const cur = exRef.current;
       const local = cur?.id === file.id ? cur : await peekStored(file.id);
@@ -826,7 +832,8 @@ export function Workspace({ product, tagline }: Props) {
         hebeNrZaehler(file);
         switchTo(file, "neu");
         const n = (file.events ?? []).filter((e) => !e.deleted).length;
-        setMergeInfo({ name: file.name, text: `${n} ${n === 1 ? "Meldung" : "Meldungen"}, neu auf diesem Gerät${att}`, nurHier: 0, replace: null });
+        setMergeInfo({ name: file.name, text: `${n} ${n === 1 ? "Meldung" : "Meldungen"}, neu auf diesem Gerät${att}`, nurHier: 0, replace: null,
+          ...(online ? { online: { namen: online.namen, einschalten: () => update((x) => (x.id === file.id ? { ...x, onlineDienste: { ...online.dienste, at: new Date().toISOString() } } : x)) } } : {}) });
         return;
       }
       const { ex: merged, report } = mergeExercise(local, file);
@@ -839,7 +846,13 @@ export function Workspace({ product, tagline }: Props) {
       if (report.conflictIds?.length) setConflictIds((c) => [...new Set([...c, ...report.conflictIds])]);
       setMergeInfo({
         name: merged.name, text: mergeReportText(report) + att, nurHier: report.nurHier,
-        replace: () => { switchTo(file, "ersetzen"); setMergeInfo(null); say(`«${file.name}» durch die Datei ersetzt`); },
+        // ersetzt: auch dann Online-Dienste aus (Datei schaltet nie still ein), die Frage kommt danach
+        replace: () => {
+          switchTo(file, "ersetzen");
+          setMergeInfo(online ? { name: file.name, text: "durch die Datei ersetzt", nurHier: 0, replace: null,
+            online: { namen: online.namen, einschalten: () => update((x) => (x.id === file.id ? { ...x, onlineDienste: { ...online.dienste, at: new Date().toISOString() } } : x)) } } : null);
+          say(`«${file.name}» durch die Datei ersetzt`);
+        },
         // abweichendes Raster/NAI: pro Element hiesige behalten oder aus der Datei übernehmen (Meldungen bleiben)
         diffs: report.diffs,
         choose: (d, c) => update((x) => (x.id === merged.id ? takeHullItems(x, c === "datei" ? file : local, [d]) : x)),
@@ -945,7 +958,7 @@ export function Workspace({ product, tagline }: Props) {
       onEvent={zurMeldung}
       onCorrect={(id) => correct(id)}
       onHint={(id) => { setSideView("rot"); setSelHint(id); const h = hints.find((x) => x.id === id); if (h) focusHint(h); }}
-      onPrefill={prefill} onPrefillArt={(t, a) => prefill(t, a)} onUebergabe={openUebergabe} update={update} device={device} kuerzel={schicht.kuerzel}
+      onPrefill={prefill} onPrefillArt={(t, a, nr) => prefill(t, a, nr)} onUebergabe={openUebergabe} update={update} device={device} kuerzel={schicht.kuerzel}
       rueckblick={zeit.zeit.kind === "rueckblick"} say={say} />
   );
   // MVP 3 an JournalPanel/EntryBox/JournalList (Paket B nimmt sie an; optional)
@@ -978,8 +991,8 @@ export function Workspace({ product, tagline }: Props) {
         events: ex.events ?? [], days: ex.days, units: ex.units, selectedId: selEvent, compact: present,
         onSelect: (id) => { setSideView("journal"); const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) { zeit.lookBack(mitOffset(e.t.slice(0, 16), offsetOf(e))); focusEvent(e); } },
         extra: present ? <>
-          <button className={"swt-chip" + (presentHints ? " on" : "")} aria-pressed={presentHints} onClick={() => { setPresentHints(!presentHints); window.setTimeout(() => sm.current?.map.invalidateSize(), 50); }}>
-            Was Rot vorhaben könnte{badge.n ? ` (${badge.n})` : ""}</button>
+          <button className={"swt-chip" + (presentHints ? " on" : "")} aria-pressed={presentHints} title="Was Rot vorhaben könnte" onClick={() => { setPresentHints(!presentHints); window.setTimeout(() => sm.current?.map.invalidateSize(), 50); }}>
+            Was Rot<span className="eb-sr"> vorhaben könnte</span>{badge.n ? <>{" "}<span className="red-badge" aria-label={badge.aria}>{badge.text}</span></> : null}</button>
           <button className="swt-chip" onClick={() => togglePresent(false)}>Präsentation beenden (Esc)</button>
         </> : undefined,
       }} />
@@ -991,8 +1004,8 @@ export function Workspace({ product, tagline }: Props) {
       <AppShell aw={aw} lagezeit={zeit.zeit.kind} night={night} present={present}
         header={<Header name={ex.name} product={product} save={saveStatus} offline={offline} menu={menu}
           schicht={{ kuerzel: schicht.kuerzel, seit: seitText(schicht.seitT) }}
-          online={betrieb.online.ortssuche || betrieb.online.strassen}
-          onFixOffline={() => setOfflinePop({ anker: offlineAnker() })} />}
+          online={betrieb.online.ortssuche || betrieb.online.strassen || onlineAllowed(ex, "sprache")}
+          onFixOffline={() => setOfflinePop({ anker: offlineAnker() })} onKuerzel={() => setDialog("kuerzel")} />}
         bands={<>
           <StatusBands ex={ex} dbBlocked={dbBlocked} onSaveFile={saveFile} />
         </>}

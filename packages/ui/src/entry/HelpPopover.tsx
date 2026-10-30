@@ -18,8 +18,11 @@ export const HILFE_BEISPIELE: Array<[string, string]> = [
 export const HILFE_ANDERE: Array<[string, string]> = [
   ["Auftrag an H01: Beo NAI 1 bis 1200", "Auftrag – offen bis erledigt"],
   ["Bat: Lagerapport 1800 im KP", "Orientierung von oben (Bat, Kp)"],
-  ["H04 Rückfrage: Standort Det 2?", "Rückfrage – offen bis Antwort"],
-  ["Antwort zu 12: weiter beobachten", "Antwort auf Nr 12 (Notiz)"],
+  ["Bat fragt: Standort H02?", "Rückfrage von oben – offen bis Antwort"],
+  ["H04 Rückfrage: Standort Det 2?", "Rückfrage eines Trupps – offen bis Antwort"],
+  ["Antwort zu Nr 12: weiter beobachten", "Antwort auf Nr 12"],
+  ["Weitergemeldet an Bat: Nr 12", "Ausgang – kein Zeichen, Vermerk an Nr 12"],
+  ["H02 Mun Nachschub benötigt", "Begehren – kommt in Offen"],
   ["H02 Vbk gut", "Verbindungskontrolle"],
   ["H01 quittiert Auftrag", "Quittung"],
 ];

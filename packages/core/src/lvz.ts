@@ -62,8 +62,11 @@ export function lvzIndex(events: LageEvent[]): LvzIndex {
   const bezuege = new Map<string, LageEvent[]>();
   for (const e of [...events].sort(compareEvents)) {
     if (e.deleted || !e.bezug) continue;
-    const l = bezuege.get(e.bezug);
-    if (l) l.push(e); else bezuege.set(e.bezug, [e]);
+    // (Fix N) weitere Bezüge mit derselben Art («Nr 55 und 56 an Bat weitergemeldet»)
+    for (const id of [e.bezug, ...(e.bezugAuch ?? []).filter((x) => x !== e.bezug)]) {
+      const l = bezuege.get(id);
+      if (l) l.push(e); else bezuege.set(id, [e]);
+    }
   }
   idx = { bezuege, lifts: liftMap(events), events };
   INDEX.set(events, idx);
@@ -104,7 +107,8 @@ export function vermerkeOf(e: LageEvent, idx: LvzIndex): VermerkStand {
   let erledigtDurch: LageEvent | undefined;
   for (const b of idx.bezuege.get(e.id) ?? []) {
     if (b.bezugArt === "quittung") { out.quittiert ??= { t: b.t, id: b.id }; if (QUITTUNG_ERLEDIGT) erledigtDurch ??= b; }
-    else if (b.bezugArt === "antwort" || (art === "rueckfrage" && b.bezugArt !== "ausgefuehrt")) { out.beantwortet ??= { t: b.t, id: b.id }; if (art === "rueckfrage") erledigtDurch ??= b; }
+    // (Fix M3) Auftrag von oben ohne Trupp («Bat verlangt Lagemeldung»): eine Antwort nach oben erledigt ihn
+    else if (b.bezugArt === "antwort" || (art === "rueckfrage" && b.bezugArt !== "ausgefuehrt")) { out.beantwortet ??= { t: b.t, id: b.id }; if (art === "rueckfrage" || (art === "auftrag" && !!e.quelle && !e.an)) erledigtDurch ??= b; }
     else if (b.bezugArt === "ausgefuehrt" && art === "auftrag") erledigtDurch ??= b;
     else if (b.bezugArt === "weiter" && artOf(b) === "ausgang") {
       // jüngster Ausgang gilt (Liste älteste zuerst); ein gesetzter Vermerk «weitergemeldet» geht vor
@@ -169,6 +173,10 @@ export interface OffenItem {
   ueberfaellig?: boolean;
   /** Minuten seit `t` */
   seitMin: number;
+  /** (Fix M3) Auftrag von oben ohne Trupp («Bat verlangt Lagemeldung bis 0800») – Art «rueckfrage-oben», «Antwort eintragen» */
+  auftragOben?: true;
+  /** (Fix M3) Frist (ISO lokal) eines Auftrags von oben */
+  frist?: string;
 }
 
 /** Rangfolge in «Offen» (Kap. 3.7) */
@@ -194,6 +202,10 @@ export interface BezugErgebnis {
   abschluss?: { id: string; nr: string; text: string } | null;
   /** (additiv) Wahl-Knöpfe zu `kandidaten` (Text und Beschriftungen, Kap. 4) → `Draft.wahl` → `EntryReason.choices` */
   wahl?: BezugWahl;
+  /** (Fix H1) fester Bezug aus Offen (`ctx.bezugNr`): Anzeige «Antwort auf Nr 57 (Standort H02?)» → `Draft.bezugFest` */
+  fest?: { id: string; nr: string; text: string };
+  /** (Fix N) weitere Bezüge eines Ausgangs («Nr 55 und 56 weitergemeldet») → `Draft.bezugAuch` */
+  auch?: string[];
 }
 
 /** Wahl-Knöpfe in der Vorschau (`Draft.wahl`, `EntryReason.choices`): «64a 07:37 H02 3 Fz AK9» bzw. «Nr 66 Beo NAI 2» */
@@ -231,72 +243,181 @@ export function offeneAuftraegeAn(events: LageEvent[], trupp: string, t: string)
 
 const sameName = (a: string, b: string) => a.replace(/[\s.]/g, "").replace(/(\D)0+(\d)/g, "$1$2").toLowerCase() === b.replace(/[\s.]/g, "").replace(/(\D)0+(\d)/g, "$1$2").toLowerCase();
 
+/** (Fix M1) Vollzug eines Auftrags: der Trupp meldet Ziel/Ort erreicht bzw. die Sache erledigt */
+const VOLLZUG_RE = /(?<![\p{L}])(?:erfolgt|eingetroffen|errichtet|erstellt|eingerichtet|bezogen|ausgeführt|ausgefuehrt|erreicht|angekommen|in\s+stellung|vollzogen|erfüllt|erledigt)(?![\p{L}])/iu;
+/** Wörter, die beim Vergleich Ausgang ↔ Meldeauftrag nichts besagen */
+const FUELL = new Set(["melden", "meldung", "bis", "bitte", "sofort", "verlangt", "will", "wissen", "möchte", "wünscht", "fordert", "erstattet", "gemeldet", "nach", "oben", "und", "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "wie", "viele", "wo", "ist", "sind", "an", "von", "zu", "in", "bei", "auf", "mit"]);
+const woerter = (s: string) => new Set((s.toLowerCase().match(/[\p{L}][\p{L}\d]{2,}|h\d{1,3}|[a-z]{1,2}\d{1,2}/gu) ?? []).filter((w) => !FUELL.has(w) && !/^\d+$/.test(w)).map((w) => w.replace(/^(\D+?)0+(\d)/, "$1$2")));
+const baseOrt = (c: string) => c.replace(/\s?[ABCD]$/, "").replace(/\s+/g, "").toUpperCase();
+
+/** Kontext von `bezugAufloesen` (parseMeldung) */
+export interface BezugKontext {
+  events: LageEvent[];
+  ex?: Pick<Exercise, "events">;
+  melder?: string;
+  t: string;
+  abschlussAus?: boolean;
+  bezugWahl?: string;
+  blau?: string[];
+  /** (Fix H1) fester Bezug aus «Antwort eintragen»/«Erledigt» in Offen: Nummer wie angezeigt («57a») oder ID – gewinnt immer */
+  bezugNr?: string;
+  /** (Fix M1) Orte der Meldung (Planquadrate ohne Unterquadrant, NAI) und Text – für den Vollzug eines Auftrags */
+  orte?: string[];
+  text?: string;
+}
+
+/** Auftrag von oben ohne Empfänger-Trupp («Bat verlangt Lagemeldung bis 0800», «Auftrag Bat: Sperre AG13 halten») */
+export const istAuftragOben = (e: Pick<LageEvent, "art" | "notiz" | "quelle" | "an">): boolean => artOf(e) === "auftrag" && !!e.quelle && !e.an;
+/** Rückfrage von oben («Bat fragt: …») */
+export const istRueckfrageOben = (e: Pick<LageEvent, "art" | "notiz" | "quelle" | "an">): boolean => artOf(e) === "rueckfrage" && !!e.quelle && !e.an;
+
+/** Eintrag zu einer Nummer («57», «57a») oder ID; null bei mehrdeutiger Nummer bzw. ohne Treffer */
+function festerEintrag(nrOderId: string, events: LageEvent[], ex: Pick<Exercise, "events">): LageEvent | null {
+  const byId = events.find((e) => e.id === nrOderId && !e.deleted);
+  if (byId) return byId;
+  const alle = findAllByNr(ex, nrOderId).filter((e) => !e.deleted);
+  return alle.length === 1 ? alle[0]! : null;
+}
+
 /**
- * (MVP 3.5, D2) Bezug einer Lesung auflösen (von `parseMeldung` aufgerufen):
- * - Nummer mit mehreren Einträgen («64» bei 64a/64b, `findAllByNr`) → `kandidaten` + `wahl` (Grund `bezug-wahl`), bis
- *   `ctx.bezugWahl` eine davon wählt; genau einer → `bezug`. Ein Ausgang («Weitergemeldet an Bat: Nr 54») auf eine
- *   Rückfrage ist ihre Antwort (`bezugArt: "antwort"`), sonst «weiter».
- * - `abschluss` («H03 erledigt», D1.7): genau ein offener Auftrag an den Melder → `bezug` + «ausgefuehrt» und
- *   `abschluss` («schliesst Auftrag Nr 66 ab»); mehrere → `kandidaten` + `wahl` (Grund `auftrag-wahl`, Knopf «keiner»);
- *   keiner → nichts. `ctx.abschlussAus` («nicht abschliessen») bzw. Wahl «keiner» → `abschluss: null`.
- * - Ausgang «Antwort an Bat» ohne Nummer → jüngste offene Rückfrage mit `quelle` Bat.
+ * (MVP 3.5, D2; Fix H1/M1/M3) Bezug einer Lesung auflösen (von `parseMeldung` aufgerufen). **Nie still der jüngste:**
+ * - `ctx.bezugNr` (fester Bezug aus Offen) gewinnt immer: Rückfrage → Antwort, Auftrag → «ausgefuehrt» + `abschluss`
+ *   («nicht abschliessen» → nur Verweis), sonst Verweis/Weitermeldung. `fest` = Anzeige «Antwort auf Nr 57 (Standort H02?)».
+ * - Nummer mit mehreren Einträgen («64» bei 64a/64b) → `kandidaten` + `wahl` (`bezug-wahl`), bis `ctx.bezugWahl` wählt.
+ *   Ein Ausgang auf eine Rückfrage ist ihre Antwort, auf einen Auftrag von oben dessen Vollzug, sonst «weiter».
+ * - `abschluss` («H03 erledigt», «H03 Auftrag ausgeführt») und Vollzug («H02 in AH10 eingetroffen», «H05 Sperre AQ12
+ *   errichtet» – Ort eines offenen Auftrags an den Melder): genau einer → `bezug` + «ausgefuehrt» + `abschluss`; mehrere
+ *   → `wahl` (`auftrag-wahl`, Knopf «keiner»); keiner → nichts.
+ * - Ausgang «Antwort an Bat: …» ohne Nummer: offene Rückfragen und Aufträge von Bat – genau einer → dieser; mehrere →
+ *   `wahl` (`bezug-wahl`, «ohne Bezug»). «Lagemeldung an Bat …» ohne Nummer: Meldeauftrag von Bat mit gleichem Inhalt
+ *   (Wort) → Abschluss vorschlagen.
+ * - Antwort an/von einem Trupp ohne Nummer mit mehreren offenen Rückfragen → `wahl` (eine: löst parseMeldung).
  * Leeres Ergebnis = nichts zu tun (das bisherige Verhalten von parseMeldung gilt).
  */
-export function bezugAufloesen(l: ArtLesung, ctx: { events: LageEvent[]; ex?: Pick<Exercise, "events">; melder?: string; t: string; abschlussAus?: boolean; bezugWahl?: string; blau?: string[] }): BezugErgebnis {
+export function bezugAufloesen(l: ArtLesung, ctx: BezugKontext): BezugErgebnis {
   const events = ctx.events;
   const ex = ctx.ex ?? { events };
   const blau = ctx.blau ?? [];
   const idx = lvzIndex(events);
-  const artDerAntwort = (z: LageEvent): LageEvent["bezugArt"] =>
-    l.art === "ausgang" && artOf(z) === "rueckfrage" ? "antwort" : l.art === "ausgang" ? "weiter" : l.bezugArt ?? "verweis";
-  const abschlussVon = (z: LageEvent) => ({ id: z.id, nr: nrLabel(z, ex), text: `an ${z.an ?? "?"}: ${auftragInhalt(z, blau)}${z.frist ? ` – bis ${hhmm(z.frist)}` : ""}` });
+  const offen = (e: LageEvent) => !e.deleted && zeitBis(e, ctx.t) && vermerkeOf(e, idx).status === "offen";
+  const abschlussVon = (z: LageEvent) => ({ id: z.id, nr: nrLabel(z, ex), text: istAuftragOben(z) ? obenText(z, blau) : `an ${z.an ?? "?"}: ${auftragInhalt(z, blau)}${z.frist ? ` – bis ${hhmm(z.frist)}` : ""}` });
+  const festVon = (z: LageEvent) => ({ id: z.id, nr: nrLabel(z, ex), text: artOf(z) === "auftrag" ? abschlussVon(z).text : inhalt(z, blau) });
+  /** Ziel `z` gewählt: Art des Bezugs je Ziel */
+  const ziel = (z: LageEvent, o: { fest?: boolean } = {}): BezugErgebnis => {
+    const extra = o.fest ? { fest: festVon(z) } : {};
+    if (artOf(z) === "rueckfrage" && (l.art !== "meldung" || l.bezugArt === "antwort" || o.fest || l.bezugAnfang)) return { bezug: z.id, bezugArt: "antwort", ...extra };
+    if (artOf(z) === "auftrag" && (l.art === "ausgang" || l.abschluss || l.bezugArt === "ausgefuehrt" || o.fest)) {
+      if (ctx.abschlussAus || ctx.bezugWahl === BEZUG_KEINER) return o.fest ? { bezug: z.id, bezugArt: "verweis", abschluss: null, ...extra } : { abschluss: null };
+      return { bezug: z.id, bezugArt: "ausgefuehrt", abschluss: abschlussVon(z), ...extra };
+    }
+    return { bezug: z.id, bezugArt: l.art === "ausgang" ? "weiter" : l.bezugArt ?? "verweis", ...extra };
+  };
+  /** Wahl zwischen `alle` (≥ 2): gewählt → Ziel; «keiner» → kein Bezug; sonst Knöpfe */
+  const wahl = (alle: LageEvent[], grund: "bezug-wahl" | "auftrag-wahl", text: string, keiner: string | null, label: (e: LageEvent) => string): BezugErgebnis => {
+    if (ctx.bezugWahl === BEZUG_KEINER && keiner) return grund === "auftrag-wahl" ? { abschluss: null } : {};
+    const gew = ctx.bezugWahl ? alle.find((e) => e.id === ctx.bezugWahl) : undefined;
+    if (gew) return ziel(gew);
+    return {
+      kandidaten: alle.map((e) => e.id), grund, ...(grund === "auftrag-wahl" ? { abschluss: null } : {}),
+      wahl: { grund, text, choices: [...alle.map((e) => ({ id: e.id, label: label(e) })), ...(keiner ? [{ id: BEZUG_KEINER, label: keiner }] : [])] },
+    };
+  };
+  const nrKnopf = (e: LageEvent) => `${nrText(e, ex)} ${artOf(e) === "auftrag" && !istAuftragOben(e) ? auftragInhalt(e, blau) : inhalt(e, blau)}`.replace(/\s+/g, " ").trim().slice(0, 42);
+
+  // (Fix H1) fester Bezug aus Offen
+  if (ctx.bezugNr) {
+    const z = festerEintrag(ctx.bezugNr, events, ex);
+    if (z) return { ...ziel(z, { fest: true }), ...auchVon(l, ex) };
+  }
 
   // Nummer genannt
   if (l.bezugNr) {
     const alle = findAllByNr(ex, l.bezugNr).filter((e) => !e.deleted);
     if (alle.length > 1) {
-      const gew = ctx.bezugWahl ? alle.find((e) => e.id === ctx.bezugWahl) : undefined;
-      if (gew) return { bezug: gew.id, bezugArt: artDerAntwort(gew) };
       const nr = l.bezugNr.replace(/[a-z]$/i, "");
-      return {
-        kandidaten: alle.map((e) => e.id), grund: "bezug-wahl",
-        wahl: { grund: "bezug-wahl", text: `Nr ${nr} gibt es ${ZAHLWORT[alle.length] ?? `${alle.length}-mal`} – welche?`, choices: alle.map((e) => ({ id: e.id, label: bezugKnopfText(e, ex, blau) })) },
-      };
+      return wahl(alle, "bezug-wahl", `Nr ${nr} gibt es ${ZAHLWORT[alle.length] ?? `${alle.length}-mal`} – welche?`, null, (e) => bezugKnopfText(e, ex, blau));
     }
     const z = alle[0];
     if (!z) return { grund: "bezug" };
-    if (l.art === "ausgang") return { bezug: z.id, bezugArt: artDerAntwort(z) };
-    if (l.abschluss && artOf(z) === "auftrag") return ctx.abschlussAus ? { abschluss: null } : { bezug: z.id, bezugArt: "ausgefuehrt", abschluss: abschlussVon(z) };
+    if (l.art === "ausgang") return { ...ziel(z), ...auchVon(l, ex) };
+    if (l.abschluss && artOf(z) === "auftrag") return ziel(z);
     return {};
   }
 
-  // «H03 erledigt» ohne Nummer: offener Auftrag an den Melder
-  if (l.abschluss) {
+  const melder = ctx.melder ?? "";
+  // «H03 erledigt», «H03 Auftrag ausgeführt» ohne Nummer: offener Auftrag an den Melder (mehrere → Wahl)
+  if (l.abschluss || (l.art === "meldung" && l.bezugArt === "ausgefuehrt")) {
     if (ctx.abschlussAus || ctx.bezugWahl === BEZUG_KEINER) return { abschluss: null };
-    const offen = offeneAuftraegeAn(events, ctx.melder ?? "", ctx.t);
-    if (!offen.length) return {};
-    const gew = ctx.bezugWahl ? offen.find((e) => e.id === ctx.bezugWahl) : offen.length === 1 ? offen[0] : undefined;
-    if (gew) return { bezug: gew.id, bezugArt: "ausgefuehrt", abschluss: abschlussVon(gew) };
-    return {
-      kandidaten: offen.map((e) => e.id), grund: "auftrag-wahl", abschluss: null,
-      wahl: {
-        grund: "auftrag-wahl", text: "Welcher Auftrag ist erledigt?",
-        choices: [...offen.map((e) => ({ id: e.id, label: `${nrText(e, ex)} ${auftragInhalt(e, blau)}`.replace(/\s+/g, " ").trim() })), { id: BEZUG_KEINER, label: "keiner" }],
-      },
-    };
+    const auf = offeneAuftraegeAn(events, melder, ctx.t);
+    if (!auf.length) return {};
+    if (auf.length === 1) return ziel(auf[0]!);
+    return wahl(auf, "auftrag-wahl", "Welcher Auftrag ist erledigt?", "keiner", nrKnopf);
   }
 
-  // «Antwort an Bat: …» ohne Nummer → jüngste offene Rückfrage von Bat
-  if (l.art === "ausgang" && l.bezugArt === "antwort" && l.an) {
-    let best: LageEvent | undefined;
-    for (const e of events) {
-      if (e.deleted || artOf(e) !== "rueckfrage" || !e.quelle || !sameName(e.quelle, l.an) || !zeitBis(e, ctx.t)) continue;
-      if (vermerkeOf(e, idx).status !== "offen") continue;
-      if (!best || compareEvents(e, best) > 0) best = e;
+  // (Fix M1) Vollzug: Trupp meldet Ort eines offenen Auftrags an ihn («H02 in AH10 eingetroffen», «Sperre AQ12 errichtet»)
+  if (l.art === "meldung" && melder && ctx.orte?.length && ctx.text && VOLLZUG_RE.test(ctx.text)) {
+    const orte = new Set(ctx.orte.map(baseOrt));
+    const auf = offeneAuftraegeAn(events, melder, ctx.t).filter((e) => (e.orte ?? []).some((o) => orte.has(baseOrt(o))));
+    if (!auf.length) return {};
+    if (ctx.abschlussAus || ctx.bezugWahl === BEZUG_KEINER) return { abschluss: null };
+    if (auf.length === 1) return { bezug: auf[0]!.id, bezugArt: "ausgefuehrt", abschluss: abschlussVon(auf[0]!) };
+    return wahl(auf, "auftrag-wahl", "Welcher Auftrag ist erledigt?", "keiner", nrKnopf);
+  }
+
+  // Ausgang nach oben ohne Nummer
+  if (l.art === "ausgang" && l.an) {
+    const von = (e: LageEvent) => !!e.quelle && sameName(e.quelle, l.an!);
+    if (l.bezugArt === "antwort") {
+      // «Antwort an Bat: …» → offene Rückfragen und Aufträge von Bat (älteste zuerst in der Wahl)
+      const alle = events.filter((e) => (istRueckfrageOben(e) || istAuftragOben(e)) && von(e) && offen(e)).sort(compareEvents);
+      if (!alle.length) return {};
+      if (alle.length === 1) return ziel(alle[0]!);
+      return wahl(alle, "bezug-wahl", "Welche Rückfrage wird beantwortet?", "ohne Bezug", nrKnopf);
     }
-    return best ? { bezug: best.id, bezugArt: "antwort" } : {};
+    // «Lagemeldung an Bat 0745 erstattet» → Meldeauftrag von Bat mit gleichem Inhalt (Wort) abschliessen?
+    const w = woerter(`${l.token ?? ""} ${l.rest}`);
+    const auf = events.filter((e) => istAuftragOben(e) && von(e) && offen(e) && [...woerter(inhalt(e, blau))].some((x) => w.has(x))).sort(compareEvents);
+    if (!auf.length) return {};
+    if (ctx.abschlussAus || ctx.bezugWahl === BEZUG_KEINER) return { abschluss: null };
+    if (auf.length === 1) return { bezug: auf[0]!.id, bezugArt: "ausgefuehrt", abschluss: abschlussVon(auf[0]!) };
+    return wahl(auf, "auftrag-wahl", "Welcher Auftrag ist erledigt?", "keiner", nrKnopf);
+  }
+
+  // Antwort an/von einem Trupp ohne Nummer («H04 Antwort: …», «Antwort an H02: …»): mehrere offene Rückfragen → Wahl
+  if (l.art === "notiz" && l.bezugArt === "antwort") {
+    const trupp = l.an ?? melder;
+    if (!trupp) return {};
+    const alle = events.filter((e) => artOf(e) === "rueckfrage" && !istRueckfrageOben(e) && offen(e)
+      && ((!!e.an && sameName(e.an, trupp)) || (!!e.melder && sameName(e.melder, trupp)))).sort(compareEvents);
+    if (alle.length < 2) return {};
+    return wahl(alle, "bezug-wahl", "Welche Rückfrage wird beantwortet?", "ohne Bezug", nrKnopf);
   }
   return {};
+}
+
+/** weitere Nummern eines Ausgangs («Nr 55 und 56») → IDs (nur eindeutige) */
+function auchVon(l: ArtLesung, ex: Pick<Exercise, "events">): Pick<BezugErgebnis, "auch"> {
+  const ids = (l.bezugNrAuch ?? []).map((n) => findAllByNr(ex, n).filter((e) => !e.deleted)).filter((a) => a.length === 1).map((a) => a[0]!.id);
+  return ids.length ? { auch: ids } : {};
+}
+
+/** «Bat verlangt Lagemeldung – bis 08:00», «Bat: Standort H02 melden – bis 08:00» (Auftrag von oben ohne Trupp) */
+export function obenText(e: LageEvent, blau: string[] = []): string {
+  const was = inhalt(e, blau);
+  const verb = /^(?:verlangt|fordert|will|möchte|wünscht|braucht|erwartet)(?![\p{L}])/iu.test(was);
+  return `${e.quelle ?? "?"}${verb ? " " : ": "}${was}${e.frist ? ` – bis ${hhmm(e.frist)}` : ""}`;
+}
+
+/**
+ * (Fix N) Zeitpunkt eines Lebenszeichens in ms: Eingang (`createdAt`), wenn er nach der Lagezeit liegt – ein nachgemeldetes
+ * «0255» um 03:10 zeigt, dass der Trupp um 03:10 Verbindung hatte. Ohne `createdAt` die Lagezeit.
+ */
+export function eingangMs(e: Pick<LageEvent, "t" | "tOffset" | "createdAt" | "tReported">): number {
+  const t = zeitMs(e);
+  // Eingang nur bei erfassten Einträgen (`tReported` gesetzt): genau aus `createdAt`, sonst aus `tReported`
+  if (!e.tReported) return t;
+  const c = e.createdAt ? Date.parse(e.createdAt) : zeitMs({ t: e.tReported.slice(0, 16) });
+  return Number.isFinite(c) && c > t ? c : t;
 }
 
 const hhmm = (t: string) => t.slice(11, 16);
@@ -351,9 +472,14 @@ export function offenePunkte(ex: Exercise, tLive: string, o: { conflictIds?: str
   const item = (art: OffenArt, e: LageEvent, text: string, extra: Partial<OffenItem> = {}): OffenItem => ({
     key: `${art}:${e.id}`, art, prio: OFFEN_PRIO[art], eventId: e.id, t: e.t, text, nr: nrLabel(e, ex), seitMin: minutesBetween(e, tLive), ...extra,
   });
-  // letzte Lebenszeichen je Trupp
+  // letzte Lebenszeichen je Trupp – nach Eingang (Fix N: ein nachgemeldetes «0255» um 03:10 ist ein Lebenszeichen um 03:10)
   const lastSign = new Map<string, LageEvent>();
-  for (const e of [...live].sort(compareEvents)) { const u = lebenszeichen(e); if (u) lastSign.set(u, e); }
+  for (const e of [...live].sort(compareEvents)) {
+    const u = lebenszeichen(e);
+    if (!u) continue;
+    const cur = lastSign.get(u);
+    if (!cur || eingangMs(e) >= eingangMs(cur)) lastSign.set(u, e);
+  }
   const keineVbk = new Set<string>();
   for (const e of live) {
     const art = artOf(e);
@@ -363,6 +489,13 @@ export function offenePunkte(ex: Exercise, tLive: string, o: { conflictIds?: str
     const conflict = conflicts.has(e.id) || (e.history ?? []).some((h) => h.conflict);
     if (conflict && !erledigt) out.push(item("konflikt", e, "zwei Fassungen – ansehen"));
     if (v.dringend && !erledigt) { out.push(item("dringend", e, `${kurzText(e, blau)}${v.weiter ? ` – weitergemeldet ${v.weiter.an} ${hhmm(v.weiter.um)}` : ""}`)); continue; }
+    // (Fix M3) Auftrag von oben ohne Trupp («Bat verlangt Lagemeldung bis 0800»): bei den Rückfragen von oben, Frist wie Aufträge
+    if (art === "auftrag" && v.status === "offen" && istAuftragOben(e)) {
+      const frist = e.frist;
+      const ueberfaellig = !!frist && zeitCmp(frist, tLive) < 0;
+      out.push({ ...item("rueckfrage-oben", e, obenText(e, blau)), prio: ueberfaellig ? OFFEN_PRIO["auftrag-frist"] : OFFEN_PRIO["rueckfrage-oben"], auftragOben: true, ...(frist ? { frist } : {}), ...(ueberfaellig ? { ueberfaellig } : {}) });
+      continue;
+    }
     if (art === "auftrag" && v.status === "offen") {
       const frist = e.frist;
       const ueberfaellig = !!frist && zeitCmp(frist, tLive) < 0;
@@ -373,11 +506,13 @@ export function offenePunkte(ex: Exercise, tLive: string, o: { conflictIds?: str
     if (art === "rueckfrage" && v.status === "offen" && e.quelle && !e.an) { out.push(item("rueckfrage-oben", e, `${e.quelle} fragt: ${inhalt(e, blau)}`)); continue; }
     if (art === "rueckfrage" && v.status === "offen") { out.push(item("rueckfrage", e, `${e.an ? `an ${e.an}` : `von ${e.melder ?? "?"}`}: ${inhalt(e, ex.units?.blau ?? [])}`)); continue; }
     if (art === "meldung" && e.begehren && v.status === "offen") { out.push({ ...item("begehren", e, `${e.melder ?? "?"}: ${e.begehren.was || inhalt(e, blau)}`), ...(e.melder ? { unit: e.melder } : {}) }); continue; }
-    if (art === "vbk" && e.vbk === "keine" && e.melder && v.status !== "erledigt") {
-      const later = lastSign.get(e.melder);
-      if (!later || compareEvents(later, e) < 0) {
-        keineVbk.add(e.melder);
-        out.push({ ...item("verbindung", e, `${e.melder}: keine Verbindung seit ${hhmm(e.t)}`), unit: e.melder });
+    // Vbk «keine»: betroffen ist `an` («H03 keine Verbindung zu H04» → H04), sonst der Melder
+    const betroffen = art === "vbk" ? e.an ?? e.melder : undefined;
+    if (art === "vbk" && e.vbk === "keine" && betroffen && v.status !== "erledigt") {
+      const later = lastSign.get(betroffen);
+      if (!later || eingangMs(later) < eingangMs(e)) {
+        keineVbk.add(betroffen);
+        out.push({ ...item("verbindung", e, `${betroffen}: keine Verbindung seit ${hhmm(e.t)}`), unit: betroffen });
       }
       continue;
     }
@@ -388,7 +523,7 @@ export function offenePunkte(ex: Exercise, tLive: string, o: { conflictIds?: str
   for (const u of ex.units?.blau ?? []) {
     const last = lastSign.get(u);
     if (!last || keineVbk.has(u)) continue;
-    const min = minutesBetween(last, tLive);
+    const min = Math.max(0, Math.round((zeitMs(tLive) - eingangMs(last)) / 60000));
     if (min <= stillMin) continue;
     const ort = ortText(last);
     out.push({ key: `still:${u}`, art: "still", prio: OFFEN_PRIO.still, unit: u, t: last.t, seitMin: min, text: `${u} seit ${min} min ohne Meldung (letzte ${hhmm(last.t)}${ort ? ` ${ort}` : ""})` });

@@ -1,7 +1,7 @@
 /**
  * Vorbereiten, Schritt 4 «Trupps» (Spez. MVP 1, Kap. 2.9): eigene Trupps als Liste (`ex.units.blau`), hinzufügen,
- * entfernen (mit Rückgängig), Zuteilung NAI ↔ Trupp anzeigen. Trupps entstehen auch beim ersten Melden – der
- * Schritt ist empfohlen, nicht nötig. Die Chipreihe «Wer meldet?» liest dieselbe Liste.
+ * entfernen (mit Rückgängig), Zuteilung NAI ↔ Trupp anzeigen. Ein unbekannter Trupp in einer Meldung wird nie still
+ * angelegt (S16: Knopf «H06 als Trupp aufnehmen» in der Vorschau) – der Schritt ist empfohlen, nicht nötig. Die Chipreihe «Wer meldet?» liest dieselbe Liste.
  */
 import { useState } from "react";
 import type { Exercise } from "@lage/core";
@@ -31,7 +31,7 @@ export function TruppsPanel({ ex, update, offerUndo }: {
   };
   return (
     <div className="pp">
-      {list.length === 0 ? <p className="pp-empty">Noch keine Trupps. Sie entstehen auch beim ersten Melden.</p> : (
+      {list.length === 0 ? <p className="pp-empty">Noch keine Trupps. Hier anlegen – oder beim Melden: Ein neuer Name (z. B. H01) zeigt in der Vorschau den Knopf «H01 als Trupp aufnehmen».</p> : (
         <ul className="pp-list">
           {list.map((u) => {
             const n = naiOf(u);

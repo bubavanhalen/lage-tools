@@ -34,6 +34,9 @@
 .lt-raster-lbl.quiet .lt-edge-t { font-size: 12px; }
 .night .lt-raster-lbl text { fill: #fff; stroke: #000; }
 .lt-quad-t { font-size: 12px; font-weight: 600; stroke-width: 3px; text-anchor: middle; dominant-baseline: central; opacity: .7; }
+/* Präsentation (Beamer): Raster-Beschriftung 16 px (Review 6 Erstbenutzer M5, Design H7) */
+.present .lt-edge-t, .present .lt-raster-lbl.quiet .lt-edge-t { font-size: 16px; stroke-width: 4px; }
+.present .lt-quad-t { font-size: 16px; }
 
 /* ---------- Flächen (NAI, AO, Stao) ---------- */
 .lt-area-lbl { background: none; border: 0; }
@@ -60,6 +63,8 @@
 .lt-area-lbl span.lt-lbl-aus { visibility: hidden; }
 /* AO: an der westlichsten Ecke, innen (links daneben stünde sie auf der Randbeschriftung des Rasters) */
 .lt-area-lbl.ao span { font-size: 12px; transform: translate(8px, calc(100% + 5px)); }
+/* Präsentation: NAI-, Raum- und AO-Beschriftung 16 px (Review 6 Erstbenutzer M5, Design H7) */
+.present .lt-area-lbl span, .present .lt-area-lbl.ao span, .present .leaflet-container .lt-area-lbl.top span { font-size: 16px; }
 
 /* ---------- Taktische Zeichen ---------- */
 .lt-sym { background: none; border: 0; }

@@ -68,6 +68,15 @@
   --focus-shadow: 0 0 0 2px var(--focus-gap), 0 0 0 5px var(--focus-ring);
 
   /*
+   * Stapelordnung der linken Spalte (MVP 3.5 Nachbesserung, Erstbenutzer H1): Liste < Reiter/Suche < Eingabeblock.
+   * Hilfe «?», «Andere ▾» und Vorschläge des Eingabeblocks liegen damit immer über Reitern und Suche.
+   */
+  --z-liste: 1;          /* Rückgängig-Leiste, Zeilen in der Liste */
+  --z-reiter: 4;         /* Reiter und Suche (Vorschläge liegen über der Liste) */
+  --z-eingabe: 6;        /* Eingabeblock (Feld, Hilfe, Vorschau) über Reitern und Suche */
+  --z-spalte-pop: 40;    /* Popover innerhalb des Eingabeblocks (Hilfe, «Andere ▾») */
+
+  /*
    * Übergang (vor MVP 1): alte Namen, bis die Pakete A–D sie ersetzt haben – in neuem Code nicht mehr verwenden.
    * --paper/--card zeigen auf den Vertrag; die übrigen Werte bleiben, damit sich das Aussehen erst mit A–D ändert.
    */

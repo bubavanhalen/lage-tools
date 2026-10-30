@@ -12,7 +12,7 @@
  * (Vorstellen): «02:30 gibt es heute nicht». Unter 420 px heisst «Zurückblicken» nur «« (Name bleibt).
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as RKeyboardEvent } from "react";
-import { addMinuten, countdownText, lageZeitText, mitOffset, offsetOf, offsetsAt, parseLageZeit, showLastLabel, zeitCmp, zeitMs, zeitTeile } from "@lage/core";
+import { addMinuten, countdownText, lageZeitText, mitOffset, zeitText, offsetOf, offsetsAt, parseLageZeit, showLastLabel, zeitCmp, zeitMs, zeitTeile } from "@lage/core";
 import type { TimeBandProps } from "../shell/contracts";
 import { SwimTimeline } from "../SwimTimeline";
 import { RUECKBLICK_WARN_S, liveAnzeige } from "./useLageZeit";
@@ -158,6 +158,8 @@ function RueckblickLeiste({ ex, zeit }: { ex: TimeBandProps["ex"]; zeit: TimeBan
   };
   const warn = zeit.remaining !== null && zeit.remaining <= RUECKBLICK_WARN_S;
   const hint = useId();
+  /** in der doppelten Stunde «02:01 MESZ» / «02:01 MEZ» (Review 6, Einsatz N: vorher zweimal «T2 02:01») */
+  const zone = zeitText(t).slice(5).trim();
   return (
     <section className="tb tb-rb" aria-label="Rückblick: Lagezeit wählen" onKeyDown={onBandKey}>
       <label className="tb-at">
@@ -168,7 +170,7 @@ function RueckblickLeiste({ ex, zeit }: { ex: TimeBandProps["ex"]; zeit: TimeBan
           onChange={(e) => { setDraft(e.target.value); setBad(false); setWahl(null); setFehlt(null); }}
           onBlur={() => { if (draft !== null && parseLageZeit(draft, { days: ex.days, t, tLive })) commit(); else { setDraft(null); setBad(false); } }}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />
-        <span className="tb-day">{lageZeitText(t, ex.days).split(" ")[0]}</span>
+        <span className="tb-day">{lageZeitText(t, ex.days).split(" ")[0]}{zone ? ` ${zone}` : ""}</span>
       </label>
       {bad && <span className="tb-bad" id={hint} role="alert">⛔ «{draft}» ist keine Uhrzeit.</span>}
       {wahl && (
@@ -185,7 +187,7 @@ function RueckblickLeiste({ ex, zeit }: { ex: TimeBandProps["ex"]; zeit: TimeBan
       </span>
       <input className="tb-range" type="range" min={0} max={total} step={1} value={pos}
         style={{ ["--p" as string]: `${(pos / total) * 100}%` }}
-        aria-label="Lagezeit" aria-valuetext={`${lageZeitText(t, ex.days)}`}
+        aria-label="Lagezeit" aria-valuetext={`${lageZeitText(t, ex.days)}${zone ? ` ${zone}` : ""}`}
         onChange={(e) => go(addMinuten(start, +e.target.value))} onKeyDown={onRangeKey} />
       <span className="tb-steps" data-zaehl="rueckblick-vor">
         <button type="button" onClick={() => step(30)}>+30 min</button>

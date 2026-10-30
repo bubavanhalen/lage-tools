@@ -32,6 +32,8 @@
 .us-list li { min-height: var(--hit); display: flex; align-items: center; padding: 0 var(--sp-8); border-radius: var(--r-4); font-size: var(--fs-14); cursor: pointer; }
 .us-list li.act, .us-list li:hover { background: var(--bg); box-shadow: inset 0 0 0 2px var(--sel); }
 .us-list .us-online, .us-list .us-load { color: var(--muted); }
+.us-list .us-online-q { flex-wrap: wrap; column-gap: var(--sp-4); }
+.us-list .us-online-n { color: var(--muted); font-size: var(--fs-12); }
 
 /* ---------- Liste ---------- */
 .jl { display: flex; flex-direction: column; min-width: 0; }

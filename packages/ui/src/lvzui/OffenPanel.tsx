@@ -20,7 +20,8 @@ import "./lvzui.css";
 /** Gruppen in der Reihenfolge der Ansicht (Kap. 2.6) */
 const GRUPPEN: Array<{ key: string; titel: string; arten: OffenArt[] }> = [
   { key: "dringend", titel: "Dringend", arten: ["dringend"] },
-  { key: "rueckfrage-oben", titel: "Rückfragen von oben", arten: ["rueckfrage-oben"] },
+  // Review 6 (Einsatz M3): Rückfragen und Meldeaufträge von oben («Bat: Standort H02 melden bis 0800»)
+  { key: "rueckfrage-oben", titel: "Von oben", arten: ["rueckfrage-oben"] },
   { key: "auftrag", titel: "Aufträge", arten: ["auftrag"] },
   { key: "rueckfrage", titel: "Rückfragen", arten: ["rueckfrage"] },
   { key: "begehren", titel: "Begehren", arten: ["begehren"] },
@@ -56,7 +57,7 @@ export interface OffenPanelExtra {
   /** Lagezeit LIVE (für den Kopf «Stand jetzt»; Zeiten anderer Tage mit «T1») */
   tLive?: string;
   /** Text ins Meldungsfeld mit vorgewählter Art («Antwort eintragen» → Notiz mit Bezug) */
-  onPrefillArt?(text: string, art: EntryArt): void;
+  onPrefillArt?(text: string, art: EntryArt, bezugNr?: string): void;
 }
 
 /** Fokus auf die Leiste «… · Rückgängig» (nach «Erledigt» ohne weiteren Punkt) */
@@ -117,13 +118,15 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
       case "rueckfrage": {
         // Antwort = Notiz mit Bezug (zeichnet nie); Feind/Eigene/Unklar wählt der Bediener selbst
         const t = `Antwort zu ${it.nr ?? ""}: `;
-        if (p.onPrefillArt) p.onPrefillArt(t, "notiz"); else p.onPrefill(t);
+        // fester Bezug: die gewählte Nummer (Review 6, Einsatz H1)
+        if (p.onPrefillArt) p.onPrefillArt(t, "notiz", it.nr); else p.onPrefill(t);
         return;
       }
       case "rueckfrage-oben": {
         // Antwort nach oben = Ausgang («Antwort an Bat: …», beantwortet die Rückfrage, kein Zeichen)
         const t = `Antwort an ${e?.quelle ?? "Bat"}: `;
-        if (p.onPrefillArt) p.onPrefillArt(t, "ausgang"); else p.onPrefill(t);
+        // fester Bezug: genau diese Rückfrage (nie still die jüngste, Review 6 Einsatz H1)
+        if (p.onPrefillArt) p.onPrefillArt(t, "ausgang", it.nr ?? e?.id); else p.onPrefill(t);
         return;
       }
       // Begehren: «Erledigt» sofort (Rückgängig über die Leiste); eine Massnahme lässt sich an der Zeile «Mehr …» vermerken
@@ -173,10 +176,11 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
           <ol className="jlist of-list">
             {g.list.map((it) => {
               const sel = it.key === selected;
-              const t = zeitKurz(it.t, heute, ex.days);
+              const t = zeitKurz(it.t, heute, ex.days, it.eventId ? byId.get(it.eventId) : null);
               const text = textMitTag(it.text, it.t, heute, ex.days);
               const ask = askM?.key === it.key ? askM : null;
-              const meta = it.art === "auftrag" ? (it.ueberfaellig ? "⚠ Frist vorbei" : seitLabel(it.seitMin)) : it.art === "rueckfrage" || it.art === "rueckfrage-oben" || it.art === "begehren" ? seitLabel(it.seitMin) : null;
+              // Frist-Warnung auch für Meldeaufträge von oben (Review 6, Einsatz M3)
+              const meta = it.ueberfaellig ? "⚠ Frist vorbei" : it.art === "auftrag" || it.art === "rueckfrage" || it.art === "rueckfrage-oben" || it.art === "begehren" ? seitLabel(it.seitMin) : null;
               return (
                 <li key={it.key} data-key={it.key} data-art={it.art} className={"of-row" + (sel ? " sel" : "") + (it.ueberfaellig ? " spaet" : "")}
                   tabIndex={it.key === tabKey ? 0 : -1} aria-selected={sel} onClick={(ev) => {

@@ -85,7 +85,9 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
 /* `.lc` = JournalPanel: Kopf (Meldungsfeld) · Umschalter und Suche · Liste (`.lc-list`, Scroll-Behälter der Liste) */
 .lc-entry, .lc-switch { display: flex; flex-direction: column; gap: var(--sp-12); min-width: 0; }
 /* Vorschläge der Suche liegen über der Liste */
-.lc-switch { position: relative; z-index: 4; }
+.lc-switch { position: relative; z-index: var(--z-reiter); }
+/* Eingabeblock über Reitern und Suche (Hilfe «?» und «Andere ▾» klappen darüber auf, Erstbenutzer H1) */
+.lc-entry { position: relative; z-index: var(--z-eingabe); }
 .lc-list { min-width: 0; }
 @media (min-width: 861px) {
   /* nur in «Lage führen»: Vorbereiten und Experte-Ansichten scrollen wie bisher. Kein Scrollen der Spalte selbst –
@@ -94,12 +96,18 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
   .app.shell.m-lage .sh-side > .jpanel.lc { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); padding-bottom: 0; }
   .app.shell.m-lage .lc-list { overflow: auto; overscroll-behavior: contain; min-height: 0; margin: 0 calc(-1 * var(--sp-16)); padding: 0 var(--sp-16) var(--sp-16); }
   /* Vorschau höchstens die halbe Spaltenhöhe, darin scrollbar (die Liste bleibt sichtbar) */
-  .app.shell.m-lage .lc-entry .eb-prev { max-height: calc((100dvh - var(--kopf-h)) * .45); overflow: auto; overscroll-behavior: contain; }
+  .app.shell.m-lage .lc-entry .eb-prev { max-height: calc((100dvh - var(--kopf-h)) * .5); overflow: auto; overscroll-behavior: contain; }
+}
+@media (min-width: 861px) and (max-height: 820px) {
+  /* niedrige Laptops (1366×768, Review 6 M1): Vorschau dichter, damit «Ort: … [Ort auf Karte setzen]» ganz sichtbar ist */
+  .app.shell.m-lage .lc-entry .eb-prev { gap: var(--sp-4); }
+  .app.shell.m-lage .lc-entry .eb-state { padding: var(--sp-4) var(--sp-8); gap: 2px; }
+  .app.shell.m-lage .lc-entry { gap: var(--sp-8); }
 }
 @media (max-width: 860px) {
   /* Tablet hoch, Handy: der Eingabeblock haftet beim Scrollen oben (die Seite scrollt) */
   .app.shell.m-lage .lc-entry {
-    position: sticky; top: 0; z-index: 6; background: var(--surface);
+    position: sticky; top: 0; z-index: var(--z-eingabe); background: var(--surface);
     margin: calc(-1 * var(--sp-16)) calc(-1 * var(--sp-16)) 0; padding: var(--sp-16) var(--sp-16) var(--sp-8);
     box-shadow: 0 6px 10px -10px rgba(0, 0, 0, .5);
   }
@@ -108,7 +116,7 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
 .sw2 { display: grid; grid-template-columns: auto 1fr; border: 1px solid var(--line); border-radius: var(--r-8); overflow: hidden; }
 /* MVP 3.5 (S25): drei gleich breite Reiter; Text kürzt mit «…», Name für Screenreader voll */
 .sw-box .sw2.sw3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.sw-box .sw2.sw3 button { min-width: 0; padding: 0 var(--sp-8); }
+.sw-box .sw2.sw3 button { min-width: 0; padding: 0 var(--sp-4); gap: var(--sp-4); }
 .sw-box .sw2.sw3 button > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sw2 button { min-height: var(--hit); border: 0; border-radius: 0; background: var(--surface); color: var(--ink); font: 600 var(--fs-14)/1.2 var(--f-body); padding: 0 var(--sp-16); display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-8); white-space: nowrap; overflow: hidden; }
 .sw2 button + button { border-left: 1px solid var(--line); }
@@ -162,11 +170,12 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
   .hd-status { gap: var(--sp-8); }
 }
 @media (max-width: 560px) {
-  /* Handy: nur Statuspunkte – «✓ 07:25», «Kein Netz», «Offline ✗»; «Offline bereit ✓» entfällt (Spez. 2.11) */
-  .hd-off.ok { display: none; }
+  /* Handy: nur Statuspunkte – «✓ 07:25», «Kein Netz», «Offline ✓» (kurz, Screenreader «Offline bereit») */
   .hd-status { font-size: var(--fs-12); }
 }
 .hd-short { display: none; }
+.hd-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (min-width: 861px) { .hd-off.ok .hd-sr { display: none; } }
 @media (max-width: 860px) {
   .hd-save .hd-short, .hd-off .hd-short { display: inline; }
 }
@@ -178,6 +187,12 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
 /* Rückgängig-Leisten (Journal, Raster/NAI, Übungen): unten in der linken Spalte, nie über Live-Band oder Rückblick-Leiste */
 @media (min-width: 861px) {
   .app.shell .undobar.wsundo { left: var(--sp-16); right: auto; bottom: var(--sp-16); transform: none; width: calc(var(--spalte-w) - 2 * var(--sp-16)); min-width: 0; }
+  /* Review 6 (Erstbenutzer N): die Leiste deckt nie Knöpfe der untersten Zeilen – solange sie steht, bekommt die Liste
+     unten Platz, die letzte Zeile lässt sich über die Leiste hinaus scrollen */
+  .app.shell.m-lage:has(.undobar.wsundo) .lc-list { padding-bottom: calc(var(--hit) + 2 * var(--sp-16) + var(--sp-16)); scroll-padding-bottom: calc(var(--hit) + 3 * var(--sp-16)); }
+}
+@media (max-width: 860px) {
+  .app.shell.m-lage:has(.undobar.wsundo) .sh-side { padding-bottom: calc(var(--hit) + 3 * var(--sp-16)); }
 }
 
 /* Meldungen der Hülle («Eingetragen – Ansicht wieder LIVE» u. a.): über dem Live-Band, nie über der LIVE-Uhr;

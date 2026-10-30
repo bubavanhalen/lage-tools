@@ -36,6 +36,8 @@ export interface SatzFall {
   vorherNr?: number[];
   /** (additiv) Übungstage statt jener des Beispiels (Sommerzeit-Fälle) */
   tage?: string[];
+  /** (additiv, MVP 3.5 Nachbesserung) Zustand des Meldungsfelds: fester Bezug aus Offen, Wahl, «nicht abschliessen», gewählte Art */
+  kontext?: { bezugNr?: string; bezugWahl?: string; abschlussAus?: boolean; art?: EntryArt };
   /** (additiv) Zeile der Tabelle Kap. 8.3 und zuständiges Paket */
   nr?: number;
   paket?: string;
@@ -284,7 +286,9 @@ export const SAETZE35: SatzFall[] = [
   { id: "s16-07", satz: "Weitergemeldet an Bat: Nr 54", quelle: "einsatz-s16", uhr: "2030-05-15T07:37:00+02:00", nr: 41, paket: "D", soll: { stufe: "bereit", art: "ausgang", an: "Bat", bezugArt: "weiter", zeichenNeu: 0 } },
   { id: "s16-08", satz: "Bat fragt: Standort H02?", quelle: "einsatz-s16", uhr: "2030-05-15T07:38:00+02:00", nr: 42, paket: "D", soll: { stufe: "bereit", art: "rueckfrage", quelle: "Bat", zeichenNeu: 0 } },
   { id: "s16-09", satz: "Rückfrage Bat: wie viele Fz in AK9?", quelle: "einsatz-s16", uhr: "2030-05-15T07:39:00+02:00", nr: 43, paket: "D", soll: { stufe: "bereit", art: "rueckfrage", quelle: "Bat", zeichenNeu: 0 } },
-  { id: "s16-10", satz: "Antwort an Bat: 2 Kpz", quelle: "einsatz-s16", uhr: "2030-05-15T07:40:00+02:00", nr: 44, paket: "D", soll: { stufe: "bereit", art: "ausgang", an: "Bat", bezugArt: "antwort", zeichenNeu: 0 } },
+  // MVP 3.5 Nachbesserung (Review 6, Entscheid «Bezug immer eindeutig»): zwei offene Rückfragen von Bat (s16-08, s16-09) →
+  // gelb mit Wahl, nie still die jüngste (vorher Tabelle #44: grün mit Bezug auf die jüngste)
+  { id: "s16-10", satz: "Antwort an Bat: 2 Kpz", quelle: "einsatz-s16", uhr: "2030-05-15T07:40:00+02:00", nr: 44, paket: "D", soll: { stufe: "pruefen", grund: "bezug-wahl", art: "ausgang", an: "Bat", zeichenNeu: 0 } },
   { id: "s16-11", satz: "H05 Ablösung erfolgt", quelle: "einsatz-s16", uhr: "2030-05-15T07:41:00+02:00", soll: "schnappschuss" },
   { id: "s16-12", satz: "H02 Mun- und Verpflegungsnachschub benötigt", quelle: "einsatz-s16", uhr: "2030-05-15T07:42:00+02:00", nr: 26, paket: "C/D", soll: { stufe: "bereit", art: "meldung", seite: "eigen", begehren: true, zeichenNeu: 0 } },
   { id: "s16-13", satz: "H01 Funkgerät defekt, Melder unterwegs", quelle: "einsatz-s16", uhr: "2030-05-15T07:43:00+02:00", soll: "schnappschuss" },

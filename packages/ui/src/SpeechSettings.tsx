@@ -19,6 +19,7 @@ import {
   whisperInfo,
 } from "./stt";
 import "./voice.css";
+import { useOnlinePolicy } from "./onlinePolicy";
 
 const mb = (b: number) => Math.round(b / 1e6);
 
@@ -86,6 +87,9 @@ export function SpeechSettings({ onClose }: { onClose?: () => void }) {
   const vendor = browserSttVendor();
   const [ask, setAsk] = useState(false);
   const [agree, setAgree] = useState(false);
+  // (MVP 3.5 Nachbesserung, Feld M1) Browser-Erkennung ist ein Online-Dienst der Übung: ohne Einschalten in
+  // Vorbereiten → Übung nicht wählbar (Standard aus)
+  const erlaubt = useOnlinePolicy().sprache;
   return (
     <div className="sp-settings" role="dialog" aria-label="Spracherkennung">
       <div className="btnrow sp-head">
@@ -113,12 +117,13 @@ export function SpeechSettings({ onClose }: { onClose?: () => void }) {
         )}
         <SpeechModelRow />
       </div>
-      <label className={"sp-opt" + (p.mode === "browser" ? " on" : "") + (avail ? "" : " off")}>
-        <input type="radio" name="sp-mode" disabled={!avail} checked={p.mode === "browser"}
+      <label className={"sp-opt" + (p.mode === "browser" && erlaubt ? " on" : "") + (avail && erlaubt ? "" : " off")}>
+        <input type="radio" name="sp-mode" disabled={!avail || !erlaubt} checked={p.mode === "browser" && erlaubt}
           onChange={() => { /* über onClick */ }} onClick={() => { if (p.browserOk) setSpeechPrefs({ mode: "browser" }); else setAsk(true); }} />
-        <span><b>Browser</b> (schnell, nur online) – Text erscheint schon beim Sprechen.{!avail && " In diesem Browser nicht vorhanden."}</span>
+        <span><b>Browser</b> (schnell, nur online) – Text erscheint schon beim Sprechen.{!avail ? " In diesem Browser nicht vorhanden."
+          : !erlaubt ? " Für diese Übung aus (Ton geht ans Internet) – einschalten: Vorbereiten → Übung → Online-Dienste." : ""}</span>
       </label>
-      {(ask || p.mode === "browser") && avail && (
+      {(ask || p.mode === "browser") && avail && erlaubt && (
         <div className="sp-indent sp-warn">
           <p><b>Achtung:</b> Der Ton geht zur Erkennung an <b>{vendor}</b> (Internet). Nur verwenden, wenn das für diese Übung erlaubt ist.</p>
           {p.mode === "browser" ? (

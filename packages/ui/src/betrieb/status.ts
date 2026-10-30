@@ -14,7 +14,7 @@ import { SCHUTZHINWEIS_KEY, type BetriebStatus, type OfflineStatus, type SchutzH
 import type { KartenAbdeckung } from "../offlineStatus";
 import { useDateiGesichert } from "./dateiSichern";
 import { installWeg, istInstalliert, onInstallWeg, type InstallWeg } from "./install";
-import { useLaden, type LadenStand } from "./laden";
+import { useLaden, useLadenErgebnis, type LadenErgebnis, type LadenStand } from "./laden";
 
 /** Eingaben der reinen Ableitung (testbar ohne Browser) */
 export interface BetriebQuellen {
@@ -24,14 +24,19 @@ export interface BetriebQuellen {
   install: InstallWeg;
   dateiGesichert: string | null;
   laden: LadenStand | null;
+  /** Ergebnis des letzten Ladens (Abbruch → «abgebrochen – 241 von 971», Review 6 Feld H1) */
+  ergebnis?: Pick<LadenErgebnis, "abgebrochen"> | null;
 }
 
 /** reine Ableitung des Status (Spez. 5.7): Karte ✓ nur bei 100 %, Teilezahlen aus der vollständigen Prüfung */
 export function betriebAus(q: BetriebQuellen): BetriebStatus {
   const ab = q.offline.abdeckung;
-  const karte = ab
-    ? { share: ab.total ? ab.share : 1, total: ab.total, cached: ab.cached, geprueft: ab.geprueft }
+  const karte: BetriebStatus["karte"] = ab
+    ? { share: ab.total ? ab.share : 1, total: ab.total, cached: ab.cached, geprueft: ab.geprueft,
+      ...(ab.uebersicht ? { uebersicht: ab.uebersicht } : {}), ...(ab.detail ? { detail: ab.detail } : {}) }
     : { share: q.offline.parts.karte ? 1 : 0, total: 0, cached: 0, geprueft: false };
+  // abgebrochen und noch unvollständig: nie still «✓» (Review 6 Feld H1)
+  if (q.ergebnis?.abgebrochen && !q.laden && karte.geprueft && karte.total > 0 && karte.share < 1) karte.abgebrochen = { cached: karte.cached, total: karte.total };
   return {
     app: q.offline.parts.app,
     karte,
@@ -51,13 +56,25 @@ export function ladenText(l: { done: number; total: number } | null): string | n
   return `Lädt ${l.total ? Math.min(99, Math.floor((l.done / l.total) * 100)) : 0} %`;
 }
 
-/** Karte im Popover: «Raster-Gebiet vollständig» · «96 % (933 von 971 Teilen)» · «noch nicht geladen» · «wird geprüft …» */
-export function karteText(k: BetriebStatus["karte"]): { ok: boolean | null; text: string } {
+/**
+ * Karte im Popover (Review 6 Feld H1 – Ampel ehrlich): «Raster-Gebiet vollständig» nur, wenn **alle** Stufen bis zur
+ * Ladestufe vorhanden sind · «Übersicht ✓ · Detail 25 %» mit `zusatz` «241 von 971 Teilen» bzw. nach Abbruch
+ * «abgebrochen – 241 von 971» · «96 % (933 von 971 Teilen)» (ohne Stufen-Angabe) · «noch nicht geladen» · «wird geprüft …».
+ */
+export function karteText(k: BetriebStatus["karte"]): { ok: boolean | null; text: string; zusatz?: string } {
   if (!k.geprueft) return { ok: null, text: "wird geprüft …" };
   if (k.total === 0 || k.share >= 1) return { ok: true, text: k.total === 0 ? "kein Raster – nichts zu laden" : "Raster-Gebiet vollständig" };
-  if (!k.cached) return { ok: false, text: "noch nicht geladen" };
+  const teile = (c: number, t: number) => `${c.toLocaleString("de-CH")} von ${t.toLocaleString("de-CH")}`;
+  const zusatz = k.abgebrochen ? { zusatz: `abgebrochen – ${teile(k.abgebrochen.cached, k.abgebrochen.total)}` } : {};
+  if (!k.cached) return { ok: false, text: "noch nicht geladen", ...zusatz };
   // nie «100 %» zeigen, solange etwas fehlt (abrunden)
-  return { ok: false, text: `${Math.floor(k.share * 100)} % (${k.cached} von ${k.total} Teilen)` };
+  const pz = (t: { total: number; cached: number }) => `${Math.floor((t.cached / Math.max(1, t.total)) * 100)} %`;
+  const u = k.uebersicht, d = k.detail;
+  if (u && d && u.total && d.total) {
+    const ueb = u.cached >= u.total ? "Übersicht ✓" : `Übersicht ${pz(u)}`;
+    return { ok: false, text: `${ueb} · Detail ${d.cached >= d.total ? "✓" : pz(d)}`, zusatz: `${teile(k.cached, k.total)} Teilen`, ...zusatz };
+  }
+  return { ok: false, text: `${Math.floor(k.share * 100)} % (${k.cached} von ${k.total} Teilen)`, ...zusatz };
 }
 
 export function useBetriebStatus(ex: Exercise | null, offline: OfflineStatus): BetriebStatus {
@@ -72,12 +89,13 @@ export function useBetriebStatus(ex: Exercise | null, offline: OfflineStatus): B
   }, []);
   const dateiGesichert = useDateiGesichert(ex?.id);
   const laden = useLaden();
+  const ergebnis = useLadenErgebnis();
   const online = ex?.onlineDienste;
   const ab = (offline as OfflineStatus & { abdeckung?: KartenAbdeckung }).abdeckung;
   return useMemo(() => {
     const inst = istInstalliert();
-    return betriebAus({ offline: { ...offline, abdeckung: ab }, onlineDienste: online, installiert: inst, install: installWeg(), dateiGesichert, laden });
-  }, [offline.parts.app, offline.parts.karte, offline.parts.speicher, offline.net, ab, online, dateiGesichert, laden, n]); // eslint-disable-line react-hooks/exhaustive-deps
+    return betriebAus({ offline: { ...offline, abdeckung: ab }, onlineDienste: online, installiert: inst, install: installWeg(), dateiGesichert, laden, ergebnis });
+  }, [offline.parts.app, offline.parts.karte, offline.parts.speicher, offline.net, ab, online, dateiGesichert, laden, ergebnis, n]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 // ---------- einmaliger Schutzhinweis (S7)

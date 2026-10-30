@@ -29,9 +29,10 @@ const mitSchutz = (o: Parameters<Harness["open"]>[0]): Parameters<Harness["open"
 
 const zaehlen = (s: Session) => s.page.evaluate(inventarImBrowser);
 
-async function messen1(h: Harness, name: string, geraet: Geraet, grenze: number | null, o: Parameters<Harness["open"]>[0], vorher?: (s: Session) => Promise<void>): Promise<TestResult> {
+async function messen1(h: Harness, name: string, geraet: Geraet, grenze: number | null, o: Parameters<Harness["open"]>[0], vorher?: (s: Session) => Promise<void>, frisch = false): Promise<TestResult> {
   return aufgabe(name, geraet, async (w) => {
-    const s = await h.open(mitSchutz({ uhr: UHR_T2_0730, geraet, ...o }));
+    // `frisch`: Schutzhinweis nicht als gesehen vorbelegen (wirklich frisches Gerät)
+    const s = await h.open(frisch ? { uhr: UHR_T2_0730, geraet, ...o } : mitSchutz({ uhr: UHR_T2_0730, geraet, ...o }));
     try {
       if (vorher) await vorher(s);
       await s.page.waitForTimeout(300);
@@ -153,6 +154,11 @@ const spec: Spec = {
     const out: TestResult[] = [];
     for (const g of ["laptop", "tablet"] as const) {
       out.push(...await messen(h, "Grundansicht Beispiel", g, 12, { query: "?beispiel" }));
+      // Review 6 (Entscheid Koordinator): frisches Gerät mit einzeiligem Schutzhinweis («So geht’s» + ✕ = 1 Element),
+      // Budget «echt» +1 erlaubt, nicht mehr
+      out.push(await messen1(h, "Grundansicht Beispiel · echt, frisches Gerät mit Schutzhinweis", g, 14, { query: "?beispiel", offline: "echt" }, async (s) => {
+        soll(await s.page.getByText("Dieses Gerät schützt die Daten nicht dauerhaft.").isVisible().catch(() => false), "Schutzhinweis fehlt");
+      }, true));
       // MVP 3.5 (Kap. 1.3): leer ohne Kürzel +2 (Kürzel-Zeile, Paket E), mit Kürzel wie Beispiel; Erststart +3
       out.push(...await messen(h, "Grundansicht leer", g, 14, { query: "?beispiel=leer" }));
       out.push(...await messen(h, "Grundansicht leer, Kürzel gesetzt", g, 12, { query: "?beispiel=leer" }, kuerzelSetzen));
@@ -241,14 +247,14 @@ const spec: Spec = {
       out.push(await messen1(h, "Übergabe-Schritt «Datei sichern» (nur Bericht, Ziel ≤ 4)", g, null, { query: "?beispiel" }, dateiSchritt));
       out.push(await messen3(h, "--hit 48px: Offline-Popover", g, null, { query: "?beispiel", offline: "echt" }, popover, ":root{--hit:48px !important}"));
       // Entscheid Koordinator: der einmalige Schutzhinweis ist im «echt»-Inventar vorbelegt – hier eigens geprüft
-      out.push(await aufgabe("Schutzhinweis einmal (echt, nicht vorbelegt): erscheint, nach «OK» und Neuladen weg", g, async (w) => {
+      out.push(await aufgabe("Schutzhinweis einmal (echt, nicht vorbelegt): erscheint, nach ✕ und Neuladen weg", g, async (w) => {
         const s = await h.open({ query: "?beispiel", geraet: g, uhr: UHR_T2_0730, offline: "echt" });
         try {
           const hinweis = s.page.getByText("Dieses Gerät schützt die Daten nicht dauerhaft.");
           w.vorher = await hinweis.isVisible().catch(() => false);
           soll(w.vorher, "Schutzhinweis fehlt");
-          await knopfVon(s, "OK").click();
-          soll(!(await hinweis.isVisible().catch(() => false)), "Hinweis nach «OK» noch da");
+          await knopfVon(s, "Hinweis schliessen").click();
+          soll(!(await hinweis.isVisible().catch(() => false)), "Hinweis nach ✕ noch da");
           await s.page.reload();
           await s.page.waitForTimeout(1200);
           w.nachNeuladen = await hinweis.count();

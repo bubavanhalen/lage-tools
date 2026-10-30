@@ -31,8 +31,11 @@ export function lebenszeichen(e: LageEvent): string | null {
   if (!m) return null;
   switch (artOf(e)) {
     case "meldung": return m;
-    case "rueckfrage": return m;
-    case "vbk": return e.vbk === "keine" ? null : m;
+    // (MVP 3.5 Fix, H2) Rückfrage von oben («Bat fragt: wo ist H01?»): der genannte Trupp ist Inhalt, nie Melder – auch
+    // in früher gespeicherten Einträgen mit Melder
+    case "rueckfrage": return e.quelle && !e.an ? null : m;
+    // «H03 keine Verbindung zu H04»: H03 meldet (lebt), H04 ist betroffen (`an`)
+    case "vbk": return e.vbk === "keine" ? (e.an && !sameName(e.an, m) ? m : null) : m;
     case "notiz":
       if (e.bezugArt === "quittung") return m;
       // Antwort: nur eine Antwort **vom** Trupp ist ein Lebenszeichen («H05 Antwort …», Rückfrage ging an den Trupp);
@@ -131,7 +134,8 @@ const VBK_WORT: Record<NonNullable<LageEvent["vbk"]>, string> = { gut: "gut", sc
 export function artText(e: LageEvent): string {
   switch (artOf(e)) {
     case "meldung": return e.notiz ? "Notiz" : e.hebtAuf ? "Aufhebung" : lageWort(e);
-    case "auftrag": return e.an ? `Auftrag an ${e.an}` : "Auftrag";
+    // (Fix M3) Auftrag von oben ohne Trupp: «Auftrag von Bat»
+    case "auftrag": return e.an ? `Auftrag an ${e.an}` : e.quelle ? `Auftrag von ${e.quelle}` : "Auftrag";
     case "orientierung": return e.quelle ? `Orientierung ${e.quelle}` : "Orientierung";
     case "rueckfrage": return e.an ? `Rückfrage an ${e.an}` : e.quelle ? `Rückfrage von ${e.quelle}` : e.melder ? `Rückfrage von ${e.melder}` : "Rückfrage";
     case "vbk": return ["Verbindung", e.melder, e.vbk ? VBK_WORT[e.vbk] : ""].filter(Boolean).join(" ");
@@ -171,6 +175,8 @@ export interface ArtLesung {
    * Melder vorschlagen (`bezugAufloesen`, lvz.ts).
    */
   abschluss?: boolean;
+  /** (MVP 3.5 Fix, N) weitere Nummern («Nr 55 und 56 an Bat weitergemeldet» → bezugNr «55», bezugNrAuch ["56"]) */
+  bezugNrAuch?: string[];
 }
 
 /** Element-Namen («H01», «Det 2», «Zug 1», «Kp», …) – für Empfänger/Absender */
@@ -273,6 +279,13 @@ const ABSCHLUSS_RE = re(String.raw`(?<!${L})(?:erledigt|ausgeführt|erfüllt|abg
 /** Bezug in einem Ausgang: «Nr 54», «zu 54», «zu Nr 54» */
 const AUSGANG_NR_RE = re(String.raw`(?<!${L})(?:nr\.?\s*|zu\s+(?:nr\.?\s*)?)(\d{1,4}[a-z]?)(?!${L})`);
 
+/** (Fix M3) Meldeauftrag von oben: Verb direkt nach dem Absender («Bat verlangt …», «Bat will wissen, …») */
+const MA_VERB_RE = re(String.raw`^(?:verlangt|fordert|verlangen|will\s+wissen|möchte\s+wissen|wünscht|braucht|erwartet\s+(?:eine?\s+|die\s+)?(?:lage)?(?:meldung|bericht|antwort))(?!${L})`);
+/** «… melden» als Auftrag («Standort H02 melden bis 0800»); nicht «gemeldet» */
+const MELDEN_RE = re(String.raw`(?<!${L})(?:zu\s+)?melden(?!${L})`);
+/** stehende Weisung («sofort melden», «laufend melden», «jede Sichtung melden») – ohne Frist kein Auftrag mit Abschluss */
+const STEHEND_RE = re(String.raw`(?<!${L})(?:sofort|laufend|jede[nrs]?|alle|immer|stündlich|bei)(?!${L})`);
+
 /** Absender von oben am Anfang wie bei der Orientierung (ohne Doppelpunkt nicht vor einer Truppengattung: «Kp Pz») */
 function obenAm(t: string): { quelle: string; len: number } | null {
   const m = re(String.raw`^${OBEN_ABS}\.?(?!${L})\s*([:,])?\s*`).exec(t);
@@ -297,9 +310,17 @@ function readArtOben(t: string, o: { blau: string[] }): ArtLesung | null {
   const ausgang = (mm: RegExpExecArray, y: string, antwort: boolean): ArtLesung => {
     const rest = cut(t, mm);
     const nr = AUSGANG_NR_RE.exec(rest);
+    // (Fix N) weitere Nummern direkt dahinter: «Nr 55 und 56», «Nr 55, 56», «zu 55 + 56»
+    const auch: string[] = [];
+    if (nr) {
+      const r = re(String.raw`^\s*(?:,|\+|&|und|sowie)\s*(?:nr\.?\s*)?(\d{1,4}[a-z]?)(?!${L})`);
+      let pos = nr.index + nr[0].length;
+      for (let x = r.exec(rest.slice(pos)); x; x = r.exec(rest.slice(pos))) { auch.push(x[1]!.toLowerCase()); pos += x[0].length; }
+    }
     return {
       art: "ausgang", stark: true, token: mm[0].trim(), an: obenName(y),
       ...(nr ? { bezugNr: nr[1]!.toLowerCase(), bezugToken: nr[0].trim(), bezugArt: antwort ? "antwort" : "weiter" } : antwort ? { bezugArt: "antwort" } : {}),
+      ...(auch.length ? { bezugNrAuch: auch } : {}),
       rest,
     };
   };
@@ -307,9 +328,19 @@ function readArtOben(t: string, o: { blau: string[] }): ArtLesung | null {
   if (m) return ausgang(m, m[2]!, /^antwort$/i.test(m[1]!));
   m = re(String.raw`^an\s+(${OBEN_Y})(?![\p{L}\d/])\s*[:,]`).exec(t);
   if (m) return ausgang(m, m[1]!, false);
+  // (Fix M2) «An Bat gemeldet: H02 in AL9», «… an Bat übermittelt» – Ausgang, zeichnet nie
   m = re(String.raw`(?<!${L})(?:weiter(?:gemeldet|geleitet)|gemeldet)\s+an\s+(${OBEN_Y})(?![\p{L}\d/])\s*[:,]?`).exec(t)
-    ?? re(String.raw`(?<!${L})an\s+(${OBEN_Y})\s+weiter(?:gemeldet|geleitet)(?!${L})\s*[:,]?`).exec(t);
+    ?? re(String.raw`(?<!${L})an\s+(${OBEN_Y})\s+(?:weiter(?:gemeldet|geleitet)|gemeldet|übermittelt|durchgegeben)(?!${L})\s*[:,]?`).exec(t);
   if (m) return ausgang(m, m[1]!, false);
+  // (Fix M2) Auftrag von oben ohne Trupp: «Auftrag Bat: Sperre AG13 halten bis 1000», «Bat Auftrag: …» – nie eine Sichtung
+  m = re(String.raw`^(?:auftrag|befehl)\s+(?:von\s+|vom\s+)?${OBEN_ABS}\.?(?!${L})\s*[:,]?\s*`).exec(t)
+    ?? re(String.raw`^${OBEN_ABS}\.?\s*[:,]?\s*(?:auftrag|befehl)(?!${L})\s*[:,]\s*`).exec(t);
+  if (m) {
+    const nach = t.slice(m[0].length);
+    const xm = re(String.raw`^(?:an\s+)?(${EL})(?!${L})\s*[:,]?\s*`).exec(nach);
+    const an = xm && eigenerTrupp(xm[1]!, blau) ? unitName(xm[1]!, blau) : undefined;
+    return { art: "auftrag", stark: true, token: m[0].trim(), ...(an ? { an } : {}), quelle: obenName(m[1]!), ...fristOf(t), rest: cut(t, m) };
+  }
   // D1.4 Rückfrage von oben: «Bat fragt: …», «Rückfrage Bat: …», «Rückfrage von Kdt: …», «Kdt: … ?»
   m = re(String.raw`^(?:rückfrage|rueckfrage|frage|anfrage)\s+(?:von\s+)?${OBEN_ABS}(?!${L})\s*[:,]`).exec(t);
   if (m) return { art: "rueckfrage", stark: true, token: m[0].trim(), quelle: obenName(m[1]!), rest: cut(t, m) };
@@ -319,6 +350,12 @@ function readArtOben(t: string, o: { blau: string[] }): ArtLesung | null {
     const fm = re(String.raw`^(?:fragt(?:\s+an)?|frage|rückfrage|rueckfrage|anfrage)(?!${L})\s*[:,]?\s*`).exec(nach);
     if (fm) return { art: "rueckfrage", stark: true, token: t.slice(0, ob.len + fm[0].length).trim(), quelle: ob.quelle, rest: nach.slice(fm[0].length).trim() };
     if (/\?\s*$/.test(t) && /[:,]/.test(t.slice(0, ob.len))) return { art: "rueckfrage", stark: true, token: t.slice(0, ob.len).trim(), quelle: ob.quelle, rest: nach.replace(/\?\s*$/, "").trim() };
+    // (Fix M3) Meldeauftrag von oben: «Bat verlangt Lagemeldung bis 0800», «Bat will wissen, …», «Bat: Standort H02 melden
+    // bis 0800» → Auftrag von oben (ohne Empfänger-Trupp, Frist); ein genannter Trupp ist Inhalt. «sofort/laufend melden»
+    // ohne Frist bleibt Orientierung (stehende Weisung)
+    const verb = MA_VERB_RE.exec(nach);
+    const melden = !verb && MELDEN_RE.test(nach) && (FRIST_RE.test(nach) || !STEHEND_RE.test(nach));
+    if (verb || melden) return { art: "auftrag", stark: true, token: t.slice(0, ob.len + (verb?.[0].length ?? 0)).trim(), quelle: ob.quelle, ...fristOf(t), rest: nach.trim() };
     // D1.5 Absender von oben + eigener Trupp + Tätigkeit, ohne «Auftrag»: schwach (gelb «Auftrag an H05?»)
     const xm = re(String.raw`^(?:an\s+)?(${EL})(?!${L})\s*[:,]?\s*`).exec(nach);
     if (xm && eigenerTrupp(xm[1]!, blau) && TAETIGKEIT_RE.test(nach) && !re(String.raw`(?<!${L})(?:auftrag|befehl)`).test(nach)) {
@@ -501,7 +538,9 @@ function readArtBisher(t: string, o: { blau: string[] }): ArtLesung {
 /** «ab sofort», «per sofort», «sofort melden» sind keine Dringlichkeit des Eintrags (MVP 3 Fix 3: «Kdt: ab sofort Funkstille») */
 const SOFORT_NICHT_RE = re(String.raw`(?<!${L})(?:(?:ab|per)\s+sofort|sofort\s+(?:zu\s+)?melden)(?!${L})`, "giu");
 const DRINGEND_RE = re(String.raw`(?<!${L})(dringend|sofort|eilt)(?!${L})|!!|(?<!${L})kontakt\s*!|(?<!${L})feuer\s+(?:auf|aus)(?!${L})|(?<!${L})san(?:ität)?\s+(?:angefordert|benötigt)(?!${L})`);
-const VERLETZT_RE = re(String.raw`(?<!${L})(verwundet\p{L}*|verletzt\p{L}*|tot|tote[nr]?)(?!${L})`);
+const VERLETZT_RE = re(String.raw`(?<!${L})(verwundet\p{L}*|verletzt\p{L}*|tot|tote[nr]?|gefallen\p{L}*)(?!${L})`);
+/** (Fix N) Verluste beim Gegner («3 verwundete Feinde», «2 gegnerische Tote») sind nicht dringend für uns */
+const FEIND_VERLUST_RE = re(String.raw`(?<!${L})(?:(?:verwundete?|verletzte?|tote?|gefallene?)\s+(?:feinde?n?|gegner\p{L}*)|(?:gegnerische?|feindliche?)\s+(?:verwundete|verletzte|tote|gefallene))(?!${L})`);
 
 /**
  * Dringend vorbelegen (nur Vorschlag, Kap. 3.1): «dringend», «sofort», «eilt», «!!», «Kontakt!», «Feuer auf/aus»,
@@ -510,5 +549,5 @@ const VERLETZT_RE = re(String.raw`(?<!${L})(verwundet\p{L}*|verletzt\p{L}*|tot|t
  */
 export function istDringend(text: string, o: { eigenerMelder: boolean }): boolean {
   const t = text.replace(SOFORT_NICHT_RE, " ");
-  return DRINGEND_RE.test(t) || (o.eigenerMelder && VERLETZT_RE.test(t));
+  return DRINGEND_RE.test(t) || (o.eigenerMelder && VERLETZT_RE.test(t) && !FEIND_VERLUST_RE.test(t));
 }

@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { WHISPER_MODELS, abortError, clearWhisper, modelMb, whisperEngine, type WhisperSize } from "./whisper";
 import { browserSttAvailable } from "./browser";
+import { useOnlinePolicy } from "../onlinePolicy";
 
 export interface LoadProgress {
   phase: "laden" | "starten";
@@ -84,9 +85,14 @@ export function useSpeechPrefs(): SpeechPrefs {
   return p;
 }
 
-/** Wird jetzt die Browser-Erkennung benutzt? (eingeschaltet, vorhanden, online) */
+/**
+ * Wird jetzt die Browser-Erkennung benutzt? (auf dem Gerät gewählt, **für diese Übung eingeschaltet**, vorhanden,
+ * online). MVP 3.5 Nachbesserung (Feld M1): die Browser-Erkennung ist ein Online-Dienst der Übung (`onlineDienste.sprache`,
+ * Standard aus, Vorbereiten → Übung) – eine Wahl auf dem Gerät allein schickt nie Ton ans Internet.
+ */
 export function useBrowserNow(p: SpeechPrefs): boolean {
-  return p.mode === "browser" && p.browserOk && browserSttAvailable() && navigator.onLine;
+  const policy = useOnlinePolicy();
+  return p.mode === "browser" && p.browserOk && policy.sprache && browserSttAvailable() && navigator.onLine;
 }
 
 // ---------- Gerät: Download-Dauer und Empfehlung

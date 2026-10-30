@@ -214,7 +214,8 @@ const spec: Spec = {
         await s.page.waitForFunction(() => !/Lädt/.test(document.querySelector(".hd")?.textContent ?? ""), null, { timeout: 60000 });
         const t1 = (await offlinePopoverVon(s).innerText().catch(() => "")).replace(/\s+/g, " ");
         w.erst = /Karte[^A-Z]*/.exec(t1)?.[0];
-        soll(/\d+ % \(\d+ von \d+ Teilen\)/.test(t1), `Popover zeigt keine Teilzahl: ${w.erst}`);
+        // Review 6 Feld H1: «Übersicht ✓ · Detail 96 %» und «933 von 971 Teilen» (bzw. ohne Stufen «96 % (933 von 971 Teilen)»)
+        soll(/\d+ % \(\d+ von \d+ Teilen\)|Detail \d+ %.*\d+ von \d+ Teilen/.test(t1), `Popover zeigt keine Teilzahl: ${w.erst}`);
         await s.page.unroute(/wmts.*\.geo\.admin\.ch/);
         await offlinePopoverVon(s).getByRole("button", { name: /Alles für offline laden/ }).click();
         await s.page.waitForFunction(() => !/Lädt/.test(document.querySelector(".hd")?.textContent ?? ""), null, { timeout: 60000 });
@@ -258,7 +259,7 @@ const spec: Spec = {
         await c.page.keyboard.press("Escape");
         const hinweis = c.page.getByText("Dieses Gerät schützt die Daten nicht dauerhaft.");
         soll(await hinweis.isVisible().catch(() => false), "Schutzhinweis fehlt");
-        await knopfVon(c, "OK").click();
+        await knopfVon(c, "Hinweis schliessen").click();
         await c.page.reload();
         await c.page.waitForTimeout(1200);
         w.nachNeuladen = await hinweis.count();

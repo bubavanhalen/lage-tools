@@ -13,6 +13,7 @@ import type { OfflineStatus, SaveStatus } from "./contracts";
 import { useLaden } from "../betrieb/laden";
 import { ladenText } from "../betrieb/status";
 import { useOnlinePolicy } from "../onlinePolicy";
+import { KUERZEL_FELD_ID } from "../entry/KuerzelZeile";
 import "./shell.css";
 import "../lvzui/lvzui.css";
 import "../betrieb/betrieb.css";
@@ -75,7 +76,7 @@ export function SaveStatusView({ s }: { s: SaveStatus }) {
 }
 
 /** Kopf-Text «Online an» (A1.6): title nennt die Dienste; nur wenn mindestens einer an ist */
-export const ONLINE_AN_TITEL = "Online-Dienste dieser Übung: Ortsnamen, Strassen";
+export const ONLINE_AN_TITEL = "Online-Dienste dieser Übung: Ortsnamen, Strassen, Spracherkennung des Browsers (Vorbereiten → Übung)";
 
 export function OfflineStatusView({ s, onFix, laden }: { s: OfflineStatus & { checked?: boolean }; onFix: () => void; laden?: { done: number; total: number } | null }) {
   const net = s.net ? "" : "Kein Netz · ";
@@ -89,7 +90,9 @@ export function OfflineStatusView({ s, onFix, laden }: { s: OfflineStatus & { ch
     );
   }
   if (s.checked === false) return net ? <span className="hd-off net">Kein Netz</span> : null;
-  if (s.ready) return <>{net && <span className="hd-off net">Kein Netz ·</span>}<span className="hd-off ok" title="Journal und Karte funktionieren auch ohne Netz">Offline bereit ✓</span></>;
+  // schmal (< 860 px) kurz «Offline ✓», für Screenreader immer «Offline bereit» (Review 6, Feld N: Handy ohne Anzeige)
+  if (s.ready) return <>{net && <span className="hd-off net">Kein Netz ·</span>}<span className="hd-off ok" title="Journal und Karte funktionieren auch ohne Netz">
+    <span className="hd-long">Offline bereit ✓</span><span className="hd-short" aria-hidden="true">Offline ✓</span><span className="sr-only hd-sr">Offline bereit</span></span></>;
   return (
     <button type="button" className="hd-off fix" onClick={onFix} title={s.missing.join(" · ")}>
       {net}<span className="bt-warnzeichen" aria-hidden="true">⚠</span><span>Offline fehlt</span>
@@ -113,13 +116,25 @@ export interface HeaderProps {
    * angezeigten Übung (`onlinePolicy.ts`, gesetzt von der Werkzeugleiste der Karte).
    */
   online?: boolean;
+  /** «Kürzel fehlt» angeklickt, ohne Kürzel-Zeile im Bild: Dialog «Kürzel ändern …» */
+  onKuerzel?: () => void;
   /** (MVP 3.5) Fortschritt «Alles für offline laden»; weglassen = aus `betrieb/laden.ts` */
   laden?: { done: number; total: number } | null;
 }
 
 /** Kopf-Text der Schicht (Kap. 2.1): «Schicht BSP seit 06:00»; schmal (< 860 px) nur «BSP», voller Text im Titel */
-export function SchichtText({ s }: { s: { kuerzel: string | null; seit: string | null } }) {
-  if (!s.kuerzel) return <span className="hd-schicht fehlt" title="Kürzel fehlt – es wird beim ersten Eintragen abgefragt">Kürzel fehlt</span>;
+export function SchichtText({ s, onKuerzel }: { s: { kuerzel: string | null; seit: string | null }; onKuerzel?: () => void }) {
+  // Review 6 (Erstbenutzer N): «Kürzel fehlt» anklickbar – Label des Kürzel-Felds (Fokus in die Kürzel-Zeile); ist die
+  // Zeile nicht da (Vorbereiten, Rückfall-Abfrage übergangen), öffnet der Klick «Kürzel ändern …»
+  if (!s.kuerzel) return (
+    <label className="hd-schicht fehlt" htmlFor={KUERZEL_FELD_ID} title="Kürzel fehlt – hier klicken und Kürzel eintragen"
+      onClick={(e) => {
+        const f = document.getElementById(KUERZEL_FELD_ID);
+        if (f) { f.scrollIntoView({ block: "nearest" }); return; }
+        e.preventDefault();
+        onKuerzel?.();
+      }}>Kürzel fehlt</label>
+  );
   const full = `Schicht ${s.kuerzel}${s.seit ? ` seit ${s.seit}` : ""}`;
   return (
     <span className="hd-schicht" title={full}>
@@ -128,7 +143,7 @@ export function SchichtText({ s }: { s: { kuerzel: string | null; seit: string |
   );
 }
 
-export function Header({ name, save, offline, onFixOffline, menu, product, schicht, online, laden }: HeaderProps) {
+export function Header({ name, save, offline, onFixOffline, menu, product, schicht, online, laden, onKuerzel }: HeaderProps) {
   useEffect(() => { document.title = `${name} – ${product}`; }, [name, product]);
   const ladenModul = useLaden();
   const policy = useOnlinePolicy();
@@ -137,7 +152,7 @@ export function Header({ name, save, offline, onFixOffline, menu, product, schic
     <header className="hd" aria-label={product}>
       <h1 className="hd-name" title={name}>{name}</h1>
       <div className="hd-status">
-        {schicht && <SchichtText s={schicht} />}
+        {schicht && <SchichtText s={schicht} onKuerzel={onKuerzel} />}
         <SaveStatusView s={save} />
         <OfflineStatusView s={offline} onFix={onFixOffline} laden={laden === undefined ? ladenModul : laden} />
         {onlineAn && <span className="hd-off online" title={ONLINE_AN_TITEL}>Online an</span>}

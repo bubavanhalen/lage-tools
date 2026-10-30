@@ -28,7 +28,10 @@ export function MergeNotice({ info, onClose, onOffen }: { info: MergeInfo; onClo
     info.choose?.(d, c);
   };
   const hold = useRef(false);
-  const choosing = diffs.length > 0 && !!info.choose;
+  /** Online-Frage beantwortet (Einschalten oder Aus lassen) */
+  const [onlineDone, setOnlineDone] = useState(false);
+  const onlineFrage = !!info.online && !onlineDone;
+  const choosing = (diffs.length > 0 && !!info.choose) || onlineFrage;
   useEffect(() => {
     if (choosing) return;
     let left = MERGENOTICE_MS;
@@ -51,7 +54,18 @@ export function MergeNotice({ info, onClose, onOffen }: { info: MergeInfo; onClo
           {onOffen && <> <button type="button" className="mn-link" onClick={onOffen}>Offen zeigen</button></>}
         </p>
       )}
-      {choosing && (
+      {info.online && (
+        <div className="mn-online">
+          <p className="mn-dh">In der Datei waren {info.online.namen} an – hier einschalten? <span className="mn-sub">Jetzt aus: nichts geht ans Netz.</span></p>
+          {onlineFrage ? (
+            <span className="mn-online-b">
+              <button type="button" className="jl-btn" onClick={() => { info.online!.einschalten(); setOnlineDone(true); }}>Einschalten</button>
+              <button type="button" className="jl-btn" onClick={() => setOnlineDone(true)}>Aus lassen</button>
+            </span>
+          ) : <p className="mn-sub">Gewählt – ändern: Vorbereiten → Übung → Online-Dienste.</p>}
+        </div>
+      )}
+      {diffs.length > 0 && !!info.choose && (
         <div className="mn-diffs">
           <p className="mn-dh">In der Datei anders – was gilt?{diffs.length > 1 && <> Alle: <button type="button" className="mn-link" onClick={() => diffs.forEach((d) => pick(d, "hier"))}>hiesige</button> · <button type="button" className="mn-link" onClick={() => diffs.forEach((d) => pick(d, "datei"))}>aus Datei</button></>}</p>
           <ul>

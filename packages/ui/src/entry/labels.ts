@@ -3,6 +3,7 @@
  * Kürzel erklären («T2» = Übungstag 2 mit Datum), «Fehlt noch: was gesehen» statt «Wer», kein «Einheit (allg.)»,
  * Vorschläge der Erkennung in den Text übernehmen. Reine Funktionen, ohne Browser testbar.
  */
+import { zeitText } from "@lage/core";
 import { artOf, correctionSummary, findByNr, kindLabel, nrLabel, parseLocalIso, readArt, vermerkeOf, type EntryArt, type Exercise, type LageEvent, type LvzIndex, type MeldeFelder } from "@lage/core";
 
 /** «T2 = Übungstag 2 · Mi., 15.05.2030» (Tooltip/Titel zu «T2»); ausserhalb der Übungstage nur das Datum */
@@ -64,8 +65,9 @@ export const FORM_ZEICHEN: Record<ZeilenForm, string> = { feind: "◆", eigen: "
  * Zeit mit Tag, wenn sie nicht am Tag `heute` liegt (Prüfung M3): «07:06» bzw. «T1 07:06» (ausserhalb der Übungstage
  * «14.05. 07:06»). Nach dem Schichtwechsel ist so klar, von welchem Tag ein Punkt stammt.
  */
-export function zeitKurz(t: string, heute: string | null | undefined, days: string[]): string {
-  const hh = t.slice(11, 16);
+export function zeitKurz(t: string, heute: string | null | undefined, days: string[], ev?: Pick<LageEvent, "t" | "tOffset" | "createdAt"> | null): string {
+  // Review 6 (Einsatz N): in der doppelten Stunde «02:30 MESZ»/«02:30 MEZ» (Übergabe, Offen) – `ev` liefert den Offset
+  const hh = ev ? zeitText(ev) : t.slice(11, 16);
   if (!heute || t.slice(0, 10) === heute.slice(0, 10)) return hh;
   const i = days.indexOf(t.slice(0, 10));
   return `${i >= 0 ? `T${i + 1}` : `${t.slice(8, 10)}.${t.slice(5, 7)}.`} ${hh}`;

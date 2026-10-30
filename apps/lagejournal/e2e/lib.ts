@@ -308,13 +308,20 @@ export async function eintragenText(s: Session, text: string, o: { zweimal?: boo
   return { zustand, zeilen: await zeilenVon(s).count() };
 }
 
-/** Standort eines Trupps über die Suche (Vorschlag «H01 – zuletzt … · AC6 B»); Suche danach leeren */
+/**
+ * Standort eines Trupps über die Suche (Vorschlag «H01 – zuletzt … · AC6 B»); Suche danach leeren.
+ * Die Suche filtert auch die Journal-Liste (H03 → 21 statt 58 Zeilen). Erst zurück, wenn die Liste wieder ungefiltert
+ * ist: sonst liest `eintragenText` danach die gefilterte Zeilenzahl als Ausgangswert, hält das spätere Aufheben des
+ * Filters für «eingetragen» und schickt das zweite Enter nie (arten 2b, sporadisch rot unter Last).
+ */
 export async function standortVon(s: Session, trupp: string): Promise<string> {
   const q = s.page.getByPlaceholder(/^Suchen: Trupp/);
+  const n = await zeilenVon(s).count();
   await q.fill(trupp);
   const opt = s.page.getByRole("option", { name: new RegExp(`^${trupp}\\b`) }).first();
   const text = (await opt.innerText({ timeout: 1500 }).catch(() => "")).replace(/\s+/g, " ");
   await q.fill("");
+  await antwortzeit(async () => (await zeilenVon(s).count()) === n, 2000);
   return text;
 }
 

@@ -30,10 +30,11 @@ import { isLocked, subscribeLock, type LayerFlags } from "./layers";
 import { clickSuppressed, longPress, suppressClick, suppressContextMenu } from "./longpress";
 import { dayLabel } from "./Timeline";
 import { quietLook } from "./map/quiet";
-import { beschriftungPx, mPerPxOf, symbolGrundmass, symbolKlasse, ZEICHEN_STRICH } from "./map/symbolSize";
+import { beschriftungPx, mPerPxOf, symbolGrundmass, symbolKlasse, zeichenStrich } from "./map/symbolSize";
 import { pickAt, pickAktion, istGrob, trefferRadius, type PickTreffer, type PickZiel } from "./map/pick";
 import { auswahlOffen, schliesseAuswahl, zeigeAuswahl, type AuswahlZeile } from "./map/Auswahlliste";
 import { ensureSchraffur, SCHRAFFUR_ID } from "./map/schraffur";
+import { beiTruppZuordnung, beiVersatz } from "./map/beiTrupp";
 import { ZEICHEN, PQ_FLAECHE } from "@lage/core";
 import { LAGE_KARTE } from "./colors";
 import "./mapoverlays.css";
@@ -289,6 +290,8 @@ class SituationLayer extends L.LayerGroup {
   private selSize = SIZE_SEL;
   /** Zeichen samt Beschriftung (Layer-Pixel) für das Ausweichen der Flächenbeschriftung */
   private rects: Rects = [];
+  /** «bei Hxx»-Sichtungen → Trupp und Platz (Review 6 Einsatz M5) */
+  private beiTrupp = new Map<SituationItem, { trupp: SituationItem; slot: number }>();
 
   constructor(map: L.Map, private events: LageEvent[], private o: SituationOptions) {
     super();
@@ -358,7 +361,7 @@ class SituationLayer extends L.LayerGroup {
     const size = it.selected ? this.selSize : this.base;
     const outline = this.o.nacht ? LAGE_KARTE.haloNacht : undefined;
     const s = g
-      ? symbolSvg(it.sym, it.aff, size, { dir: it.e.dir, sidc: it.sidc, status: it.status }, outline, ZEICHEN_STRICH)
+      ? symbolSvg(it.sym, it.aff, size, { dir: it.e.dir, sidc: it.sidc, status: it.status }, outline, zeichenStrich(size))
       : symbolSvg(it.sym, it.aff, size, { dir: it.e.dir, sidc: it.sidc, status: it.status });
     const [ax, ay] = s.anchor;
     // Beschriftung: 12 px (Präsentation 16 px), Plex Mono ≈ 0.6 em je Zeichen; Abstand zum Zeichen wächst mit dem Grundmass
@@ -397,7 +400,6 @@ class SituationLayer extends L.LayerGroup {
       for (const p of this.placed) {
         const gr = this.graphic(p.it);
         p.core = gr.core; p.box = gr.box; p.boxFan = gr.boxFan; p.parts = gr.parts;
-        p.offset = p.it.road ? roadOffset(p.it, gr.core) : undefined;
         const icon = this.iconFor(p.it, gr, p.marker.options.icon!.options.className ?? "lt-ev");
         p.marker.options.icon = icon;
         const el = p.marker.getElement();
@@ -405,6 +407,7 @@ class SituationLayer extends L.LayerGroup {
         const tt = p.marker.getTooltip();
         if (tt) tt.options.offset = L.point(0, -gr.anchor[1] - 2);
       }
+      this.setzeVersatz();
       this.layout();
       performance.mark("lt:zeichen:ende");
       try { performance.measure("lt:zeichen", "lt:zeichen:start", "lt:zeichen:ende"); } catch { /* ältere Browser */ }
@@ -551,9 +554,22 @@ class SituationLayer extends L.LayerGroup {
       marker.bindTooltip(() => this.tooltipFor(p), { direction: "top", offset: [0, -ay - 2], className: "lt-tip", opacity: 1 });
       // gewählte Meldung: das Band zeigt dasselbe – nur der Hinweis zum Ziehen (Maus), sonst kein Tooltip
       marker.on("tooltipopen", () => { if (this.drag || auswahlOffen(this.ctl.map) || (it.selected && !this.isClosedStack(p) && (this.hoverNone || !this.canDrag()))) marker.closeTooltip(); });
-      marker.on("click", () => { marker.closeTooltip(); if (!clickSuppressed()) this.activate(p); });
+      marker.on("click", (ev: L.LeafletMouseEvent) => { marker.closeTooltip(); if (!clickSuppressed() && !this.listeBeiDirekt(p, ev)) this.activate(p); });
       marker.addTo(this);
       this.placed.push(p);
+    }
+    // «bei Hxx»-Sichtungen neben den Trupp (Review 6 Einsatz M5): nie deckungsgleich, der Trupp behält seinen Namen
+    this.beiTrupp = beiTruppZuordnung(model.items);
+    this.setzeVersatz();
+  }
+
+  /** Versatz neben dem wahren Ort: Strassen-Hindernis quer zur Strasse, «bei Hxx» neben dem Trupp (je Grösse neu) */
+  private setzeVersatz(): void {
+    const byIt = new Map(this.placed.map((p) => [p.it, p]));
+    for (const p of this.placed) {
+      const b = this.beiTrupp.get(p.it);
+      const tp = b && byIt.get(b.trupp);
+      p.offset = p.it.road ? roadOffset(p.it, p.core) : b && tp ? beiVersatz(b.slot, tp.core, p.core) : undefined;
     }
   }
 
@@ -597,6 +613,26 @@ class SituationLayer extends L.LayerGroup {
     return hits;
   }
 
+  /**
+   * Klick (Maus) direkt auf ein Zeichen: liegen im Trefferradius ≥ 2 verschiedene Zeichen, die Auswahlliste statt still
+   * eines zu wählen (Review 6 Feld M2, Entscheid «Touch und Maus»). Nicht im aufgefächerten Stapel, nicht per Tastatur.
+   * @returns true, wenn die Liste erscheint
+   */
+  private listeBeiDirekt(p: Placed, ev: L.LeafletMouseEvent): boolean {
+    const map = this._map;
+    const oe = ev.originalEvent as MouseEvent | undefined;
+    if (!map || !oe || !(oe.clientX || oe.clientY) || oe.detail === 0) return false;
+    // Finger/Stift: schon beim Loslassen mit dem ungerückten Punkt geprüft (`tippOhneVersatz`)
+    const pt = (oe as PointerEvent).pointerType;
+    if (pt && pt !== "mouse") return false;
+    if (p.marker.getElement()?.classList.contains("fan")) return false;
+    const cp = map.mouseEventToContainerPoint(oe);
+    const hits = this.treffer(cp);
+    if (pickAktion(hits.length) !== "liste") return false;
+    this.zeigeListe(hits, cp);
+    return true;
+  }
+
   private zeigeListe(hits: Array<PickTreffer<Placed>>, cp: L.Point): void {
     const map = this._map;
     if (!map) return;
@@ -610,9 +646,10 @@ class SituationLayer extends L.LayerGroup {
 
   /**
    * Finger/Stift: Der Browser verschiebt einen Tipp auf das nächste antippbare Element (Chromium «touch adjustment») –
-   * liegen zwei verschiedene Zeichen nahe, gewänne still das nächste. Deshalb hier mit dem **ungerückten** Punkt:
-   * liegt er nicht direkt auf einem Zeichen und gibt es ≥ 2 Kandidaten, erscheint die Auswahlliste und der folgende
-   * (verschobene) Klick entfällt. Ein Kandidat oder keiner: wie gewohnt über den Klick.
+   * liegen zwei verschiedene Zeichen nahe, gewänne still das nächste. Deshalb hier mit dem **ungerückten** Punkt: gibt
+   * es ≥ 2 Kandidaten im Radius, erscheint die Auswahlliste und der folgende (verschobene) Klick entfällt – auch wenn
+   * der Tipp direkt auf einem Zeichen liegt (Review 6 Feld M2), ausser im aufgefächerten Stapel. Ein Kandidat oder
+   * keiner: wie gewohnt über den Klick.
    */
   private tippOhneVersatz(e: PointerEvent, down: { x: number; y: number; ab: number }): void {
     const map = this._map;
@@ -620,7 +657,9 @@ class SituationLayer extends L.LayerGroup {
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8 || Date.now() - down.ab > LIFT_MS) return;
     const cont = map.getContainer();
     const unter = document.elementFromPoint(e.clientX, e.clientY);
-    if (!unter || !cont.contains(unter) || unter.closest(".lt-ev, .leaflet-control-container, .lt-pick-host")) return;
+    // direkt auf einem Zeichen zählt auch (Review 6 Feld M2: die Zeichen sind gross, fast jeder Tipp trifft eines) –
+    // nur im aufgefächerten Stapel wählt der Tipp direkt
+    if (!unter || !cont.contains(unter) || unter.closest(".lt-ev.fan, .leaflet-control-container, .lt-pick-host")) return;
     const cp = map.mouseEventToContainerPoint(e as unknown as MouseEvent);
     const hits = this.treffer(cp);
     if (pickAktion(hits.length) !== "liste") return;
@@ -799,8 +838,9 @@ class SituationLayer extends L.LayerGroup {
       if (si === this.openStack) {
         // ---- aufgefächert: Kreis um den gemeinsamen Ort, Linie zum wahren Ort jedes Zeichens, Punkt markiert
         const mem = [...st.members].sort((a, b) => this.placed[a]!.fanRank - this.placed[b]!.fanRank);
-        const cx = mem.reduce((s, i) => s + truePt[i]!.x, 0) / mem.length;
-        const cy = mem.reduce((s, i) => s + truePt[i]!.y, 0) / mem.length;
+        // Mitte am gezeigten Ort («bei Hxx» steht neben dem Trupp, Review 6 Einsatz M5), Linien zum wahren Ort
+        const cx = mem.reduce((s, i) => s + shownPt[i]!.x, 0) / mem.length;
+        const cy = mem.reduce((s, i) => s + shownPt[i]!.y, 0) / mem.length;
         const slots = fanLayout(mem.map((i) => this.placed[i]!.boxFan), mem.map((i) => this.placed[i]!.core));
         const lines: L.LatLng[][] = [];
         const dots: L.Point[] = [];
@@ -1238,6 +1278,10 @@ function avoidAreaLabels(map: L.Map, rects: Rects) {
       tries.push([0, T0 - 2 - h / 2 - cy], [0, B0 + 2 + h / 2 - cy], [L0 - 4 - w / 2 - cx, 0], [R0 + 4 + w / 2 - cx, 0]);
     }
     tries.push(...nudges);
+    // (Review 6 Erstbenutzer M5) Fläche am Bildrand und grosse Zeichen (L, Präsentation): weiter suchen – Ringe um den
+    // Ort in 12 Richtungen bis 3× Etikettenhöhe + 120 px, damit das Etikett nie unter einem Zeichen liegt
+    for (let rad = 24; rad <= 120 + 3 * h; rad += 16)
+      for (let k = 0; k < 12; k++) tries.push([Math.cos((k * Math.PI) / 6) * rad * 1.6, Math.sin((k * Math.PI) / 6) * rad]);
     const kand = tries.map(([dx, dy]) => [Math.round(dx), Math.round(dy)] as const);
     const at = ([dx, dy]: readonly [number, number]): R => [r0[0] + dx, r0[1] + dy, r0[2] + dx, r0[3] + dy];
     let ok = kand.find((d) => { const r = at(d); return inMap(r) && !hit(r); });

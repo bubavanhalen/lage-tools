@@ -13,6 +13,7 @@
 import type { jsPDF } from "jspdf";
 import { sheetBounds, zeitCmp, type Area, type Exercise, type LV95, type RasterSheet } from "@lage/core";
 import { KARTE, RESOLUTIONS, symbolSvg, toLv95 } from "@lage/map";
+import { beiTruppZuordnung, beiVersatz } from "../map/beiTrupp";
 import type L from "leaflet";
 import { renderTiles, tileLevel, type Bounds } from "../tiles";
 import { tileCoverage } from "../offline";
@@ -197,10 +198,16 @@ export async function lagekartePdf(ex: Exercise, o: LagekarteDruck & { signal?: 
   // Zeichen (SVG → Bild), 7 mm A4 / 8 mm A3
   const symPx = pxOf(o.paper === "A3" ? 8 : 7);
   const drawn: Array<{ it: SituationItem; x: number; y: number; w: number }> = [];
+  // «bei Hxx»-Zeichen neben den Trupp, nie deckungsgleich (Review 6 Einsatz M5; gleiche Regel wie der Bildschirm)
+  const gr = new Map(items.map((it) => [it, symbolSvg(it.sym, it.aff, symPx, { sidc: it.sidc, status: it.status, dir: it.e.dir })]));
+  const kern = (g: ReturnType<typeof symbolSvg>): [number, number, number, number] => [-g.anchor[0], -g.anchor[1], g.w - g.anchor[0], g.h - g.anchor[1]];
+  const bei = beiTruppZuordnung(items);
   for (const it of [...items].sort((a, c) => Number(a.kind === "eigen") - Number(c.kind === "eigen"))) {
-    const g = symbolSvg(it.sym, it.aff, symPx, { sidc: it.sidc, status: it.status, dir: it.e.dir });
+    const g = gr.get(it)!;
     const img = await svgImage(g.svg);
-    const [x, y] = px(it.pos);
+    let [x, y] = px(it.pos);
+    const b2 = bei.get(it);
+    if (b2) { const [dx, dy] = beiVersatz(b2.slot, kern(gr.get(b2.trupp)!), kern(g), pxOf(0.4)); x += dx; y += dy; }
     if (img) ctx.drawImage(img, x - g.anchor[0], y - g.anchor[1], g.w, g.h);
     drawn.push({ it, x, y, w: g.w - g.anchor[0] });
   }
@@ -290,8 +297,12 @@ export async function lagekartePdf(ex: Exercise, o: LagekarteDruck & { signal?: 
       [x + off, y - th / 2], [x - off - tw, y - th / 2], [x + off * 0.6, y - off - th * 0.6], [x + off * 0.6, y + off * 0.6],
       [x - off * 0.6 - tw, y - off - th * 0.6], [x - off * 0.6 - tw, y + off * 0.6], [x - tw / 2, y - off - th], [x - tw / 2, y + off],
     ];
-    const spot = cand.map(([cx, cy]) => ({ x0: cx, y0: cy, x1: cx + tw, y1: cy + th }))
-      .find((r) => r.x0 >= F.x && r.x1 <= F.x + F.w && r.y0 >= F.y && r.y1 <= F.y + F.h && !busy.some((b2) => hit(r, b2)));
+    const imFeld = cand.map(([cx, cy]) => ({ x0: cx, y0: cy, x1: cx + tw, y1: cy + th }))
+      .filter((r) => r.x0 >= F.x && r.x1 <= F.x + F.w && r.y0 >= F.y && r.y1 <= F.y + F.h);
+    // eigene Trupps immer beschriftet (Review 6 Einsatz M5): ohne freie Stelle die mit der kleinsten Überdeckung
+    const flaeche = (r: R) => busy.reduce((n, b2) => n + Math.max(0, Math.min(r.x1, b2.x1) - Math.max(r.x0, b2.x0)) * Math.max(0, Math.min(r.y1, b2.y1) - Math.max(r.y0, b2.y0)), 0);
+    const spot = imFeld.find((r) => !busy.some((b2) => hit(r, b2)))
+      ?? (d.it.kind === "eigen" && d.it.isUnit ? [...imFeld].sort((a, c) => flaeche(a) - flaeche(c))[0] : undefined);
     if (!spot) { ohnePlatz++; continue; }
     busy.push(spot);
     const col: [number, number, number] = d.it.kind === "eigen" ? rgb(LAGE_KARTE.eigen) : rgb(LAGE_KARTE.ink);

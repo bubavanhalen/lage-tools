@@ -52,7 +52,7 @@ describe("Ampel «Karte» (S8): vollständig geprüft, 4xx zählt als vorhanden"
     // alle bis auf 5 vorhanden; davon 3 bei swisstopo nicht vorhanden (4xx)
     for (const u of urls.slice(5)) await t.put(u, new Response("x"));
     let r = await areaTileCoverage(B);
-    expect(r).toEqual({ share: (urls.length - 5) / urls.length, total: urls.length, cached: urls.length - 5 });
+    expect(r).toMatchObject({ share: (urls.length - 5) / urls.length, total: urls.length, cached: urls.length - 5 });
     const f = await c.api.open(TILES_FEHLEN);
     for (const u of urls.slice(0, 3)) await f.put(u, new Response("", { headers: { "x-lt-fehlt": "1" } }));
     r = await areaTileCoverage(B);
@@ -60,6 +60,33 @@ describe("Ampel «Karte» (S8): vollständig geprüft, 4xx zählt als vorhanden"
     expect(r.share).toBeLessThan(1);
     for (const u of urls.slice(3, 5)) await t.put(u, new Response("x"));
     expect((await areaTileCoverage(B)).share).toBe(1);
+  });
+  it("Review 6 Feld H1: abgebrochen nach den groben Stufen → Übersicht ✓, Detail teilweise, feinste Stufe", async () => {
+    const c = cachesAttrappe();
+    vi.stubGlobal("caches", c.api);
+    const { areaTileCoverage, tileUrls, OFFLINE_FEINSTE_M, UEBERSICHT_AB_M } = await import("../src/offline");
+    const { RESOLUTIONS } = await import("@lage/map");
+    const urls = tileUrls(B, OFFLINE_FEINSTE_M, "lk");
+    const zOf = (u: string) => +u.split("/2056/")[1]!.split("/")[0]!;
+    const grob = urls.filter((u) => RESOLUTIONS[zOf(u)]! >= UEBERSICHT_AB_M);
+    // Laden lädt grob → fein: Abbruch nach den groben Stufen und einem Viertel von 5 m
+    const z5 = urls.filter((u) => RESOLUTIONS[zOf(u)] === 5);
+    const t = await c.api.open("lt-tiles-v1");
+    for (const u of [...grob, ...z5.slice(0, Math.floor(z5.length / 4))]) await t.put(u, new Response("x"));
+    const r = await areaTileCoverage(B, OFFLINE_FEINSTE_M);
+    expect(r.share).toBeLessThan(1);
+    expect(r.uebersicht).toEqual({ total: grob.length, cached: grob.length });
+    expect(r.detail.total).toBe(urls.length - grob.length);
+    expect(r.detail.cached).toBe(Math.floor(z5.length / 4));
+    expect(RESOLUTIONS[r.feinsteZ!]).toBe(10);
+    // die alte Prüfung (bis 5 m) hätte hier fast alles gesehen – die Ampel prüft bis zur Ladestufe
+    const { karteText, betriebAus } = await import("../src/betrieb/status");
+    const s = betriebAus({ offline: { ready: false, net: true, parts: { app: true, karte: false, speicher: true }, missing: [], abdeckung: { ...r, geprueft: true } },
+      onlineDienste: undefined, installiert: false, install: "manuell", dateiGesichert: null, laden: null, ergebnis: { abgebrochen: true } });
+    const k = karteText(s.karte);
+    expect(k.ok).toBe(false);
+    expect(k.text).toMatch(/^Übersicht ✓ · Detail \d+ %$/);
+    expect(k.zusatz).toBe(`abgebrochen – ${r.cached.toLocaleString("de-CH")} von ${r.total.toLocaleString("de-CH")}`);
   });
   it("ohne Cache-API: nichts vorhanden", async () => {
     vi.stubGlobal("caches", undefined);

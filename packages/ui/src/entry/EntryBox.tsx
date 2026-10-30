@@ -198,10 +198,12 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
       )}
       {d.notice && <p className="eb-notice" role="status">{d.notice}</p>}
       {schutz && (
-        <p className="eb-notice eb-schutz" role="status">
+        // Review 6 (Erstbenutzer M2, Feld H3): eine Zeile, «So geht’s» und ✕ zählen zusammen als 1 Bedienelement;
+        // bei offener Bildschirmtastatur ausgeblendet (entry.css, `data-tastatur`)
+        <p className="eb-notice eb-schutz" role="status" data-zaehl="schutzhinweis">
           <span>Dieses Gerät schützt die Daten nicht dauerhaft.</span>
-          <button type="button" className="eb-btn" onClick={() => schutz.mehr()}>So geht’s</button>
-          <button type="button" className="eb-btn" onClick={() => schutz.ok()}>OK</button>
+          <button type="button" className="eb-btn eb-link" onClick={() => schutz.mehr()}>So geht’s</button>
+          <button type="button" className="eb-btn eb-x" aria-label="Hinweis schliessen" title="Hinweis schliessen" onClick={() => schutz.ok()}>✕</button>
         </p>
       )}
       {!d.voice.available && !korr && <p className="eb-nomic" id="eb-nomic">Kein Mikrofon gefunden – Tippen und Foto gehen weiter.</p>}

@@ -401,8 +401,16 @@ export interface SearchOnline {
 export interface BetriebStatus {
   /** App-Dateien im Zwischenspeicher (Service Worker) */
   app: boolean;
-  /** Kartenabdeckung des Raster-Gebiets bis 5 m/px; `geprueft` = vollständig geprüft (keine Stichprobe, S8) */
-  karte: { share: number; total: number; cached: number; geprueft: boolean };
+  /**
+   * Kartenabdeckung des Raster-Gebiets über alle Stufen bis zur Ladestufe 2 m/px; `geprueft` = vollständig geprüft
+   * (keine Stichprobe, S8). Review 6 Feld H1: `uebersicht`/`detail` (Stufen ≥ / < 10 m/px) für «Übersicht ✓ · Detail 25 %»,
+   * `abgebrochen` = letztes «Alles für offline laden» abgebrochen und die Karte noch unvollständig.
+   */
+  karte: {
+    share: number; total: number; cached: number; geprueft: boolean;
+    uebersicht?: { total: number; cached: number }; detail?: { total: number; cached: number };
+    abgebrochen?: { cached: number; total: number };
+  };
   /** `navigator.storage.persisted()` */
   speicher: boolean;
   /** als App installiert (`display-mode: standalone` bzw. `navigator.standalone`) */

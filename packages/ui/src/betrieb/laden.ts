@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import type L from "leaflet";
 import { onlineAllowed, type Exercise } from "@lage/core";
 import { toLv95 } from "@lage/map";
-import { downloadTiles, estimateTiles } from "../offline";
+import { downloadTiles, estimateTiles, OFFLINE_FEINSTE_M } from "../offline";
 import { karteNeuPruefen, notifyOfflineChanged, rasterArea } from "../offlineStatus";
 import { estimateRoadTiles, prefetchRoads } from "../roadsource";
 import { requestPersist } from "../persist";
@@ -23,8 +23,8 @@ export interface LadenErgebnis { saved: number; failed: number; fehlen: number; 
 
 /** Strassen höchstens für so viele km² vorladen (wie bisher OfflineBox) */
 export const STRASSEN_MAX_KM2 = 400;
-/** Detailstufe «Normal» (m/px) */
-export const DETAIL_NORMAL = 2;
+/** Detailstufe «Normal» (m/px) – dieselbe Stufe prüft die Ampel (`OFFLINE_FEINSTE_M`, Review 6 Feld H1) */
+export const DETAIL_NORMAL = OFFLINE_FEINSTE_M;
 
 let stand: LadenStand | null = null;
 let ergebnis: LadenErgebnis | null = null;

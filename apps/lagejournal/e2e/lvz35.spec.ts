@@ -74,8 +74,9 @@ const spec: Spec = {
         await ansicht(s, "Offen");
         const t = await offenText(s);
         w.offen = t.slice(0, 300);
-        const io = t.search(/RÜCKFRAGEN VON OBEN|Rückfragen von oben/), ia = t.search(/AUFTRÄGE|Aufträge/);
-        soll(io >= 0 && (ia < 0 || io < ia), "«Rückfragen von oben» fehlt oder steht nicht über «Aufträge»");
+        // Review 6: Gruppe heisst «Von oben» (Rückfragen und Meldeaufträge von oben)
+        const io = t.search(/RÜCKFRAGEN VON OBEN|Rückfragen von oben|\bVON OBEN\b|\bVon oben\b/), ia = t.search(/AUFTRÄGE|Aufträge/);
+        soll(io >= 0 && (ia < 0 || io < ia), "«Von oben» fehlt oder steht nicht über «Aufträge»");
         await s.page.locator('[role="tabpanel"] li').filter({ hasText: /Bat fragt/ }).first().click();
         await knopfVon(s, "Antwort eintragen").click();
         soll(/^Antwort an Bat: /.test(await feldVon(s).inputValue()), "Feld nicht «Antwort an Bat: »");
@@ -84,6 +85,28 @@ const spec: Spec = {
         await s.page.waitForTimeout(400);
         await ansicht(s, "Offen");
         soll(!/Bat fragt/.test(await offenText(s)), "Rückfrage nach Antwort noch offen");
+      } finally { await s.close(); }
+    }));
+
+    out.push(await aufgabe("3b Review 6 H1: zwei Fragen von oben – «Antwort eintragen» an der älteren beantwortet genau diese (fester Bezug)", "laptop", async (w) => {
+      const s = await neu();
+      try {
+        await eintragenText(s, "Bat fragt: Standort H02?");
+        await eintragenText(s, "Bat fragt: wie viele Fz bei AD7?");
+        await ansicht(s, "Offen");
+        await s.page.locator('[role="tabpanel"] li').filter({ hasText: /Standort H02/ }).first().click();
+        await knopfVon(s, "Antwort eintragen").click();
+        await feldVon(s).pressSequentially("H02 in AL9");
+        await s.page.waitForTimeout(300);
+        w.vorschau = (await s.page.locator(".eb-prev").first().innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 240);
+        soll(/Antwort auf Nr \d+[a-z]? \(.*Standort H02/.test(String(w.vorschau)), "Vorschau ohne «Antwort auf Nr … (Standort H02?)»");
+        await feldVon(s).press("Enter");
+        await s.page.waitForTimeout(400);
+        await ansicht(s, "Offen");
+        const t = await offenText(s);
+        w.offen = t.slice(0, 300);
+        soll(!/Standort H02/.test(t), "beantwortete Frage «Standort H02?» noch offen");
+        soll(/wie viele Fz bei AD7/.test(t), "andere Frage «wie viele Fz» fälschlich erledigt");
       } finally { await s.close(); }
     }));
 

@@ -74,6 +74,44 @@ interface Props {
   reveal?: { id: string; n: number } | null;
 }
 
+/** sichtbare Höhe (Bildschirmtastatur verkleinert nur den sichtbaren Teil) */
+const sichtHoehe = () => window.visualViewport?.height ?? window.innerHeight;
+/** Texteingabe im Fokus (auf Touch-Geräten heisst das: Bildschirmtastatur offen) */
+const textFokus = () => { const a = document.activeElement as HTMLElement | null; return !!a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && /^(text|search|)$/.test((a as HTMLInputElement).type))); };
+const grob = () => !!window.matchMedia?.("(pointer: coarse)").matches;
+/** Bildschirmtastatur vermutlich offen: sichtbarer Teil deutlich kleiner als das Fenster, oder Finger-Gerät mit Textfokus */
+export const tastaturOffen = (): boolean => sichtHoehe() < window.innerHeight - 80 || (grob() && textFokus());
+
+/**
+ * Review 6 (Feld H3): Tablet quer mit Bildschirmtastatur – nach dem Eintragen den Eingabeblock (Feld oben) wieder ins Bild
+ * holen, wenn nur wenig Höhe sichtbar ist (< 500 px). Zweimal, weil die neue Zeile die Spalte nachträglich verschiebt.
+ */
+function eingabeImBild(): void {
+  const hol = () => {
+    if (sichtHoehe() >= 500) return;
+    const f = document.querySelector<HTMLElement>(".lc-entry .eb-fieldwrap");
+    if (!f) return;
+    const r = f.getBoundingClientRect(), top = window.visualViewport?.offsetTop ?? 0;
+    if (r.top >= top && r.bottom <= top + sichtHoehe()) return;
+    f.scrollIntoView({ block: "start" });
+  };
+  requestAnimationFrame(hol);
+  window.setTimeout(hol, 350);
+}
+
+/** `data-tastatur` am Dokument, solange die Bildschirmtastatur offen ist (CSS blendet z. B. den Schutzhinweis aus) */
+function useTastaturMarke(): void {
+  useEffect(() => {
+    let raf = 0;
+    const set = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { const on = tastaturOffen(); const el = document.documentElement; if (on) el.setAttribute("data-tastatur", ""); else el.removeAttribute("data-tastatur"); }); };
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", set); window.addEventListener("resize", set);
+    document.addEventListener("focusin", set); document.addEventListener("focusout", set);
+    set();
+    return () => { vv?.removeEventListener("resize", set); window.removeEventListener("resize", set); document.removeEventListener("focusin", set); document.removeEventListener("focusout", set); cancelAnimationFrame(raf); document.documentElement.removeAttribute("data-tastatur"); };
+  }, []);
+}
+
 export function JournalPanel(p: Props) {
   const { ex, map, device, selected, onSelect, update, say, quality } = p;
   const events = ex.events ?? [];
@@ -123,7 +161,9 @@ export function JournalPanel(p: Props) {
     if (last) onSelect(last);
     setJustIds(ids);
     p.onCommitted?.(ids);
+    eingabeImBild();
   }, [onSelect, p.onCommitted]); // eslint-disable-line react-hooks/exhaustive-deps
+  useTastaturMarke();
   useEffect(() => setJustIds([]), [q, art]);
   useEffect(() => { if (!justIds.length) return; const t = window.setTimeout(() => setJustIds([]), 15000); return () => window.clearTimeout(t); }, [justIds]);
   useEffect(() => {

@@ -226,6 +226,8 @@ export interface LageEvent {
    * Meldung `bezug` weiter (Vermerk «weitergemeldet» abgeleitet, `vermerkeOf`)
    */
   bezugArt?: "antwort" | "quittung" | "ausgefuehrt" | "verweis" | "weiter";
+  /** (MVP 3.5 Fix) weitere Bezüge mit derselben Art («Nr 55 und 56 an Bat weitergemeldet» → bezug 55, bezugAuch [56]) */
+  bezugAuch?: string[];
   /** diese Meldung hebt die Meldung mit dieser ID auf (Sperre, Checkpoint, Fläche, Linie) */
   hebtAuf?: string;
   /** genannte Orte bei Nicht-Meldungen und Aufhebungen – nur Text (Liste, Suche, PDF), nie Karte */
@@ -372,7 +374,12 @@ export interface Exercise {
    * **Ab MVP 3.5 (Entscheid K2): nur `true` = an**, fehlt = `ONLINE_STANDARD` (aus) – alte Übungen gelten beim Öffnen als
    * aus, nichts wird geschrieben. `at` = letzte Wahl (ISO UTC). Zusammenführen einer Datei: lokal gewinnt (`mergeExercise`).
    */
-  onlineDienste?: { ortssuche?: boolean; strassen?: boolean; at?: string };
+  onlineDienste?: {
+    ortssuche?: boolean; strassen?: boolean;
+    /** (MVP 3.5 Nachbesserung, Feld M1) Spracherkennung des Browsers – der Ton geht an Google/Apple/Microsoft */
+    sprache?: boolean;
+    at?: string;
+  };
   /**
    * Löschmarken für Raster, Flächen (NAI/AO …) und Bilder: ID → Zeitpunkt (ISO) des Löschens; `undone` = mit
    * Rückgängig wiederhergestellt. Die spätere Marke gilt. So taucht ein gelöschtes Element beim Zusammenführen

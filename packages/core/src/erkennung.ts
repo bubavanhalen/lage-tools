@@ -351,6 +351,9 @@ const OWN_POS_RE = new RegExp(
   "iu",
 );
 
+/** (MVP 3.5 Fix) Text meldet einen eigenen Standort («Standort AE5», «Stellung bezogen», «verschiebt nach …») */
+export const meldetStandort = (text: string): boolean => OWN_POS_RE.test(text);
+
 /** Sicht-/Meldeverben zwischen zwei eigenen Elementen («H02 sieht H04 in AK9», «H02 meldet H04 bei NAI 1») */
 const SEE_RE = /^\s*[:,]?\s*(?:sieht|sah|beobachtet|meldet|hat|erkennt|gesichtet|sichtet)\b/i;
 

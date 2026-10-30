@@ -82,11 +82,17 @@ describe("D2 Bezug auflösen", () => {
     // «64a» ist eindeutig
     expect(lies(ex, "Antwort zu 64a", "0740").d.bezug).toBe(a.id);
   });
-  it("«Antwort an Bat» ohne Nummer → jüngste offene Rückfrage von Bat; beantwortet sie", () => {
+  it("«Antwort an Bat» ohne Nummer: zwei offene Rückfragen von Bat → Wahl (nie still die jüngste); gewählt beantwortet sie", () => {
     const ex = demoExercise();
-    trage(ex, "Bat fragt: Standort H02?", "0738");
+    const r1 = trage(ex, "Bat fragt: Standort H02?", "0738");
     const r2 = trage(ex, "Rückfrage Bat: wie viele Fz in AK9?", "0739");
-    const { d, st } = lies(ex, "Antwort an Bat: 2 Kpz", "0740");
+    const w = lies(ex, "Antwort an Bat: 2 Kpz", "0740");
+    expect(w.st.level).toBe("pruefen");
+    expect(w.d.bezug).toBeUndefined();
+    const r = w.st.reasons.find((x) => x.code === "bezug-wahl")!;
+    expect(r.text).toBe("Welche Rückfrage wird beantwortet?");
+    expect(r.choices!.map((c) => c.id)).toEqual([r1.id, r2.id, BEZUG_KEINER]);
+    const { d, st } = lies(ex, "Antwort an Bat: 2 Kpz", "0740", { bezugWahl: r2.id });
     expect(st.level).toBe("bereit");
     expect(d).toMatchObject({ art: "ausgang", an: "Bat", bezug: r2.id, bezugArt: "antwort" });
     ex.events = [...ex.events!, eventFromDraft(d, "dev-a", at("0740"), { nr: nextNr(ex, 0) })];

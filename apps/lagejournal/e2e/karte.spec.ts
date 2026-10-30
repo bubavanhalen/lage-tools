@@ -293,6 +293,204 @@ const spec: Spec = {
       } finally { await s.close(); }
     }));
 
+    // ---------------------------------------------------------------- Nachbesserung Review 6 (Agent KARTE)
+    out.push(await aufgabe("14 Nacht: Bewegungspfeil hell, Kontrast ≥ 3:1 zur Karte, Linie ≥ 1.5 px; S bei > 15 m/px Linie ≥ 1.5 px", "laptop", async (w) => {
+      const s = await neu({ lokal: { "lage-tools.night": "1" } });
+      try {
+        await s.page.waitForTimeout(800);
+        const pf = await s.page.evaluate(() => {
+          // Zeichen mit Pfeil, frei von Bedienelementen (Zoom, Anzeige ▾) und möglichst in der Kartenmitte
+          const m = document.querySelector(".leaflet-container")!.getBoundingClientRect();
+          const e = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev:not(.hid):not(.under)")].filter((x) => x.querySelector('path[d^="M100,100 l0,-75"]'))
+            .map((x) => ({ x, r: x.getBoundingClientRect() })).filter((o) => o.r.left > m.left + 80 && o.r.right < m.right - 220 && o.r.top > m.top + 80 && o.r.bottom < m.bottom - 60)
+            .sort((a, b) => Math.hypot(a.r.x - m.x - m.width / 2, a.r.y - m.y - m.height / 2) - Math.hypot(b.r.x - m.x - m.width / 2, b.r.y - m.y - m.height / 2))[0]?.x;
+          if (!e) return null;
+          const paths = [...e.querySelectorAll('path[d^="M100,100 l0,-75"]')];
+          const innen = paths[paths.length - 1]!, svg = e.querySelector("svg")!;
+          const k = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+          const r = innen.getBoundingClientRect();
+          return { farbe: innen.getAttribute("stroke"), saum: paths[0]!.getAttribute("stroke"), px: +(parseFloat(innen.getAttribute("stroke-width")!) * k).toFixed(2), box: [r.x, r.y, r.width, r.height] };
+        });
+        w.pfeil = pf;
+        soll(pf, "kein Zeichen mit Bewegungspfeil sichtbar");
+        soll(/^#fff(fff)?$/i.test(String(pf!.farbe)), `Pfeil nachts «${pf!.farbe}» statt hell`);
+        soll(/^#000(000)?$/i.test(String(pf!.saum)), `Saum nachts «${pf!.saum}» statt schwarz`);
+        soll(pf!.px >= 1.5, `Pfeil ${pf!.px} px`);
+        // Karte unter dem Pfeil (Zeichen ausgeblendet): hellste 5 % gegen den hellen Pfeil
+        await s.page.addStyleTag({ content: ".leaflet-marker-pane{visibility:hidden}" });
+        await s.page.waitForTimeout(200);
+        const [x, y, bw, bh] = pf!.box;
+        const png = await s.page.screenshot({ clip: { x: Math.max(0, x - 6), y: Math.max(0, y - 6), width: bw + 12, height: bh + 12 } });
+        const k = await s.page.evaluate(async (b64: string) => {
+          const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode();
+          const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+          const ctx = c.getContext("2d")!; ctx.drawImage(img, 0, 0);
+          const d = ctx.getImageData(0, 0, c.width, c.height).data;
+          const f = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+          const L: number[] = [];
+          for (let i = 0; i < d.length; i += 4) L.push(0.2126 * f(d[i]!) + 0.7152 * f(d[i + 1]!) + 0.0722 * f(d[i + 2]!));
+          L.sort((a, b) => a - b);
+          const hell = L[Math.floor(L.length * 0.95)]!;
+          return { karte: +hell.toFixed(3), kontrast: +((1 + 0.05) / (hell + 0.05)).toFixed(2) };
+        }, png.toString("base64"));
+        w.kontrast = k;
+        soll(k.kontrast >= 3, `Kontrast Pfeil/Karte ${k.kontrast}`);
+      } finally { await s.close(); }
+      const t = await neu({ lokal: { "lage-tools.zeichengroesse": "S" } });
+      try {
+        await zoomen(t, -2);
+        const lin = await t.page.evaluate(() => Math.min(99, ...[...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev:not(.hid) svg")].flatMap((svg) => {
+          const vb = (svg as unknown as SVGSVGElement).viewBox?.baseVal;
+          if (!vb || !vb.width) return [];
+          const k = svg.getBoundingClientRect().width / vb.width;
+          // Rahmen = dickster Strich der gefüllten Form (Innenzeichen haben dünnere Striche)
+          const rahmen = [...svg.querySelectorAll('path[fill^="rgb"], polygon[fill^="#"]')].map((e) => parseFloat(e.getAttribute("stroke-width") ?? "0") * k).filter((x) => x > 0);
+          return rahmen.length ? [Math.max(...rahmen)] : [];
+        })));
+        w.linieS = +lin.toFixed(2);
+        soll(lin >= 1.5, `Rahmenlinie S ${lin} px`);
+      } finally { await t.close(); }
+    }));
+
+    out.push(await aufgabe("15 Präsentation: Raster- und NAI-Beschriftung ≥ 16 px; Grösse L: kein NAI-Etikett unter einem Zeichen", "laptop", async (w) => {
+      const ueber = () => {
+        const sym = [...document.querySelectorAll(".leaflet-marker-pane .lt-ev:not(.hid):not(.under) svg")].map((e) => e.getBoundingClientRect());
+        return [...document.querySelectorAll<HTMLElement>(".lt-area-lbl span")].filter((e) => e.getBoundingClientRect().width > 0 && !e.classList.contains("lt-lbl-aus"))
+          .filter((l) => { const r = l.getBoundingClientRect(); return sym.some((q) => r.left < q.right - 1 && r.right > q.left + 1 && r.top < q.bottom - 1 && r.bottom > q.top + 1); })
+          .map((l) => l.textContent);
+      };
+      const s = await neu({ viewport: { width: 1920, height: 1080 }, arbeitsweise: { modus: "lage", experte: true } });
+      try {
+        await s.page.getByRole("button", { name: "Menü" }).click();
+        await s.page.getByRole("menuitem", { name: /Präsentation/ }).click();
+        await s.page.waitForTimeout(1500);
+        w.schrift = await s.page.evaluate(() => {
+          const fs = (sel: string) => [...document.querySelectorAll<Element>(sel)].filter((e) => e.getBoundingClientRect().width > 0).map((e) => parseFloat(getComputedStyle(e).fontSize));
+          const min = (a: number[]) => (a.length ? Math.min(...a) : 0);
+          return { raster: min(fs(".lt-raster-lbl .lt-edge-t")), nai: min(fs(".lt-area-lbl span")) };
+        });
+        const sch = w.schrift as { raster: number; nai: number };
+        soll(sch.raster >= 16 && sch.nai >= 16, `Präsentation Raster ${sch.raster} px, NAI ${sch.nai} px`);
+        w.praesentation = await s.page.evaluate(ueber);
+        soll(!(w.praesentation as string[]).length, `NAI unter Zeichen (Präsentation): ${JSON.stringify(w.praesentation)}`);
+      } finally { await s.close(); }
+      for (const vp of [{ width: 1440, height: 900 }, { width: 1366, height: 768 }]) {
+        const t = await neu({ viewport: vp, lokal: { "lage-tools.zeichengroesse": "L" } });
+        try {
+          await t.page.waitForTimeout(800);
+          const u = await t.page.evaluate(ueber);
+          w[`L${vp.width}`] = u;
+          soll(!u.length, `NAI unter Zeichen (L, ${vp.width}): ${JSON.stringify(u)}`);
+        } finally { await t.close(); }
+      }
+    }));
+
+    out.push(await aufgabe("16 Touch (echt): 10 Tipps zwischen nahen Zeichen → Auswahlliste ≥ 9×, auch direkt auf einem Zeichen", "tablet-touch", async (w) => {
+      const s = await neu({ geraet: "tablet-touch", lokal: { "lage-tools.zeichengroesse": "S" } });
+      try {
+        soll(await istGrob(s), "kein echtes pointer: coarse");
+        const res: Array<{ liste: boolean; aufZeichen: boolean }> = [];
+        for (let n = 0; n < 10; n++) {
+          const z = await s.page.evaluate((n: number) => {
+            const ev = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev:not(.hid):not(.under)")].map((e) => {
+              const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
+              return { x: b.x - (parseFloat(cs.marginLeft) || 0), y: b.y - (parseFloat(cs.marginTop) || 0), b };
+            }).filter((q) => q.b.width > 0 && q.x > 440 && q.x < 990 && q.y > 90 && q.y < 680);
+            const paare: Array<{ x: number; y: number }> = [];
+            for (let i = 0; i < ev.length; i++) for (let j = i + 1; j < ev.length; j++) {
+              const d = Math.hypot(ev[i]!.x - ev[j]!.x, ev[i]!.y - ev[j]!.y);
+              if (d > 6 && d <= 44) paare.push({ x: (ev[i]!.x + ev[j]!.x) / 2, y: (ev[i]!.y + ev[j]!.y) / 2 });
+            }
+            const p = paare[n % Math.max(1, paare.length)];
+            return p ? { ...p, aufZeichen: !!document.elementFromPoint(p.x, p.y)?.closest(".lt-ev") } : null;
+          }, n);
+          if (!z) { res.push({ liste: false, aufZeichen: false }); continue; }
+          await cdpTippen(s, z.x, z.y);
+          const lb = s.page.getByRole("listbox", { name: /Welches Zeichen/ });
+          const liste = await lb.isVisible().catch(() => false);
+          res.push({ liste, aufZeichen: z.aufZeichen });
+          await s.page.keyboard.press("Escape");
+          await s.page.waitForTimeout(250);
+          if (!liste && await s.page.locator(".lt-ev.sel").count()) { await s.page.keyboard.press("Escape"); await s.page.waitForTimeout(1200); }
+        }
+        w.listen = res.filter((r) => r.liste).length;
+        w.aufZeichen = res.filter((r) => r.aufZeichen).length;
+        soll((w.listen as number) >= 9, `Auswahlliste nur ${w.listen} von 10`);
+      } finally { await s.close(); }
+    }));
+
+    out.push(await aufgabe("17 «bei Hxx» neben dem Trupp: nie deckungsgleich, Trupp sichtbar und beschriftet", "laptop", async (w) => {
+      const s = await neu();
+      try {
+        const feld = s.page.getByPlaceholder(/Was wurde gemeldet/);
+        for (const t of ["H03 Motorenlärm aus Rtg AP5", "H03 Kontakt mit 4 Pers"]) {
+          await feld.click(); await feld.fill(t);
+          for (let i = 0; i < 3 && await feld.inputValue(); i++) { await s.page.keyboard.press("Enter"); await s.page.waitForTimeout(700); }
+        }
+        await s.page.waitForTimeout(1200);
+        const r = await s.page.evaluate(() => {
+          const els = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev:not(.hid)")];
+          const h03 = els.find((e) => e.classList.contains("k-eigen") && e.querySelector(".lt-ud")?.textContent === "H03");
+          if (!h03) return null;
+          const a = h03.getBoundingClientRect();
+          const gleich = els.filter((e) => e !== h03 && !e.classList.contains("k-eigen")).filter((e) => { const b = e.getBoundingClientRect(); return Math.abs(b.x + b.width / 2 - (a.x + a.width / 2)) < 3 && Math.abs(b.y + b.height / 2 - (a.y + a.height / 2)) < 3; }).length;
+          return { gleich, under: h03.classList.contains("under"), name: (h03.querySelector(".lt-ud")?.getBoundingClientRect().width ?? 0) > 0 };
+        });
+        w.h03 = r;
+        soll(r, "H03 nicht auf der Karte");
+        soll(r!.gleich === 0, `${r!.gleich} Zeichen deckungsgleich auf H03`);
+        soll(!r!.under && r!.name, "H03 verdeckt oder ohne Namen");
+      } finally { await s.close(); }
+    }));
+
+    out.push(await aufgabe("18 Offline ehrlich: Abbruch → «Übersicht ✓ · Detail» + «abgebrochen»; offline hineingezoomt gröber statt weiss", "laptop", async (w) => {
+      const s = await neu({ offline: "echt" });
+      try {
+        let netz = true;
+        await s.page.route(/wmts\.geo\.admin\.ch/, async (r: any) => { if (!netz) return r.abort(); await new Promise((ok) => setTimeout(ok, 10)); return r.fallback(); });
+        await s.page.locator(".hd button.hd-off").first().click();
+        const pop = s.page.getByRole("dialog", { name: "Offline auf diesem Gerät" });
+        await pop.getByRole("button", { name: /Alles für offline laden/ }).click();
+        for (let i = 0; i < 300; i++) {
+          const m = /Karte ([\d’']+) von ([\d’']+)/.exec(await pop.innerText());
+          if (m && +m[1]!.replace(/\D/g, "") > 0.25 * +m[2]!.replace(/\D/g, "")) break;
+          await s.page.waitForTimeout(50);
+        }
+        await pop.getByRole("button", { name: "Abbrechen" }).click();
+        await s.page.waitForFunction(() => !/Lädt/.test(document.querySelector(".hd")?.textContent ?? ""), null, { timeout: 30000 });
+        await s.page.waitForTimeout(500);
+        const t1 = (await pop.innerText()).replace(/\s+/g, " ");
+        w.abbruch = /Karte.{0,80}/.exec(t1)?.[0];
+        soll(!/Raster-Gebiet vollständig/.test(t1), "nach Abbruch «Raster-Gebiet vollständig»");
+        soll(/Übersicht (✓|\d+ %) · Detail \d+ %/.test(t1) && /abgebrochen – [\d’']+ von [\d’']+/.test(t1), `Popover nach Abbruch: ${w.abbruch}`);
+        soll(/Offline fehlt/.test(await s.page.locator(".hd").innerText()), "Kopf ohne «Offline fehlt»");
+        if (!(await pop.isVisible().catch(() => false))) await s.page.locator(".hd button.hd-off").first().click();
+        await h.shot(s.page, "karte-18-abbruch");
+        w.schritt = "laden 2";
+        await pop.getByRole("button", { name: /Alles für offline laden/ }).click({ timeout: 15000 });
+        await s.page.waitForFunction(() => !/Lädt/.test(document.querySelector(".hd")?.textContent ?? ""), null, { timeout: 90000 });
+        await s.page.waitForTimeout(500);
+        soll(/Raster-Gebiet vollständig/.test(await pop.innerText()), "nach vollständigem Laden nicht vollständig");
+        await s.page.keyboard.press("Escape");
+        w.schritt = "offline zoomen";
+        netz = false;
+        await s.page.context().setOffline(true);
+        // Mausrad in der Kartenmitte (Bedienelemente können nach «offline» von einem Hinweis verdeckt sein)
+        const mb = await s.page.locator(".leaflet-container").boundingBox();
+        for (let i = 0; i < 6; i++) { await s.page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2); await s.page.mouse.wheel(0, -200); await s.page.waitForTimeout(450); }
+        w.massstab = await s.page.locator(".leaflet-control-scale").innerText().catch(() => "");
+        await s.page.waitForTimeout(2000);
+        w.kacheln = await s.page.evaluate(() => {
+          const m = document.querySelector(".leaflet-container")!.getBoundingClientRect();
+          const t = [...document.querySelectorAll<HTMLImageElement>(".leaflet-tile-container img.leaflet-tile")].filter((i) => { const r = i.getBoundingClientRect(); return r.right > m.left && r.left < m.right && r.bottom > m.top && r.top < m.bottom; });
+          return { sichtbar: t.length, geladen: t.filter((i) => i.complete && i.naturalWidth > 0).length, ersatz: t.filter((i) => i.classList.contains("lt-ersatz")).length };
+        });
+        const k = w.kacheln as { sichtbar: number; geladen: number; ersatz: number };
+        soll(k.sichtbar > 0 && k.geladen === k.sichtbar && k.ersatz > 0, `offline unter 2 m: ${JSON.stringify(k)}`);
+        await s.page.context().setOffline(false);
+      } finally { await s.close(); }
+    }));
+
     return out;
   },
 };
