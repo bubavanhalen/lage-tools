@@ -12,9 +12,11 @@ describe("demoLang – lange Beispielübung (Phase 0, Kap. 2.10/8.5)", () => {
     expect(ts[ts.length - 1]).toBe("2030-05-18T07:30");
     expect(new Set(ts.map((t) => t.slice(0, 10))).size).toBe(4);
   });
+  it.todo("MVP 3.5: demoLang enthält Ausgänge («Meldung an Bat: …», «Weitergemeldet an Bat: Nr …») – Paket D");
   it("alle Eintragsarten, gestrichene, korrigierte, dringende, aufgehobene, Bezüge", () => {
     const arten = new Set(ex.events!.map(artOf));
-    for (const a of ENTRY_ARTEN) expect(arten.has(a), a).toBe(true);
+    // MVP 3.5: «ausgang» ist neu – demoLang bekommt Ausgänge erst mit Paket D (dann die Ausnahme hier streichen)
+    for (const a of ENTRY_ARTEN.filter((x) => x !== "ausgang")) expect(arten.has(a), a).toBe(true);
     expect(ex.events!.some((e) => e.deleted)).toBe(true);
     expect(ex.events!.some((e) => e.history?.length && !e.deleted)).toBe(true);
     expect(ex.events!.some((e) => e.lvz?.dringend?.v)).toBe(true);

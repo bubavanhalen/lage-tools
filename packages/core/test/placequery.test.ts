@@ -17,15 +17,17 @@ describe("isPlaceName: Online-Ortssuche nur für echte Ortsnamen", () => {
   });
 });
 
-describe("onlineAllowed: pro Übung schaltbar, Standard an", () => {
-  it("ohne Einstellung an", () => {
-    expect(onlineAllowed({}, "ortssuche")).toBe(true);
-    expect(onlineAllowed(null, "strassen")).toBe(true);
+describe("onlineAllowed: pro Übung schaltbar, Standard aus (MVP 3.5, Entscheid K2)", () => {
+  it("ohne Einstellung aus (neue, alte, Beispiel-Übung)", () => {
+    expect(onlineAllowed({}, "ortssuche")).toBe(false);
+    expect(onlineAllowed(null, "strassen")).toBe(false);
+    expect(onlineAllowed({ onlineDienste: {} }, "ortssuche")).toBe(false);
   });
-  it("einzeln aus", () => {
-    const ex = { onlineDienste: { ortssuche: false } };
-    expect(onlineAllowed(ex, "ortssuche")).toBe(false);
-    expect(onlineAllowed(ex, "strassen")).toBe(true);
-    expect(onlineAllowed({ onlineDienste: { strassen: false } }, "strassen")).toBe(false);
+  it("nur ausdrücklich true schaltet ein, einzeln", () => {
+    const ex = { onlineDienste: { ortssuche: true } };
+    expect(onlineAllowed(ex, "ortssuche")).toBe(true);
+    expect(onlineAllowed(ex, "strassen")).toBe(false);
+    expect(onlineAllowed({ onlineDienste: { ortssuche: false, strassen: true } }, "ortssuche")).toBe(false);
+    expect(onlineAllowed({ onlineDienste: { strassen: true } }, "strassen")).toBe(true);
   });
 });

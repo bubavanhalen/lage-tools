@@ -10,7 +10,7 @@
  * Phase 0: Verträge mit erster, getesteter Umsetzung; Paket A baut aus (Texte, Aufheben-Erkennung, Vorrang).
  * Kein Import aus journal.ts (journal.ts wird `liftMap` importieren).
  */
-import { artOf, artText, isLage, lebenszeichen, readArt } from "./arten";
+import { artOf, artText, isLage, lebenszeichen, readArt, type ArtLesung } from "./arten";
 import { AUFHEBBAR, catalogEntry } from "./catalog";
 import { compareEvents } from "./clock";
 import { QUITTUNG_ERLEDIGT, STILL_MIN } from "./entscheide";
@@ -77,6 +77,8 @@ export interface VermerkStand {
   quittiert?: { t: string; id: string };
   beantwortet?: { t: string; id: string };
   aufgehoben?: { t: string; id: string };
+  /** (MVP 3.5, D3) weitergemeldet über einen Ausgang (`bezugArt: "weiter"`): Eintrag und Nummer («weitergemeldet Bat 07:31 (Nr 58)») */
+  weiterVon?: { id: string; nr: string };
 }
 
 /**
@@ -136,7 +138,8 @@ export function aufhebZiele(events: LageEvent[], d: Pick<Draft, "sym" | "cells" 
     .sort((a, b) => compareEvents(b, a));
 }
 
-export type OffenArt = "dringend" | "konflikt" | "auftrag" | "rueckfrage" | "verbindung" | "still" | "ohne-ort" | "offen";
+/** MVP 3.5 (D3): + «rueckfrage-oben» (Rückfrage von Bat/Kdt, prio 28) und «begehren» (Nachschub, Sanität, prio 45) */
+export type OffenArt = "dringend" | "konflikt" | "auftrag" | "rueckfrage" | "rueckfrage-oben" | "begehren" | "verbindung" | "still" | "ohne-ort" | "offen";
 
 export interface OffenItem {
   /** stabil (Art + ID bzw. Trupp) */
@@ -158,8 +161,35 @@ export interface OffenItem {
 
 /** Rangfolge in «Offen» (Kap. 3.7) */
 export const OFFEN_PRIO: Record<OffenArt | "auftrag-frist", number> = {
-  dringend: 10, konflikt: 20, "auftrag-frist": 25, auftrag: 30, rueckfrage: 40, verbindung: 50, still: 50, "ohne-ort": 60, offen: 70,
+  dringend: 10, konflikt: 20, "auftrag-frist": 25, "rueckfrage-oben": 28, auftrag: 30, rueckfrage: 40, begehren: 45, verbindung: 50, still: 50, "ohne-ort": 60, offen: 70,
 };
+
+// ---------- MVP 3.5: Bezug auflösen (D2, Spez. MVP 3.5, Kap. 3.4, 5.3) ----------
+
+/** Ergebnis von `bezugAufloesen` – parseMeldung übernimmt es in den Entwurf (Phase 0 verdrahtet) */
+export interface BezugErgebnis {
+  bezug?: string;
+  bezugArt?: LageEvent["bezugArt"];
+  /** mehrere mögliche Bezüge (IDs): «64» bei 64a/64b, mehrere offene Aufträge bei «erledigt» → `Draft.bezugKandidaten` */
+  kandidaten?: string[];
+  /** Grund für die Vorschau (gelb): `bezug-wahl`, `auftrag-wahl`; `bezug` = unbekannte Nummer */
+  grund?: "bezug-wahl" | "auftrag-wahl" | "bezug";
+  /** (additiv) D1.7: genau ein offener Auftrag wird abgeschlossen → `Draft.abschluss` («schliesst Auftrag Nr 66 ab») */
+  abschluss?: { id: string; nr: string; text: string };
+}
+
+/**
+ * (MVP 3.5, D2) Bezug einer Lesung auflösen: Nummer mit mehreren Einträgen (`findAllByNr`) → Kandidaten (`bezug-wahl`);
+ * «erledigt» ohne «Auftrag» (`ArtLesung.abschluss`) → genau ein offener Auftrag an den Melder → `bezug` + «ausgefuehrt»
+ * und `abschluss`, mehrere → Kandidaten (`auftrag-wahl`), keiner → nichts; «Antwort an Bat» ohne Nummer → jüngste offene
+ * Rückfrage mit `quelle` Bat. `ctx.abschlussAus` («nicht abschliessen» gewählt) und `ctx.bezugWahl` (gewählte ID) gelten.
+ * Wird von `parseMeldung` aufgerufen (Phase 0 verdrahtet). **Phase-0-Stub:** liefert nichts (bisheriges Verhalten);
+ * Paket D baut aus.
+ */
+export function bezugAufloesen(l: ArtLesung, ctx: { events: LageEvent[]; ex?: Pick<Exercise, "events">; melder?: string; t: string; abschlussAus?: boolean; bezugWahl?: string }): BezugErgebnis {
+  void l; void ctx;
+  return {};
+}
 
 const hhmm = (t: string) => t.slice(11, 16);
 const minutesBetween = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000));

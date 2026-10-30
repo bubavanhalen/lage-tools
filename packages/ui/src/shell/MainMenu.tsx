@@ -45,6 +45,14 @@ export interface MainMenuProps {
   onAbout(): void;
   /** Menü offen/zu (Rückblick-Timer ruht, R4) */
   onOpenChange?(open: boolean): void;
+  // ---- MVP 3.5 (Spez. MVP 3.5, Kap. 1.2; Phase 0: von Workspace geliefert, Paket A zeigt sie an) ----
+  /** Gruppe «Ansicht»: «Bildschirm bleibt an ✓» (nur in «Lage führen» wirksam); ohne Unterstützung «… – geht in diesem Browser nicht» */
+  wach?: { an: boolean; unterstuetzt: boolean; fehler?: string | null; setAn(v: boolean): void };
+  /** «Auf diesem Gerät sicher? …» öffnet das Offline-Popover; `sicher` = Speicher geschützt und installiert (✓/✗) */
+  onSicher?: () => void;
+  sicher?: boolean;
+  /** Zusatz bei «Datei für anderes Gerät …»: «zuletzt 07:31» bzw. «nie gesichert» */
+  dateiNote?: string | null;
 }
 
 export function MainMenu(p: MainMenuProps) {

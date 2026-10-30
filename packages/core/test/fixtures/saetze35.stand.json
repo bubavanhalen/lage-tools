@@ -1,0 +1,6032 @@
+{
+ "alt58-01": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "NAI 3",
+   "melder": "H04",
+   "dir": 0,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "NAI 3",
+   "melder": "H04",
+   "dir": 0,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-02": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Autos",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:15"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Autos",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:15",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-03": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-04": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp",
+   "anzahl": 3,
+   "ort": "AJ9 C",
+   "melder": "H03",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp",
+   "anzahl": 3,
+   "ort": "AJ9 C",
+   "melder": "H03",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-05": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "pz gegnerische Panzer",
+   "ort": "AJ9",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "pz gegnerische Panzer",
+   "ort": "AJ9",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-06": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "stellung Stellung",
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "stellung Stellung",
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {
+   "H02": "AK9 C"
+  },
+  "blauNeu": []
+ },
+ "alt58-07": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt",
+   "ort": "bei H05",
+   "melder": "H05",
+   "from": 90,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt",
+   "ort": "bei H05",
+   "melder": "H05",
+   "from": 90,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-08": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12",
+   "melder": "H01",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12",
+   "melder": "H01",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {
+   "H01": "AF12 C"
+  },
+  "blauNeu": []
+ },
+ "alt58-09": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit Verschiebung",
+   "ort": "AG10",
+   "melder": "H01",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit Verschiebung",
+   "ort": "AG10",
+   "melder": "H01",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {
+   "H01": "AG10 C"
+  },
+  "blauNeu": []
+ },
+ "alt58-10": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AG10",
+   "melder": "H01",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AG10",
+   "melder": "H01",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {
+   "H01": "AG10 C"
+  },
+  "blauNeu": []
+ },
+ "alt58-11": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-12": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne gegnerische Drohne",
+   "ort": "bei H05",
+   "melder": "H05",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne gegnerische Drohne",
+   "ort": "bei H05",
+   "melder": "H05",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-13": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-14": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "vbk": "gut",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "vbk": "gut",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-15": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit",
+   "ort": "AO7",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit",
+   "ort": "AO7",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-16": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Soldaten",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Soldaten",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-17": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "lw 1 gegnerischer Lastwagen",
+   "anzahl": 1,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "lw 1 gegnerischer Lastwagen",
+   "anzahl": 1,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-18": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-19": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerisches Fahrzeug",
+   "anzahl": 1,
+   "ort": "NAI 2",
+   "melder": "H03",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerisches Fahrzeug",
+   "anzahl": 1,
+   "ort": "NAI 2",
+   "melder": "H03",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-20": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-21": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Personenwagen",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Personenwagen",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-22": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre",
+   "ort": "AG13",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre",
+   "ort": "AG13",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-23": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "verletzte Verletzter",
+   "ort": "bei H02",
+   "melder": "H02",
+   "dringend": true,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "verletzte Verletzter",
+   "ort": "bei H02",
+   "melder": "H02",
+   "dringend": true,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-24": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ11 C",
+   "melder": "H05",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ11 C",
+   "melder": "H05",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-25": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Schüsse",
+   "ort": "bei H01",
+   "melder": "H01",
+   "from": 180,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Schüsse",
+   "ort": "bei H01",
+   "melder": "H01",
+   "from": 180,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-26": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder",
+   "ort"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit gegnerischer Rückzug",
+   "ort": null,
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit gegnerischer Rückzug",
+   "ort": null,
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-27": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:15"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:15",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-28": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:15"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:15",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-29": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "Koordinate",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "Koordinate",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-30": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "Koordinate",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "Koordinate",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-31": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:15"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:15",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-32": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-33": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "patrouille Patrouille (4 Personen)",
+   "anzahl": 4,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "patrouille Patrouille (4 Personen)",
+   "anzahl": 4,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-34": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "zivil verdächtige Zivilperson",
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "zivil verdächtige Zivilperson",
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-35": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-36": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-37": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt (1 Verwundeter)",
+   "ort": "bei H02",
+   "melder": "H02",
+   "dringend": true,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt (1 Verwundeter)",
+   "ort": "bei H02",
+   "melder": "H02",
+   "dringend": true,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-38": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7 C",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7 C",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-39": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7 C",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7 C",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-40": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ11",
+   "melder": "H05",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ11",
+   "melder": "H05",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-41": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "ied IED",
+   "ort": "AF13",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "ied IED",
+   "ort": "AF13",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-42": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-43": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "NAI 3",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "NAI 3",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-44": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-45": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7 C",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7 C",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-46": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-47": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "lw 1 Auto, 1 Lastwagen, 3 Personen",
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "lw 1 Auto, 1 Lastwagen, 3 Personen",
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-48": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-49": {
+  "stufe": "geht-nicht",
+  "gruende": [
+   "problem"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": null,
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-50": {
+  "stufe": "geht-nicht",
+  "gruende": [
+   "problem"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": null,
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": null,
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-51": {
+  "stufe": "geht-nicht",
+  "gruende": [
+   "problem"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": null,
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": null,
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-52": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {
+   "H04": "AK9 C"
+  },
+  "blauNeu": []
+ },
+ "alt58-53": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": null,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-54": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-55": {
+  "stufe": "geht-nicht",
+  "gruende": [
+   "problem"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": null,
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": null,
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-56": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne gegnerische Drohne",
+   "ort": "bei H04",
+   "melder": "H04",
+   "dir": 180,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne gegnerische Drohne",
+   "ort": "bei H04",
+   "melder": "H04",
+   "dir": 180,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-57": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "heli gegnerischer Helikopter",
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "heli gegnerischer Helikopter",
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "alt58-58": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt",
+   "ort": "bei H03",
+   "melder": "H03",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt",
+   "ort": "bei H03",
+   "melder": "H03",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-01": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AN6",
+   "melder": "H03",
+   "dir": 0,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AN6",
+   "melder": "H03",
+   "dir": 0,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-02": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "stgw gegnerisches Sturmgewehr",
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "stgw gegnerisches Sturmgewehr",
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-03": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt",
+   "ort": "AP10",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt",
+   "ort": "AP10",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-04": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AC6 B",
+   "melder": "H01",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AC6 B",
+   "melder": "H01",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-05": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne gegnerische Drohne",
+   "ort": "NAI 2",
+   "melder": "H03",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne gegnerische Drohne",
+   "ort": "NAI 2",
+   "melder": "H03",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-06": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AL9 A",
+   "melder": "H02",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AL9 A",
+   "melder": "H02",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-07": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "dir": 180,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "dir": 180,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-08": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit Sperre aufgehoben",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H05",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "gesehen": "einheit Sperre aufgehoben",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H05",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": -1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-09": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AC7",
+   "melder": "H01",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AC7",
+   "melder": "H01",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-10": {
+  "stufe": "pruefen",
+  "gruende": [
+   "art-schwach"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H05",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H05",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-11": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-12": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-13": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AE5",
+   "melder": "H01",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AE5",
+   "melder": "H01",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-14": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AQ11",
+   "melder": "H05",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AQ11",
+   "melder": "H05",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-15": {
+  "stufe": "pruefen",
+  "gruende": [
+   "was"
+  ],
+  "vorschlag": "pz",
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit 2 ? («Panzr»)",
+   "anzahl": 2,
+   "ort": "AK9",
+   "melder": "H02",
+   "dir": 270,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit 2 ? («Panzr»)",
+   "anzahl": 2,
+   "ort": "AK9",
+   "melder": "H02",
+   "dir": 270,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-16": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "dir": 0,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "dir": 0,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-17": {
+  "stufe": "pruefen",
+  "gruende": [
+   "art-schwach"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-18": {
+  "stufe": "pruefen",
+  "gruende": [
+   "unscharf"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit IED aufgehoben",
+   "ort": null,
+   "orte": [
+    "AF13"
+   ],
+   "melder": "H05",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "gesehen": "einheit IED aufgehoben",
+   "ort": null,
+   "orte": [
+    "AF13"
+   ],
+   "melder": "H05",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": -1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-19": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "NAI 3"
+   ],
+   "melder": null,
+   "an": "H02",
+   "frist": "09:00",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "NAI 3"
+   ],
+   "melder": null,
+   "an": "H02",
+   "frist": "09:00",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-20": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-21": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Kdt",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Kdt",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-22": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H01",
+   "vbk": "gut",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H01",
+   "vbk": "gut",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-23": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H04",
+   "vbk": "keine",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H04",
+   "vbk": "keine",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-24": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-25": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "50",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "50",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-26": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-27": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AN6"
+   ],
+   "melder": null,
+   "quelle": "S2",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AN6"
+   ],
+   "melder": null,
+   "quelle": "S2",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-28": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "verletzte 1 Verletzter",
+   "anzahl": 1,
+   "ort": "bei H02",
+   "melder": "H02",
+   "dringend": true,
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "verletzte 1 Verletzter",
+   "anzahl": 1,
+   "ort": "bei H02",
+   "melder": "H02",
+   "dringend": true,
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-29": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "vbk": "schlecht",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "vbk": "schlecht",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "neu30-30": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Kp",
+   "zeit": "10:30"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Kp",
+   "zeit": "10:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-01": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AK10",
+   "melder": "H02",
+   "dir": 0,
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AK10",
+   "melder": "H02",
+   "dir": 0,
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-02": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 3 gegnerische Personen",
+   "anzahl": 3,
+   "ort": "AK8",
+   "melder": "H03",
+   "dir": 270,
+   "zeit": "07:32"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 3 gegnerische Personen",
+   "anzahl": 3,
+   "ort": "AK8",
+   "melder": "H03",
+   "dir": 270,
+   "zeit": "07:32",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-03": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AD7 B",
+   "melder": "H01",
+   "dir": 90,
+   "zeit": "07:32"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AD7 B",
+   "melder": "H01",
+   "dir": 90,
+   "zeit": "07:32",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-04": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne 1 gegnerische Drohne",
+   "anzahl": 1,
+   "ort": "AH9",
+   "melder": null,
+   "zeit": "07:33"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne 1 gegnerische Drohne",
+   "anzahl": 1,
+   "ort": "AH9",
+   "melder": null,
+   "zeit": "07:33",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-05": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 4 gegnerische Personen",
+   "anzahl": 4,
+   "ort": "AF11 C",
+   "melder": "H04",
+   "dir": 180,
+   "zeit": "07:34"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 4 gegnerische Personen",
+   "anzahl": 4,
+   "ort": "AF11 C",
+   "melder": "H04",
+   "dir": 180,
+   "zeit": "07:34",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-06": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit 2 gegnerische Trupps",
+   "anzahl": 2,
+   "ort": "AQ10",
+   "melder": "H05",
+   "zeit": "07:34"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit 2 gegnerische Trupps",
+   "anzahl": 2,
+   "ort": "AQ10",
+   "melder": "H05",
+   "zeit": "07:34",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-07": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": null,
+   "melder": "H03",
+   "dir": 0,
+   "zeit": "07:36"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": null,
+   "melder": "H03",
+   "dir": 0,
+   "zeit": "07:36",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-08": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 3 gegnerische Fahrzeuge",
+   "anzahl": 3,
+   "ort": "AK9",
+   "melder": "H02",
+   "dir": 270,
+   "zeit": "07:37"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 3 gegnerische Fahrzeuge",
+   "anzahl": 3,
+   "ort": "AK9",
+   "melder": "H02",
+   "dir": 270,
+   "zeit": "07:37",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-09": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 3 gegnerische Personen",
+   "anzahl": 3,
+   "ort": "AN7",
+   "melder": null,
+   "zeit": "07:38"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 3 gegnerische Personen",
+   "anzahl": 3,
+   "ort": "AN7",
+   "melder": null,
+   "zeit": "07:38",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-10": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "NAI 2"
+   ],
+   "melder": null,
+   "an": "H03",
+   "frist": "08:21",
+   "zeit": "07:41"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "NAI 2"
+   ],
+   "melder": null,
+   "an": "H03",
+   "frist": "08:21",
+   "zeit": "07:41",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-11": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AQ12"
+   ],
+   "melder": null,
+   "an": "H05",
+   "frist": "08:07",
+   "zeit": "07:42"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AQ12"
+   ],
+   "melder": null,
+   "an": "H05",
+   "frist": "08:07",
+   "zeit": "07:42",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-12": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "bezugArt": "quittung",
+   "bezugNr": "66",
+   "zeit": "07:43"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "bezugArt": "quittung",
+   "bezugNr": "66",
+   "zeit": "07:43",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-13": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ12",
+   "melder": "H05",
+   "bezugArt": "ausgefuehrt",
+   "bezugNr": "67",
+   "zeit": "07:46"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ12",
+   "melder": "H05",
+   "bezugArt": "ausgefuehrt",
+   "bezugNr": "67",
+   "zeit": "07:46",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {
+   "H05": "AQ12 C"
+  },
+  "blauNeu": []
+ },
+ "s02-14": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "07:47"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "07:47",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-15": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Kp",
+   "zeit": "07:48"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Kp",
+   "zeit": "07:48",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-16": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "zeit": "07:49"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "zeit": "07:49",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-17": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "an": "H02",
+   "zeit": "07:50"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "an": "H02",
+   "zeit": "07:50",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-18": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H01",
+   "vbk": "gut",
+   "zeit": "07:52"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H01",
+   "vbk": "gut",
+   "zeit": "07:52",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-19": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H04",
+   "vbk": "schlecht",
+   "zeit": "07:53"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H04",
+   "vbk": "schlecht",
+   "zeit": "07:53",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-20": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "vbk": "keine",
+   "zeit": "07:54"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "vbk": "keine",
+   "zeit": "07:54",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-21": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H05",
+   "vbk": "gut",
+   "zeit": "07:55"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H05",
+   "vbk": "gut",
+   "zeit": "07:55",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-22": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "vbk": "gut",
+   "zeit": "07:56"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "vbk": "gut",
+   "zeit": "07:56",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-23": {
+  "stufe": "pruefen",
+  "gruende": [
+   "sichtung"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": null,
+   "an": "H04",
+   "bezugArt": "antwort",
+   "bezugNr": "72",
+   "zeit": "07:58"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": null,
+   "an": "H04",
+   "bezugArt": "antwort",
+   "bezugNr": "72",
+   "zeit": "07:58",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-24": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "bezugArt": "antwort",
+   "bezugNr": "73",
+   "zeit": "07:59"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "bezugArt": "antwort",
+   "bezugNr": "73",
+   "zeit": "07:59",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-25": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt (1 Verwundeter)",
+   "ort": "AR11",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "08:00"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt (1 Verwundeter)",
+   "ort": "AR11",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "08:00",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-26": {
+  "stufe": "pruefen",
+  "gruende": [
+   "art-schwach"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "zeit": "08:01"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "zeit": "08:01",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-27": {
+  "stufe": "pruefen",
+  "gruende": [
+   "art-schwach"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AC5"
+   ],
+   "melder": "H01",
+   "an": "H01",
+   "zeit": "08:02"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AC5"
+   ],
+   "melder": "H01",
+   "an": "H01",
+   "zeit": "08:02",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-28": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre",
+   "ort": "AH13",
+   "melder": "H04",
+   "zeit": "08:04"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre",
+   "ort": "AH13",
+   "melder": "H04",
+   "zeit": "08:04",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-29": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit Sperre aufgehoben",
+   "ort": null,
+   "orte": [
+    "AH13"
+   ],
+   "melder": "H04",
+   "zeit": "08:05"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "gesehen": "einheit Sperre aufgehoben",
+   "ort": null,
+   "orte": [
+    "AH13"
+   ],
+   "melder": "H04",
+   "zeit": "08:05",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": -1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-30": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "strassensperre Strassensperre",
+   "ort": "AL10",
+   "melder": "H02",
+   "zeit": "08:06"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "strassensperre Strassensperre",
+   "ort": "AL10",
+   "melder": "H02",
+   "zeit": "08:06",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-31": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre",
+   "ort": "AL10",
+   "melder": "H05",
+   "zeit": "08:07"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre",
+   "ort": "AL10",
+   "melder": "H05",
+   "zeit": "08:07",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-32": {
+  "stufe": "geht-nicht",
+  "gruende": [
+   "aufheben"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre",
+   "ort": "AL10",
+   "melder": "H02",
+   "zeit": "08:08"
+  },
+  "eingetragen": null,
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-33": {
+  "stufe": "pruefen",
+  "gruende": [
+   "aufheben"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AA1"
+   ],
+   "melder": "H01",
+   "zeit": "08:09"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AA1"
+   ],
+   "melder": "H01",
+   "zeit": "08:09",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-34": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit IED aufgehoben",
+   "ort": null,
+   "orte": [
+    "AF13"
+   ],
+   "melder": "H05",
+   "zeit": "08:10"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "gesehen": "einheit IED aufgehoben",
+   "ort": null,
+   "orte": [
+    "AF13"
+   ],
+   "melder": "H05",
+   "zeit": "08:10",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": -1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-35": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "zeit": "08:12"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "zeit": "08:12",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-36": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AK8"
+   ],
+   "melder": "H02",
+   "zeit": "08:13"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AK8"
+   ],
+   "melder": "H02",
+   "zeit": "08:13",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-37": {
+  "stufe": "pruefen",
+  "gruende": [
+   "art-schwach"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "zeit": "08:14"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "zeit": "08:14",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-38": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerisches Fahrzeug",
+   "anzahl": 1,
+   "ort": "AK7",
+   "melder": "H02",
+   "zeit": "07:15"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerisches Fahrzeug",
+   "anzahl": 1,
+   "ort": "AK7",
+   "melder": "H02",
+   "zeit": "07:15",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-39": {
+  "stufe": "geht-nicht",
+  "gruende": [
+   "zukunft"
+  ],
+  "vorschlag": "0746",
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AC7",
+   "melder": "H01",
+   "zeit": "08:46"
+  },
+  "eingetragen": null,
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-40": {
+  "stufe": "pruefen",
+  "gruende": [
+   "bezug"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "999",
+   "zeit": "08:17"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "zeit": "08:17",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-41": {
+  "stufe": "pruefen",
+  "gruende": [
+   "trupp-neu"
+  ],
+  "vorschlag": "H06",
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AK5",
+   "melder": "H06",
+   "zeit": "08:18"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AK5",
+   "melder": "H06",
+   "zeit": "08:18",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": [
+   "H06"
+  ]
+ },
+ "s02-42": {
+  "stufe": "geht-nicht",
+  "gruende": [
+   "problem"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": null,
+   "melder": "H01",
+   "zeit": "08:19"
+  },
+  "eingetragen": null,
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-43": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "spz 2 Fahrzeuge, 1 Schützenpanzer",
+   "ort": "AL11",
+   "melder": "H02",
+   "dir": 0,
+   "zeit": "08:22"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "spz 2 Fahrzeuge, 1 Schützenpanzer",
+   "ort": "AL11",
+   "melder": "H02",
+   "dir": 0,
+   "zeit": "08:22",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-44": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "inf_trp 3 Personen",
+   "anzahl": 3,
+   "ort": "AN7",
+   "melder": "H03",
+   "zeit": "08:23"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "inf_trp 3 Personen",
+   "anzahl": 3,
+   "ort": "AN7",
+   "melder": "H03",
+   "zeit": "08:23",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-45": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "08:24"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "08:24",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-46": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ12",
+   "melder": "H05",
+   "zeit": "08:25"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ12",
+   "melder": "H05",
+   "zeit": "08:25",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-47": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "beob_aufkl Beobachtungsposten",
+   "ort": "AC6 B",
+   "melder": "H01",
+   "zeit": "08:26"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "beob_aufkl Beobachtungsposten",
+   "ort": "AC6 B",
+   "melder": "H01",
+   "zeit": "08:26",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-48": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerischer Personenwagen",
+   "anzahl": 1,
+   "ort": "AL9",
+   "melder": "H02",
+   "zeit": "08:27"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerischer Personenwagen",
+   "anzahl": 1,
+   "ort": "AL9",
+   "melder": "H02",
+   "zeit": "08:27",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-49": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne gegnerische Drohne",
+   "ort": "NAI 2",
+   "melder": "H03",
+   "zeit": "08:29"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "drohne gegnerische Drohne",
+   "ort": "NAI 2",
+   "melder": "H03",
+   "zeit": "08:29",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-50": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "08:30"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "08:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-51": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "an": "H01",
+   "zeit": "08:31"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "an": "H01",
+   "zeit": "08:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-52": {
+  "stufe": "pruefen",
+  "gruende": [
+   "an"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "zeit": "08:32"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "zeit": "08:32",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-53": {
+  "stufe": "pruefen",
+  "gruende": [
+   "art-schwach"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AF10"
+   ],
+   "melder": "H04",
+   "an": "H04",
+   "zeit": "08:33"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AF10"
+   ],
+   "melder": "H04",
+   "an": "H04",
+   "zeit": "08:33",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-54": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kpz 2 gegnerische Kampfpanzer",
+   "anzahl": 2,
+   "ort": "AK9",
+   "melder": "H02",
+   "dringend": true,
+   "dir": 270,
+   "zeit": "08:34"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kpz 2 gegnerische Kampfpanzer",
+   "anzahl": 2,
+   "ort": "AK9",
+   "melder": "H02",
+   "dringend": true,
+   "dir": 270,
+   "zeit": "08:34",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-55": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "an": "H05",
+   "zeit": "08:35"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "an": "H05",
+   "zeit": "08:35",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-56": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H05",
+   "bezugArt": "antwort",
+   "bezugNr": "108",
+   "zeit": "08:36"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H05",
+   "bezugArt": "antwort",
+   "bezugNr": "108",
+   "zeit": "08:36",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-57": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H01",
+   "bezugArt": "quittung",
+   "bezugNr": "104",
+   "zeit": "08:37"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H01",
+   "bezugArt": "quittung",
+   "bezugNr": "104",
+   "zeit": "08:37",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-58": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "vbk": "gut",
+   "zeit": "08:39"
+  },
+  "eingetragen": {
+   "art": "vbk",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H03",
+   "vbk": "gut",
+   "zeit": "08:39",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-59": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre (3 Personen)",
+   "anzahl": 3,
+   "ort": "AG12",
+   "melder": "H04",
+   "zeit": "08:40"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "sperre Sperre (3 Personen)",
+   "anzahl": 3,
+   "ort": "AG12",
+   "melder": "H04",
+   "zeit": "08:40",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-60": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit Sperre aufgehoben",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "zeit": "08:41"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "gesehen": "einheit Sperre aufgehoben",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "zeit": "08:41",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": -1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-61": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "verletzte 1 Verletzter (Trupp)",
+   "anzahl": 1,
+   "ort": "AQ12",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "08:42"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "verletzte 1 Verletzter (Trupp)",
+   "anzahl": 1,
+   "ort": "AQ12",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "08:42",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-62": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "zeit": "08:43"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "zeit": "08:43",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-63": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AD8 C",
+   "melder": "H01",
+   "dir": 225,
+   "zeit": "08:44"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AD8 C",
+   "melder": "H01",
+   "dir": 225,
+   "zeit": "08:44",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-64": {
+  "stufe": "pruefen",
+  "gruende": [
+   "aufheben"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AK9"
+   ],
+   "melder": "H02",
+   "zeit": "08:45"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AK9"
+   ],
+   "melder": "H02",
+   "zeit": "08:45",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-65": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "08:46"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "08:46",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s02-66": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 4 gegnerische Personen",
+   "anzahl": 4,
+   "ort": "AO5",
+   "melder": "H03",
+   "dir": 180,
+   "zeit": "08:47"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 4 gegnerische Personen",
+   "anzahl": 4,
+   "ort": "AO5",
+   "melder": "H03",
+   "dir": 180,
+   "zeit": "08:47",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-01": {
+  "stufe": "pruefen",
+  "gruende": [
+   "unscharf"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit Sperre aufgehoben",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "gesehen": "einheit Sperre aufgehoben",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": -1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-02": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit IED aufgehoben",
+   "ort": null,
+   "orte": [
+    "AF13"
+   ],
+   "melder": "H05",
+   "zeit": "07:32"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "gesehen": "einheit IED aufgehoben",
+   "ort": null,
+   "orte": [
+    "AF13"
+   ],
+   "melder": "H05",
+   "zeit": "07:32",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": -1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-03": {
+  "stufe": "pruefen",
+  "gruende": [
+   "unscharf",
+   "aufheben"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AF13"
+   ],
+   "melder": "H05",
+   "zeit": "07:33"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AF13"
+   ],
+   "melder": "H05",
+   "zeit": "07:33",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-04": {
+  "stufe": "pruefen",
+  "gruende": [
+   "unscharf"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "NAI 1"
+   ],
+   "melder": null,
+   "an": "H01",
+   "zeit": "07:34"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "NAI 1"
+   ],
+   "melder": null,
+   "an": "H01",
+   "zeit": "07:34",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-05": {
+  "stufe": "pruefen",
+  "gruende": [
+   "unscharf"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AN7"
+   ],
+   "melder": null,
+   "an": "H03",
+   "zeit": "07:35"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AN7"
+   ],
+   "melder": null,
+   "an": "H03",
+   "zeit": "07:35",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-06": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "bezugArt": "antwort",
+   "zeit": "07:36"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "bezugArt": "antwort",
+   "zeit": "07:36",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-07": {
+  "stufe": "pruefen",
+  "gruende": [
+   "unscharf"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "57",
+   "zeit": "07:37"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "57",
+   "zeit": "07:37",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-08": {
+  "stufe": "pruefen",
+  "gruende": [
+   "unscharf"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "57",
+   "zeit": "07:38"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "57",
+   "zeit": "07:38",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-09": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder",
+   "ort"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "verweis",
+   "bezugNr": "57",
+   "zeit": "07:39"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "verweis",
+   "bezugNr": "57",
+   "zeit": "07:39",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-10": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Kdt",
+   "zeit": "07:40"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Kdt",
+   "zeit": "07:40",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-11": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 3 gegnerische Personen",
+   "anzahl": 3,
+   "ort": "AK10",
+   "melder": "H02",
+   "dir": 90,
+   "zeit": "07:41"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 3 gegnerische Personen",
+   "anzahl": 3,
+   "ort": "AK10",
+   "melder": "H02",
+   "dir": 90,
+   "zeit": "07:41",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-12": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AK10"
+   ],
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "07:42"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AK10"
+   ],
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "07:42",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-13": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AH10",
+   "melder": "H02",
+   "zeit": "07:43"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AH10",
+   "melder": "H02",
+   "zeit": "07:43",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {
+   "H02": "AH10 C"
+  },
+  "blauNeu": []
+ },
+ "s12-14": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AC5",
+   "melder": "H01",
+   "zeit": "07:44"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AC5",
+   "melder": "H01",
+   "zeit": "07:44",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {
+   "H01": "AC5 C"
+  },
+  "blauNeu": []
+ },
+ "s12-15": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "07:45"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "07:45",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {
+   "H03": "AN6 C"
+  },
+  "blauNeu": []
+ },
+ "s12-16": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "07:46"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "07:46",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-17": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "verletzte 1 Verwundeter",
+   "anzahl": 1,
+   "ort": "AQ11 C",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "07:47"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "verletzte 1 Verwundeter",
+   "anzahl": 1,
+   "ort": "AQ11 C",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "07:47",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-18": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AF9",
+   "melder": null,
+   "zeit": "07:48"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 2 gegnerische Personen",
+   "anzahl": 2,
+   "ort": "AF9",
+   "melder": null,
+   "zeit": "07:48",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-19": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt mit 4 Personen",
+   "ort": "AK11",
+   "melder": "H02",
+   "zeit": "07:49"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Kontakt mit 4 Personen",
+   "ort": "AK11",
+   "melder": "H02",
+   "zeit": "07:49",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-20": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "zeit": "07:50"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "zeit": "07:50",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-21": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-offline"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 1 gegnerische Person",
+   "anzahl": 1,
+   "ort": null,
+   "melder": "H01",
+   "zeit": "07:51"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 1 gegnerische Person",
+   "anzahl": 1,
+   "ort": null,
+   "melder": "H01",
+   "zeit": "07:51",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-22": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "kpz vermuteter Kampfpanzer in Stellung",
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "07:52"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "kpz vermuteter Kampfpanzer in Stellung",
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "07:52",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-23": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AP5",
+   "melder": "H03",
+   "zeit": "07:53"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AP5",
+   "melder": "H03",
+   "zeit": "07:53",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-24": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Schüsse gehört",
+   "ort": "bei H04",
+   "melder": "H04",
+   "dir": 180,
+   "zeit": "07:54"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kontakt Schüsse gehört",
+   "ort": "bei H04",
+   "melder": "H04",
+   "dir": 180,
+   "zeit": "07:54",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-25": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit Rückzug",
+   "ort": "AC5",
+   "melder": "H01",
+   "zeit": "07:55"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit Rückzug",
+   "ort": "AC5",
+   "melder": "H01",
+   "zeit": "07:55",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-26": {
+  "stufe": "pruefen",
+  "gruende": [
+   "art-schwach"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "zeit": "07:56"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": "H02",
+   "zeit": "07:56",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-27": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AH10",
+   "melder": "H02",
+   "zeit": "07:57"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AH10",
+   "melder": "H02",
+   "zeit": "07:57",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-28": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "mun_lager Munitionslager",
+   "ort": "bei H05",
+   "melder": "H05",
+   "zeit": "07:58"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "mun_lager Munitionslager",
+   "ort": "bei H05",
+   "melder": "H05",
+   "zeit": "07:58",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-29": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "07:59"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AN6",
+   "melder": "H03",
+   "zeit": "07:59",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-30": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "08:00"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "08:00",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-31": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit",
+   "ort": "AD7",
+   "melder": "H01",
+   "dir": 0,
+   "zeit": "08:01"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "einheit",
+   "ort": "AD7",
+   "melder": "H01",
+   "dir": 0,
+   "zeit": "08:01",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-32": {
+  "stufe": "pruefen",
+  "gruende": [
+   "aufheben"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "zeit": "08:02"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AG13"
+   ],
+   "melder": "H04",
+   "zeit": "08:02",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-33": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "ziv_fz Ziviles Fahrzeug",
+   "ort": "AL9",
+   "melder": "H02",
+   "zeit": "08:03"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "ziv_fz Ziviles Fahrzeug",
+   "ort": "AL9",
+   "melder": "H02",
+   "zeit": "08:03",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-34": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "inf_trp 2 Personen",
+   "anzahl": 2,
+   "ort": "AL9",
+   "melder": "H02",
+   "zeit": "08:04"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "inf_trp 2 Personen",
+   "anzahl": 2,
+   "ort": "AL9",
+   "melder": "H02",
+   "zeit": "08:04",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s12-35": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "panzersperre Panzersperre",
+   "ort": "AG13",
+   "melder": "H04",
+   "zeit": "08:05"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "panzersperre Panzersperre",
+   "ort": "AG13",
+   "melder": "H04",
+   "zeit": "08:05",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-01": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AN7"
+   ],
+   "melder": null,
+   "an": "H03",
+   "frist": "08:00",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "auftrag",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AN7"
+   ],
+   "melder": null,
+   "an": "H03",
+   "frist": "08:00",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-02": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "zeit": "07:32"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "zeit": "07:32",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-03": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "bezugArt": "ausgefuehrt",
+   "bezugNr": "57",
+   "zeit": "07:33"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "bezugArt": "ausgefuehrt",
+   "bezugNr": "57",
+   "zeit": "07:33",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-04": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder",
+   "ort"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit Bataillon",
+   "ort": null,
+   "melder": null,
+   "zeit": "07:34"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit Bataillon",
+   "ort": null,
+   "melder": null,
+   "zeit": "07:34",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-05": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kpz 2 gegnerische Kampfpanzer",
+   "anzahl": 2,
+   "ort": "AK9",
+   "melder": null,
+   "dir": 270,
+   "zeit": "07:35"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "kpz 2 gegnerische Kampfpanzer",
+   "anzahl": 2,
+   "ort": "AK9",
+   "melder": null,
+   "dir": 270,
+   "zeit": "07:35",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-06": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder",
+   "ort"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit Kompanie",
+   "ort": null,
+   "melder": null,
+   "zeit": "07:36"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit Kompanie",
+   "ort": null,
+   "melder": null,
+   "zeit": "07:36",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-07": {
+  "stufe": "pruefen",
+  "gruende": [
+   "melder",
+   "ort"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit Bataillon",
+   "ort": null,
+   "melder": null,
+   "zeit": "07:37"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit Bataillon",
+   "ort": null,
+   "melder": null,
+   "zeit": "07:37",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-08": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "07:38"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "quelle": "Bat",
+   "zeit": "07:38",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-09": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AK9"
+   ],
+   "melder": null,
+   "zeit": "07:39"
+  },
+  "eingetragen": {
+   "art": "rueckfrage",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AK9"
+   ],
+   "melder": null,
+   "zeit": "07:39",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-10": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "an": "Bat",
+   "bezugArt": "antwort",
+   "zeit": "07:40"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "an": "Bat",
+   "bezugArt": "antwort",
+   "zeit": "07:40",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-11": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ11 C",
+   "melder": "H05",
+   "zeit": "07:41"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ11 C",
+   "melder": "H05",
+   "zeit": "07:41",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-12": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AL9 A",
+   "melder": "H02",
+   "zeit": "07:42"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AL9 A",
+   "melder": "H02",
+   "zeit": "07:42",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-13": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AC6 B",
+   "melder": "H01",
+   "zeit": "07:43"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AC6 B",
+   "melder": "H01",
+   "zeit": "07:43",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-14": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AH10"
+   ],
+   "melder": null,
+   "dringend": true,
+   "quelle": "Kdt",
+   "zeit": "07:44"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AH10"
+   ],
+   "melder": null,
+   "dringend": true,
+   "quelle": "Kdt",
+   "zeit": "07:44",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "s16-15": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "zivil Zivilperson (3 Personen)",
+   "anzahl": 3,
+   "ort": "AF11",
+   "melder": "H04",
+   "zeit": "07:45"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "zivil Zivilperson (3 Personen)",
+   "anzahl": 3,
+   "ort": "AF11",
+   "melder": "H04",
+   "zeit": "07:45",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-01": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "verletzte Verletzter",
+   "ort": "AC7",
+   "melder": "H01",
+   "dringend": true,
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "verletzte Verletzter",
+   "ort": "AC7",
+   "melder": "H01",
+   "dringend": true,
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-02": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "verletzte Verwundeter",
+   "ort": "AQ11",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "verletzte Verwundeter",
+   "ort": "AQ11",
+   "melder": "H05",
+   "dringend": true,
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-03": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "NAI 2"
+   ],
+   "melder": null,
+   "quelle": "Kdt",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "NAI 2"
+   ],
+   "melder": null,
+   "quelle": "Kdt",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-04": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AR12"
+   ],
+   "melder": null,
+   "dringend": true,
+   "quelle": "Kdt",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "orientierung",
+   "gesehen": "einheit",
+   "ort": null,
+   "orte": [
+    "AR12"
+   ],
+   "melder": null,
+   "dringend": true,
+   "quelle": "Kdt",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-05": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AP11",
+   "melder": "H03",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AP11",
+   "melder": "H03",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-06": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "AK7",
+   "melder": "H04",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-07": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-08": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ11 C",
+   "melder": "H05",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AQ11 C",
+   "melder": "H05",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-09": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AF12 A",
+   "melder": "H04",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "erst-10": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerisches Fahrzeug",
+   "anzahl": 1,
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerisches Fahrzeug",
+   "anzahl": 1,
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "spez-9": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AM9",
+   "melder": "H03",
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "unklar",
+   "gesehen": "einheit",
+   "ort": "AM9",
+   "melder": "H03",
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "spez-47": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "zeit": "07:35"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "zeit": "07:35",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "spez-48": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "zeit": "07:35"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "eigen",
+   "gesehen": "einheit",
+   "ort": "AP4 D",
+   "melder": "H03",
+   "zeit": "07:35",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "spez-50": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "64a",
+   "zeit": "07:40"
+  },
+  "eingetragen": {
+   "art": "notiz",
+   "gesehen": "einheit",
+   "ort": null,
+   "melder": null,
+   "bezugArt": "antwort",
+   "bezugNr": "64a",
+   "zeit": "07:40",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "spez-51": {
+  "stufe": "pruefen",
+  "gruende": [
+   "ort-bei-trupp"
+  ],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "dir": 0,
+   "zeit": "07:31"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 2 gegnerische Fahrzeuge",
+   "anzahl": 2,
+   "ort": "bei H04",
+   "melder": "H04",
+   "dir": 0,
+   "zeit": "07:31",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "spez-53": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 1 gegnerische Person",
+   "anzahl": 1,
+   "ort": "AC7",
+   "melder": "H01",
+   "zeit": "02:55"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 1 gegnerische Person",
+   "anzahl": 1,
+   "ort": "AC7",
+   "melder": "H01",
+   "zeit": "02:55",
+   "tOffset": "+01:00"
+  },
+  "zeichenNeu": 0,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "spez-54": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 1 gegnerische Person",
+   "anzahl": 1,
+   "ort": "AC7",
+   "melder": "H01",
+   "zeit": "02:30"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "inf_trp 1 gegnerische Person",
+   "anzahl": 1,
+   "ort": "AC7",
+   "melder": "H01",
+   "zeit": "02:30",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ },
+ "spez-55": {
+  "stufe": "bereit",
+  "gruende": [],
+  "vorschlag": null,
+  "vorschau": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerisches Fahrzeug",
+   "anzahl": 1,
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "07:35"
+  },
+  "eingetragen": {
+   "art": "meldung",
+   "seite": "feind",
+   "gesehen": "fz 1 gegnerisches Fahrzeug",
+   "anzahl": 1,
+   "ort": "AK9",
+   "melder": "H02",
+   "zeit": "07:35",
+   "tOffset": "+02:00"
+  },
+  "zeichenNeu": 1,
+  "truppNach": {},
+  "blauNeu": []
+ }
+}

@@ -10,7 +10,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type Page = any;
 
-export type Geraet = "laptop" | "tablet";
+/**
+ * Geräte: «laptop» 1440×900 · «tablet» 1024×768 (hasTouch, aber Maus-Medien) · MVP 3.5 (Kap. 8.8): «tablet-touch» 1024×768
+ * und «handy-touch» 390×844 mit echtem `(pointer: coarse)` (eigener Chromium, run.mjs) – Gesten über `cdpTippen`.
+ */
+export type Geraet = "laptop" | "tablet" | "tablet-touch" | "handy-touch";
 
 export interface OpenOptions {
   /** Adresse relativ zur App, z. B. «?beispiel» oder «?beispiel=leer» */
@@ -25,6 +29,17 @@ export interface OpenOptions {
   css?: string;
   /** Offline-Status: Standard «bereit» über den Testhaken `window.__ltOfflineBereit`; «echt» = wirklich prüfen */
   offline?: "bereit" | "echt";
+  // ---- MVP 3.5 ----
+  /** andere Fenstergrösse als das Gerät (z. B. Präsentation 1920×1080, Tablet hoch 768×1024) */
+  viewport?: { width: number; height: number };
+  /** Service Worker zulassen (Standard: blockiert); Netzereignisse des SW nur mit `npm run e2e -- --sw-netz` */
+  sw?: boolean;
+  /** anderer User-Agent (z. B. iOS Safari für die Anleitung «Zum Home-Bildschirm») */
+  userAgent?: string;
+  /** localStorage vor dem ersten Laden vorbelegen (nur wenn der Schlüssel fehlt) */
+  lokal?: Record<string, string>;
+  /** vor `goto` (z. B. `addInitScript` mit Attrappen für `navigator.wakeLock`, `page.route`) */
+  vorLaden?: (page: Page) => Promise<void>;
 }
 
 export interface Session {
@@ -34,6 +49,8 @@ export interface Session {
   fehler: string[];
   /** Datei-Downloads (dürfen bei Korrektur nie vorkommen) */
   downloads: string[];
+  /** (MVP 3.5) URLs aller Anfragen des Kontexts seit dem Öffnen (betrieb.spec: «nichts geht ans Netz») */
+  anfragen: string[];
   close(): Promise<void>;
 }
 
@@ -42,6 +59,8 @@ export interface Harness {
   base: string;
   /** Ausgabeordner e2e/out/ */
   out: string;
+  /** (MVP 3.5) Lauf mit `--sw-netz` (Service Worker und seine Netzanfragen sichtbar) */
+  swNetz?: boolean;
   open(o?: OpenOptions): Promise<Session>;
   /** Screenshot nach e2e/out/<name>.png */
   shot(page: Page, name: string): Promise<void>;
@@ -68,6 +87,8 @@ export const UHR_T2_0730 = "2030-05-15T07:30:00+02:00";
 export const VIEWPORT: Record<Geraet, { width: number; height: number }> = {
   laptop: { width: 1440, height: 900 },
   tablet: { width: 1024, height: 768 },
+  "tablet-touch": { width: 1024, height: 768 },
+  "handy-touch": { width: 390, height: 844 },
 };
 
 // ---------- KLM (Keystroke-Level Model): Zeigen 1.1 s, Tippen 0.4 s/Zeichen, Entscheid 1.35 s ----------
@@ -86,9 +107,12 @@ export function soll(cond: unknown, text: string): void {
   if (!cond) throw new Error(text);
 }
 
+/** Gerät mit Touch (tap statt click) */
+export const istTouch = (s: Pick<Session, "geraet">): boolean => s.geraet !== "laptop";
+
 /** Tippen bzw. Klicken je nach Gerät */
 export async function antippen(s: Session, loc: any): Promise<void> {
-  if (s.geraet === "tablet") await loc.tap();
+  if (istTouch(s)) await loc.tap();
   else await loc.click();
 }
 
@@ -303,7 +327,9 @@ export async function ansicht(s: Session, name: "Journal" | "Offen" | "Was Rot")
 /** Menü ☰ öffnen und Eintrag wählen */
 export async function menue(s: Session, eintrag: string | RegExp): Promise<void> {
   await antippen(s, s.page.getByRole("button", { name: "Menü" }).first());
-  await antippen(s, s.page.getByRole("menuitem", { name: eintrag }).or(s.page.getByRole("button", { name: eintrag })).first());
+  // MVP 3.5: auch Einträge mit Häkchen/Auswahl («Vorbereiten», «Nacht», «Bildschirm bleibt an»)
+  const m = s.page.getByRole("menuitem", { name: eintrag }).or(s.page.getByRole("menuitemradio", { name: eintrag })).or(s.page.getByRole("menuitemcheckbox", { name: eintrag }));
+  await antippen(s, m.or(s.page.getByRole("button", { name: eintrag })).first());
 }
 
 /** `window.__ltPerf()` (P1) – im Browser */
@@ -321,4 +347,66 @@ export function pdfInfoImBrowser(): { seiten: number; format: string; quer?: boo
 export function woerterImBrowser(sel: string): number {
   const e = document.querySelector(sel) as HTMLElement | null;
   return e ? (e.innerText.match(/[\p{L}\p{N}][\p{L}\p{N}'’.:-]*/gu) ?? []).length : -1;
+}
+
+// =====================================================================================================================
+// MVP 3.5 «Feinschliff» (Spez. MVP 3.5, Kap. 8) – gemeinsame Hilfen der neuen Specs
+// =====================================================================================================================
+
+/** Uhr T2 07:31 (eine Minute nach dem Beispiel-Stand, Spez. MVP 3.5 Kap. 8) */
+export const UHR_T2_0731 = "2030-05-15T07:31:00+02:00";
+/** Sommerzeit 2030 (fiktiv): Rückstellung 27.10. (doppelte Stunde 02:00–02:59), Vorstellen 31.03. (02:00–02:59 fehlt) */
+export const UHR_RUECKSTELLUNG_0245_MESZ = "2030-10-27T02:45:00+02:00";
+export const UHR_RUECKSTELLUNG_0210_MEZ = "2030-10-27T02:10:00+01:00";
+export const UHR_VORSTELLEN_0340 = "2030-03-31T03:40:00+02:00";
+/** iOS Safari (iPad) für die Anleitung «Zum Home-Bildschirm» */
+export const UA_IOS = "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+
+/** echter Touch-Zeiger? (Vorbedingung aller Touch-Messungen, Kap. 8.8) */
+export async function istGrob(s: Session): Promise<boolean> {
+  return s.page.evaluate(() => matchMedia("(pointer: coarse)").matches && matchMedia("(hover: none)").matches);
+}
+
+/** Tipp über CDP-Touch (Input.dispatchTouchEvent) – wie review5/feldgeraet; `halten` ms (Long-Press ≥ 600) */
+export async function cdpTippen(s: Session, x: number, y: number, halten = 60): Promise<void> {
+  const cdp = await s.page.context().newCDPSession(s.page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y, radiusX: 8, radiusY: 8, id: 1 }] });
+  await s.page.waitForTimeout(halten);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await s.page.waitForTimeout(350);
+  await cdp.detach().catch(() => {});
+}
+
+/** Mitte eines Elements antippen (CDP-Touch); gibt das Rechteck zurück */
+export async function cdpTippenAuf(s: Session, loc: any, dx = 0, dy = 0): Promise<{ x: number; y: number; width: number; height: number }> {
+  await loc.scrollIntoViewIfNeeded().catch(() => {});
+  const bb = await loc.boundingBox();
+  if (!bb) throw new Error("Element nicht sichtbar");
+  await cdpTippen(s, bb.x + bb.width / 2 + dx, bb.y + bb.height / 2 + dy);
+  return bb;
+}
+
+/** Anfragen an Online-Dienste mit Übungsinhalt (Ortssuche, Strassen) – Kacheln zählen nicht (S1, Frage 9.1) */
+export const onlineDienstAnfragen = (s: Session): string[] => s.anfragen.filter((u) => /api3\.geo\.admin\.ch/.test(u) && !/\/tile|wmts/.test(u));
+
+/** Kopf: Text/Knopf des Offline-Status (MVP 3.5: «⚠ Offline fehlt», «Lädt 42 %», «Offline bereit ✓») */
+export const offlineKnopfVon = (s: Session) => s.page.locator(".hd button.hd-off, .hd .hd-off").first();
+
+/** Offline-Popover «Offline auf diesem Gerät» */
+export const offlinePopoverVon = (s: Session) => s.page.getByRole("dialog", { name: "Offline auf diesem Gerät" });
+
+/** Modus der App («lage» | «vorbereiten») über den Testhaken `data-modus` bzw. die Klasse `.m-lage` */
+export async function modusVon(s: Session): Promise<string | null> {
+  return s.page.evaluate(() => document.querySelector("[data-modus]")?.getAttribute("data-modus") ?? (document.querySelector(".m-lage") ? "lage" : document.querySelector(".m-vorbereiten") ? "vorbereiten" : null));
+}
+
+/** Zeit einstellen und weiterlaufen lassen (Playwright clock), z. B. Sommerzeit-Fälle */
+export async function uhrStellen(s: Session, iso: string): Promise<void> {
+  await s.page.clock.setFixedTime(new Date(iso));
+  await s.page.waitForTimeout(300);
+}
+
+/** Ergebnis als «rot, noch nicht gebaut» (Gerüst Phase 0) – wenn eine Vorbedingung des Pakets fehlt */
+export function fehltNoch(was: string, paket: string): never {
+  throw new Error(`noch nicht gebaut (Paket ${paket}): ${was}`);
 }

@@ -35,7 +35,15 @@ export type EntryReasonCode = "melder" | "ort" | "ort-bei-trupp" | "zukunft" | "
    * MVP 3 Fix 3 (gelb): `unscharf` Art/Aufheben nur aus einem unscharfen Wort («Auftrag gemeint? «Auftarg»») · `sichtung`
    * Antwort mit Sichtung und Ort («Sichtung in der Antwort – als Meldung eintragen?»).
    */
-  | "unscharf" | "sichtung";
+  | "unscharf" | "sichtung"
+  /**
+   * MVP 3.5 (Spez. MVP 3.5, Kap. 3.3, 4; Paket C setzt um, Texte Kap. 4): gelb `kein-zeichen` (Verneinung/Abgang,
+   * 2. Enter = Notiz) · `seite` («H01 selbst nach AC5?») · `zwei-orte` (Knopf «Als zwei Einträge») · `ort-online-aus`
+   * (Ortsnamen sind aus) · `bezug-wahl`/`auftrag-wahl` (Knöpfe aus `choices`, Paket D liefert die Kandidaten); rot
+   * `zeit-fehlt` (Uhr vorgestellt, Vorschlag in `suggest`). `was` wird auch ohne Anzahl gesetzt, `trupp-neu`
+   * unabhängig von `unitsPrepared`.
+   */
+  | "kein-zeichen" | "seite" | "zwei-orte" | "ort-online-aus" | "bezug-wahl" | "auftrag-wahl" | "zeit-fehlt";
 
 export interface EntryReason {
   code: EntryReasonCode;
@@ -54,6 +62,8 @@ export interface EntryReason {
    * Name des neuen Trupps («H07», für den Knopf «neu anlegen»)
    */
   suggest?: string;
+  /** (MVP 3.5) Wahl-Knöpfe für `bezug-wahl`/`auftrag-wahl`: ID (bzw. «keiner») und Beschriftung «64a 07:37 H02 3 Fz AK9» */
+  choices?: Array<{ id: string; label: string }>;
 }
 
 export interface EntryState {
@@ -93,6 +103,10 @@ export interface EntryStateOptions {
   follow?: boolean;
   /** (MVP 3) Zeit der letzten Meldung (ISO lokal) – Vorschlag «Als T2 07:26 eintragen» (letzte + 1 min) */
   lastReport?: string | null;
+  /** (MVP 3.5, A1.5) Ortsnamen: an, aus (Online-Dienst der Übung aus → `ort-online-aus`), an aber kein Netz */
+  ortsnamen?: "an" | "aus" | "kein-netz";
+  /** (MVP 3.5) IANA-Zone für Zeitvergleiche (fehlt → Gerät) */
+  zone?: string;
 }
 
 /** «AK7», «AK 77 C» – Planquadrat-ähnliche Textstelle */

@@ -41,7 +41,8 @@ describe("MVP 3 Verträge (Kap. 5.4)", () => {
     expect(kuerzelNorm("BSP1")).toBe("BSP1");
     expect(kuerzelNorm("M")).toBeNull();
     expect(kuerzelNorm("ABCDEFG")).toBeNull();
-    expect(kuerzelNorm("M-U")).toBeNull();
+    // MVP 3.5 (S24): eine Regel für Kürzel und Visum – Bindestrich, Punkt, Leerzeichen fallen weg (vorher: «M-U» ungültig)
+    expect(kuerzelNorm("M-U")).toBe("MU");
   });
   it("Schlüssel und Klassifizierung", async () => {
     const { NR_KEY, SCHICHT_KEY, klassifizierungOf } = await import("../src/shell/contracts");

@@ -18,11 +18,27 @@ function slowFetch(ok = true, ms = 30) {
 
 afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
 
+/** MVP 3.5 (Entscheid K2): Strassen nur, wenn die Übung den Dienst ausdrücklich einschaltet */
+async function mitStrassen() {
+  const p = await import("../src/onlinePolicy");
+  p.setOnlinePolicy({ strassen: true });
+  return import("../src/roadsource");
+}
+
 describe("roadsource", () => {
-  it("Abbruch des ersten Aufrufers trifft den zweiten nicht (geteilter Abruf)", async () => {
+  it("MVP 3.5 (K2): ohne Einschalten keine Anfrage ans Netz", async () => {
     const f = slowFetch();
     vi.stubGlobal("fetch", f);
     const rs = await import("../src/roadsource");
+    const r = await rs.placeOnRoadTry(CELL);
+    expect(r.pl).toBeNull();
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("Abbruch des ersten Aufrufers trifft den zweiten nicht (geteilter Abruf)", async () => {
+    const f = slowFetch();
+    vi.stubGlobal("fetch", f);
+    const rs = await mitStrassen();
     const ctl = new AbortController();
     const first = rs.placeOnRoadTry(CELL, undefined, { signal: ctl.signal });
     const second = rs.placeOnRoadTry(CELL);
@@ -36,7 +52,7 @@ describe("roadsource", () => {
 
   it("Netzfehler: kein Ergebnis und unvollständig (später erneut versuchen)", async () => {
     vi.stubGlobal("fetch", slowFetch(false, 1));
-    const rs = await import("../src/roadsource");
+    const rs = await mitStrassen();
     const r = await rs.placeOnRoadTry(CELL);
     expect(r).toEqual({ pl: null, complete: false });
   });
@@ -47,7 +63,7 @@ describe("roadsource", () => {
       { id: 2, properties: { objektart: 2, strassenname: "A1" }, geometry: { type: "LineString", coordinates: [[2600100, 1199450], [2600900, 1199450]] } },
     ] };
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(both), { status: 200 })));
-    const rs = await import("../src/roadsource");
+    const rs = await mitStrassen();
     expect((await rs.placeOnRoadTry(CELL)).pl?.road).toBe("Teststrasse");
     expect((await rs.placeOnRoadTry(CELL, undefined, { hint: "autobahn" })).pl?.road).toBe("A1");
   });
@@ -58,7 +74,7 @@ describe("roadsource", () => {
       { id: 3, properties: { objektart: 10, strassenname: "Bärenmattweg" }, geometry: { type: "LineString", coordinates: [[2600100, 1199700], [2600900, 1199700]] } },
     ] };
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(two), { status: 200 })));
-    const rs = await import("../src/roadsource");
+    const rs = await mitStrassen();
     const auto = (await rs.placeOnRoadTry(CELL)).pl!;
     expect(auto.road).toBe("Teststrasse");
     const r = (await rs.placeOnRoadTry(CELL, undefined, { text: "H04: gn Sperre Baerenmattweg" })).pl!;

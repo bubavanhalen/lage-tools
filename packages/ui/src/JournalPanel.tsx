@@ -68,6 +68,8 @@ interface Props {
   offen?: ReactNode;
   /** Trenner von aussen (C); fehlt → aus `schicht` (null = keiner). Bei aktiver Suche nie. */
   schichtSeit?: { seit: string; kuerzel: string } | null;
+  /** (MVP 3.5, Phase 0 verdrahtet) einmaliger Schutzhinweis unter dem Feld – geht ans Meldungsfeld (Paket E zeigt ihn) */
+  schutzHinweis?: import("./shell/contracts").SchutzHinweis;
   /** «Zur Meldung» (Offen): blendet die Suche den Eintrag aus, Suche leeren */
   reveal?: { id: string; n: number } | null;
 }
@@ -134,7 +136,7 @@ export function JournalPanel(p: Props) {
     <div className="panel journal jpanel">
       <EntryBox ex={ex} map={map} device={device} experte={!!p.experte} update={update} say={say} zeit={zeit}
         onCommitted={onCommitted} correct={correct} reportAt={p.reportAt ?? null} onCorrecting={setCorrecting}
-        schicht={p.schicht} onNr={p.onNr} />
+        schicht={p.schicht} onNr={p.onNr} schutzHinweis={p.schutzHinweis} />
       <hr className="jp-sep" />
       {any && p.between}
       {p.tab === "rot" ? p.rot : p.tab === "offen" && p.offen ? p.offen : (

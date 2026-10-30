@@ -1,0 +1,17 @@
+/* Offline-Popover (Spez. MVP 3.5, Kap. 2.3) – Phase-0-Fassung; nur Tokens aus theme.css. Paket A baut aus. */
+.bt-pop {
+  position: fixed; z-index: 3150; width: 400px; max-width: calc(100vw - 16px); max-height: calc(100vh - var(--kopf-h) - 16px); overflow: auto;
+  padding: var(--sp-8) var(--sp-16) var(--sp-16); background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  border-radius: var(--r-8); box-shadow: 0 12px 32px rgba(0, 0, 0, .22); font: 400 var(--fs-14)/1.35 var(--f-body);
+}
+.bt-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-8); }
+.bt-head h2 { margin: 0; font: 600 var(--fs-16)/1.2 var(--f-display); }
+.bt-x { min-width: var(--hit); min-height: var(--hit); border: 1px solid var(--line); border-radius: var(--r-8); background: var(--surface); color: var(--ink); font-size: var(--fs-16); }
+.bt-row { display: grid; grid-template-columns: 96px 1fr; gap: var(--sp-8); align-items: baseline; min-height: 44px; padding: var(--sp-8) 0; border-bottom: 1px solid var(--line-soft); }
+.bt-name { color: var(--muted); }
+.bt-val.ja { color: var(--ok); }
+.bt-val.nein { color: var(--stop); }
+.bt-zusatz { display: block; color: var(--muted); }
+.bt-acts { display: grid; gap: var(--sp-8); margin-top: var(--sp-12); }
+.bt-btn { min-height: var(--hit); padding: 0 var(--sp-12); border: 1px solid var(--line); border-radius: var(--r-8); background: var(--surface); color: var(--ink); font: 600 var(--fs-14)/1.2 var(--f-body); text-align: left; }
+.bt-x:focus-visible, .bt-btn:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }

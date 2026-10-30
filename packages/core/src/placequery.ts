@@ -1,8 +1,9 @@
 /**
  * Online-Ortssuche nur für echte Ortsnamen: Buchstabier- und Rastertexte («Alpha Kilo 7», «AK77», «NAI 9», «H04»)
  * gehen nie ans Netz – sie sind entweder ein Planquadrat/Element oder ein Problem in der Meldung, aber kein Ort.
- * Dazu die Einstellungen «Online-Dienste» einer Übung (Standard an).
+ * Dazu die Einstellungen «Online-Dienste» einer Übung (MVP 3.5, Entscheid K2: Standard **aus**, `ONLINE_STANDARD`).
  */
+import { ONLINE_STANDARD } from "./entscheide";
 import type { Exercise } from "./model";
 
 /** Buchstabieralphabet (NATO) inkl. gängiger Schreibweisen der Spracherkennung */
@@ -37,7 +38,11 @@ export function isPlaceName(query: string | undefined | null): boolean {
 
 export type OnlineDienst = "ortssuche" | "strassen";
 
-/** Ist der Online-Dienst für diese Übung erlaubt? (Standard: an) */
+/**
+ * Ist der Online-Dienst für diese Übung erlaubt? MVP 3.5 (Entscheid K2): nur bei ausdrücklichem `true`; fehlt die Wahl
+ * (neue, alte, Beispiel-Übung), gilt `ONLINE_STANDARD` (aus). Liest nur – beim Öffnen wird nichts geschrieben.
+ */
 export function onlineAllowed(ex: Pick<Exercise, "onlineDienste"> | null | undefined, dienst: OnlineDienst): boolean {
-  return ex?.onlineDienste?.[dienst] !== false;
+  const v = ex?.onlineDienste?.[dienst];
+  return v === undefined ? ONLINE_STANDARD : v === true;
 }

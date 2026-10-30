@@ -60,7 +60,7 @@ const minutes = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) 
 /** Meldungstext ohne führenden Melder («H05: 4 Pers …» → «4 Pers …») */
 const ohneMelder = (e: Pick<LageEvent, "melder" | "text">) => (e.melder ? e.text.replace(new RegExp(`^${e.melder}\\s*(?:meldet)?\\s*[:,]?\\s*`), "") : e.text).trim() || e.text;
 
-const MARK: Record<OffenItem["art"], string> = { dringend: "!", auftrag: "✎", rueckfrage: "✎", verbindung: "⇄", still: "⇄", "ohne-ort": "◆", offen: "•", konflikt: "⚠" };
+const MARK: Record<OffenItem["art"], string> = { dringend: "!", auftrag: "✎", rueckfrage: "✎", verbindung: "⇄", still: "⇄", "ohne-ort": "◆", offen: "•", konflikt: "⚠", "rueckfrage-oben": "✎", begehren: "●" };
 
 /** Beginn von «Neu»: eigene Schicht, sonst letzte Übergabe der Übung (ISO UTC) – null = noch keine */
 export function neuSeit(ex: Pick<Exercise, "schichten">, seit: string | null): { at: string; t: string | null } | null {

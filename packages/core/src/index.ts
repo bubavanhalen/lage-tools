@@ -37,3 +37,5 @@ export * from "./nummer";
 export * from "./lvz";
 export * from "./schicht";
 export * from "./demolang";
+// MVP 3.5 «Feinschliff» (Phase 0: Verträge; Zeit-Funktionen in clock.ts, Entscheide in entscheide.ts)
+export * from "./zaehlen";

@@ -134,9 +134,9 @@ Ziel: Ungeschulte führen die Lage mit minimaler Vorbereitung.
 - Zusammenführen meldet Konflikte (gleiche Revision, anderer Inhalt), nichts geht verloren.
 - Abnahme `npm run e2e`: Erstbenutzer (8 Aufgaben, Laptop und Tablet), Inventar, Kontrast.
 
-## Lagejournal – MVP 3 «LVZ-Betrieb» (in Arbeit)
+## Lagejournal – MVP 3 «LVZ-Betrieb» ✅
 Ziel: Das Lagejournal trägt einen ganzen Übungstag im LVZ samt Schichtwechsel und Rapport – **ohne Papierjournal als
-Rückfall**. Spezifikation MVP 3 (Entscheide E1–E18 in Kap. 0); Stand: Phase 0 (Verträge) gelegt, Pakete A–D bauen.
+Rückfall**. Spezifikation MVP 3 (Entscheide E1–E18 in Kap. 0).
 - **Eintragsarten:** Meldung · Auftrag · Orientierung · Rückfrage · Verbindungskontrolle · Notiz, aus dem Text erkannt
   und in der Vorschau umschaltbar («Was ist es?»). **Nur Meldungen zeichnen** (Karte, Hinweise, Kräfte Rot);
   Nicht-Meldungen haben nie einen Ort und tragen `notiz: true` (ältere App zeigt sie als «Notiz»). AEIOU und
@@ -159,3 +159,26 @@ Rückfall**. Spezifikation MVP 3 (Entscheide E1–E18 in Kap. 0); Stand: Phase 0
   4. Journal drucken standardmässig die laufende Schicht, ohne Übergabe den ganzen Tag; 5. Quittung = Notiz mit Bezug.
 - Datenmodell rückwärtskompatibel: nur optionale Felder, Dateiformat Version 1, ältere Dateien öffnen ohne Umschreiben.
 
+## Lagejournal – MVP 3.5 «Feinschliff» (in Arbeit)
+Ziel: die verbliebenen **stillen Fehler** beseitigen (Erkennung, Zeit), die **LVZ-Lücken** schliessen (Ausgang nach
+oben, Begehren, Rückfrage von oben), den Betrieb **sicher** machen (nichts geht ungefragt ans Netz, Bildschirm bleibt an,
+Start ohne Netz ≤ 4 s) und die **Karte lesbar** machen (Zeichen V4). Grundlage: Review 5 (Noten 4.5–5), Spezifikation
+MVP 3.5; Stand: Phase 0 (Verträge, Migrationen, Abnahme-Gerüst) gelegt, Pakete A–E bauen parallel.
+- **Kundenentscheide (29.10.2026):** K1 Umfang Pakete A–E, danach MVP 4, dann MVP 2 · K2 **Online-Dienste
+  standardmässig aus** (Ortsnamen, Strassen; pro Übung in «Vorbereiten» einschaltbar, die Journal-Suche geht nie online;
+  alte Übungen ohne Wahl gelten als aus, beim Zusammenführen gewinnt die lokale Wahl) · K3 **Kartenzeichen V4**
+  (Grösse je Massstab 24–32 px, Regler S/M/L pro Gerät, Präsentation grösser, graue Tageskarte, schraffiertes Unklar).
+- **Offene Fragen an den Kunden** (Vorschlag gilt bis zur Antwort, im Code als Konstanten in `entscheide.ts`):
+  Kartenkacheln sind kein Online-Dienst (`KACHELN_SIND_ONLINE_DIENST = false`) · kein dauerndes ⚠ für ungeschützten
+  Speicher, dafür Popover, Menü und Erinnerung «Datei sichern» (`SCHUTZ_WARNT_IM_KOPF = false`) · Meldungen bis 10 min
+  nach der Geräteuhr gehören zur Lage, LIVE zeigt aber immer die echte Uhr (`LIVE_TOLERANZ_MIN = 10`).
+- **Zeit mit UTC-Offset:** Lagezeiten dürfen den Offset tragen («…T02:10+01:00»), Meldungen speichern ihn in `tOffset`;
+  verglichen wird nur noch über `zeitCmp`/`zeitBis` (doppelte Stunde bei der Rückstellung richtig). Alte Meldungen:
+  Offset abgeleitet, nie geschrieben. Ein Test zählt Zeitvergleiche als Text je Datei und lässt die Zahl nur sinken.
+- **Regressionstest aller Sätze** (`saetze35`): 222 Sätze aus den Prüfungen (fiktiv, Beispiel Bern) – richtige Sätze
+  als Schnappschuss, die 55 Fälle der Spezifikation mit Soll; noch nicht erfüllte laufen als erwartete Fehlschläge.
+- **Betrieb:** Kopf-Knopf öffnet «Offline auf diesem Gerät» (kein Moduswechsel), «Alles für offline laden», Speicherschutz
+  und Installationsanleitung, Erinnerung «Datei sichern» bei der Übergabe; Service Worker mit Netz-Timeout 3 s.
+- **LVZ:** Ausgang an Bat/Kp («↗», kein Zeichen, «weitergemeldet» abgeleitet), Begehren und Rückfragen von oben in
+  «Offen», Übergabe als Journalzeile, «Nr 56» überall, eine Zahl für offene Hinweise, Kürzel beim Öffnen.
+- Datenmodell weiter rückwärtskompatibel (nur optionale Felder, Dateiformat Version 1, Test `mvp35kompat`).

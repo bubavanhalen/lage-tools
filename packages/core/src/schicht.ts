@@ -112,6 +112,10 @@ export interface VonObenZeile {
   termin?: string;
   /** Termin liegt vor `t` – abgelaufen, nicht mehr gültig (MVP 3 Fix 3) */
   vorbei?: boolean;
+  /** (MVP 3.5, D4) «bis HHMM» = Ende (danach vorbei), «ab|um|erwartet|ca. HHMM» = Beginn (bleibt gültig, «ab 09:07») */
+  terminArt?: "bis" | "ab";
+  /** (MVP 3.5, D4) Orientierung oder Auftrag von oben (mit `quelle`); Phase 0: nur Orientierungen */
+  art: "orientierung" | "auftrag";
 }
 
 /** Zeiten im Inhalt: «bis 0800» (Ende), «1000», «um 1200», «neu 0800» (Termin); «ab/seit/von 2200» (Beginn, kein Ende) */
@@ -157,7 +161,7 @@ export function vonOben(ex: Pick<Exercise, "events" | "units">, t: string, n = 3
     .map((e): VonObenZeile => {
       const text = inhaltText(e, blau);
       const termin = terminOf(e, text);
-      return { id: e.id, nr: nrLabel(e, ex), t: e.t, quelle: e.quelle ?? "", text, ...(termin ? { termin, vorbei: termin <= t.slice(0, 16) } : {}) };
+      return { id: e.id, nr: nrLabel(e, ex), t: e.t, quelle: e.quelle ?? "", text, art: "orientierung", ...(termin ? { termin, vorbei: termin <= t.slice(0, 16) } : {}) };
     });
   return [...alle.filter((z) => !z.vorbei), ...alle.filter((z) => z.vorbei)].slice(0, n);
 }
@@ -188,6 +192,10 @@ export interface RapportZahlen {
   korrigiert: number;
   gestrichen: number;
   hinweise?: { offen: number; erledigt: number };
+  /** (MVP 3.5, D3) Ausgänge nach Empfänger: Bat (auch Btl), Kp, andere */
+  ausgang: { bat: number; kp: number; andere: number };
+  /** (MVP 3.5, D3) Meldungen mit Begehren; offen = nicht erledigt (Phase 0: Status über `vermerkeOf`, Standard offen) */
+  begehren: { total: number; offen: number };
 }
 
 /**
@@ -202,6 +210,7 @@ export function rapportZahlen(ex: Exercise, from: string | null, to: string, hin
   const z: RapportZahlen = {
     eintraege: 0, gesehen: { feind: 0, unklar: 0, eigen: 0 }, auftraege: { total: 0, offen: 0 }, rueckfragen: { total: 0, offen: 0 },
     dringend: { total: 0, offen: 0 }, korrigiert: 0, gestrichen: 0,
+    ausgang: { bat: 0, kp: 0, andere: 0 }, begehren: { total: 0, offen: 0 },
   };
   for (const e of inRange) {
     if (e.deleted) { z.gestrichen++; continue; }
@@ -217,6 +226,9 @@ export function rapportZahlen(ex: Exercise, from: string | null, to: string, hin
     if (art === "auftrag") { z.auftraege.total++; if (v.status === "offen") z.auftraege.offen++; }
     if (art === "rueckfrage") { z.rueckfragen.total++; if (v.status === "offen") z.rueckfragen.offen++; }
     if (v.dringend) { z.dringend.total++; if (v.status !== "erledigt") z.dringend.offen++; }
+    // MVP 3.5 (Phase 0, Paket D baut aus)
+    if (art === "ausgang") { const an = (e.an ?? "").toLowerCase(); if (/^(bat|btl)/.test(an)) z.ausgang.bat++; else if (/^kp/.test(an)) z.ausgang.kp++; else z.ausgang.andere++; }
+    if (e.begehren) { z.begehren.total++; if (v.status !== "erledigt") z.begehren.offen++; }
   }
   if (hints) {
     let offen = 0, erledigt = 0;

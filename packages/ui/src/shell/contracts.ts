@@ -9,6 +9,10 @@
  *
  * MVP 3 «LVZ-Betrieb» (Spez. MVP 3, Kap. 5.4): Abschnitte «MVP 3» unten; Kern-Verträge in arten.ts, felder.ts,
  * nummer.ts, lvz.ts, schicht.ts, entscheide.ts (Entscheide des Kunden), demolang.ts.
+ *
+ * MVP 3.5 «Feinschliff» (Spez. MVP 3.5, Kap. 5.7): Abschnitt «MVP 3.5» unten; Kern-Verträge in clock.ts (Zeit mit
+ * Offset), nummer.ts (`nrText`, `findAllByNr`), zaehlen.ts, lvz.ts (`bezugAufloesen`), entscheide.ts; Module
+ * `betrieb/` (Paket A) und `map/symbolSize.ts` (Paket B).
  */
 import type L from "leaflet";
 import type { EntryArt, EventQuality, Exercise, Hint, Kind, LageEvent, LV95, OffenItem, RedCoa } from "@lage/core";
@@ -51,6 +55,11 @@ export interface ZeitApi {
   /** (C, ergänzt) nur Experte: fester Anfang «ab 05:30» (Griff im Zeitstrahl ziehen); schliesst «Zeige letzte» aus */
   ab?: string | null;
   setAb?(t: string | null): void;
+  /**
+   * (MVP 3.5, S22) Geräteuhr als Lagezeit mit Offset («2030-05-15T07:31+02:00») – für die Anzeige «LIVE 07:31», Übergabe
+   * «Stand», Druck «Stand». Phase 0: gesetzt (`jetztLagezeit`); `tNow`/`tLive` tragen den Offset erst mit Paket E.
+   */
+  tUhr: string;
 }
 
 // ---------- Kopf (Paket A) ----------
@@ -82,6 +91,11 @@ export interface EntryBoxProps {
   schicht?: SchichtApi;
   /** (MVP 3, C liefert) nächste laufende Nummer: liest–erhöht–schreibt den Gerätezähler (`NR_KEY`) synchron, Kap. 3.3 */
   onNr?(): number;
+  /**
+   * (MVP 3.5, A liefert `useSchutzHinweis`, E zeigt) einmaliger Hinweis «Dieses Gerät schützt die Daten nicht dauerhaft.
+   * [So geht’s] [OK]» unter dem Feld (`eb-notice`, S7). Phase 0: verdrahtet, `zeigen` immer false.
+   */
+  schutzHinweis?: SchutzHinweis;
 }
 export type JournalEmpty = "erststart" | "suche" | "zeige-letzte" | "rueckblick" | null;
 export interface JournalListProps {
@@ -210,11 +224,20 @@ export interface SchichtLokal {
 /** `localStorage`-Schlüssel des Gerätezählers der laufenden Nummer je Übung (Zahl als Text, Kap. 3.3, nummer.ts) */
 export const NR_KEY = (exId: string): string => `lage-tools.nr.${exId}`;
 
-/** Kürzel prüfen und schreiben wie gespeichert: 2–6 Zeichen, Grossbuchstaben A–Z und Ziffern («mu» → «MU»), sonst null */
+/**
+ * Kürzel prüfen und schreiben wie gespeichert – **eine Regel für Kürzel und Visum** (MVP 3.5, S24; Phase 0 fertig):
+ * Leerzeichen, Punkt, Bindestrich fallen weg, Ä/Ö/Ü → AE/OE/UE, gross; gültig sind 2–6 Zeichen A–Z und Ziffern
+ * («mu» → «MU», «Wm M» → «WMM», «M-U» → «MU»), sonst null. Nie still abschneiden (kein `maxLength`).
+ */
 export function kuerzelNorm(k: string): string | null {
-  const s = k.trim().toUpperCase();
+  const s = k.toUpperCase().replace(/[\s.\-‐–]/g, "").replace(/Ä/g, "AE").replace(/Ö/g, "OE").replace(/Ü/g, "UE");
   return /^[A-Z0-9]{2,6}$/.test(s) ? s : null;
 }
+/** Hinweis zur Eingabe (MVP 3.5): null = gültig, sonst «2–6 Zeichen: Buchstaben A–Z und Ziffern» (sichtbar, nie still) */
+export function kuerzelHinweis(k: string): string | null {
+  return kuerzelNorm(k) ? null : KUERZEL_HINWEIS;
+}
+export const KUERZEL_HINWEIS = "2–6 Zeichen: Buchstaben A–Z und Ziffern";
 
 export interface SchichtApi {
   kuerzel: string | null;
@@ -271,6 +294,16 @@ export interface UebergabeProps {
   ki: boolean;
   onClose(): void;
   say(t: string): void;
+  // ---- MVP 3.5 (Kap. 5.7, Phase 0 verdrahtet; Paket D nutzt sie) ----
+  /** Geräteuhr mit Offset – «Stand T2 15.05.2030 07:31» (S22) */
+  tUhr: string;
+  /** Übergabe-Eintrag `system: "uebergabe"` schreiben (S20) */
+  update(f: (x: Exercise) => Exercise): void;
+  device: string;
+  /** «Datei sichern …» = Menü «Datei für anderes Gerät …» (S9) */
+  onSaveFile(): void;
+  /** letzte Datei-Sicherung dieser Übung auf diesem Gerät (ISO UTC) oder null */
+  dateiGesichert: string | null;
 }
 
 // ---------- Drucken (Paket D) ----------
@@ -312,8 +345,11 @@ export interface AnalyseAuftrag { gen: number; ex: AnalyseInput; t: string; from
 /** analyse.worker.ts: Ergebnis (gleiche Formen wie `useHints`/`useLageRot`/`offenePunkte`) */
 export interface AnalyseErgebnis { gen: number; hints: Hint[]; quality: Map<string, EventQuality>; all: Hint[]; lageRot: LageRotState; offen: OffenItem[] }
 
-/** Messpunkte `performance.mark(...)` (P1); `window.__ltPerf()` liefert die Abstände in ms */
-export const PERF_MARK = { enter: "lt:enter", zeile: "lt:zeile", bereit: "lt:bereit" } as const;
+/**
+ * Messpunkte `performance.mark(...)` (P1); `window.__ltPerf()` liefert die Abstände in ms. MVP 3.5: `lt:zeichen:start|ende`
+ * (Neuaufbau bei Wechsel der Grössenklasse, Paket B), `lt:offline-pruefung:start|ende` (Kartenabdeckung, Paket A).
+ */
+export const PERF_MARK = { enter: "lt:enter", zeile: "lt:zeile", bereit: "lt:bereit", zeichen: "lt:zeichen", offlinePruefung: "lt:offline-pruefung" } as const;
 export interface LtPerf {
   /** Navigation → erste Liste und Feld bedienbar */
   bereit?: number;
@@ -323,10 +359,87 @@ export interface LtPerf {
   enterZeileAlle?: number[];
 }
 /** `window.__ltPdfInfo`: letztes erzeugtes PDF (nur lesen, auch im Produktivbau; keine Daten nach aussen) */
-export interface LtPdfInfo { seiten: number; format: "a4" | "a3"; quer: boolean; zeilen: string[] }
+export interface LtPdfInfo {
+  seiten: number; format: "a4" | "a3"; quer: boolean; zeilen: string[];
+  /** (MVP 3.5, D8) jede gesetzte Textbox (mm, Seite ab 1) – Prüfung «keine Überlappung», Schriftgrösse */
+  boxes?: Array<{ seite: number; x: number; y: number; w: number; h: number; pt: number; text: string }>;
+  /** (MVP 3.5) Füllflächen mit Farbe ≠ weiss (Prüfung «Farbe nur in Spalte Art») */
+  fills?: Array<{ seite: number; x: number; y: number; w: number; h: number; farbe: string }>;
+  /** (MVP 3.5) gezeichnete Vektorzeichen (`glyphPunkt/glyphHaken/glyphWarn/glyphKreuz`, pdfSafe.ts) */
+  glyphen?: { punkt: number; haken: number; warn: number; kreuz: number };
+}
 declare global {
   interface Window {
     __ltPerf?: () => LtPerf;
     __ltPdfInfo?: LtPdfInfo;
   }
 }
+
+// =====================================================================================================================
+// MVP 3.5 «Feinschliff» (Spez. MVP 3.5, Kap. 5.7) – nur Ergänzungen. Phase 0: Typen, Stubs mit Standardwerten in den
+// genannten Modulen; «fertig» sind `kuerzelNorm`/`kuerzelHinweis` (oben) und `betrieb/dateiSichern.ts`.
+// =====================================================================================================================
+
+// ---------- Kürzel-Zeile beim Öffnen (Paket E, Kap. 2.2) ----------
+export interface KuerzelZeileProps { exId: string; onSet(k: string): void }
+
+// ---------- Meldungsfeld (Paket E): einmaliger Schutzhinweis (A liefert `useSchutzHinweis`, E zeigt ihn, S7) ----------
+export interface SchutzHinweis { zeigen: boolean; ok(): void; mehr(): void }
+
+// ---------- Suche (A liefert `SearchApi.online`, E zeigt die Vorschlagszeile, S3) ----------
+/** Online-Ortssuche nur auf Klick «‹q› bei swisstopo suchen» – nie automatisch */
+export interface SearchOnline {
+  /** `onlineAllowed(ex, "ortssuche") && navigator.onLine && isPlaceName(q) && wantsPlaceLookup(q, local)` */
+  moeglich: boolean;
+  laeuft: boolean;
+  /** fragt einmal ab; Treffer erscheinen wie heute als «Ort» */
+  suchen(): void;
+  fehler?: string;
+}
+
+// ---------- Betrieb (Paket A) – Ordner packages/ui/src/betrieb/ ----------
+export interface BetriebStatus {
+  /** App-Dateien im Zwischenspeicher (Service Worker) */
+  app: boolean;
+  /** Kartenabdeckung des Raster-Gebiets bis 5 m/px; `geprueft` = vollständig geprüft (keine Stichprobe, S8) */
+  karte: { share: number; total: number; cached: number; geprueft: boolean };
+  /** `navigator.storage.persisted()` */
+  speicher: boolean;
+  /** als App installiert (`display-mode: standalone` bzw. `navigator.standalone`) */
+  installiert: boolean;
+  /** Weg zur Installation: Knopf (`beforeinstallprompt`), Anleitung iOS, Anleitung sonst, schon installiert */
+  install: "prompt" | "ios" | "manuell" | "fertig";
+  /** Online-Dienste der Übung (`onlineAllowed`) */
+  online: { ortssuche: boolean; strassen: boolean };
+  /** letzte Datei-Sicherung dieser Übung auf diesem Gerät (ISO UTC) oder null */
+  dateiGesichert: string | null;
+  /** «Alles für offline laden» läuft: Fortschritt, sonst null */
+  laden: { done: number; total: number } | null;
+  net: boolean;
+}
+export interface OfflinePopoverProps {
+  ex: Exercise;
+  map: L.Map | null;
+  status: BetriebStatus;
+  /** Kopf-Knopf (Popover darunter, Fokus zurück beim Schliessen) */
+  anker: HTMLElement | null;
+  onClose(): void;
+  onSaveFile(): void;
+  say(t: string): void;
+  /** (Phase 0, Übergang bis Paket A «Alles für offline laden» baut) zu Vorbereiten → Offline, wie bisher der Kopf-Knopf */
+  onVorbereiten?(): void;
+}
+/** Bildschirm bleibt an (S5): Einstellung pro Gerät «an»|«aus», fehlt = an */
+export const WAKE_KEY = "lage-tools.wachbleiben";
+/** Datei-Sicherung je Übung auf diesem Gerät: ISO UTC (`betrieb/dateiSichern.ts`) */
+export const DATEI_KEY = (exId: string): string => `lage-tools.datei.${exId}`;
+/** einmaliger Schutzhinweis je Übung und Gerät (S7) */
+export const SCHUTZHINWEIS_KEY = (exId: string): string => `lage-tools.schutzhinweis.${exId}`;
+
+// ---------- Karte (Paket B) – packages/ui/src/map/ ----------
+export type ZeichenStufe = "S" | "M" | "L";
+export interface ZeichenGroesse { stufe: ZeichenStufe; praesentation: boolean }
+/** Zeichengrösse pro Gerät («S»|«M»|«L», fehlt = M) */
+export const ZEICHEN_KEY = "lage-tools.zeichengroesse";
+/** Kandidat der Auswahlliste «Welches Zeichen?» (S12, `map/pick.ts`) */
+export interface PickKandidat { id: string; kind: import("../journalLayer").ItemKind; label: string; zeit: string; dist: number }

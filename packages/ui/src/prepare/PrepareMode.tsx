@@ -6,7 +6,7 @@
  */
 import { useState, type ReactNode } from "react";
 import L from "leaflet";
-import type { Area, Exercise } from "@lage/core";
+import { onlineAllowed, type Area, type Exercise } from "@lage/core";
 import { NaiPanel } from "../NaiPanel";
 import { GeorefPane } from "../GeorefPane";
 import type { Candidate } from "../imageimport";
@@ -161,10 +161,11 @@ function UebungStep({ ex, update }: { ex: Exercise; update(f: (x: Exercise) => E
       <fieldset className="pp-set">
         <legend>Online-Dienste (diese Übung)</legend>
         {ONLINE.map((o) => {
-          const on = ex.onlineDienste?.[o.key] !== false;
+          // MVP 3.5 (K2, Phase 0): Standard aus – nur ausdrückliches «an» zählt; die Wahl trägt ihren Zeitpunkt (`at`, ISO UTC)
+          const on = onlineAllowed(ex, o.key);
           return (
             <label key={o.key} className="pp-check">
-              <input type="checkbox" checked={on} onChange={() => update((x) => { x.onlineDienste = { ...(x.onlineDienste ?? {}), [o.key]: !on }; return x; })} />
+              <input type="checkbox" checked={on} onChange={() => update((x) => { x.onlineDienste = { ...(x.onlineDienste ?? {}), [o.key]: !on, at: new Date().toISOString() }; return x; })} />
               <span><b>{o.label}</b> <span className="pp-meta">{o.text}</span></span>
             </label>
           );

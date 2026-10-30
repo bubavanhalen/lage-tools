@@ -93,6 +93,8 @@
   --karte-zivil: #6A1B9A;
   --karte-ink: #1B2320;
   --karte-halo: #FFFFFF;
+  /* MVP 3.5 (K3, V4): Rand der Kartenzeichen nachts – Spiegel KARTE.haloNacht / LAGE_KARTE.haloNacht */
+  --karte-halo-nacht: #000000;
   --karte-nai: #1F78D1;
   --karte-ao: #0B3D91;
   --karte-flash: #F2B705;

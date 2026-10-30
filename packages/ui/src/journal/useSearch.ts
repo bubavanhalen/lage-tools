@@ -9,6 +9,7 @@ import L from "leaflet";
 import { cellAtAny, cellLabel, isPlaceName, onlineAllowed, searchAll, wantsPlaceLookup, type Bounds, type Exercise, type LV95, type SearchHit } from "@lage/core";
 import { boundsAround, flashBounds, flashPoint, flashRing, flyToBoundsSharp, flyToCell, growBounds, NAV_MAX_ZOOM, toLatLng, whenSettled } from "@lage/map";
 import { LAGE_KARTE } from "../colors";
+import type { SearchOnline } from "../shell/contracts";
 
 export interface OnlineHit extends SearchHit { online: true }
 export type Hit = SearchHit | OnlineHit;
@@ -55,7 +56,15 @@ export interface SearchApi {
   clearPin(): void;
   /** Beispiele aus der Übung (keine festen Namen) */
   examples: Array<{ k: string; v: string }>;
+  /**
+   * (MVP 3.5, S3 – Paket A baut, E zeigt «‹q› bei swisstopo suchen») Online-Ortssuche nur auf Klick. Phase 0: Stub
+   * (`moeglich` immer false); die automatische Abfrage unten entfällt mit Paket A, ebenso der Parameter `allowOnline`.
+   */
+  online: SearchOnline;
 }
+
+/** Phase 0: noch keine Ortssuche auf Klick */
+const ONLINE_AUS: SearchOnline = { moeglich: false, laeuft: false, suchen() { /* Paket A */ } };
 
 /**
  * @param q Suchtext
@@ -137,5 +146,5 @@ export function useSearch(ex: Exercise, map: L.Map, q: string, active: boolean, 
     return out;
   }, [ex.sheets, ex.areas, ex.units]);
 
-  return { hits, loading, go, clearPin: () => setPin(null), examples };
+  return { hits, loading, go, clearPin: () => setPin(null), examples, online: ONLINE_AUS };
 }

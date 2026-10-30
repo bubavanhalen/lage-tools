@@ -23,7 +23,7 @@ export const ANDERE: Array<[NichtMeldung, string, string, string]> = [
 ];
 
 /** kurzer Name im Segment (Platz Tablet 384 px) */
-const SEG_NAME: Record<NichtMeldung, string> = { auftrag: "Auftrag", orientierung: "Orientierung", rueckfrage: "Rückfrage", vbk: "Verbindung", notiz: "Notiz" };
+const SEG_NAME: Record<NichtMeldung, string> = { auftrag: "Auftrag", orientierung: "Orientierung", rueckfrage: "Rückfrage", vbk: "Verbindung", notiz: "Notiz", ausgang: "Ausgang" };
 
 export function ArtSwitch({ art, kind, neutral, onKind, onArt, open, setOpen, onDone }: {
   /** wirksame Art (Meldung = eines von Feind/Eigene/Unklar gedrückt) */

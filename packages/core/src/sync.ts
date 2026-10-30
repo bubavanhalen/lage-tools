@@ -10,6 +10,8 @@
  * - Tage, Elemente, Orte: Vereinigung. Name und Einstellungen: lokal (fehlt lokal etwas, aus der anderen Fassung).
  * - MVP 3: Schichten/Übergaben Vereinigung nach ID; Klassifizierung lokal; laufende Nummern ändern nie – doppelt
  *   vergebene werden gemeldet (`MergeReport.doppelt`, Kennzeichnung «12a/12b» in nummer.ts).
+ * - MVP 3.5: Online-Dienste beim Zusammenführen einer Datei (`mergeExercise`) immer lokal – auch wenn lokal keine Wahl
+ *   besteht (Standard aus); eine Datei schaltet nie etwas ein.
  * «Ersetzen» (andere Fassung gilt ganz) ist bewusst kein Teil davon – nur auf ausdrücklichen Wunsch.
  */
 import { eventWins, mergeEventsDetailed, type Exercise, type HintDecision, type LageEvent } from "./model";
@@ -222,6 +224,10 @@ export function mergeEventsReport(ours: LageEvent[], theirs: LageEvent[]): { eve
  */
 export function mergeExercise(ours: Exercise, theirs: Exercise): { ex: Exercise; report: MergeReport } {
   const h = mergeHull(ours, theirs);
+  // MVP 3.5 (Entscheid K2, Spez. S2): Online-Dienste – die lokale Wahl gilt immer, eine Datei schaltet nie etwas ein
+  // (auch nicht, wenn hier nie gewählt wurde). Eine neu aus der Datei entstehende Übung (kein lokaler Stand) übernimmt die
+  // Wahl der Datei – das geschieht ohne Zusammenführen. Fenster desselben Geräts (`mergeHull` direkt) übernehmen sie weiter.
+  if (ours.onlineDienste) h.ex.onlineDienste = ours.onlineDienste; else delete h.ex.onlineDienste;
   const ev = mergeEventsReport(ours.events ?? [], theirs.events ?? []);
   h.ex.events = ev.events;
   // Tage der Meldungen sicher dabei

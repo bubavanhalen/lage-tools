@@ -103,7 +103,17 @@ export const ART_LABEL: Record<EntryArt, string> = {
   rueckfrage: "Rückfrage",
   vbk: "Verbindungskontrolle",
   notiz: "Notiz",
+  /** MVP 3.5 (S17): Meldung, Weitermeldung oder Antwort nach oben – kein Zeichen */
+  ausgang: "Ausgang",
 };
+
+/**
+ * (MVP 3.5) Zeichen der Art in Liste und Vorschau: ✎ Auftrag, Orientierung, Rückfrage, Notiz · ⇄ Vbk · ↗ Ausgang ·
+ * «» Meldung (Zeichen der Lage). Phase 0 fertig; Paket D/E zeigen es.
+ */
+export function artZeichen(a: EntryArt): string {
+  return a === "meldung" ? "" : a === "vbk" ? "⇄" : a === "ausgang" ? "↗" : "✎";
+}
 
 /** «Eigene», «Feind», «Unklar» wie `kindLabel` (journal.ts) – hier ohne Import, damit es keinen Kreis gibt */
 function lageWort(e: Pick<LageEvent, "side" | "aff">): string {
@@ -126,6 +136,8 @@ export function artText(e: LageEvent): string {
     case "rueckfrage": return e.an ? `Rückfrage an ${e.an}` : e.melder ? `Rückfrage von ${e.melder}` : "Rückfrage";
     case "vbk": return ["Verbindung", e.melder, e.vbk ? VBK_WORT[e.vbk] : ""].filter(Boolean).join(" ");
     case "notiz": return e.bezugArt === "antwort" ? (e.an ? `Antwort an ${e.an}` : e.melder ? `Antwort von ${e.melder}` : "Antwort") : "Notiz";
+    // MVP 3.5 (Phase 0, Paket D baut aus): «Ausgang an Bat»
+    case "ausgang": return e.an ? `Ausgang an ${e.an}` : "Ausgang";
   }
 }
 
@@ -154,6 +166,11 @@ export interface ArtLesung {
   unscharf?: string;
   /** Text ohne Art-Hinweis (für die weitere Erkennung) */
   rest: string;
+  /**
+   * (MVP 3.5, D1.7) Meldung meldet «erledigt/ausgeführt» ohne das Wort «Auftrag» → Abschluss des offenen Auftrags an den
+   * Melder vorschlagen (`bezugAufloesen`, lvz.ts). Phase 0: nie gesetzt.
+   */
+  abschluss?: boolean;
 }
 
 /** Element-Namen («H01», «Det 2», «Zug 1», «Kp», …) – für Empfänger/Absender */

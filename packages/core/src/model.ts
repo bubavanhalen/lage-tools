@@ -52,9 +52,12 @@ export interface Attachment {
 
 // ---------- MVP 3 «LVZ-Betrieb»: Eintragsarten, Vermerke, Schichten (Spez. MVP 3, Kap. 5.1) ----------
 
-/** Art eines Journaleintrags. Fehlt `art`: «notiz» wenn `notiz === true`, sonst «meldung» (`artOf`, arten.ts). */
-export type EntryArt = "meldung" | "auftrag" | "orientierung" | "rueckfrage" | "vbk" | "notiz";
-export const ENTRY_ARTEN: readonly EntryArt[] = ["meldung", "auftrag", "orientierung", "rueckfrage", "vbk", "notiz"];
+/**
+ * Art eines Journaleintrags. Fehlt `art`: «notiz» wenn `notiz === true`, sonst «meldung» (`artOf`, arten.ts).
+ * MVP 3.5: + «ausgang» (Meldung/Weitermeldung/Antwort nach oben, kein Zeichen; `an` = Empfänger, `notiz: true`).
+ */
+export type EntryArt = "meldung" | "auftrag" | "orientierung" | "rueckfrage" | "vbk" | "notiz" | "ausgang";
+export const ENTRY_ARTEN: readonly EntryArt[] = ["meldung", "auftrag", "orientierung", "rueckfrage", "vbk", "notiz", "ausgang"];
 
 /** Wert mit Zeitstempel (Zusammenführen pro Feld: späteres `at` gilt, gleich: grösseres `device`) */
 export interface Stamp<T> {
@@ -218,8 +221,11 @@ export interface LageEvent {
   vbk?: "gut" | "schlecht" | "keine";
   /** ID eines früheren Eintrags: Antwort auf Rückfrage, Quittung/Ausführung eines Auftrags, «zu 42» */
   bezug?: string;
-  /** Art des Bezugs (für Status): Antwort, Quittung, ausgeführt, Verweis */
-  bezugArt?: "antwort" | "quittung" | "ausgefuehrt" | "verweis";
+  /**
+   * Art des Bezugs (für Status): Antwort, Quittung, ausgeführt, Verweis; MVP 3.5 + «weiter»: ein Ausgang meldet die
+   * Meldung `bezug` weiter (Vermerk «weitergemeldet» abgeleitet, `vermerkeOf`)
+   */
+  bezugArt?: "antwort" | "quittung" | "ausgefuehrt" | "verweis" | "weiter";
   /** diese Meldung hebt die Meldung mit dieser ID auf (Sperre, Checkpoint, Fläche, Linie) */
   hebtAuf?: string;
   /** genannte Orte bei Nicht-Meldungen und Aufhebungen – nur Text (Liste, Suche, PDF), nie Karte */
@@ -228,6 +234,17 @@ export interface LageEvent {
   felder?: MeldeFelder;
   /** LVZ-Vermerke (dringend, Status, Massnahme, weitergemeldet) – eigenes Zusammenführen pro Feld (`mergeLvz`) */
   lvz?: LvzVermerke;
+
+  // ---- MVP 3.5 «Feinschliff» (Spez. MVP 3.5, Kap. 5.1; alle optional, additiv) ----
+  // `tOffset` besteht seit MVP 3 – ab 3.5 bei jeder Erfassung und Korrektur gesetzt; fehlt er: `offsetOf` (clock.ts).
+  // Ausgang (`art: "ausgang"`): `an` = Empfänger («Bat»), `notiz: true`, nie pos/unit/cells/nai/shape (Invariante E3).
+  // Rückfrage von oben: `art: "rueckfrage"`, `quelle` = «Bat»/«Kdt», `an` leer.
+  /** eigene Meldung mit Begehren (Nachschub, Sanität, Mun-Stand): offen bis erledigt (`vermerkeOf`), kein neues Zeichen */
+  begehren?: { was: string };
+  /** vom System geschriebener Eintrag (nicht getippt): Übergabe (S20, `art: "notiz"`) */
+  system?: "uebergabe";
+  /** zu `system: "uebergabe"`: ID des `SchichtWechsel` */
+  schichtId?: string;
 }
 
 /** Eine frühere Fassung einer Meldung (Schnappschuss vor einer Korrektur). */
@@ -270,6 +287,9 @@ export interface EventRevision {
   orte?: string[];
   /** Kürzel, das diese Fassung geschrieben hat */
   von?: string;
+  // ---- MVP 3.5 ----
+  begehren?: LageEvent["begehren"];
+  tOffset?: string;
 }
 
 /** Schnappschuss einer Meldung als `EventRevision` (nur gesetzte Felder). */
@@ -279,6 +299,8 @@ export function revisionOf(e: LageEvent): EventRevision {
     melder: e.melder, sidc: e.sidc, pos: e.pos, cells: e.cells, nai: e.nai, where: e.where, count: e.count, dir: e.dir, desc: e.desc, deleted: e.deleted,
     // MVP 3: Art und Bezüge; `von` = Kürzel, das diese Fassung geschrieben hat (letzte Korrektur, sonst Erfassung)
     art: e.art, an: e.an, quelle: e.quelle, frist: e.frist, vbk: e.vbk, bezug: e.bezug, hebtAuf: e.hebtAuf, orte: e.orte, von: e.geaendertVon ?? e.erfasstVon,
+    // MVP 3.5
+    begehren: e.begehren, tOffset: e.tOffset,
   };
   for (const [k, v] of Object.entries(opt)) if (v !== undefined) (r as unknown as Record<string, unknown>)[k] = Array.isArray(v) ? [...v] : v && typeof v === "object" ? { ...v } : v;
   return r;
@@ -345,10 +367,12 @@ export interface Exercise {
   /** Entscheide zu Hinweisen (Hinweis-ID → bestätigt/verworfen) */
   hintDecisions?: Record<string, HintDecision>;
   /**
-   * Online-Dienste dieser Übung (Standard: alles an). `ortssuche`: Ortsnamen bei swisstopo nachschlagen (Meldungsfeld,
-   * Kartensuche); `strassen`: Strassennetz (TLM) für Hindernisse & Co. laden. Aus = kein Request (siehe `onlineAllowed`).
+   * Online-Dienste dieser Übung. `ortssuche`: Ortsnamen bei swisstopo nachschlagen (Meldungsfeld, Kartensuche);
+   * `strassen`: Strassennetz (TLM) für Hindernisse & Co. laden. Aus = kein Request (siehe `onlineAllowed`).
+   * **Ab MVP 3.5 (Entscheid K2): nur `true` = an**, fehlt = `ONLINE_STANDARD` (aus) – alte Übungen gelten beim Öffnen als
+   * aus, nichts wird geschrieben. `at` = letzte Wahl (ISO UTC). Zusammenführen einer Datei: lokal gewinnt (`mergeExercise`).
    */
-  onlineDienste?: { ortssuche?: boolean; strassen?: boolean };
+  onlineDienste?: { ortssuche?: boolean; strassen?: boolean; at?: string };
   /**
    * Löschmarken für Raster, Flächen (NAI/AO …) und Bilder: ID → Zeitpunkt (ISO) des Löschens; `undone` = mit
    * Rückgängig wiederhergestellt. Die spätere Marke gilt. So taucht ein gelöschtes Element beim Zusammenführen

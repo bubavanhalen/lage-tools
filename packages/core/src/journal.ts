@@ -9,13 +9,13 @@ import { findCoordinates, type LV95 } from "./lv95";
 import { newEventId, revisionOf, type Area, type EntryArt, type Exercise, type LageEvent, type MeldeFelder, type Place, type RoadHint, type Side } from "./model";
 import { ART_LABEL, artOf, artText, isLage, istDringend, readArt, unscharfTreffer, type ArtLesung } from "./arten";
 import { readMeldeFelder, felderZuText } from "./felder";
-import { aufhebZiele, istAufhebbar, liftMap, lvzIndex, vermerkeOf } from "./lvz";
+import { aufhebZiele, bezugAufloesen as lvzBezugAufloesen, istAufhebbar, liftMap, lvzIndex, vermerkeOf } from "./lvz";
 import { findByNr, nrLabel } from "./nummer";
 import { boundsCenter, cellAtAny, cellBounds, findCells, type RasterSheet } from "./raster";
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
-import { addDays, compareEvents, localDay, localIso, nearestDay, offsetFor } from "./clock";
+import { addDays, compareEvents, localDay, localIso, nearestDay, offsetFor, zeitTeile } from "./clock";
 import { schichtZuordnung } from "./schichtwahl";
 import { autoShape, shapeCenter } from "./shapes";
 import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeMelder, normalizeTyped, observedOwn, ownDirection, partPlaces, pickTime, placeProblems, placeSpans, sameUnitName, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, unknownSubject, vagueAmount, type UnknownWord } from "./erkennung";
@@ -50,6 +50,13 @@ export interface JournalContext {
   events?: LageEvent[];
   /** (MVP 3) Übung – für Nummern (`findByNr`) */
   ex?: Pick<Exercise, "events">;
+  // ---- MVP 3.5 (Spez. MVP 3.5, Kap. 5.4) ----
+  /** IANA-Zone für Lesart und Offset (fehlt → Zone des Geräts); Tests geben «Europe/Zurich» an */
+  zone?: string;
+  /** «nicht abschliessen» gewählt (Vorschau, gilt wie `kind` bis der Text gelöscht wird) – D2 */
+  abschlussAus?: boolean;
+  /** gewählter Bezug (ID) bei mehreren Kandidaten («64a …» / «Nr 66 …» angetippt) – D2 */
+  bezugWahl?: string;
 }
 
 export type WhereKind = "koordinate" | "raster" | "nai" | "ort" | "zuletzt" | "melder" | "karte";
@@ -179,6 +186,24 @@ export interface Draft {
    * eintragen?» (Ausweg Feind/Eigene/Unklar wählen); 2. Enter trägt die Antwort ohne Zeichen ein.
    */
   sichtung?: boolean;
+
+  // ---- MVP 3.5 «Feinschliff» (Spez. MVP 3.5, Kap. 5.4) – Phase 0: nur Verträge, gesetzt von den Paketen C/D ----
+  /** Offset der Ereigniszeit aus der Lesart (`lesart`, clock.ts); `eventFromDraft` übernimmt ihn (fehlt → `offsetFor`) */
+  tOffset?: string;
+  /** C7/C11: eigene Meldung mit Begehren (Nachschub, Sanität, Mun-Stand) – kein neues Zeichen, Trupp bleibt */
+  begehren?: { was: string };
+  /** C6: Aufteilung in zwei Einträge (Texte, je mit Melder vorne) – Knopf «Als zwei Einträge» (E) */
+  teile?: [string, string];
+  /** D2: mehrere mögliche Bezüge (IDs) – Knöpfe «64a …»/«Nr 66 …» (E), Grund `bezug-wahl`/`auftrag-wahl` */
+  bezugKandidaten?: string[];
+  /** D2/D1.7: dieser Eintrag schliesst einen Auftrag ab («schliesst Auftrag Nr 66 ab»); null = keiner */
+  abschluss?: { id: string; nr: string; text: string } | null;
+  /** «nicht abschliessen» gewählt (Vorgabe aus dem Feld, wie `kindOverride`) */
+  abschlussAus?: boolean;
+  /** C1: Vorschlag für die unbekannte Textstelle («Persohnen» → «Personen»), Knopf «‹Wort› übernehmen» (E) */
+  ersatz?: { token: string; wort: string };
+  /** C12: unbekannter Trupp («H06») – nur Anzeige/Knopf «H06 als Trupp aufnehmen», `melder` bleibt leer */
+  truppNeu?: string;
 }
 
 /** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
@@ -699,6 +724,15 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     // es eine gewöhnliche Meldung («2 Pers entfernen sich»), zählt das Wort nicht
     if (wort.unscharf && artFrom !== "vorgabe" && d !== d0) d = { ...d, unscharf: { wort: wort.wort === "weg" ? wort.key![0]!.toUpperCase() + wort.key!.slice(1) : "Aufheben", token: wort.unscharf } };
   }
+  // MVP 3.5 (Phase 0 verdrahtet, Paket D baut `bezugAufloesen` aus): Nummer mit mehreren Einträgen, Abschluss eines
+  // Auftrags («H03 erledigt»), «Antwort an Bat» ohne Nummer
+  if (events) {
+    const b = lvzBezugAufloesen(lesung, { events, ex: ctx.ex, melder: d.melder, t: d.t, abschlussAus: ctx.abschlussAus, bezugWahl: ctx.bezugWahl });
+    if (b.bezug) d = { ...d, bezug: b.bezug, ...(b.bezugArt ? { bezugArt: b.bezugArt } : {}) };
+    if (b.kandidaten?.length) d = { ...d, bezugKandidaten: b.kandidaten };
+    if (b.abschluss !== undefined) d = { ...d, abschluss: b.abschluss };
+    if (ctx.abschlussAus) d = { ...d, abschlussAus: true };
+  }
   const melderEigen = !!d.melder && blau.some((u) => sameUnitName(u, d.melder));
   if (istDringend(les, { eigenerMelder: melderEigen })) d = { ...d, dringend: true };
   if (art !== "meldung" && !artStark) d = { ...d, kindHint: "notiz" };
@@ -1132,6 +1166,8 @@ export function journalToCsv(events: LageEvent[], days: string[], o: { gestriche
  *
  * MVP 3: `o.nr` = laufende Nummer (`nextNr`, setzt auch `von` = Gerät), `o.kuerzel` = «erfasst von». Nicht-Meldungen
  * (`d.art ≠ meldung`) bekommen `art`, `notiz: true` und **nie** pos/unit/cells/nai/shape (Invariante E3).
+ * MVP 3.5: `tOffset` aus dem Entwurf (Lesart; fehlt → `offsetFor` wie bisher), `begehren`; Ausgang = Nicht-Meldung.
+ * `t` ist immer die Lagezeit ohne Offset (16 Zeichen) – auch wenn der Entwurf eine Lagezeit mit Endung trägt.
  */
 export function eventFromDraft(d: Draft, device: string, now = new Date(), o: { nr?: number; kuerzel?: string } = {}): LageEvent {
   const art = d.art ?? (d.kindHint === "notiz" ? "notiz" : "meldung");
@@ -1143,6 +1179,7 @@ export function eventFromDraft(d: Draft, device: string, now = new Date(), o: { 
     ...(d.bezug ? { bezug: d.bezug, ...(d.bezugArt ? { bezugArt: d.bezugArt } : {}) } : d.bezugArt === "antwort" && art === "notiz" ? { bezugArt: d.bezugArt } : {}),
     ...(d.hebtAuf ? { hebtAuf: d.hebtAuf } : {}), ...(d.orte?.length ? { orte: [...d.orte] } : {}), ...(d.felder ? { felder: { ...d.felder } } : {}),
     ...(d.dringend ? { lvz: { dringend: { v: true, at: now.toISOString(), device, ...(o.kuerzel ? { von: o.kuerzel } : {}) } } } : {}),
+    ...(d.begehren ? { begehren: { ...d.begehren } } : {}),
   };
   if (art === "meldung" && !d.hebtAuf) return { ...ev, ...mvp3 };
   if (art === "meldung") {
@@ -1163,8 +1200,8 @@ function eventFromDraftBase(d: Draft, device: string, now: Date): LageEvent {
     updatedAt: now.toISOString(),
     createdAt: now.toISOString(),
     tReported: localIso(now),
-    t: d.t,
-    tOffset: offsetFor(d.t, now),
+    t: d.t.slice(0, 16),
+    tOffset: zeitTeile(d.t).off ?? d.tOffset ?? offsetFor(d.t.slice(0, 16), now),
     side: d.side,
     unit: d.unit,
     melder: d.melder || undefined,

@@ -16,7 +16,7 @@ describe("Kartenfarben", () => {
     const paare: Array<[keyof typeof KARTE, string, string | undefined]> = [
       ["feind", "feind", FARBEN.hell.feind], ["eigen", "eigen", FARBEN.hell.eigen], ["unklar", "unklar", FARBEN.hell.unklar],
       ["unklarFill", "unklar-fill", FARBEN.hell["unklar-fill"]], ["neutral", "neutral", FARBEN.hell.neutral],
-      ["zivil", "zivil", FARBEN.hell.zivil], ["ink", "ink", FARBEN.hell.ink], ["halo", "halo", LAGE_KARTE.halo],
+      ["zivil", "zivil", FARBEN.hell.zivil], ["ink", "ink", FARBEN.hell.ink], ["halo", "halo", LAGE_KARTE.halo], ["haloNacht", "halo-nacht", LAGE_KARTE.haloNacht],
       ["nai", "nai", undefined], ["ao", "ao", undefined],
     ];
     for (const [k, t, v] of paare) {

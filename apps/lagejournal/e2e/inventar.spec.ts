@@ -8,12 +8,18 @@
  * Übergabe-Seite (Ziel ≤ 8) und Druck-Dialoge nur berichten; mit `--hit: 48px` kein Überlauf und nichts unter 48 px in
  * Offen und «Mehr …».
  * Ausgabe: e2e/out/inventar.json (Liste je Zustand mit Name und Grösse, vergleichbar mit einfachheit/d_inventar.json).
+ *
+ * MVP 3.5 (Spez. MVP 3.5, Kap. 1.3): jede Grenz-Messung zweimal – «bereit» (Testhaken `__ltOfflineBereit`, wie bisher)
+ * und «echt» (frisches Gerät, kein Haken: Kopf-Knopf «Offline …» sichtbar, Budget +1). Neue Budgets: `?beispiel=leer`
+ * mit Kürzel ≤ 12/13, ohne Kürzel ≤ 14/15 (Kürzel-Zeile +2), Erststart ≤ 15/16. Der Kopf-Knopf öffnet das Offline-Popover
+ * (kein Moduswechsel, S6). Zustände, die erst mit den Paketen entstehen (Laden, Vorschau mit Wahl, Bezug-Wahl, Popover,
+ * Auswahlliste, Datei-Schritt): `inventar35.spec.ts` (darf bis Phase 2 rot sein; danach übernimmt E sie hierher).
  */
-import { UHR_T2_0730, UHR_T4_0730, ansicht, aufgabe, eintragenText, feldVon, inventarImBrowser, knopfVon, menue, soll, ueberlaufImBrowser, zeilenVon, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
+import { UHR_T2_0730, UHR_T4_0730, ansicht, aufgabe, eintragenText, feldVon, inventarImBrowser, knopfVon, menue, modusVon, offlinePopoverVon, soll, ueberlaufImBrowser, zeilenVon, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
 
 const zaehlen = (s: Session) => s.page.evaluate(inventarImBrowser);
 
-async function messen(h: Harness, name: string, geraet: Geraet, grenze: number | null, o: Parameters<Harness["open"]>[0], vorher?: (s: Session) => Promise<void>): Promise<TestResult> {
+async function messen1(h: Harness, name: string, geraet: Geraet, grenze: number | null, o: Parameters<Harness["open"]>[0], vorher?: (s: Session) => Promise<void>): Promise<TestResult> {
   return aufgabe(name, geraet, async (w) => {
     const s = await h.open({ uhr: UHR_T2_0730, geraet, ...o });
     try {
@@ -28,6 +34,26 @@ async function messen(h: Harness, name: string, geraet: Geraet, grenze: number |
     } finally { await s.close(); }
   });
 }
+
+/**
+ * MVP 3.5: Messung «bereit» (Name wie bisher) und «echt» (Name + « · echt», Grenze +1 bzw. `echt`); `grenze` null = nur berichten
+ */
+async function messen(h: Harness, name: string, geraet: Geraet, grenze: number | null, o: Parameters<Harness["open"]>[0], vorher?: (s: Session) => Promise<void>, echt?: number | null): Promise<TestResult[]> {
+  return [
+    await messen1(h, name, geraet, grenze, { ...o, offline: "bereit" }, vorher),
+    await messen1(h, `${name} · echt`, geraet, echt !== undefined ? echt : grenze === null ? null : grenze + 1, { ...o, offline: "echt" }, vorher),
+  ];
+}
+
+/** `?beispiel=leer` mit Kürzel (über Menü «Kürzel ändern …», wie ein Benutzer) */
+const kuerzelSetzen = async (s: Session) => {
+  await menue(s, /Kürzel ändern/);
+  const f = s.page.getByRole("dialog").getByRole("textbox").first();
+  await f.fill("MU");
+  await f.press("Enter");
+  await s.page.waitForTimeout(300);
+  soll(await s.page.getByText(/Schicht MU/).first().isVisible().catch(() => false), "Kürzel MU nicht gesetzt");
+};
 
 // ---------- MVP 3 (aus inventar3.spec.ts übernommen) ----------
 async function messen3(h: Harness, name: string, geraet: Geraet, grenze: number | null, o: Parameters<Harness["open"]>[0], vorher: (s: Session) => Promise<void>, css?: string): Promise<TestResult> {
@@ -63,33 +89,44 @@ const spec: Spec = {
   async run(h) {
     const out: TestResult[] = [];
     for (const g of ["laptop", "tablet"] as const) {
-      out.push(await messen(h, "Grundansicht Beispiel", g, 12, { query: "?beispiel" }));
-      out.push(await messen(h, "Grundansicht leer", g, 12, { query: "?beispiel=leer" }));
-      out.push(await messen(h, "Mit Vorschau", g, 15, { query: "?beispiel" }, async (s) => {
+      out.push(...await messen(h, "Grundansicht Beispiel", g, 12, { query: "?beispiel" }));
+      // MVP 3.5 (Kap. 1.3): leer ohne Kürzel +2 (Kürzel-Zeile, Paket E), mit Kürzel wie Beispiel; Erststart +3
+      out.push(...await messen(h, "Grundansicht leer", g, 14, { query: "?beispiel=leer" }));
+      out.push(...await messen(h, "Grundansicht leer, Kürzel gesetzt", g, 12, { query: "?beispiel=leer" }, kuerzelSetzen));
+      out.push(...await messen(h, "Erststart (ohne Parameter)", g, 15, {}));
+      out.push(...await messen(h, "Mit Vorschau", g, 15, { query: "?beispiel" }, async (s) => {
         await s.page.getByPlaceholder("Was wurde gemeldet?").fill("H04 2 Fz in AK7 Rtg N");
       }));
-      out.push(await messen(h, "Vorschau Nicht-Meldung", g, 14, { query: "?beispiel" }, async (s) => {
+      out.push(...await messen(h, "Vorschau Nicht-Meldung", g, 14, { query: "?beispiel" }, async (s) => {
         await s.page.getByPlaceholder("Was wurde gemeldet?").fill("Auftrag an H01: Beo NAI 1 bis 1200");
       }));
-      out.push(await messen(h, "Grundansicht lang", g, 13, { query: "?beispiel=lang", uhr: UHR_T4_0730 }, async (s) => { await s.page.waitForTimeout(1500); }));
-      out.push(await messen(h, "Gewählte Zeile", g, 15, { query: "?beispiel" }, async (s) => {
+      out.push(...await messen(h, "Grundansicht lang", g, 13, { query: "?beispiel=lang", uhr: UHR_T4_0730 }, async (s) => { await s.page.waitForTimeout(1500); }));
+      out.push(...await messen(h, "Gewählte Zeile", g, 15, { query: "?beispiel" }, async (s) => {
         await s.page.locator(".jlist li").first().click();
       }));
-      out.push(await messen(h, "Rückblick", g, 18, { query: "?beispiel" }, async (s) => {
+      out.push(...await messen(h, "Rückblick", g, 18, { query: "?beispiel" }, async (s) => {
         await s.page.getByRole("button", { name: /Zurückblicken/ }).click();
       }));
-      out.push(await messen(h, "Experte (nur Bericht)", g, null, { query: "?beispiel", arbeitsweise: { modus: "lage", experte: true } }));
-      out.push(await messen(h, "Vorbereiten (nur Bericht)", g, null, { query: "?beispiel", arbeitsweise: { modus: "vorbereiten", experte: false } }));
-      // Offline nicht bereit (ohne Testhaken: kein Service Worker, kein Kartenpaket) → Knopf im Kopf
-      out.push(await aufgabe("Offline nicht bereit – Knopf «beheben»", g, async (w) => {
+      out.push(await messen1(h, "Experte (nur Bericht)", g, null, { query: "?beispiel", arbeitsweise: { modus: "lage", experte: true } }));
+      out.push(await messen1(h, "Vorbereiten (nur Bericht)", g, null, { query: "?beispiel", arbeitsweise: { modus: "vorbereiten", experte: false } }));
+      // Offline nicht bereit (ohne Testhaken: kein Service Worker, kein Kartenpaket) → Knopf im Kopf. MVP 3.5 (S6): öffnet
+      // das Popover «Offline auf diesem Gerät», kein Moduswechsel (Text des Knopfs «⚠ Offline fehlt» kommt mit Paket A)
+      out.push(await aufgabe("Offline nicht bereit – Knopf öffnet «Offline auf diesem Gerät»", g, async (w) => {
         const s = await h.open({ query: "?beispiel", geraet: g, uhr: UHR_T2_0730, offline: "echt" });
         try {
-          const b = s.page.getByRole("button", { name: /Offline nicht bereit – beheben/ });
+          const b = s.page.locator(".hd button.hd-off").first();
           await b.waitFor({ timeout: 5000 });
+          w.knopf = (await b.innerText()).replace(/\s+/g, " ").trim();
           await b.click();
-          w.vorbereiten = await s.page.getByText("Du bereitest vor.").count();
-          soll(w.vorbereiten === 1, "Knopf führt nicht zu Vorbereiten");
-          soll(await s.page.getByText(/Karte nicht gespeichert|App noch nicht offline geladen|Speicher nicht geschützt/).first().isVisible(), "Grund fehlt in Schritt 6");
+          await s.page.waitForTimeout(300);
+          w.modus = await modusVon(s);
+          soll(w.modus === "lage", `Modus wechselte zu «${w.modus}»`);
+          const pop = offlinePopoverVon(s);
+          soll(await pop.isVisible().catch(() => false), "Popover «Offline auf diesem Gerät» fehlt");
+          w.popover = (await pop.innerText()).replace(/\s+/g, " ").slice(0, 300);
+          soll(/App|Karte/.test(String(w.popover)) && /✗/.test(String(w.popover)), "Grund (✗) fehlt im Popover");
+          await s.page.keyboard.press("Escape");
+          soll(!(await pop.isVisible().catch(() => false)), "Esc schliesst das Popover nicht");
         } finally { await s.close(); }
       }));
       // Feldgerät-Vorbereitung: --hit 48 px

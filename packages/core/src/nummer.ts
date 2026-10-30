@@ -92,6 +92,28 @@ export function findByNr(ex: Pick<Exercise, "events">, label: string): LageEvent
   return id ? (ex.events ?? []).find((e) => e.id === id) : undefined;
 }
 
+/** (MVP 3.5, S25) Nummer in Worten «Nr 56», «Nr 64a» – eine Form überall (Liste, Offen, Übergabe, PDF); ohne Nummer «» */
+export function nrText(e: NrEvent, ex: Pick<Exercise, "events">): string {
+  const l = nrLabel(e, ex);
+  return l ? `Nr ${l}` : "";
+}
+
+/**
+ * (MVP 3.5, D2) alle Einträge zu einer Nummer: «64» → alle mit Nummer 64 (bei Doppelten 64a, 64b – in Endungs-Reihenfolge),
+ * «64a» → genau der eine; «Nr 64» und «nr. 64» gehen auch. Unbekannt → [].
+ */
+export function findAllByNr(ex: Pick<Exercise, "events">, label: string): LageEvent[] {
+  const events = ex.events ?? [];
+  const idx = indexOf(events);
+  const l = label.trim().toLowerCase().replace(/^nr\.?\s*/, "");
+  if (!/^\d+$/.test(l)) { const e = findByNr(ex, l); return e ? [e] : []; }
+  const n = +l;
+  const ids = new Set<string>();
+  for (const e of events) if (idx.nr.get(e.id) === n) ids.add(e.id);
+  const byId = new Map(events.map((e) => [e.id, e]));
+  return [...ids].map((id) => byId.get(id)!).sort((a, b) => ((idx.endung.get(a.id) ?? "") < (idx.endung.get(b.id) ?? "") ? -1 : 1));
+}
+
 export interface NrDoppelt {
   nr: number;
   /** Einträge mit dieser Nummer, in Endungs-Reihenfolge */

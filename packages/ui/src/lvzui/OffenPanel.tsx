@@ -27,7 +27,7 @@ const GRUPPEN: Array<{ key: string; titel: string; arten: OffenArt[] }> = [
 ];
 
 /** Zeichen je Art (Form statt nur Farbe): ! dringend, ✎ Auftrag/Rückfrage, ⇄ Verbindung, ◆ ohne Ort, ⚠ Konflikt */
-const MARK: Record<OffenArt, string> = { dringend: "!", auftrag: "✎", rueckfrage: "✎", verbindung: "⇄", still: "⇄", "ohne-ort": "◆", offen: "•", konflikt: "⚠" };
+const MARK: Record<OffenArt, string> = { dringend: "!", auftrag: "✎", rueckfrage: "✎", verbindung: "⇄", still: "⇄", "ohne-ort": "◆", offen: "•", konflikt: "⚠", "rueckfrage-oben": "✎", begehren: "●" };
 
 /** Hauptaktion je Art (Kap. 2.6) */
 export function hauptAktion(it: Pick<OffenItem, "art">): string {

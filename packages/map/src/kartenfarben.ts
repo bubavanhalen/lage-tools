@@ -13,6 +13,8 @@ export const KARTE = {
   zivil: "#6A1B9A",
   ink: "#1B2320",
   halo: "#FFFFFF",
+  /** Rand der Zeichen nachts (MVP 3.5, K3: Variante V4 – Nacht-Rand schwarz); Spiegel `--karte-halo-nacht`, `LAGE_KARTE.haloNacht` */
+  haloNacht: "#000000",
   /** NAI und andere Räume */
   nai: "#1F78D1",
   /** Einsatzraum (AO) */

@@ -30,6 +30,7 @@ import {
   angleDiff, baseCellAt, bearing, centroid, dist, distToRing, sameCell, sameOrNeighbor, type BaseCell,
 } from "./hintgeo";
 import { areaCenter } from "./journal";
+import { zeitMax } from "./clock";
 import { isLage, lebenszeichen } from "./arten";
 import { istAufhebbar, liftMap } from "./lvz";
 import type { LV95 } from "./lv95";
@@ -671,6 +672,24 @@ function qualityOf(evs: Ev[]): Map<string, EventQuality> {
     if (!v.pos && !v.e.nai) out.set(v.id, { missing: ["Ort"] });
   }
   return out;
+}
+
+/**
+ * (MVP 3.5, C14) Verschiedene Melder, die dieselbe Sichtung gesehen haben – die Meldung selbst zuerst, dann die
+ * bestätigenden (ohne Doppel): H02 einmal, H04 zweimal → ["H02", "H04"] («von 2 Trupps gesehen», Trupps im `title`).
+ * Ohne Bestätigung []. Phase 0: aus `eventQuality(...).confirmedBy` (Lagezeit = späteste Meldung); Paket C baut aus.
+ */
+export function bestaetigtVon(e: LageEvent, events: LageEvent[]): string[] {
+  let t = e.t;
+  for (const x of events) if (!x.deleted) t = zeitMax(t, x.t);
+  const ids = eventQuality(events, t).get(e.id)?.confirmedBy ?? [];
+  const byId = new Map(events.map((x) => [x.id, x]));
+  const out: string[] = e.melder ? [e.melder] : [];
+  for (const id of ids) {
+    const x = byId.get(id);
+    if (x && !x.deleted && x.melder && !out.includes(x.melder)) out.push(x.melder);
+  }
+  return out.length > 1 ? out : [];
 }
 
 /** Qualität je Meldung (E1 bestätigt/unbestätigt, E2 unvollständig) bis zur Lagezeit */

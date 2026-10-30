@@ -30,7 +30,7 @@ describe("artOf / isLage / lebenszeichen", () => {
     expect(lebenszeichen(ev({ melder: "H02", deleted: true }))).toBeNull();
   });
   it("Texte", () => {
-    expect(ENTRY_ARTEN.map((a) => ART_LABEL[a])).toEqual(["Meldung", "Auftrag", "Orientierung", "Rückfrage", "Verbindungskontrolle", "Notiz"]);
+    expect(ENTRY_ARTEN.map((a) => ART_LABEL[a])).toEqual(["Meldung", "Auftrag", "Orientierung", "Rückfrage", "Verbindungskontrolle", "Notiz", "Ausgang"]);
     expect(artText(ev({ art: "auftrag", an: "H01" }))).toBe("Auftrag an H01");
     expect(artText(ev({ art: "orientierung", quelle: "Bat" }))).toBe("Orientierung Bat");
     expect(artText(ev({ art: "rueckfrage", melder: "H04" }))).toBe("Rückfrage von H04");

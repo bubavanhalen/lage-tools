@@ -33,6 +33,8 @@ export const ART_LABEL: Record<Exclude<SearchArt, null>, string> = {
   // MVP 3 (Phase 0: nur Chip-Texte; Stichwörter und Filter baut Paket B)
   gestrichen: "gestrichen", dringend: "dringend", offen: "offen",
   auftrag: "Auftrag", orientierung: "Orientierung", rueckfrage: "Rückfrage", vbk: "Verbindung", notiz: "Notiz",
+  // MVP 3.5 (Phase 0: nur Chip-Text)
+  ausgang: "Ausgang",
 };
 
 /**

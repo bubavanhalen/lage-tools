@@ -47,6 +47,13 @@ export interface SituationOptions {
   highlight?: ReadonlySet<string> | null;
   /** MVP 1: ruhige Karte der Grundansicht (Beschriftungsregel Kap. 3.7); false/fehlt = Experte (wie bisher) */
   quiet?: boolean;
+  /**
+   * (MVP 3.5, K3 – Phase 0 verdrahtet, Paket B nutzt es) Zeichengrösse: Stufe S/M/L pro Gerät, Präsentation
+   * (`symbolGrundmass`, map/symbolSize.ts). Fehlt → wie bisher.
+   */
+  groesse?: import("./shell/contracts").ZeichenGroesse;
+  /** (MVP 3.5) Nacht: Rand der Zeichen `KARTE.haloNacht` (schwarz) statt weiss – Paket B */
+  nacht?: boolean;
 }
 
 /** geparste Zeichen-SVG je Gestalt (Text → Element), geklont statt neu geparst */

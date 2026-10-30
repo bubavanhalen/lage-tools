@@ -145,6 +145,8 @@ export function felderText(f: MeldeFelder): string {
 /** Name der Art im vierten Segment und im Menü «Andere» */
 export const ART_NAME: Record<Exclude<EntryArt, "meldung">, string> = {
   auftrag: "Auftrag", orientierung: "Orientierung", rueckfrage: "Rückfrage", vbk: "Verbindungskontrolle", notiz: "Notiz",
+  // MVP 3.5 (Phase 0: nur Name; Eintrag in «Andere ▾» baut Paket E)
+  ausgang: "Ausgang",
 };
 
 /** Bezug «zu 42» → Meldung (für «Antwort auf Nr 57» in der Vorschau) */

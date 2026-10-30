@@ -16,7 +16,7 @@
  * `LageZeitCtl` ist ohne React (Test mit vitest und Fake-Timern), `useLageZeit` hängt ihn an die Seite.
  */
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { localIso, showLastStart, windowStart, zaehleMeldungen, type LageEvent } from "@lage/core";
+import { jetztLagezeit, localIso, showLastStart, windowStart, zaehleMeldungen, type LageEvent } from "@lage/core";
 import type { GoLiveGrund, LageZeit, ShowLast, ZeitApi } from "../shell/contracts";
 
 /** so lange ohne Bedienung, dann zurück nach LIVE (R1) */
@@ -354,5 +354,7 @@ export function useLageZeit({ exId, events, say }: UseLageZeitOptions): ZeitApi 
     goLive: ctl.goLive,
     suspend: ctl.suspend,
     remaining: ctl.remaining,
-  }), [version, tLive, ctl]); // eslint-disable-line react-hooks/exhaustive-deps
+    // MVP 3.5 (S22, Phase 0): Geräteuhr mit Offset – Anzeige «LIVE 07:31», Übergabe/Druck «Stand» (Paket E/D)
+    tUhr: jetztLagezeit(new Date(clock)),
+  }), [version, tLive, ctl, clock]); // eslint-disable-line react-hooks/exhaustive-deps
 }

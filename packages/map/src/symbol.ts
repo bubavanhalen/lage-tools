@@ -73,17 +73,23 @@ const cache = new Map<string, SymbolGraphic>();
 /**
  * @param outline Farbe der Umrandung (Standard weiss); z. B. blau für «von Blau gemeldet»
  */
-export function symbolSvg(key: string, aff: Affiliation, size = 22, text: SymbolText = {}, outline = "#ffffff"): SymbolGraphic {
-  const ck = `${key}|${aff}|${size}|${text.dir ?? ""}|${outline}|${text.sidc ?? ""}|${text.status ?? ""}`;
+export function symbolSvg(key: string, aff: Affiliation, size = 22, text: SymbolText = {}, outline = "#ffffff", o: SymbolStrich = {}): SymbolGraphic {
+  const ck = `${key}|${aff}|${size}|${text.dir ?? ""}|${outline}|${text.sidc ?? ""}|${text.status ?? ""}|${o.strokeWidth ?? ""}|${o.outlineWidth ?? ""}`;
   const hit = cache.get(ck);
   if (hit) return hit;
-  const g = draw(key, aff, size, text, outline);
+  const g = draw(key, aff, size, text, outline, o);
   if (cache.size > 400) cache.clear();
   cache.set(ck, g);
   return g;
 }
 
-function draw(key: string, aff: Affiliation, size: number, text: SymbolText, outline: string): SymbolGraphic {
+/**
+ * (MVP 3.5, K3 – Variante V4, Paket B) Linienstärken für milsymbol: `strokeWidth` (Rahmen), `outlineWidth` (Halo).
+ * Fehlt → wie bisher (milsymbol-Standard, Halo 4).
+ */
+export interface SymbolStrich { strokeWidth?: number; outlineWidth?: number }
+
+function draw(key: string, aff: Affiliation, size: number, text: SymbolText, outline: string, o: SymbolStrich = {}): SymbolGraphic {
   const triangle = (OLD_KEYS.has(key) ? symbolDef(key).triangle : catalogEntry(key)?.triangle) ?? false;
   const dashed = isAnticipated(text.sidc, text.status);
   if (text.sidc) aff = sidcAffiliation(text.sidc, aff);
@@ -103,7 +109,7 @@ function draw(key: string, aff: Affiliation, size: number, text: SymbolText, out
       + `<circle cx="${W / 2}" cy="${p + (h * 2) / 3}" r="1.6" fill="#000"/></svg>`;
     return { svg, w: W, h: H, anchor: [W / 2, p + (h * 2) / 3] };
   }
-  const opts: Record<string, unknown> = { size, outlineWidth: 4, outlineColor: outline, fill: true };
+  const opts: Record<string, unknown> = { size, outlineWidth: o.outlineWidth ?? 4, outlineColor: outline, fill: true, ...(o.strokeWidth !== undefined ? { strokeWidth: o.strokeWidth } : {}) };
   if (text.dir !== undefined) opts.direction = String(text.dir);
   let sym = new ms.Symbol(resolveSidc(key, aff, text), opts);
   if (!sym.isValid()) sym = new ms.Symbol(resolveSidc(key, aff, { status: text.status }), opts);

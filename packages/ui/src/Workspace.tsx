@@ -5,6 +5,12 @@
  * `cloneForUpdate` (P3) und Messpunkt `lt:bereit` (P1). Anordnung in `shell/AppShell.tsx`, Kopf und Menü in
  * `shell/`, Modus «Vorbereiten» in `prepare/`, Zeit in `time/` (Paket C). Speichern/Abgleich unverändert aus MVP 0
  * (`useExerciseStore`, `persist.ts`), ebenso Speicherbänder, Zusammenführen beim Öffnen und Rückgängig.
+ *
+ * MVP 3.5 «Feinschliff», Phase 0 (Spez. MVP 3.5, Kap. 6.1): Kopf-Knopf «Offline …» öffnet das Offline-Popover
+ * (`betrieb/`, kein Moduswechsel mehr), `useWakeLock(lage)`, `useBetriebStatus`, Datei-Sicherung gemerkt
+ * (`markDateiGesichert`), Zeichengrösse/Nacht an die Lage-Ebene, Übergabe mit `tUhr/update/device/onSaveFile/
+ * dateiGesichert`, Schutzhinweis ans Meldungsfeld, Menü-Angaben (Bildschirm bleibt an, sicher?, zuletzt gesichert).
+ * Ab Phase 1 gehört diese Datei allein Paket E.
  */
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
@@ -110,6 +116,13 @@ import { cloneForUpdate } from "./lvzui/clone";
 import { ladeLetzteUebergabe, ladeUebergabePdf, letzteUebergabeText, onLetzteUebergabe } from "./lvzui/letzteUebergabe";
 import { JournalDruckDialog } from "./print/JournalDruckDialog";
 import { LagekarteDialog } from "./print/LagekarteDialog";
+// MVP 3.5 (Phase 0): `beforeinstallprompt` früh abfangen (Modul fängt es beim Laden ab, Paket A)
+import "./betrieb/install";
+import { OfflinePopover } from "./betrieb/OfflinePopover";
+import { useBetriebStatus, useSchutzHinweis } from "./betrieb/status";
+import { useWakeLock } from "./betrieb/wakeLock";
+import { dateiText, markDateiGesichert, useDateiGesichert } from "./betrieb/dateiSichern";
+import { useZeichenGroesse } from "./map/symbolSize";
 
 /**
  * `f` nach dem nächsten gezeichneten Bild ausführen (rAF → Task): so erscheinen Feld, Liste und Band sofort, die
@@ -222,6 +235,15 @@ export function Workspace({ product, tagline }: Props) {
   // ---------- Kopf: Speicher- und Offline-Status
   const saveStatus = useSaveStatus();
   const offline = useOfflineStatus(ex);
+  // ---------- MVP 3.5 (Phase 0 verdrahtet): Betrieb (Paket A) – Status, Bildschirm bleibt an, Schutzhinweis, Datei-Sicherung
+  const betrieb = useBetriebStatus(ex, offline);
+  const wach = useWakeLock(lage);
+  const schutz = useSchutzHinweis(ex?.id ?? null, betrieb);
+  const dateiAm = useDateiGesichert(ex?.id);
+  /** Offline-Popover offen (am Kopf-Knopf bzw. am Menü), kein Moduswechsel (S6) */
+  const [offlinePop, setOfflinePop] = useState<{ anker: HTMLElement | null } | null>(null);
+  // ---------- MVP 3.5 (Phase 0 verdrahtet): Zeichengrösse S/M/L pro Gerät (Paket B baut die Lage-Ebene um)
+  const [zeichenStufe] = useZeichenGroesse();
 
   // Datenbank blockiert (altes Lagejournal-Fenster offen): Hinweis zeigen, App läuft mit leerer Übung weiter
   const [dbBlocked, setDbBlocked] = useState(false);
@@ -322,6 +344,7 @@ export function Workspace({ product, tagline }: Props) {
   const fromLater = useDeferredValue(winFrom);
   useEffect(() => { zeit.suspend("praesentation", present); }, [present]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { zeit.suspend("dialog", dialog !== null); }, [dialog]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { zeit.suspend("offline", offlinePop !== null); }, [offlinePop]); // eslint-disable-line react-hooks/exhaustive-deps
   const suspendMenu = useCallback((key: string) => (o: boolean) => zeit.suspend(key, o), [zeit.suspend]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- Hinweise zu Rot: folgen der Lagezeit, nie «Zeige letzte» (Entscheid: «Was Rot» rechnet immer über alles)
@@ -426,7 +449,7 @@ export function Workspace({ product, tagline }: Props) {
   const builtKey = useRef<unknown[] | null>(null);
   const hlKey = hintHl ? [...hintHl].join() : "";
   const buildSituation = (s: SwissMap, x: Exercise, t: string, from: string | null) => {
-    const key = [x.events, x.sheets, t, from, flags, selEvent, present, experte, hlKey, mapReady];
+    const key = [x.events, x.sheets, t, from, flags, selEvent, present, experte, hlKey, mapReady, zeichenStufe, night];
     if (builtKey.current && key.length === builtKey.current.length && key.every((v, i) => v === builtKey.current![i])) return;
     // nicht während ein Zeichen gezogen wird (Live-Takt, Abgleich, Abspielen …): nach dem Loslassen nachholen
     whenNotDragging(s.map, () => {
@@ -439,6 +462,8 @@ export function Workspace({ product, tagline }: Props) {
         onClick: (e) => { setSideView("journal"); selectEventRef.current(e.id); },
         onMove: present ? undefined : mover.move,
         highlight: hintHl,
+        // MVP 3.5 (Phase 0 verdrahtet, Paket B): Zeichengrösse und Nacht-Rand
+        groesse: { stufe: zeichenStufe, praesentation: present }, nacht: night,
       });
       g.addTo(s.map);
       journalRef.current = g;
@@ -466,7 +491,7 @@ export function Workspace({ product, tagline }: Props) {
     const x = exLater;
     if (!s || !x || x !== ex || tLater !== tNow || fromLater !== winFrom) return;
     return afterPaint(() => buildSituation(s, x, tLater, fromLater));
-  }, [exLater?.events, exLater?.sheets, ex?.events, tLater, tNow, fromLater, winFrom, flags, selEvent, mapReady, present, experte, hlKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [exLater?.events, exLater?.sheets, ex?.events, tLater, tNow, fromLater, winFrom, flags, selEvent, mapReady, present, experte, hlKey, zeichenStufe, night]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flächen- und Linienzeichen (unter den Zeichen)
   const shapeRef = useRef<L.LayerGroup | null>(null);
@@ -754,11 +779,13 @@ export function Workspace({ product, tagline }: Props) {
     const cur = exRef.current;
     if (!cur) return false;
     try {
-      if (!cur.attachments?.length) { downloadText(`${safeFileName(cur.name)}.lage.json`, exerciseToFile(cur)); return true; }
+      // MVP 3.5 (S9): Datei-Sicherung dieser Übung auf diesem Gerät merken («zuletzt 07:31», Erinnerung bei der Übergabe)
+      if (!cur.attachments?.length) { downloadText(`${safeFileName(cur.name)}.lage.json`, exerciseToFile(cur)); markDateiGesichert(cur.id); return true; }
       const { exerciseFile, sizeText } = await import("./exportZip");
       const r = await exerciseFile(cur, safeFileName(cur.name), getBlob);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(r.blob); a.download = r.name; a.click();
+      markDateiGesichert(cur.id);
       window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
       say(`Gespeichert als ZIP mit ${r.files} ${r.files === 1 ? "Anhang" : "Anhängen"} (${sizeText(r.blob.size)})${r.missing ? ` – ${r.missing} nicht auf diesem Gerät` : ""}`);
       return true;
@@ -890,7 +917,9 @@ export function Workspace({ product, tagline }: Props) {
       schichtNote={schicht.kuerzel ? `Schicht ${schicht.kuerzel}${seitText(schicht.seitT) ? ` seit ${seitText(schicht.seitT)}` : ""}` : "Kürzel fehlt"}
       night={night} onNight={setNight} onPresent={() => togglePresent(true)}
       onSpeech={() => setDialog("sprache")} onHintsCsv={exportHints} onHelp={() => setDialog("hilfe")} onAbout={() => setDialog("ueber")}
-      onOpenChange={suspendMenu("menu")} />
+      onOpenChange={suspendMenu("menu")}
+      wach={wach} sicher={betrieb.speicher && betrieb.installiert} dateiNote={dateiText(dateiAm)}
+      onSicher={() => setOfflinePop({ anker: document.querySelector<HTMLElement>(".hd .mm-btn") })} />
   );
 
   const red = (
@@ -909,7 +938,7 @@ export function Workspace({ product, tagline }: Props) {
       rueckblick={zeit.zeit.kind === "rueckblick"} say={say} />
   );
   // MVP 3 an JournalPanel/EntryBox/JournalList (Paket B nimmt sie an; optional)
-  const mvp3 = { schicht, onNr, lvz: lvzRow, updateEvents, offen: offenPanel };
+  const mvp3 = { schicht, onNr, lvz: lvzRow, updateEvents, offen: offenPanel, schutzHinweis: schutz };
   const journal = map ? (
     <JournalPanel {...mvp3} ex={ex} map={map} device={device} selected={selEvent} experte={experte} zeit={zeit}
       win={winFrom ? { from: winFrom, to: tNow } : null} onWinClear={() => { zeit.setShowLast(null); zeit.setAb?.(null); }}
@@ -951,7 +980,7 @@ export function Workspace({ product, tagline }: Props) {
       <AppShell aw={aw} lagezeit={zeit.zeit.kind} night={night} present={present}
         header={<Header name={ex.name} product={product} save={saveStatus} offline={offline} menu={menu}
           schicht={{ kuerzel: schicht.kuerzel, seit: seitText(schicht.seitT) }}
-          onFixOffline={() => { setModus("vorbereiten"); setPrepStep(6); }} />}
+          onFixOffline={() => setOfflinePop({ anker: document.querySelector<HTMLElement>(".hd .hd-off.fix") })} />}
         bands={<>
           <StatusBands ex={ex} dbBlocked={dbBlocked} onSaveFile={saveFile} />
         </>}
@@ -998,6 +1027,11 @@ export function Workspace({ product, tagline }: Props) {
         {toast && <div className="toast" role="status">{toast}</div>}
         {mover.notice}
         {undo.bar}
+        {offlinePop && (
+          <OfflinePopover ex={ex} map={map} status={betrieb} anker={offlinePop.anker} onClose={() => setOfflinePop(null)}
+            onSaveFile={() => void saveFile()} say={say}
+            onVorbereiten={() => { setOfflinePop(null); setModus("vorbereiten"); setPrepStep(6); }} />
+        )}
         <ViewerHost />
         {dialog === "uebungen" && (
           <ExerciseList currentId={ex.id} onOpen={(id) => void openSaved(id)} onClose={() => setDialog(null)} offerUndo={undo.offer}
@@ -1010,7 +1044,8 @@ export function Workspace({ product, tagline }: Props) {
           onSet={(k, neu) => { schicht.setKuerzel(k, { neu }); say(neu ? `Schicht ${k} beginnt jetzt – Neu gilt ab jetzt.` : `Kürzel ${k} gespeichert`); }} />}
         {dialog === "uebergabe" && (
           <UebergabeView ex={ex} tLive={zeit.tLive} hints={allHints} lage={lageRot} items={offenItems} schicht={schicht} seitT={schicht.seitT}
-            ki={!!ex.ki?.enabled} onKiNotiz={kiNotiz} onClose={() => setDialog(null)} say={say} />
+            ki={!!ex.ki?.enabled} onKiNotiz={kiNotiz} onClose={() => setDialog(null)} say={say}
+            tUhr={zeit.tUhr} update={update} device={device} onSaveFile={() => void saveFile()} dateiGesichert={dateiAm} />
         )}
         {dialog === "journaldruck" && (
           <JournalDruckDialog ex={ex} hints={allHints} lage={lageRot} tLive={zeit.tLive} kuerzel={schicht.kuerzel} schichtSeit={schicht.seit}
