@@ -3,6 +3,8 @@
  * Absender in «Von oben» genau einmal, Spalte «Art» im Journal-PDF ohne Worttrennung,
  * MESZ/MEZ in der doppelten Stunde (Übergabe/Offen). Nur fiktive Daten (Raum Bern).
  */
+// wie die übrigen Zeit-Tests: Gerätezone fest auf Schweizer Zeit (CI läuft in UTC)
+process.env.TZ = "Europe/Zurich";
 import { describe, expect, it } from "vitest";
 import { demoExercise, type Exercise } from "@lage/core";
 import { ohneOnline } from "../src/betrieb/dateiOnline";
