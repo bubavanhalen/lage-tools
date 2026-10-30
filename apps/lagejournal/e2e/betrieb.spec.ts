@@ -143,7 +143,8 @@ const spec: Spec = {
         await s.page.context().route(/\/lagejournal\/(\?.*)?$/, () => { /* hängt: nie antworten */ });
         const t0 = Date.now();
         await s.page.reload({ waitUntil: "commit", timeout: 10000 }).catch(() => {});
-        await s.page.waitForFunction(() => performance.getEntriesByName("lt:bereit").length > 0, null, { timeout: 8000 });
+        // Entscheid Koordinator: `__ltPerf().bereit` (unter der Test-Uhr findet getEntriesByName die Marke nicht)
+        await s.page.waitForFunction(() => { const f = (window as unknown as { __ltPerf?: () => { bereit?: number } }).__ltPerf; return !!f && typeof f().bereit === "number"; }, null, { timeout: 8000 });
         w.ms = Date.now() - t0;
         w.perf = await s.page.evaluate(perfImBrowser);
         soll((w.ms as number) <= 4000, `lt:bereit nach ${w.ms} ms`);

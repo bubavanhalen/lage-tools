@@ -227,6 +227,21 @@ const spec: Spec = {
       out.push(await messen1(h, "Auswahlliste auf der Karte (nur Bericht)", g, null, { query: "?beispiel" }, auswahlliste));
       out.push(await messen1(h, "Übergabe-Schritt «Datei sichern» (nur Bericht, Ziel ≤ 4)", g, null, { query: "?beispiel" }, dateiSchritt));
       out.push(await messen3(h, "--hit 48px: Offline-Popover", g, null, { query: "?beispiel", offline: "echt" }, popover, ":root{--hit:48px !important}"));
+      // Entscheid Koordinator: der einmalige Schutzhinweis ist im «echt»-Inventar vorbelegt – hier eigens geprüft
+      out.push(await aufgabe("Schutzhinweis einmal (echt, nicht vorbelegt): erscheint, nach «OK» und Neuladen weg", g, async (w) => {
+        const s = await h.open({ query: "?beispiel", geraet: g, uhr: UHR_T2_0730, offline: "echt" });
+        try {
+          const hinweis = s.page.getByText("Dieses Gerät schützt die Daten nicht dauerhaft.");
+          w.vorher = await hinweis.isVisible().catch(() => false);
+          soll(w.vorher, "Schutzhinweis fehlt");
+          await knopfVon(s, "OK").click();
+          soll(!(await hinweis.isVisible().catch(() => false)), "Hinweis nach «OK» noch da");
+          await s.page.reload();
+          await s.page.waitForTimeout(1200);
+          w.nachNeuladen = await hinweis.count();
+          soll(w.nachNeuladen === 0, "Hinweis nach Neuladen wieder da");
+        } finally { await s.close(); }
+      }));
       out.push(await messen3(h, "--hit 48px: Kürzel-Zeile", g, null, { query: "?beispiel=leer" }, async (s) => {
         soll(await s.page.getByLabel("Dein Kürzel").isVisible().catch(() => false), "Kürzel-Zeile fehlt");
       }, ":root{--hit:48px !important}"));

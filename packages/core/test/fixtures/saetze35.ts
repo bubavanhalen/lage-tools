@@ -264,7 +264,7 @@ export const SAETZE35: SatzFall[] = [
   { id: "s12-22", satz: "H02 Kpz AK9 hat Stellung bezogen, vermutlich 2", quelle: "einsatz-s12", uhr: "2030-05-15T07:52:00+02:00", soll: "schnappschuss" },
   { id: "s12-23", satz: "H03 Lärm von Motoren aus Rtg AP5", quelle: "einsatz-s12", uhr: "2030-05-15T07:53:00+02:00", nr: 12, paket: "C", soll: { stufe: "pruefen", grund: "ort-bei-trupp", art: "meldung", seite: "unklar", ort: "bei H03", zeichenNeu: 1 } },
   { id: "s12-24", satz: "H04 Schüsse gehört Rtg S", quelle: "einsatz-s12", uhr: "2030-05-15T07:54:00+02:00", soll: "schnappschuss" },
-  { id: "s12-25", satz: "H01 Rückzug nach AC5", quelle: "einsatz-s12", uhr: "2030-05-15T07:55:00+02:00", nr: 11, paket: "C", soll: { stufe: "pruefen", grund: "seite", art: "meldung", seite: "eigen", ort: "AC5", truppNach: { H01: "AC5" }, zeichenNeu: 0 } },
+  { id: "s12-25", satz: "H01 Rückzug nach AC5", quelle: "einsatz-s12", uhr: "2030-05-15T07:55:00+02:00", nr: 11, paket: "C", soll: { stufe: "pruefen", grund: "seite", art: "meldung", seite: "eigen", ort: "AC5", zeichenNeu: 0 } }, // truppNach: Folge s12 hat H01 schon in AC5 – Versetzen prüft erkennung35
   { id: "s12-26", satz: "H02 Wiederholen?", quelle: "einsatz-s12", uhr: "2030-05-15T07:56:00+02:00", soll: "schnappschuss" },
   { id: "s12-27", satz: "H02 Verstanden", quelle: "einsatz-s12", uhr: "2030-05-15T07:57:00+02:00", nr: 46, paket: "D", soll: { stufe: "bereit", art: "notiz", bezugArt: "quittung", zeichenNeu: 0 } },
   { id: "s12-28", satz: "H05 Mun Stand 60%", quelle: "einsatz-s12", uhr: "2030-05-15T07:58:00+02:00", nr: 25, paket: "C/D", soll: { stufe: "bereit", art: "meldung", seite: "eigen", gesehen: /^(?!.*munitionslager)/i, begehren: true, zeichenNeu: 0 } },

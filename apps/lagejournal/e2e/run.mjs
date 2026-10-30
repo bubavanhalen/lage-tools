@@ -64,6 +64,9 @@ if (!ohneBuild || !existsSync(join(SITE, "lagejournal", "index.html"))) {
   const r = spawnSync("npx", ["vite", "build", "--outDir", join(SITE, "lagejournal"), "--emptyOutDir", "--logLevel", "warn"], { cwd: APP, stdio: "inherit" });
   if (r.status !== 0) { console.error("Build fehlgeschlagen"); process.exit(2); }
   if (existsSync(join(ROOT, "site", "icons"))) cpSync(join(ROOT, "site", "icons"), join(SITE, "icons"), { recursive: true });
+  // MVP 3.5 (Paket A): Service Worker, precache.json und Manifest in die Kopie (betrieb.spec 5, Zeitlimits aus entscheide.ts)
+  const sw = spawnSync("node", [join(ROOT, "scripts/assemble-site.mjs"), "--sw", join(SITE, "lagejournal"), "lagejournal"], { stdio: "inherit" });
+  if (sw.status !== 0) { console.error("sw.js für die Kopie fehlgeschlagen"); process.exit(2); }
 }
 
 // ---------- statischer Server ----------

@@ -25,9 +25,6 @@ const MODUS = process.env.SAETZE35_STAND ?? "";
 
 /** Soll-Fälle, die Phase 0 noch nicht erfüllt (laufen als `it.fails`). Erfüllt → ID streichen. */
 const OFFEN = new Set<string>([
-  // Paket C – s12-25 (#11): H01 steht in der Folge s12 seit s12-14 («Stellungswechsel nach AC5 erfolgt») schon in AC5,
-  // «Rückzug nach AC5» kann ihn nicht mehr versetzen (Erwartung `truppNach` – Koordinator, Notizdatei)
-  "s12-25",
 ]);
 
 /** Schnappschuss-Fälle, deren Ergebnis sich bewusst ändert: ID → Begründung (Paket, Regel) */
