@@ -1373,7 +1373,9 @@ export function historyText(e: Pick<LageEvent, "history">): string {
  */
 export function journalToCsv(events: LageEvent[], days: string[], o: { gestrichen?: boolean; schichten?: Exercise["schichten"] } = {}): string {
   const head = ["Tag", "Zeit", "Art", "Element", "Melder", "Meldung", "Zeichen", "Ort", "Planquadrat", "NAI", "E", "N", "Status", "Fassungen", "Form",
-    "Nr", "Eingang", "An/Quelle", "Erfasst von", "Dringend", "Stand", "Massnahme", "Weitergemeldet", "Bezug", "Hebt auf", "Schicht"];
+    "Nr", "Eingang", "An/Quelle", "Erfasst von", "Dringend", "Stand", "Massnahme", "Weitergemeldet", "Bezug", "Hebt auf", "Schicht",
+    // MVP 3.5 (Kap. 5.8): «Begehren» hinten angefügt (Nachschub, Sanität …; leer ohne Begehren)
+    "Begehren"];
   // Spalte «Schicht»: dieselbe Zuordnung wie Übergabe und Druck (`schichtEintraege`: erfasst ab Schichtbeginn bis zum Wechsel)
   const schichtVon = schichtZuordnung({ schichten: o.schichten });
   const ex = { events };
@@ -1394,7 +1396,7 @@ export function journalToCsv(events: LageEvent[], days: string[], o: { gestriche
       // «gestrichen 08:12 BSP» (Zeit des Streichens = letzte Änderung)
       e.pos ? String(Math.round(e.pos.e)) : "", e.pos ? String(Math.round(e.pos.n)) : "", `${journalStatus(e)}${e.deleted ? ` ${localHhmm(e.updatedAt)}` : ""}${e.deleted && e.geaendertVon ? ` ${e.geaendertVon}` : ""}`, historyText(e), shapeCsv(e),
       nrLabel(e, ex), eingang, e.an ?? e.quelle ?? "", e.erfasstVon ?? "", v.dringend ? "dringend" : "", stand, v.massnahme ?? "",
-      v.weiter ? `${v.weiter.an} ${v.weiter.um.slice(11, 16)}` : "", nrOfId(e.bezug), nrOfId(e.hebtAuf), schichtVon(e)?.an ?? ""];
+      v.weiter ? `${v.weiter.an} ${v.weiter.um.slice(11, 16)}` : "", nrOfId(e.bezug), nrOfId(e.hebtAuf), schichtVon(e)?.an ?? "", e.begehren?.was ?? ""];
   });
   return "\uFEFF" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
 }

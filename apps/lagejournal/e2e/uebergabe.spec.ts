@@ -64,6 +64,8 @@ const spec: Spec = {
         await s.page.getByLabel(/übernommen von/).fill("MU");
         await ab.click();
         soll(await s.page.getByText(/Übergabe 07:30 BSP → MU gespeichert/).first().isVisible(), "Rückmeldung fehlt");
+        // MVP 3.5 (S9): frisches Gerät = nie gesichert → Schritt «Datei sichern»; hier «Später»
+        await knopfVon(s, "Später").click();
         soll(await s.page.getByText(/Schicht MU seit 07:30/).first().isVisible(), "Kopf ohne «Schicht MU seit 07:30»");
         await ansicht(s, "Journal");
         await eintragenText(s, "H03 1 Fz in NAI 2 Rtg N");

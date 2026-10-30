@@ -16,7 +16,7 @@
  */
 import { createPortal } from "react-dom";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
-import { artOf, catalogEntry, describeTactical, nrLabel, zeitMs, zeitText, type Draft, type Kind, type LageEvent } from "@lage/core";
+import { artOf, catalogEntry, cellAtAny, describeTactical, lastPosition, nrLabel, zeitMs, zeitText, type Draft, type Kind, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { LAGE_KARTE } from "../colors";
 import { useDraftMissing } from "../QualityMarks";
@@ -122,7 +122,8 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
   const ortProblem = state.reasons.some((x) => x.problem === "ort" || x.problem === "orte");
   const melderProblems = state.reasons.filter((x) => (x.problem === "melder" || x.code === "trupp-neu") && x.token);
   /** (MVP 3.5) Wahl-Knöpfe (Bezug 64a/64b, welcher Auftrag erledigt) */
-  const wahl = state.reasons.find((x) => (x.code === "bezug-wahl" || x.code === "auftrag-wahl") && x.choices?.length);
+  const wahlGrund = state.reasons.find((x) => x.code === "bezug-wahl" || x.code === "auftrag-wahl");
+  const wahl = wahlGrund && (wahlGrund.choices?.length ? wahlGrund : draft.wahl?.choices?.length ? { ...wahlGrund, choices: draft.wahl.choices } : null);
   const zweiOrte = !korr && !!draft.teile && state.reasons.some((x) => x.code === "zwei-orte");
   /** Vorschläge der Erkennung, die in den Text übernommen werden können («meintest du 07:35?», «Schützenpanzer») */
   const offers = state.reasons.flatMap((x) => {
@@ -251,6 +252,12 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
           {artBefore && <span className="eb-vorher">(vorher {artBefore})</span>}
         </div>
       </>}
+      {lvl !== "geht-nicht" && !note && !lift && draft.ohneZeichen && draft.melder && (() => {
+        // MVP 3.5 (C7/C11): eigene Verwundete bzw. Begehren – kein neues Zeichen, der Trupp bleibt, wo er ist
+        const p = lastPosition(ex.events ?? [], "blau", draft.melder);
+        const zelle = p ? cellAtAny(ex.sheets, p)?.label : undefined;
+        return <p className="eb-genannt">kein neues Zeichen{zelle ? ` · ${draft.melder} bleibt in ${zelle}` : ""}</p>;
+      })()}
       {lvl !== "geht-nicht" && !note && !lift && (
         <div className="eb-row eb-ort">
           {d.roadTarget && d.effPos ? (

@@ -106,6 +106,20 @@ export function demoLang(o: { meldungen?: number; tage?: number; seed?: number }
   const sperren: LageEvent[] = [];
   let tagStao = 0;
   let lastCreated = 0;
+  // MVP 3.5: Ausgänge nach oben (fiktiv), über die Tage verteilt und sicher in der letzten Schicht – wie Gestrichene und
+  // Korrigierte über feste Plätze (verbrauchen keinen Zufall, die übrige Übung bleibt gleich): je Tag «Bat fragt: …» mit
+  // «Antwort an Bat: …», eine Weitergabe «Weitergemeldet an Bat: Nr …» der jüngsten Feindmeldung, dazu «Lagemeldung an Kp»
+  type Slot = { min: number; art: "frage" | "antwort" | "weiter" | "lage"; done?: boolean };
+  const slots: Slot[] = [];
+  for (let d = 0; d < tage; d++) {
+    const t0 = d * 1440;
+    if (d < tage - 1) slots.push({ min: t0 + 10 * 60, art: "frage" }, { min: t0 + 10 * 60 + 6, art: "antwort" }, { min: t0 + 14 * 60, art: "weiter" }, { min: t0 + 19 * 60, art: "lage" });
+  }
+  // letzte Schicht (ab dem letzten Wechsel): Rückfrage, Antwort und Weitergabe
+  slots.push({ min: end - 50, art: "frage" }, { min: end - 40, art: "antwort" }, { min: end - 25, art: "weiter" });
+  const slotIds = new Set<number>();
+  let frageOben: LageEvent | undefined;
+  let letzteFeind: LageEvent | undefined;
 
   for (let i = 0; i < total; i++) {
     const min = times[i]!;
@@ -168,6 +182,22 @@ export function demoLang(o: { meldungen?: number; tage?: number; seed?: number }
       plan = { art: "meldung", text: `${tag} ${hhmm(t)} ${pick(lines)}` };
     }
 
+    const slot = i >= TRUPPS.length && i < total - 3 ? slots.find((s) => !s.done && min >= s.min && (s.art !== "antwort" || frageOben) && (s.art !== "weiter" || letzteFeind)) : undefined;
+    if (slot) {
+      slot.done = true;
+      slotIds.add(i);
+      if (slot.art === "frage") plan = { art: "rueckfrage", text: `Bat fragt: Lage bei ${["NAI 1", "NAI 2", "NAI 3"][slots.indexOf(slot) % 3]}?`, quelle: "Bat" };
+      else if (slot.art === "antwort") {
+        plan = { art: "ausgang", text: `Antwort an Bat: ${["ruhig, H03 beobachtet weiter", "2 Fz Rtg S, H05 beobachtet", "keine Bewegung"][slots.indexOf(slot) % 3]}`, an: "Bat" };
+        (plan as { bezug?: LageEvent; bezugArt?: LageEvent["bezugArt"] }).bezug = frageOben;
+        (plan as { bezugArt?: LageEvent["bezugArt"] }).bezugArt = "antwort";
+      } else if (slot.art === "weiter") {
+        plan = { art: "ausgang", text: `Weitergemeldet an Bat: Nr ${letzteFeind!.nr}`, an: "Bat" };
+        (plan as { bezug?: LageEvent }).bezug = letzteFeind;
+        (plan as { bezugArt?: LageEvent["bezugArt"] }).bezugArt = "weiter";
+      } else plan = { art: "ausgang", text: `Lagemeldung an Kp: ${["ruhig", "Trupps in Stellung, keine Bewegung", "1 Kontakt, keine Verluste"][slots.indexOf(slot) % 3]}`, an: "Kp" };
+    }
+
     const nr = i + 1;
     // Eingang kurz nach dem Ereignis, ab und zu 6 min später («Eingang 07:40»); Nummern steigen mit dem Eingang
     const createdAt = new Date(Math.max(Date.parse(utcOf(t, 20 + Math.floor(r() * 30) + (r() < 0.05 ? 360 : 0))), lastCreated + 1000)).toISOString();
@@ -192,7 +222,7 @@ export function demoLang(o: { meldungen?: number; tage?: number; seed?: number }
       },
         DEMO_LANG_DEVICE, new Date(createdAt), { nr, kuerzel });
       const bez = (plan as { bezug?: LageEvent }).bezug;
-      if (bez) { ev.bezug = bez.id; ev.bezugArt = "quittung"; }
+      if (bez) { ev.bezug = bez.id; ev.bezugArt = (plan as { bezugArt?: LageEvent["bezugArt"] }).bezugArt ?? "quittung"; }
     }
     ev.id = `${Date.parse(createdAt).toString(36).padStart(9, "0")}lang${nr.toString(36).padStart(4, "0")}`;
     ev.tReported = isoAt(Math.min(end, min + Math.floor((Date.parse(createdAt) - Date.parse(utcOf(t))) / 60000)), days);
@@ -207,7 +237,7 @@ export function demoLang(o: { meldungen?: number; tage?: number; seed?: number }
       ev.lvz = { dringend: stamp(true, 1), weiter: stamp({ an: "Bat", um: isoAt(Math.min(end, min + 3), days) }, 3) };
       if (min < end - 360 || r() < 0.3) ev.lvz.status = stamp("erledigt" as const, 15);
       if (r() < 0.5) ev.lvz.massnahme = stamp("Zfhr orientiert", 2);
-    } else if ((y < 0.045 || (min >= end - 90 && !letzteGestrichen)) && i < total - 3) {
+    } else if ((y < 0.045 || (min >= end - 90 && !letzteGestrichen)) && i < total - 3 && !slotIds.has(i)) {
       letzteGestrichen ||= min >= end - 90;
       // gestrichen
       ev = { ...ev, deleted: true, rev: 2, updatedAt: utcOf(t, 300), geaendertVon: kuerzel };
@@ -223,7 +253,10 @@ export function demoLang(o: { meldungen?: number; tage?: number; seed?: number }
       offeneAuftraege.push(ev);
       if (offeneAuftraege.length > 2) { const a = offeneAuftraege.shift()!; a.lvz = { ...(a.lvz ?? {}), status: stamp("erledigt" as const, 30) }; }
     }
-    if (ev.art === "rueckfrage" && !ev.deleted) {
+    if (ev.art === "rueckfrage" && ev.quelle && !ev.deleted) frageOben = ev;
+    if (ev.art === "ausgang" && ev.bezugArt === "antwort") frageOben = undefined;
+    if (artOf(ev) === "meldung" && ev.side === "rot" && !ev.deleted && !ev.hebtAuf) letzteFeind = ev;
+    if (ev.art === "rueckfrage" && !ev.quelle && !ev.deleted) {
       offeneRueckfragen.push(ev);
       if (offeneRueckfragen.length > 2) { const q = offeneRueckfragen.shift()!; q.lvz = { ...(q.lvz ?? {}), status: stamp("erledigt" as const, 20) }; }
     }

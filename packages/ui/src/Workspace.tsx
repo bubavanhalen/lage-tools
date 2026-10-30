@@ -110,7 +110,7 @@ import { OffenPanel } from "./lvzui/OffenPanel";
 import { OffenTabLabel } from "./lvzui/OffenTabLabel";
 import { UebergabeView } from "./lvzui/UebergabeView";
 import { KuerzelDialog } from "./lvzui/KuerzelDialog";
-import { KiNotizCtx } from "./ki/KiFeatures";
+import { KiNotizCtx, kiNotizText } from "./ki/KiFeatures";
 import { prefillEntry } from "./entry/useEntryDraft";
 import { HILFE_ANDERE, HILFE_BEISPIELE } from "./entry/HelpPopover";
 import { useTypeToField } from "./entry/useTypeToField";
@@ -749,7 +749,7 @@ export function Workspace({ product, tagline }: Props) {
   // MVP 3.5 (E2, S21): ein druckbares Zeichen ausserhalb eines Felds springt ins Meldungsfeld («Lage führen», kein Dialog)
   useTypeToField(lage && !present && dialog === null && offlinePop === null);
   /** KI-Lagebericht als Notiz (Kap. 3.11): `art: notiz`, `via: ki`, Lagezeit des Entwurfs, Kürzel; gibt die Nummer zurück */
-  const kiNotiz = useCallback((text: string, t: string): string | null => {
+  const kiNotiz = useCallback((text: string, t: string, o?: { geprueft: boolean }): string | null => {
     const cur = exRef.current;
     if (!cur) return null;
     const now = new Date();
@@ -757,7 +757,7 @@ export function Workspace({ product, tagline }: Props) {
     const k = schicht.kuerzel;
     const ev: LageEvent = {
       id: newEventId(now.getTime()), rev: 1, device, updatedAt: now.toISOString(), createdAt: now.toISOString(), tReported: localIso(now),
-      t: t.slice(0, 16), side: "blau", unit: "", text: `Lagebericht (KI-Entwurf, geprüft ${k ?? "–"}): ${text}`, sym: "einheit", aff: "F",
+      t: t.slice(0, 16), side: "blau", unit: "", text: kiNotizText(text, o?.geprueft ?? false, k), sym: "einheit", aff: "F",
       source: { kind: "text" }, confirmed: true, via: "ki", art: "notiz", notiz: true, nr, von: device, ...(k ? { erfasstVon: k } : {}),
     };
     update((x) => ({ ...x, events: [...(x.events ?? []), ev] }));
@@ -943,7 +943,7 @@ export function Workspace({ product, tagline }: Props) {
       onEvent={zurMeldung}
       onCorrect={(id) => correct(id)}
       onHint={(id) => { setSideView("rot"); setSelHint(id); const h = hints.find((x) => x.id === id); if (h) focusHint(h); }}
-      onPrefill={prefill} onUebergabe={openUebergabe} update={update} device={device} kuerzel={schicht.kuerzel}
+      onPrefill={prefill} onPrefillArt={(t, a) => prefill(t, a)} onUebergabe={openUebergabe} update={update} device={device} kuerzel={schicht.kuerzel}
       rueckblick={zeit.zeit.kind === "rueckblick"} say={say} />
   );
   // MVP 3 an JournalPanel/EntryBox/JournalList (Paket B nimmt sie an; optional)

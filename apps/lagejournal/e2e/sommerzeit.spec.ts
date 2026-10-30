@@ -43,7 +43,7 @@ const spec: Spec = {
     const out: TestResult[] = [];
     const TAGE_OKT = ["2030-10-26", "2030-10-27"];
 
-    out.push(await aufgabe("1+2 Rückstellung: H01 02:45 MESZ, H02 02:10 MEZ, «0255» = 02:55 MESZ (vor 75 min) dazwischen", "laptop", async (w) => {
+    out.push(await aufgabe("1+2 Rückstellung: H01 02:45 MESZ, H02 02:10 MEZ, «0255» = 02:55 MESZ (vor 15 min) dazwischen", "laptop", async (w) => {
       const s = await uebungAm(h, TAGE_OKT, UHR_RUECKSTELLUNG_0245_MESZ);
       try {
         await eintragenText(s, "H01 1 Pers AC7");
@@ -58,7 +58,8 @@ const spec: Spec = {
         w.zustand = await zustandVon(s);
         w.vorschau = (await s.page.locator("[data-zustand]").first().innerText()).replace(/\s+/g, " ").slice(0, 160);
         soll(w.zustand === "bereit", `Zustand ${w.zustand}`);
-        soll(/02:55 MESZ \(vor 75 min\)/.test(String(w.vorschau)), "Vorschau ohne «02:55 MESZ (vor 75 min)»");
+        // 02:10 MEZ = 01:10 UTC, 02:55 MESZ = 00:55 UTC → vor 15 min (Spez. Tabelle #53 nannte irrtümlich 75)
+        soll(/02:55 MESZ \(vor 15 min\)/.test(String(w.vorschau)), "Vorschau ohne «02:55 MESZ (vor 15 min)»");
         await feldVon(s).press("Enter");
         await s.page.waitForTimeout(400);
         w.reihe2 = await reihenfolge(s);

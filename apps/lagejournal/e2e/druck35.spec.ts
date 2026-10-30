@@ -80,7 +80,7 @@ const spec: Spec = {
       soll(journal!.boxes?.some((b) => /^Erf\.$/.test(b.text.trim())), "Spalte «Erf.» fehlt");
     }));
 
-    out.push(await aufgabe("5 «lang», ganze Übung: letzte Seite hat ≥ 1 Tabellenzeile vor «Geführt von»", "laptop", async (w) => {
+    out.push(await aufgabe("5 «lang», ganze Übung: Seite mit «Geführt von» hat ≥ 1 Tabellenzeile davor", "laptop", async (w) => {
       const s = await h.open({ query: "?beispiel=lang", uhr: UHR_T4_0730 });
       try {
         await s.page.waitForTimeout(1500);
@@ -88,7 +88,9 @@ const spec: Spec = {
         await s.page.getByRole("radio", { name: /Ganze Übung|Alles/ }).first().check().catch(() => {});
         const r = await pdf(s, 30000);
         soll(r?.boxes, "__ltPdfInfo.boxes fehlt");
-        const letzte = r!.boxes!.filter((b) => b.seite === r!.seiten);
+        // Entscheid Koordinator: die Seite mit «Geführt von» (die letzte Seite ist der Anhang «Hinweise»)
+        const vSeite = r!.boxes!.find((b) => /Geführt von/.test(b.text))?.seite ?? r!.seiten;
+        const letzte = r!.boxes!.filter((b) => b.seite === vSeite);
         const visum = letzte.find((b) => /Geführt von/.test(b.text));
         const tabelle = letzte.filter((b) => /^\d+$/.test(b.text.trim()) && (!visum || b.y < visum.y));
         w.letzteSeite = { zeilen: tabelle.length, visum: !!visum };

@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import L from "leaflet";
-import { zeitBis, type EventQuality, type Exercise, type LV95 } from "@lage/core";
+import { uebergabeEintragZu, zeitBis, type EventQuality, type Exercise, type LV95 } from "@lage/core";
 import { EntryBox } from "./entry/EntryBox";
 import { prefillEntry, requestCorrection } from "./entry/useEntryDraft";
 import { deleteEvent, restoreEvent } from "./journal/actions";
@@ -106,8 +106,7 @@ export function JournalPanel(p: Props) {
   /** Übergaben als Zeile im Journal: im gezeigten Zeitraum; bei Suche nur, wenn nach «Übergabe»/«Schichtwechsel» gesucht wird */
   const wechsel = useMemo(() => {
     // MVP 3.5 (S20): gibt es den Übergabe-Eintrag (`system: "uebergabe"`, `schichtId`), entfällt die virtuelle Zeile
-    const mitEintrag = new Set(events.filter((e) => e.system === "uebergabe" && e.schichtId && !e.deleted).map((e) => e.schichtId!));
-    const ws = (ex.schichten ?? []).filter((w) => w.art === "uebergabe" && !mitEintrag.has(w.id) && (!to || zeitBis(w.t.slice(0, 16), to)) && (!p.win?.from || zeitBis(p.win.from, w.t.slice(0, 16))));
+    const ws = (ex.schichten ?? []).filter((w) => w.art === "uebergabe" && !uebergabeEintragZu({ events }, w.id) && (!to || zeitBis(w.t.slice(0, 16), to)) && (!p.win?.from || zeitBis(p.win.from, w.t.slice(0, 16))));
     if (art) return [];
     if (!q) return ws;
     const qq = q.trim().toLowerCase();

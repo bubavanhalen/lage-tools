@@ -121,8 +121,43 @@ const spec: Spec = {
       } finally { await s.close(); }
     }));
 
-    out.push(await aufgabe("6 KI-Notiz: ohne Häkchen «nicht geprüft», mit Häkchen «geprüft BSP»", "laptop", async () => {
-      throw new Error("KI-Attrappe (review5 Port 9209) als Testhaken fehlt noch – Paket D: Ablauf nach lvz.spec/KI-Test der Prüfer, dann hier einbauen");
+    out.push(await aufgabe("6 KI-Notiz: ohne Häkchen «nicht geprüft», mit Häkchen «geprüft BSP»", "laptop", async (w) => {
+      // Ablauf Paket D (Notizdatei): Beispiel mit KI an (als Datei), Schlüssel und Einwilligung auf dem Gerät, KI-Antwort als Attrappe
+      const a = await neu();
+      let json: Record<string, any>;
+      try {
+        const dl = a.page.waitForEvent("download", { timeout: 5000 });
+        await menue(a, /Datei für anderes Gerät/);
+        json = JSON.parse(readFileSync(await (await dl).path(), "utf8"));
+      } finally { await a.close(); }
+      json.exercise.ki = { enabled: true, since: "2030-05-15T05:00:00.000Z" };
+      const lokal = { "lt-ki-key": "sk-test", [`lt-ki-consent:${json.exercise.id}`]: "2030-05-15T05:00:00.000Z" };
+      const s = await h.open({ uhr: UHR_T2_0730, lokal, vorLaden: async (p: any) => {
+        await p.route("https://api.anthropic.com/v1/messages", (r: any) => r.fulfill({ json: { content: [{ type: "text", text: "Lage Rot: 2 Kpz bei AK9, Det 1 in NAI 2. Lage eigene: unverändert." }], model: "claude-x", usage: {} } }));
+      } });
+      try {
+        const fc = s.page.waitForEvent("filechooser", { timeout: 5000 });
+        await menue(s, /Datei öffnen \(zusammenführen\)/);
+        await (await fc).setFiles({ name: "ki.lage.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(json)) });
+        await s.page.waitForTimeout(800);
+        await s.page.getByLabel("Dein Kürzel").fill("BSP");
+        await s.page.getByLabel("Dein Kürzel").press("Enter");
+        for (const geprueft of [false, true]) {
+          await uebergabeOeffnen(s);
+          await s.page.getByRole("button", { name: /Lagebericht/ }).first().click();
+          await knopfVon(s, /Entwurf erstellen|Neu entwerfen/).click();
+          await s.page.getByText("Ich habe den Entwurf geprüft").waitFor({ timeout: 5000 });
+          if (geprueft) await s.page.getByText("Ich habe den Entwurf geprüft").click();
+          await knopfVon(s, "Als Notiz ins Journal").click();
+          await s.page.waitForTimeout(300);
+          if (await s.page.getByRole("dialog", { name: "Übergabe" }).isVisible().catch(() => false)) await s.page.keyboard.press("Escape");
+          await s.page.waitForTimeout(300);
+        }
+        const texte = await zeilenVon(s).filter({ hasText: /Lagebericht/ }).allInnerTexts();
+        w.zeilen = texte.map((t: string) => t.replace(/\s+/g, " ").slice(0, 80));
+        soll(texte.some((t: string) => /nicht geprüft/.test(t)), "Notiz «KI-Entwurf, nicht geprüft» fehlt");
+        soll(texte.some((t: string) => /geprüft BSP/.test(t)), "Notiz «KI-Entwurf, geprüft BSP» fehlt");
+      } finally { await s.close(); }
     }));
 
     out.push(await aufgabe("7 Bezug-Wahl #50: 64a/64b über zwei Kontexte → Knopf «64b …» → «Antwort auf Nr 64b»", "laptop", async (w) => {

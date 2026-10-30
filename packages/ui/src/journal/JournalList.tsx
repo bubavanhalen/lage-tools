@@ -24,7 +24,7 @@
  * Vorrat) stehen im DOM, gemessene Höhen werden gemerkt, Platzhalter oben/unten halten die Bildlaufleiste richtig.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, zeitBis, zeitCmp, zeitText, type EventQuality, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
+import { artOf, artText, bestaetigtVon, journalStatus, lvzIndex, nrLabel, placeLabel, zeitBis, zeitCmp, zeitText, type EventQuality, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { AttachmentChips } from "../Attachments";
 import { attachmentsOf } from "../attachmentStore";
@@ -380,18 +380,11 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     if (li) { focusNext.current = null; li.focus({ preventScroll: true }); }
   });
 
-  const byId = useMemo(() => new Map(all.map((e) => [e.id, e])), [all]);
   /**
    * (MVP 3.5, C14) «von n Trupps gesehen» = verschiedene Melder, wie `bestaetigtVon` (Kern) – hier aus der schon
    * gerechneten Qualität (`confirmedBy`), damit nicht jede Zeile die ganze Übung neu prüft
    */
-  const gesehenVon = (e: LageEvent): string => {
-    const ids = quality?.get(e.id)?.confirmedBy ?? [];
-    if (!ids.length) return "";
-    const out: string[] = e.melder ? [e.melder] : [];
-    for (const id of ids) { const x = byId.get(id); if (x && !x.deleted && x.melder && !out.includes(x.melder)) out.push(x.melder); }
-    return out.length > 1 ? out.join(", ") : "";
-  };
+  const gesehenVon = (e: LageEvent): string => (quality ? bestaetigtVon(e, all, quality).join(", ") : "");
   const toggle = useCallback((id: string) => setOpenHist((o) => (o === id ? null : id)), []);
 
   // gezeichnete Teile

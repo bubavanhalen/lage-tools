@@ -12,11 +12,28 @@ describe("demoLang – lange Beispielübung (Phase 0, Kap. 2.10/8.5)", () => {
     expect(ts[ts.length - 1]).toBe("2030-05-18T07:30");
     expect(new Set(ts.map((t) => t.slice(0, 10))).size).toBe(4);
   });
-  it.todo("MVP 3.5: demoLang enthält Ausgänge («Meldung an Bat: …», «Weitergemeldet an Bat: Nr …») – Paket D");
+  it("MVP 3.5: Ausgänge über alle Tage – Antwort an Bat (beantwortet «Bat fragt»), Weitergabe, auch in der letzten Schicht", () => {
+    const aus = ex.events!.filter((e) => artOf(e) === "ausgang" && !e.deleted);
+    expect(new Set(aus.map((e) => e.t.slice(0, 10))).size).toBe(4);
+    const antwort = aus.filter((e) => e.bezugArt === "antwort" && /^Antwort an Bat:/.test(e.text));
+    const weiter = aus.filter((e) => e.bezugArt === "weiter" && /^Weitergemeldet an Bat: Nr \d+$/.test(e.text));
+    expect(antwort.length).toBeGreaterThanOrEqual(1);
+    expect(weiter.length).toBeGreaterThanOrEqual(1);
+    for (const a of antwort) expect(ex.events!.find((e) => e.id === a.bezug)).toMatchObject({ art: "rueckfrage", quelle: "Bat" });
+    for (const w of weiter) {
+      const z = ex.events!.find((e) => e.id === w.bezug)!;
+      expect(w.text).toBe(`Weitergemeldet an Bat: Nr ${nrLabel(z, ex)}`);
+      expect(z).toMatchObject({ side: "rot" });
+    }
+    // letzte Schicht (ab T4 06:00): Antwort und Weitergabe
+    const letzte = aus.filter((e) => e.t >= "2030-05-18T06:00"); // zeit-ok: Test, gleicher Offset
+    expect(letzte.some((e) => e.bezugArt === "antwort")).toBe(true);
+    expect(letzte.some((e) => e.bezugArt === "weiter")).toBe(true);
+    for (const e of aus) expect(e).toMatchObject({ notiz: true, unit: "" });
+  });
   it("alle Eintragsarten, gestrichene, korrigierte, dringende, aufgehobene, Bezüge", () => {
     const arten = new Set(ex.events!.map(artOf));
-    // MVP 3.5: «ausgang» ist neu – demoLang bekommt Ausgänge erst mit Paket D (dann die Ausnahme hier streichen)
-    for (const a of ENTRY_ARTEN.filter((x) => x !== "ausgang")) expect(arten.has(a), a).toBe(true);
+    for (const a of ENTRY_ARTEN) expect(arten.has(a), a).toBe(true);
     expect(ex.events!.some((e) => e.deleted)).toBe(true);
     expect(ex.events!.some((e) => e.history?.length && !e.deleted)).toBe(true);
     expect(ex.events!.some((e) => e.lvz?.dringend?.v)).toBe(true);
