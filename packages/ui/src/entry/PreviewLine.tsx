@@ -147,6 +147,8 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
     // MVP 3.5 (C1): Ersatzwort aus dem Wörterbuch ««Personen» übernehmen» (ersetzt die Textstelle, Ctrl+Z im Feld)
     if (x.code === "was" && draft.ersatz) return [{ key: "e", label: `«${draft.ersatz.wort}» übernehmen`, token: draft.ersatz.token, by: draft.ersatz.wort, ersatz: true }];
     if (x.code === "was" && x.token && draft.unknownWord?.suggestLabel) return [{ key: "w", label: `«${draft.unknownWord.suggestLabel}» einsetzen`, token: x.token, by: draft.unknownWord.suggestLabel }];
+    // Review 6 (Erstbenutzer H4): «H3» Trupp oder Planquadrat? – Knopf setzt «in H3» (Ort); nochmals Enter = Trupp
+    if (x.code === "einordnung" && x.token && draft.hnFrage) return [{ key: "hn", label: `Planquadrat ${x.token}`, token: x.token, by: `in ${x.token}` }];
     // (MVP 3, E17) heute kein Tag der Übung: Tag und Zeit vorne einsetzen
     if (x.code === "tag-fremd" && x.suggest) return [{ key: "t", label: `Als ${tagZeit(x.suggest)} eintragen`, token: "", by: x.suggest }];
     return [];

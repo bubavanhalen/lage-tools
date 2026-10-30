@@ -135,14 +135,21 @@ export async function ersatzKachel(url: (z: number, x: number, y: number) => str
       const k = rr / r; // Pixel der fehlenden Stufe je Pixel der gröberen
       ctx.imageSmoothingQuality = "high";
       for (const tl of teile) {
-        const bmp = await createImageBitmap(await tl.res.blob());
+        const bmp = await bildAus(await tl.res.blob());
         ctx.drawImage(bmp, (tl.x * t - e0) / r, (tl.y * t - s0) / r, size * k, size * k);
-        bmp.close?.();
+        (bmp as ImageBitmap).close?.();
       }
       return await new Promise<Blob | null>((ok) => cv.toBlob(ok, "image/jpeg", 0.85));
     } catch { continue; }
   }
   return null;
+}
+
+/** Bild aus einer gespeicherten Kachel: `createImageBitmap`, sonst über ein `<img>` (dekodiert nachsichtiger) */
+async function bildAus(blob: Blob): Promise<CanvasImageSource> {
+  try { return await createImageBitmap(blob); } catch { /* weiter mit <img> */ }
+  const u = URL.createObjectURL(blob);
+  try { const i = new Image(); i.src = u; await i.decode(); return i; } finally { URL.revokeObjectURL(u); }
 }
 
 /**
