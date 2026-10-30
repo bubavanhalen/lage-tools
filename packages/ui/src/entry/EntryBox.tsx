@@ -105,7 +105,10 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
   const setKuerzel = (k: string) => {
     sch?.setKuerzel(k, { neu: true });
     props.say(`Schicht ${k} beginnt jetzt.`);
-    requestAnimationFrame(() => d.inputRef.current?.focus({ preventScroll: true }));
+    // sofort ins Meldungsfeld (sonst landen schnell getippte Zeichen bis zum nächsten Frame im Leeren),
+    // nach dem Ausblenden der Kürzel-Zeile nochmals absichern
+    d.inputRef.current?.focus({ preventScroll: true });
+    requestAnimationFrame(() => { if (document.activeElement !== d.inputRef.current) d.inputRef.current?.focus({ preventScroll: true }); });
   };
   /** (S7) einmaliger Schutzhinweis – erst wenn es Daten zu schützen gibt (Übung mit Einträgen) */
   const schutz = props.schutzHinweis?.zeigen && (ex.events ?? []).some((e) => !e.deleted) ? props.schutzHinweis : null;
@@ -147,7 +150,8 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); d.submit(); }
             else if (e.key === "Escape") { e.preventDefault(); if (help) setHelp(false); else d.escape(); }
-            else if (e.key === "ArrowUp" && !d.text && !korr) { if (d.correctLast()) e.preventDefault(); }
+            else if (e.key === "ArrowUp" && !e.currentTarget.value && !korr) { // DOM-Wert: Zustand kann einen Frame hinterher sein
+              if (d.correctLast()) e.preventDefault(); }
             else if (e.altKey && !e.ctrlKey && !e.metaKey && draft && state?.level !== "geht-nicht" && /^Digit[1-4]$/.test(e.code)) {
               // Alt+1/2/3 = Feind/Eigene/Unklar, Alt+4 = Menü «Andere» (Kap. 2.2)
               e.preventDefault();
