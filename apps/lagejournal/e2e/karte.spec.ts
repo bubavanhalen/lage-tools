@@ -110,7 +110,8 @@ const spec: Spec = {
       try {
         const r = await s.page.evaluate(() => {
           const sicht = (e: Element) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.right > 0 && b.left < innerWidth && b.bottom > 0 && b.top < innerHeight; };
-          return { einzel: [...document.querySelectorAll(".leaflet-marker-pane .lt-ev")].filter((e) => sicht(e) && !e.closest(".lt-stk") && !e.querySelector(".lt-stk")).length, stapel: [...document.querySelectorAll(".leaflet-marker-pane .lt-stk")].filter(sicht).length };
+          // Entscheid Koordinator (wie symbole/measure.js): alle sichtbaren Zeichen, Stapel-Oberste eingeschlossen
+          return { einzel: [...document.querySelectorAll(".leaflet-marker-pane .lt-ev")].filter(sicht).length, stapel: [...document.querySelectorAll(".leaflet-marker-pane .lt-stk")].filter(sicht).length };
         });
         w.ruhe = r;
         soll(r.einzel >= 28 && r.stapel <= 10, `${r.einzel} Einzelzeichen, ${r.stapel} Stapel`);
@@ -123,15 +124,18 @@ const spec: Spec = {
         const cdp = await s.page.context().newCDPSession(s.page);
         await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
         const ms: number[] = [];
+        // Entscheid Koordinator: unter der Test-Uhr legt performance.mark nichts ab → `window.__ltZeichen` (ms je Neuaufbau, letzter Wert je Zoom)
+        type Z = { __ltZeichen?: number[] | number };
+        const letzter = () => s.page.evaluate(() => { const z = (window as unknown as Z).__ltZeichen; return Array.isArray(z) ? z.length : z === undefined ? 0 : 1; });
         for (let i = 0; i < 5; i++) {
-          await s.page.evaluate(() => { performance.clearMarks("lt:zeichen:start"); performance.clearMarks("lt:zeichen:ende"); });
+          const n0 = await letzter();
           await zoomen(s, i % 2 ? -2 : 2);
-          const d = await s.page.evaluate(() => { const a = performance.getEntriesByName("lt:zeichen:start").at(-1), b = performance.getEntriesByName("lt:zeichen:ende").at(-1); return a && b ? b.startTime - a.startTime : -1; });
+          const d = await s.page.evaluate((n: number) => { const z = (window as unknown as Z).__ltZeichen; if (Array.isArray(z)) return z.length > n ? z[z.length - 1]! : -1; return typeof z === "number" ? z : -1; }, n0);
           ms.push(d);
         }
         await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
         w.ms = ms;
-        soll(ms.every((x) => x >= 0), "Messpunkte lt:zeichen:start|ende fehlen");
+        soll(ms.every((x) => x >= 0), "Messwerte window.__ltZeichen fehlen");
         const med = [...ms].sort((a, b) => a - b)[2]!;
         soll(med <= 100, `Median ${med.toFixed(0)} ms`);
       } finally { await s.close(); }
@@ -159,7 +163,8 @@ const spec: Spec = {
       try {
         const r = await s.page.evaluate(() => {
           const p = [...document.querySelectorAll<SVGPathElement>(".leaflet-overlay-pane path")];
-          const feind = p.filter((e) => /c62828/i.test(e.getAttribute("fill") ?? "") || /c62828/i.test(e.getAttribute("stroke") ?? ""));
+          // Entscheid Koordinator: nur neue Planquadrate (ältere tragen zusätzlich die Deckkraft 0.72 der älteren Zeichen)
+          const feind = p.filter((e) => e.matches(".lt-pq:not(.old)") && (/c62828/i.test(e.getAttribute("fill") ?? "") || /c62828/i.test(e.getAttribute("stroke") ?? "")));
           return {
             feind: feind.map((e) => [e.getAttribute("fill-opacity"), e.getAttribute("stroke-opacity")]).slice(0, 3),
             schraffur: p.filter((e) => /url\(#lt-schraffur-unklar\)/.test(e.getAttribute("fill") ?? "")).length,
@@ -176,6 +181,8 @@ const spec: Spec = {
     out.push(await aufgabe("9 Lineal: Zoom +1 auf AK9 → «AK» oben, «9» links; Blattrand im Bild → kein Lineal", "laptop", async (w) => {
       const s = await neu();
       try {
+        // Entscheid Koordinator: «ohne» erst nach Zoom −1 (die Einpassung kann knapp innerhalb der Blattränder liegen)
+        await zoomen(s, -1);
         const ohne = await s.page.locator(".leaflet-lt-lineal-pane :is(span,div)").filter({ hasText: /\S/ }).count();
         await s.page.getByPlaceholder(/^Suchen/).fill("AK9");
         await s.page.getByRole("option", { name: /^AK9/ }).first().click();
@@ -190,28 +197,49 @@ const spec: Spec = {
     }));
 
     out.push(await aufgabe("10 Treffer (tablet-touch): 20 px daneben trifft; zwei nahe → Auswahlliste 48 px; Esc schliesst", "tablet-touch", async (w) => {
-      const s = await neu({ geraet: "tablet-touch" });
+      // Entscheid Koordinator: Tipp-Punkt ausserhalb jedes Zeichens, ≤ 22 px von ≥ 2 Ankern; Zeichengrösse S; Prüfung `__ltPick.was`
+      const s = await neu({ geraet: "tablet-touch", lokal: { "lage-tools.zeichengroesse": "S" } });
       try {
         soll(await istGrob(s), "kein echtes pointer: coarse");
         const ziel = await s.page.evaluate(() => {
-          const ev = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev")].map((e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }).filter((p) => p.x > 450 && p.y > 100 && p.y < 650);
+          // Anker sichtbarer, nicht verdeckter Zeichen (verdeckte Stapel-Mitglieder: Klassen «hid»/«under»)
+          const ev = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev:not(.hid):not(.under)")].map((e) => {
+            const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
+            const ml = parseFloat(cs.marginLeft) || 0, mt = parseFloat(cs.marginTop) || 0;
+            return { x: b.x - ml, y: b.y - mt, b };
+          }).filter((p) => p.b.width > 0 && p.x > 450 && p.y > 100 && p.y < 650);
+          const innen = (x: number, y: number) => ev.some((p) => x >= p.b.left && x <= p.b.right && y >= p.b.top && y <= p.b.bottom);
           const einzel = ev.find((p) => ev.every((q) => q === p || Math.hypot(q.x - p.x, q.y - p.y) > 60));
-          const paar = ev.flatMap((p) => ev.filter((q) => q !== p && Math.hypot(q.x - p.x, q.y - p.y) <= 10).map((q) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 })))[0];
-          return { einzel, paar };
+          let paar: { x: number; y: number } | null = null;
+          for (const p of ev) {
+            for (let dx = -22; dx <= 22 && !paar; dx += 2) for (let dy = -22; dy <= 22 && !paar; dy += 2) {
+              const x = p.x + dx, y = p.y + dy;
+              if (innen(x, y)) continue;
+              if (ev.filter((q) => Math.hypot(q.x - x, q.y - y) <= 20).length >= 2) paar = { x, y };
+            }
+            if (paar) break;
+          }
+          return { einzel: einzel ? { x: einzel.b.x + einzel.b.width / 2, y: einzel.b.y + einzel.b.height / 2 } : null, paar };
         });
         w.ziel = ziel;
-        soll(ziel.einzel, "kein einzelnes Zeichen gefunden");
-        await cdpTippen(s, ziel.einzel!.x + 20, ziel.einzel!.y);
-        soll(await s.page.locator(".jlist li[aria-selected=true], .jlist li.sel, .lt-ev.sel").count() > 0, "Tipp 20 px daneben wählt nichts");
-        soll(ziel.paar, "keine zwei Zeichen ≤ 10 px auseinander");
-        await cdpTippen(s, ziel.paar!.x, ziel.paar!.y);
+        // zuerst die Auswahlliste (die Wahl eines Zeichens lässt die Karte danach zur Meldung fliegen)
+        const paar = ziel.paar;
+        soll(paar, "kein Punkt ≤ 22 px von zwei Zeichen ausserhalb der Zeichen");
+        await cdpTippen(s, paar!.x, paar!.y);
+        await s.page.waitForTimeout(300);
+        w.pick = await s.page.evaluate(() => (window as unknown as { __ltPick?: unknown }).__ltPick ?? null);
+        soll((w.pick as { was?: string } | null)?.was === "liste", `__ltPick.was «${(w.pick as { was?: string } | null)?.was}»`);
         const lb = s.page.getByRole("listbox", { name: /Welches Zeichen/ });
         soll(await lb.isVisible().catch(() => false), "Auswahlliste fehlt");
         const hoehen = await lb.getByRole("option").evaluateAll((l: Element[]) => l.map((e) => e.getBoundingClientRect().height));
         w.zeilen = hoehen;
         soll(hoehen.length >= 2 && hoehen.every((x: number) => x >= 48), `Zeilen ${JSON.stringify(hoehen)}`);
         await s.page.keyboard.press("Escape");
+        await s.page.waitForTimeout(200); // die Liste wird im nächsten Takt ausgehängt
         soll(!(await lb.isVisible().catch(() => false)), "Esc schliesst die Auswahlliste nicht");
+        soll(ziel.einzel, "kein einzelnes Zeichen gefunden");
+        await cdpTippen(s, ziel.einzel!.x + 20, ziel.einzel!.y);
+        soll(await s.page.locator(".jlist li[aria-selected=true], .jlist li.sel, .lt-ev.sel").count() > 0, "Tipp 20 px daneben wählt nichts");
       } finally { await s.close(); }
     }));
 
@@ -229,7 +257,8 @@ const spec: Spec = {
       const t = await neu({ geraet: "tablet", viewport: { width: 768, height: 1024 } });
       try {
         const ueber = await t.page.evaluate(() => {
-          const r = [...document.querySelectorAll<HTMLElement>(".lt-nai-lbl, .leaflet-lt-lineal-pane span, .lt-raster-lbl")].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0);
+          // Entscheid Koordinator: die Beschriftungen selbst (`.lt-raster-lbl` ist die ganze Beschriftungs-SVG)
+          const r = [...document.querySelectorAll<Element>(".lt-nai-lbl:not(.lt-lbl-aus), .leaflet-lt-lineal-pane span, .lt-raster-lbl text")].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0);
           let n = 0;
           for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) { const a = r[i]!, b = r[j]!; if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) n++; }
           return n;

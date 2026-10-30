@@ -146,6 +146,9 @@ const spec: Spec = {
           await uebergabeOeffnen(s);
           await s.page.getByRole("button", { name: /Lagebericht/ }).first().click();
           await knopfVon(s, /Entwurf erstellen|Neu entwerfen/).click();
+          // Vorschau «Wird an Claude gesendet» → «Senden» (nie automatisch)
+          const senden = knopfVon(s, "Senden");
+          if (await senden.isVisible().catch(() => false)) await senden.click();
           await s.page.getByText("Ich habe den Entwurf geprüft").waitFor({ timeout: 5000 });
           if (geprueft) await s.page.getByText("Ich habe den Entwurf geprüft").click();
           await knopfVon(s, "Als Notiz ins Journal").click();

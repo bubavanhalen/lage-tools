@@ -1198,8 +1198,8 @@ function avoidAreaLabelsSoon(map: L.Map, rects: Rects) {
  * Beschriftungen der Flächen (aus `areasLayer`) ausweichen lassen (Spez. MVP 3.5, B5): Hindernisse sind die Zeichen
  * samt Beschriftung (`rects`, Layer-Pixel), die Randbeschriftung des Rasters, das Lineal und die schon gesetzten
  * Etiketten. NAI/Räume (`data-bb`): zuerst am Pol der Unerreichbarkeit, dann innen oben/unten/links/rechts, dann
- * knapp ausserhalb oben/unten, zuletzt kleine Verschiebungen; passt nichts, wird das Etikett ausgeblendet (Name im
- * `title` der Fläche). Wird nach jedem Neuberechnen der Stapel und nach jedem Verschieben der Karte neu gesetzt.
+ * knapp ausserhalb oben/unten, zuletzt kleine Verschiebungen; passt nichts, die Lage mit der kleinsten Überdeckung –
+ * das Etikett eines NAI wird nie ausgeblendet. Wird nach jedem Neuberechnen der Stapel und nach jedem Verschieben der Karte neu gesetzt.
  */
 function avoidAreaLabels(map: L.Map, rects: Rects) {
   const cont = map.getContainer();
@@ -1238,9 +1238,15 @@ function avoidAreaLabels(map: L.Map, rects: Rects) {
       tries.push([0, T0 - 2 - h / 2 - cy], [0, B0 + 2 + h / 2 - cy], [L0 - 4 - w / 2 - cx, 0], [R0 + 4 + w / 2 - cx, 0]);
     }
     tries.push(...nudges);
-    const ok = tries.map(([dx, dy]) => [Math.round(dx), Math.round(dy)] as const)
-      .find(([dx, dy]) => { const r: R = [r0[0] + dx, r0[1] + dy, r0[2] + dx, r0[3] + dy]; return inMap(r) && !hit(r); });
-    if (!ok) { sp.classList.add("lt-lbl-aus"); return; }
+    const kand = tries.map(([dx, dy]) => [Math.round(dx), Math.round(dy)] as const);
+    const at = ([dx, dy]: readonly [number, number]): R => [r0[0] + dx, r0[1] + dy, r0[2] + dx, r0[3] + dy];
+    let ok = kand.find((d) => { const r = at(d); return inMap(r) && !hit(r); });
+    // (Paket E, Entscheid Koordinator) das Etikett eines NAI fehlt nie: passt keine Lage frei, die mit der kleinsten
+    // Überdeckung im Bild (sonst am Ort) – nie ausblenden
+    if (!ok) {
+      const deckung = (r: R) => busy.reduce((n, q) => n + Math.max(0, Math.min(r[2], q[2]) - Math.max(r[0], q[0])) * Math.max(0, Math.min(r[3], q[3]) - Math.max(r[1], q[1])), 0);
+      ok = kand.filter((d) => inMap(at(d))).sort((x, y) => deckung(at(x)) - deckung(at(y)))[0] ?? ([0, 0] as const);
+    }
     if (ok[0] || ok[1]) sp.style.translate = `${ok[0]}px ${ok[1]}px`;
     busy.push([r0[0] + ok[0], r0[1] + ok[1], r0[2] + ok[0], r0[3] + ok[1]]);
   });

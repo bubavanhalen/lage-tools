@@ -127,7 +127,7 @@ import { OfflinePopover } from "./betrieb/OfflinePopover";
 import { onSchutzAnleitung, useBetriebStatus, useSchutzHinweis } from "./betrieb/status";
 import { useWakeLock } from "./betrieb/wakeLock";
 import { dateiText, markDateiGesichert, useDateiGesichert } from "./betrieb/dateiSichern";
-import { useZeichenGroesse } from "./map/symbolSize";
+import { mPerPxOf, symbolGrundmass, useZeichenGroesse } from "./map/symbolSize";
 
 /**
  * `f` nach dem nächsten gezeichneten Bild ausführen (rAF → Task): so erscheinen Feld, Liste und Band sofort, die
@@ -487,10 +487,12 @@ export function Workspace({ product, tagline }: Props) {
     mapNow.current = null;
     const g = pendingRef.current ?? L.layerGroup().addTo(s.map);
     pendingRef.current = g;
+    // MVP 3.5 (K3): gleich gross wie die Lage-Ebene (Grundmass je Massstab, Stufe, Präsentation) – nicht kurz kleiner
+    const groesse = symbolGrundmass(mPerPxOf(s.map), { stufe: zeichenStufe, praesentation: present });
     for (const id of ids) {
       const e = (ex.events ?? []).find((x) => x.id === id);
       if (!e || e.deleted || !e.pos || !zeitBis(e, tNow) || (winFrom && zeitCmp(e, winFrom) < 0)) continue;
-      L.marker(toLatLng(e.pos), { icon: symbolIcon(e.sym, e.aff, 18, { sidc: e.sidc, dir: e.dir }, "lt-ev lt-pending"), interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(g);
+      L.marker(toLatLng(e.pos), { icon: symbolIcon(e.sym, e.aff, groesse, { sidc: e.sidc, dir: e.dir }, "lt-ev lt-pending"), interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(g);
     }
   }, [ex?.events]); // eslint-disable-line react-hooks/exhaustive-deps
   // sonst: mit der verzögerten Fassung nach dem nächsten Bild (Feld, Liste und Band sind dann schon gezeichnet);

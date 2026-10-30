@@ -21,7 +21,7 @@
  * das Budget «echt» = «bereit» + 1 (Kopf-Knopf) misst die Grundansicht, nicht den einmaligen Hinweis.
  */
 import { readFileSync } from "node:fs";
-import { UHR_T2_0730, UHR_T4_0730, ansicht, aufgabe, eintragenText, feldVon, inventarImBrowser, knopfVon, menue, modusVon, offlineKnopfVon, offlinePopoverVon, soll, ueberlaufImBrowser, zeilenVon, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
+import { UHR_T2_0730, UHR_T4_0730, ansicht, aufgabe, cdpTippen, eintragenText, feldVon, inventarImBrowser, knopfVon, menue, modusVon, offlineKnopfVon, offlinePopoverVon, soll, ueberlaufImBrowser, zeilenVon, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
 
 /** Schutzhinweis der Beispiel-Übungen als gesehen (nur «echt»; der Hinweis selbst: betrieb.spec 10) */
 const SCHUTZ_GESEHEN: Record<string, string> = Object.fromEntries(["ex-beispiel-bern", "ex-beispiel-bern-leer", "ex-beispiel-bern-lang"].map((id) => [`lage-tools.schutzhinweis.${id}`, "2030-05-15T05:00:00.000Z"]));
@@ -109,21 +109,34 @@ const bezugWahl = (h: Harness, g: Geraet) => async (s: Session) => {
     await menue(s, /Datei öffnen \(zusammenführen\)/);
     await (await fc).setFiles({ name: "b.lage.json", mimeType: "application/json", buffer: readFileSync(pfad) });
     await s.page.waitForTimeout(800);
+    // Rückmeldung «Öffnen» schliessen (gehört nicht zum Zustand «Bezug-Wahl»)
+    await s.page.locator(".mn").getByRole("button", { name: "OK", exact: true }).first().click().catch(() => {});
   } finally { await b.close(); }
   const nr = (await zeilenVon(s).filter({ hasText: "3 Fz AK9" }).first().getAttribute("data-nr"))?.replace(/[a-z]$/, "");
   await feldVon(s).fill(`Antwort zu ${nr}`);
   await s.page.waitForTimeout(200);
   soll(await knopfVon(s, new RegExp(`^${nr}b\\b`)).isVisible().catch(() => false), `Knopf «${nr}b …» fehlt`);
 };
-/** zwei Zeichen ≤ 10 px auseinander antippen → Auswahlliste «Welches Zeichen?» */
+/**
+ * Auswahlliste «Welches Zeichen?» (nur Bericht): mit dem Finger (`tablet-touch`, Trefferradius 24 px, Zeichengrösse S)
+ * ausserhalb jedes Zeichens, ≤ 20 px von zwei Ankern antippen – mit der Maus (16 px) liegt jeder solche Punkt im Zeichen
+ */
 const auswahlliste = async (s: Session) => {
   await s.page.waitForTimeout(1500);
   const p = await s.page.evaluate(() => {
-    const ev = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev")].map((e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }).filter((q) => q.x > 450 && q.y > 100 && q.y < innerHeight - 120);
-    return ev.flatMap((a) => ev.filter((q) => q !== a && Math.hypot(q.x - a.x, q.y - a.y) <= 10).map((q) => ({ x: (a.x + q.x) / 2, y: (a.y + q.y) / 2 })))[0] ?? null;
+    const ev = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev:not(.hid):not(.under)")].map((e) => {
+      const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
+      return { x: b.x - (parseFloat(cs.marginLeft) || 0), y: b.y - (parseFloat(cs.marginTop) || 0), b };
+    }).filter((q) => q.b.width > 0 && q.x > 450 && q.y > 100 && q.y < innerHeight - 120);
+    const innen = (x: number, y: number) => ev.some((q) => x >= q.b.left && x <= q.b.right && y >= q.b.top && y <= q.b.bottom);
+    for (const a of ev) for (let dx = -20; dx <= 20; dx += 2) for (let dy = -20; dy <= 20; dy += 2) {
+      const x = a.x + dx, y = a.y + dy;
+      if (!innen(x, y) && ev.filter((q) => Math.hypot(q.x - x, q.y - y) <= 20).length >= 2) return { x, y };
+    }
+    return null;
   });
-  soll(p, "keine zwei Zeichen ≤ 10 px auseinander");
-  await s.page.mouse.click(p!.x, p!.y);
+  soll(p, "kein Punkt nahe zweier Zeichen ausserhalb der Zeichen");
+  await cdpTippen(s, p!.x, p!.y);
   await s.page.waitForTimeout(300);
   soll(await s.page.getByRole("listbox", { name: /Welches Zeichen/ }).isVisible().catch(() => false), "Auswahlliste nicht geöffnet");
 };
@@ -224,7 +237,7 @@ const spec: Spec = {
       }));
       out.push(...await messen(h, "Vorschau Bezug-Wahl (64a/64b)", g, 17, { query: "?beispiel" }, bezugWahl(h, g)));
       out.push(await messen1(h, "Offline-Popover offen (nur Bericht, Ziel ≤ 6 im Popover)", g, null, { query: "?beispiel", offline: "echt" }, popover));
-      out.push(await messen1(h, "Auswahlliste auf der Karte (nur Bericht)", g, null, { query: "?beispiel" }, auswahlliste));
+      if (g === "tablet") out.push(await messen1(h, "Auswahlliste auf der Karte (nur Bericht, Finger)", "tablet-touch", null, { query: "?beispiel", lokal: { "lage-tools.zeichengroesse": "S" } }, auswahlliste));
       out.push(await messen1(h, "Übergabe-Schritt «Datei sichern» (nur Bericht, Ziel ≤ 4)", g, null, { query: "?beispiel" }, dateiSchritt));
       out.push(await messen3(h, "--hit 48px: Offline-Popover", g, null, { query: "?beispiel", offline: "echt" }, popover, ":root{--hit:48px !important}"));
       // Entscheid Koordinator: der einmalige Schutzhinweis ist im «echt»-Inventar vorbelegt – hier eigens geprüft

@@ -57,6 +57,11 @@ const spec: Spec = {
       out.push(await aufgabe("4 Karte: Tipp 20 px neben ein Zeichen trifft (Trefferradius 24 px)", g, async (w) => {
         const s = await h.open({ query: "?beispiel", uhr: UHR_T2_0730, geraet: g });
         try {
+          // Entscheid Koordinator: im Handy-Ausschnitt (20 m/px) liegen alle Zeichen dicht – vorher Zoom +2 (Abstand bleibt 70 px)
+          if (g === "handy-touch") {
+            for (let i = 0; i < 2; i++) { await s.page.locator(".leaflet-control-zoom-in").click(); await s.page.waitForTimeout(400); }
+            await s.page.waitForTimeout(600);
+          }
           const p = await s.page.evaluate(() => {
             const ev = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev")].map((e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, r: Math.max(b.width, b.height) / 2 }; }).filter((q) => q.x > 40 && q.x < innerWidth - 40 && q.y > 80 && q.y < innerHeight - 80);
             return ev.find((q) => ev.every((o) => o === q || Math.hypot(o.x - q.x, o.y - q.y) > 70)) ?? null;

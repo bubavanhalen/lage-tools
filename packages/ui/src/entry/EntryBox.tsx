@@ -50,6 +50,10 @@ function scrollBox(el: HTMLElement): HTMLElement | null {
  */
 function keepVisible(field: HTMLElement | null): void {
   if (!field || document.activeElement !== field) return;
+  // MVP 3.5 (E1): ab 860 px steht die Knopfzeile direkt unter dem Feld im festen Spaltenkopf – nur verschieben, wenn eine
+  // Bildschirmtastatur den sichtbaren Teil verkleinert (sonst verrutschen Knöpfe zwischen Zielen und Tippen)
+  const vv0 = window.visualViewport;
+  if (window.innerWidth > 860 && !(vv0 && vv0.height < window.innerHeight - 80)) return;
   const btns = field.closest(".ebox")?.querySelector<HTMLElement>(".eb-btns");
   if (!btns) return;
   const vv = window.visualViewport;

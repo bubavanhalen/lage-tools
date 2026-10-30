@@ -94,7 +94,7 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
   .app.shell.m-lage .sh-side > .jpanel.lc { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); padding-bottom: 0; }
   .app.shell.m-lage .lc-list { overflow: auto; overscroll-behavior: contain; min-height: 0; margin: 0 calc(-1 * var(--sp-16)); padding: 0 var(--sp-16) var(--sp-16); }
   /* Vorschau höchstens die halbe Spaltenhöhe, darin scrollbar (die Liste bleibt sichtbar) */
-  .app.shell.m-lage .lc-entry .eb-prev { max-height: calc((100dvh - var(--kopf-h)) * .5); overflow: auto; overscroll-behavior: contain; }
+  .app.shell.m-lage .lc-entry .eb-prev { max-height: calc((100dvh - var(--kopf-h)) * .45); overflow: auto; overscroll-behavior: contain; }
 }
 @media (max-width: 860px) {
   /* Tablet hoch, Handy: der Eingabeblock haftet beim Scrollen oben (die Seite scrollt) */

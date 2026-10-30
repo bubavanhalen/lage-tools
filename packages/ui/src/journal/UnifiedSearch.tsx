@@ -16,7 +16,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { dayLabel } from "../Timeline";
 import type { SearchArt, UnifiedSearchProps } from "../shell/contracts";
-import { artOf, artText, isPlaceName, kindLabel, nrLabel, onlineAllowed, zeitCmp, type SearchHit } from "@lage/core";
+import { artOf, artText, isPlaceName, kindLabel, nrLabel, onlineAllowed, uebergabeEintragZu, zeitCmp, type SearchHit } from "@lage/core";
 import { ART_LABEL, matchesQuery, nrQuery, takeKeyword, wechselSuche } from "./filter";
 import { registerUnified, useSearch, type Hit } from "./useSearch";
 import { hitText } from "./hitText";
@@ -55,7 +55,8 @@ export function UnifiedSearch(p: UnifiedSearchProps & {
   const q = text.trim();
   // Text, der als Listenfilter wirkt (Stichwort «feind», Chip «Art», oder Wörter aus Meldungen): keine Online-Orte vorschlagen –
   // die Liste ist die Antwort, Vorschläge «Feindsee · online» führten nur in die Irre
-  const uebergaben = useMemo(() => (ex.schichten ?? []).filter((w) => w.art === "uebergabe"), [ex.schichten]);
+  // MVP 3.5 (S20): Übergaben mit eigenem Journal-Eintrag findet die Suche über den Eintrag – keine «Schichtwechsel»-Zeile
+  const uebergaben = useMemo(() => (ex.schichten ?? []).filter((w) => w.art === "uebergabe" && !uebergabeEintragZu(ex, w.id)), [ex.schichten, ex.events]); // eslint-disable-line react-hooks/exhaustive-deps
   const filtering = useMemo(() => !ortOnly && (!!art || !!takeKeyword(q, true).art || wechselSuche(q, uebergaben)
     || (q.length >= 2 && (ex.events ?? []).some((e) => !e.deleted && matchesQuery(e, q)))), [ortOnly, art, q, ex.events, uebergaben]);
   const { hits, loading, go, online } = useSearch(ex, map, q, open && q !== shown, !filtering);

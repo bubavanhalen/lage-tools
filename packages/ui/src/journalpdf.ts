@@ -15,7 +15,7 @@
  *   Ausgang als Art «Ausgang an Bat»; Art-Korrektur «vorher: Orientierung Bat «…»». Zeitvergleiche über `zeitCmp`.
  */
 import { jsPDF } from "jspdf";
-import {
+import { zeitText,
   ART_LABEL, artOf, artText, isLage, kindLabel, lvzIndex, nrLabel, placeLabel, schichtenIm, vermerkeOf, zeitCmp,
   type EventRevision, type Exercise, type Hint, type LageEvent,
 } from "@lage/core";
@@ -151,7 +151,8 @@ export function journalPdfRows(ex: Exercise, umfang: Pick<JournalUmfang, "from" 
       id: e.id,
       cells: [
         nrLabel(e, ex),
-        e.t.slice(11, 16),
+        // MVP 3.5 (S23, Paket E): in der doppelten Stunde «02:45 MESZ» / «02:10 MEZ»
+        zeitText(e),
         e.tReported ? e.tReported.slice(11, 16) : "",
         art === "meldung" ? (e.notiz ? "Notiz" : kindText(e)) : art === "ausgang" ? artText(e) : ART_KURZ[art],
         vonAn(e),
@@ -242,7 +243,8 @@ function layout(ex: Exercise, o: JournalDruck, extra: JournalPdfExtra): jsPDF {
     if (r.kind === "tag") return { lines: [] as string[][], verm: [] as string[], h: LH + 0.8 };
     doc.setFont("helvetica", r.dringend ? "bold" : "normal"); doc.setFontSize(FS);
     // Spalte «Nr» bei dringend: Platz für das Vektorzeichen ⚠
-    const lines = r.cells.map((c, i) => doc.splitTextToSize(c, JOURNAL_COLS[i]!.w - 1.4 - (i === 0 && r.dringend ? 3 : 0)) as string[]);
+    // Zeit: «02:45 MESZ» (doppelte Stunde) als zwei Zeilen «02:45» / «MESZ», nie mitten im Wort getrennt (Paket E)
+    const lines = r.cells.map((c, i) => (i === 1 ? c.split(" ") : doc.splitTextToSize(c, JOURNAL_COLS[i]!.w - 1.4 - (i === 0 && r.dringend ? 3 : 0)) as string[]));
     doc.setFont("helvetica", "italic");
     const verm = r.vermerke.length ? doc.splitTextToSize(r.vermerke.join(" · "), JOURNAL_COLS[5].w - 1.4) as string[] : [];
     doc.setFont("helvetica", "normal");
