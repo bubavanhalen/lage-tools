@@ -215,12 +215,13 @@ const spec: Spec = {
         const t1 = (await offlinePopoverVon(s).innerText().catch(() => "")).replace(/\s+/g, " ");
         w.erst = /Karte[^A-Z]*/.exec(t1)?.[0];
         // Review 6 Feld H1: «Übersicht ✓ · Detail 96 %» und «933 von 971 Teilen» (bzw. ohne Stufen «96 % (933 von 971 Teilen)»)
-        soll(/\d+ % \(\d+ von \d+ Teilen\)|Detail \d+ %.*\d+ von \d+ Teilen/.test(t1), `Popover zeigt keine Teilzahl: ${w.erst}`);
+        // Entscheid Koordinator (Review 6): «⚠ unvollständig – Detail 96 %» bzw. «⚠ unvollständig – 96 %» + «933 von 971 Teilen»
+        soll(/⚠ unvollständig – (Detail )?\d+ %/.test(t1) && !/✗ Übersicht/.test(t1), `Popover zeigt keine Teilzahl: ${w.erst}`);
         await s.page.unroute(/wmts.*\.geo\.admin\.ch/);
         await offlinePopoverVon(s).getByRole("button", { name: /Alles für offline laden/ }).click();
         await s.page.waitForFunction(() => !/Lädt/.test(document.querySelector(".hd")?.textContent ?? ""), null, { timeout: 60000 });
         const t2 = (await offlinePopoverVon(s).innerText()).replace(/\s+/g, " ");
-        soll(/Raster-Gebiet vollständig/.test(t2), "nach Nachladen nicht vollständig");
+        soll(/✓ vollständig \(alle Stufen\)/.test(t2), "nach Nachladen nicht vollständig");
       } finally { await s.close(); }
     }));
 

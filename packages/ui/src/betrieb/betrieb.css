@@ -13,6 +13,9 @@
 .bt-val { min-width: 0; }
 .bt-val .ja { color: var(--ok); }
 .bt-val .nein { color: var(--stop); }
+/* Karte teilweise geladen: Warnfarbe, nicht rot (Entscheid Koordinator, Review 6) */
+.bt-val .teil { color: var(--warn-ink); background: var(--warn-bg); padding: 0 var(--sp-4); border-radius: var(--r-4); }
+.bt-val .teil::first-letter { color: var(--warn-sym); }
 .bt-zusatz { display: block; color: var(--muted); font-size: var(--fs-12); margin-top: 2px; }
 .bt-prog { color: var(--ink); font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 .bt-bar { display: block; height: 4px; margin: var(--sp-4) 0; background: var(--line-soft); border-radius: 2px; overflow: hidden; }

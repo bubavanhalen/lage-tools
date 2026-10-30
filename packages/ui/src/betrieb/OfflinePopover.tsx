@@ -45,15 +45,40 @@ export function OfflinePopover(p: OfflinePopoverProps) {
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
   const s = p.status;
-  const zeile = (name: string, ok: boolean | null, text: string, extra?: React.ReactNode) => (
-    <div className="bt-row" role="listitem">
-      <span className="bt-name">{name}</span>
-      <span className="bt-val">
-        <span className={ok === false ? "nein" : ok ? "ja" : ""}>{ok === null ? "" : ok ? "✓ " : "✗ "}{text}</span>
-        {extra}
-      </span>
-    </div>
-  );
+  const zeile = (name: string, ok: boolean | null, text: string, extra?: React.ReactNode) => {
+    // Entscheid Koordinator (Review 6, Feld H1): Karte nie «✗ Übersicht ✓ · Detail 21 %» (✗ und ✓ in einer Zeile) –
+    // teilweise = «⚠ unvollständig – Detail 21 %» (Warnfarbe), darunter «Übersicht vollständig · abgebrochen – 250 von 971»;
+    // ganz = «✓ vollständig (alle Stufen)»; nichts = «✗ nicht geladen». Der Kopf bleibt «⚠ Offline fehlt», bis alles da ist.
+    let zeichen = ok === null ? "" : ok ? "✓ " : "✗ ", klasse = ok === false ? "nein" : ok ? "ja" : "", zweite: string | null = null;
+    if (name === "Karte" && ok !== null) {
+      const kk = s.karte, pz = (t: { total: number; cached: number }) => `${Math.floor((t.cached / Math.max(1, t.total)) * 100)} %`;
+      const teile = (c: number, t: number) => `${c.toLocaleString("de-CH")} von ${t.toLocaleString("de-CH")}`;
+      const abbruch = kk.abgebrochen ? `abgebrochen – ${teile(kk.abgebrochen.cached, kk.abgebrochen.total)}` : "";
+      if (ok) { if (kk.total > 0) text = "vollständig (alle Stufen)"; }
+      else if (!kk.cached) { text = "nicht geladen"; zweite = abbruch || null; }
+      else {
+        zeichen = "⚠ "; klasse = "teil";
+        const u = kk.uebersicht, d = kk.detail;
+        if (u && d && u.total && d.total) {
+          text = `unvollständig – Detail ${d.cached >= d.total ? "vollständig" : pz(d)}`;
+          zweite = [u.cached >= u.total ? "Übersicht vollständig" : `Übersicht ${pz(u)}`, abbruch].filter(Boolean).join(" · ");
+        } else {
+          text = `unvollständig – ${pz(kk)}`;
+          zweite = abbruch || `${teile(kk.cached, kk.total)} Teilen`;
+        }
+      }
+    }
+    return (
+      <div className="bt-row" role="listitem">
+        <span className="bt-name">{name}</span>
+        <span className="bt-val">
+          <span className={klasse}>{zeichen}{text}</span>
+          {zweite && <span className="bt-zusatz bt-abbruch">{zweite}</span>}
+          {extra}
+        </span>
+      </div>
+    );
+  };
   const k = karteText(s.karte);
   const umfang = ladenUmfang(p.ex, p.map);
   const start = () => {
@@ -80,7 +105,7 @@ export function OfflinePopover(p: OfflinePopoverProps) {
       <div role="list">
         {zeile("App", s.app, s.app ? "auf dem Gerät" : "noch nicht geladen", !s.app && <span className="bt-zusatz">wird beim Öffnen mit Netz gespeichert – danach einmal neu laden</span>)}
         {zeile("Karte", k.ok, k.text, fortschritt ? <span className="bt-zusatz bt-prog" role="status"><span className="bt-bar" aria-hidden="true"><span style={{ width: `${Math.round((laden!.done / Math.max(1, laden!.total)) * 100)}%` }} /></span>{fortschritt}</span>
-          : k.zusatz && <span className="bt-zusatz bt-abbruch">{k.zusatz}</span>)}
+          : null)}
         {zeile("Ortsnamen", null, s.online.ortssuche ? "an – Ortsname und Übungsraum gehen an swisstopo" : "aus – nichts geht ans Netz", !s.online.ortssuche && <span className="bt-zusatz">einschalten: Vorbereiten → Übung</span>)}
         {zeile("Speicher", s.speicher, s.speicher ? "geschützt" : "nicht geschützt – der Browser darf Daten löschen")}
         {zeile("Installiert", s.installiert, "", !s.installiert && (

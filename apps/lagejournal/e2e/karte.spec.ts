@@ -461,8 +461,9 @@ const spec: Spec = {
         await s.page.waitForTimeout(500);
         const t1 = (await pop.innerText()).replace(/\s+/g, " ");
         w.abbruch = /Karte.{0,80}/.exec(t1)?.[0];
-        soll(!/Raster-Gebiet vollständig/.test(t1), "nach Abbruch «Raster-Gebiet vollständig»");
-        soll(/Übersicht (✓|\d+ %) · Detail \d+ %/.test(t1) && /abgebrochen – [\d’']+ von [\d’']+/.test(t1), `Popover nach Abbruch: ${w.abbruch}`);
+        soll(!/vollständig \(alle Stufen\)/.test(t1), "nach Abbruch «vollständig»");
+        // Entscheid Koordinator (Review 6): «⚠ unvollständig – Detail 21 %» · «Übersicht vollständig · abgebrochen – 250 von 971»
+        soll(/⚠ unvollständig – Detail \d+ %/.test(t1) && /Übersicht (vollständig|\d+ %)/.test(t1) && /abgebrochen – [\d’']+ von [\d’']+/.test(t1), `Popover nach Abbruch: ${w.abbruch}`);
         soll(/Offline fehlt/.test(await s.page.locator(".hd").innerText()), "Kopf ohne «Offline fehlt»");
         if (!(await pop.isVisible().catch(() => false))) await s.page.locator(".hd button.hd-off").first().click();
         await h.shot(s.page, "karte-18-abbruch");
@@ -470,7 +471,7 @@ const spec: Spec = {
         await pop.getByRole("button", { name: /Alles für offline laden/ }).click({ timeout: 15000 });
         await s.page.waitForFunction(() => !/Lädt/.test(document.querySelector(".hd")?.textContent ?? ""), null, { timeout: 90000 });
         await s.page.waitForTimeout(500);
-        soll(/Raster-Gebiet vollständig/.test(await pop.innerText()), "nach vollständigem Laden nicht vollständig");
+        soll(/✓ vollständig \(alle Stufen\)/.test(await pop.innerText()), "nach vollständigem Laden nicht vollständig");
         await s.page.keyboard.press("Escape");
         w.schritt = "offline zoomen";
         netz = false;
