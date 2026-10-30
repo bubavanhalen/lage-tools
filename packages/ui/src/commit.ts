@@ -236,7 +236,7 @@ const PLACE_KEYS = ["pos", "where", "cells", "nai", "angle", "road", "roadNone",
 const SYMBOL_KEYS = ["side", "unit", "aff", "sym", "sidc", "echelon", "status", "desc", "count", "label"] as const;
 /** übrige Inhalte, die der neu gelesene Text bestimmt (MVP 3: Art und ihre Felder) */
 const TEXT_KEYS = ["melder", "text", "dir", "from", "fromLabel", "roadHint", "via",
-  "art", "notiz", "an", "quelle", "frist", "vbk", "bezug", "bezugArt", "hebtAuf", "orte", "felder"] as const;
+  "art", "notiz", "an", "quelle", "frist", "vbk", "bezug", "bezugArt", "bezugAuch", "hebtAuf", "orte", "felder"] as const;
 
 /**
  * Änderung für `correctEvent` aus der neu gelesenen Fassung `cand` (`buildEvent` aus dem Korrekturtext):
