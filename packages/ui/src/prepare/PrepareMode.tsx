@@ -139,15 +139,17 @@ export function PrepareMode(p: PrepareModeProps) {
   );
 }
 
-const ONLINE: Array<{ key: "ortssuche" | "strassen"; label: string; text: string }> = [
-  { key: "ortssuche", label: "Ortsnamen nachschlagen", text: "Ortsnamen aus Meldungen bei swisstopo suchen (Text und Übungsraum gehen ans Netz)." },
-  { key: "strassen", label: "Strassennetz laden", text: "Strassen (swisstopo) laden, um Sperren, Checkpoints usw. auf die Strasse zu legen." },
+/** Online-Dienste (Spez. MVP 3.5, Kap. 2.8, K2): Standard aus, Texte sagen, was ans Internet geht */
+export const ONLINE_DIENSTE: Array<{ key: "ortssuche" | "strassen"; label: string; text: string }> = [
+  { key: "ortssuche", label: "Ortsnamen bei swisstopo nachschlagen", text: "(der getippte Ortsname geht ans Internet)" },
+  { key: "strassen", label: "Strassen für Sperren und Checkpoints laden", text: "(Kartenausschnitte gehen ans Internet)" },
 ];
 
 function UebungStep({ ex, update }: { ex: Exercise; update(f: (x: Exercise) => Exercise): void }) {
   // MVP 3: Klassifizierung gehört der Übung (Ausdrucke), Raster ziehen mit; ohne Raster trotzdem eingebbar
   const cls = ex.klassifizierung ?? ex.sheets[0]?.classification ?? "";
   const mixed = ex.sheets.some((s) => s.classification !== cls);
+  const geschuetzt = !!cls.trim() && !/^(öffentlich|oeffentlich|offen|keine?)$/i.test(cls.trim());
   return (
     <div className="pp">
       <label className="pp-field">Name der Übung
@@ -160,8 +162,9 @@ function UebungStep({ ex, update }: { ex: Exercise; update(f: (x: Exercise) => E
       {mixed && <p className="pp-note">Die Raster haben verschiedene Klassifizierungen – eine Eingabe setzt sie für alle gleich.</p>}
       <fieldset className="pp-set">
         <legend>Online-Dienste (diese Übung)</legend>
-        {ONLINE.map((o) => {
-          // MVP 3.5 (K2, Phase 0): Standard aus – nur ausdrückliches «an» zählt; die Wahl trägt ihren Zeitpunkt (`at`, ISO UTC)
+        <p className="pp-note pp-std">Standard: aus – nichts verlässt das Gerät</p>
+        {ONLINE_DIENSTE.map((o) => {
+          // MVP 3.5 (K2): Standard aus – nur ausdrückliches «an» zählt; die Wahl trägt ihren Zeitpunkt (`at`, ISO UTC)
           const on = onlineAllowed(ex, o.key);
           return (
             <label key={o.key} className="pp-check">
@@ -170,7 +173,8 @@ function UebungStep({ ex, update }: { ex: Exercise; update(f: (x: Exercise) => E
             </label>
           );
         })}
-        <p className="pp-note">Aus = keine Anfrage ans Netz. Ohne Netz wird ohnehin nichts abgefragt.</p>
+        <p className={geschuetzt ? "pp-warn" : "pp-note"}>Klassifizierung INTERN oder höher: ⚠ Nur einschalten, wenn der Befehl es erlaubt.</p>
+        <p className="pp-note">Ohne Online-Dienste fehlen: Ortsnamen («beim Gasthof Bären») und die Lage auf der Strasse. Die Karte selbst lädt weiterhin von swisstopo (enthält keine Meldung).</p>
       </fieldset>
     </div>
   );

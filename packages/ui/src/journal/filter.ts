@@ -5,7 +5,7 @@
  * MVP 3 (Kap. 1.1, 2.5): Stichwörter «gestrichen», «dringend», «offen», «Auftrag», «Orientierung», «Rückfrage», «Vbk»,
  * «Notiz»; eine Zahl allein («54», «Nr 54», «12a») sucht die laufende Nummer. Feind/Eigene/Unklar zeigen nur Meldungen.
  */
-import { artOf, compareEvents, lvzIndex, nrLabel, vermerkeOf, type EventQuality, type Exercise, type Kind, type LageEvent } from "@lage/core";
+import { artOf, compareEvents, lvzIndex, nrLabel, vermerkeOf, zeitBis, type EventQuality, type Exercise, type Kind, type LageEvent } from "@lage/core";
 import type { SearchArt } from "../shell/contracts";
 
 /** Art einer Meldung für Filter: neutral (N) zählt zu «Unklar» */
@@ -105,8 +105,8 @@ export function filterJournal(events: LageEvent[], o: { q?: string; art?: Search
   // einmal sortieren je Ereignisliste (neueste zuerst), Filterwechsel filtern nur noch (800 Meldungen: kein Sortieren pro Klick)
   return sortedDesc(events)
     .filter((e) => (showDel || !e.deleted)
-      && (!o.to || e.t <= o.to)
-      && (!o.from || e.t >= o.from)
+      && (!o.to || zeitBis(e, o.to))
+      && (!o.from || zeitBis(o.from, e))
       && (!o.art || artMatches(e, o.art, { quality: o.quality, ex }))
       && (!q || (nr ? nrMatches(e, nr, ex) : matchesQuery(e, q))));
 }
@@ -120,7 +120,7 @@ function nrMatches(e: LageEvent, nr: string, ex: Pick<Exercise, "events">): bool
 /** Anzahl gestrichener Einträge (für «Gestrichene zeigen (n)»), im selben Zeitfenster wie die Liste */
 export function countGestrichene(events: LageEvent[], o: { from?: string | null; to?: string | null } = {}): number {
   let n = 0;
-  for (const e of events) if (e.deleted && (!o.to || e.t <= o.to) && (!o.from || e.t >= o.from)) n++;
+  for (const e of events) if (e.deleted && (!o.to || zeitBis(e, o.to)) && (!o.from || zeitBis(o.from, e))) n++;
   return n;
 }
 

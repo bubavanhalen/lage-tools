@@ -2,6 +2,7 @@
  * Zuordnung der Einträge zu Schichten (MVP 3 Fix 3) – eigenes Modul ohne Abhängigkeiten ausser dem Modell, damit
  * journal.ts (CSV) und schicht.ts (Übergabe, Zahlen) dieselbe Regel verwenden, ohne sich gegenseitig zu importieren.
  */
+import { zeitBis } from "./clock";
 import type { Exercise, LageEvent, SchichtWechsel } from "./model";
 
 /** Zeitpunkt der Erfassung (ISO UTC): `createdAt`, bei alten Einträgen `updatedAt` */
@@ -18,7 +19,7 @@ export function schichtEintraege(ex: Pick<Exercise, "events">, s: { at: string |
   return (ex.events ?? []).filter((e) => {
     if (e.deleted && !o.gestrichene) return false;
     const at = erfasstUm(e);
-    return (!s.at || at >= s.at) && (!s.bis || at < s.bis) && (!to || e.t.slice(0, 16) <= to.slice(0, 16));
+    return (!s.at || at >= s.at) && (!s.bis || at < s.bis) && (!to || zeitBis(e, to));
   });
 }
 

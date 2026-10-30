@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { artOf, artText, type Area, type LageEvent } from "@lage/core";
 import { FORM_ZEICHEN, formOf, nichtLageText } from "./entry/labels";
-import { iconSvg } from "@lage/map";
+import { iconSvg, KARTE } from "@lage/map";
 import type { LayerFlags } from "./layers";
 import { kindOf, kindText, situationModel, STALE_MIN } from "./journalLayer";
 import { getSituationLayout, ohneAufgehobene, subscribeSituationLayout } from "./situationLayer";
@@ -143,10 +143,21 @@ const FOLD_KEY = "lage-tools.legende.zu";
 const AFF_SUFFIX: Record<string, string> = { F: " (eigene)", U: " (unklar)", N: " (neutral / UL)" };
 
 /** Muster in Kartenfarben auf hellem «Kartengrund» (auch im Dunkelmodus erkennbar) */
-const LineSample = ({ color, dash, dots, width = 2.5 }: { color: string; dash?: string; dots?: boolean; width?: number }) => (
+const LineSample = ({ color, dash, dots, width = 2.5, round }: { color: string; dash?: string; dots?: boolean; width?: number; round?: boolean }) => (
   <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden>
-    <path d="M1 7 H23" stroke={color} strokeWidth={width} strokeDasharray={dash} />
+    <path d="M2 7 H22" stroke={color} strokeWidth={width} strokeDasharray={dash} strokeLinecap={round ? "round" : undefined} />
     {dots && <circle cx="6" cy="7" r="2.3" fill="#fff" stroke={color} strokeWidth="1.4" />}
+  </svg>
+);
+/** Unklar-Fläche: Schraffur 45° wie auf der Karte (S11) */
+const HatchSample = () => (
+  <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden>
+    <defs>
+      <pattern id="mo-schraffur" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="4" stroke={LAGE_KARTE.unklar} strokeWidth="1.2" />
+      </pattern>
+    </defs>
+    <rect x="2" y="2" width="20" height="10" fill="url(#mo-schraffur)" stroke={LAGE_KARTE.unklar} strokeOpacity=".6" strokeWidth="1" />
   </svg>
 );
 const AreaSample = ({ color, dash, fill }: { color: string; dash?: string; fill?: string }) => (
@@ -207,38 +218,32 @@ export function Legend({ events, t, flags, areas, recentMin = 30, selectedId = n
       out.push({ key: k, icon: <Sym k={it.sym} aff={it.aff} size={16} sidc={plain(it.sidc)} />, label: it.name + (AFF_SUFFIX[it.aff] ?? "") });
     });
     const ant = model.items.find((i) => i.anticipated);
-    if (ant) out.push({ key: "vermutet", icon: <Sym k={ant.sym} aff={ant.aff} size={16} sidc={ant.sidc} status="anticipated" />, label: "gestrichelt = vermutet" });
+    if (ant) out.push({ key: "vermutet", icon: <Sym k={ant.sym} aff={ant.aff} size={16} sidc={ant.sidc} status="anticipated" />, label: "- - - vermutet" });
     if (model.items.some((i) => i.road === "sperre")) out.push({
       key: "sperre",
       icon: <svg className="mo-swatch" viewBox="0 0 24 14" width="24" height="14" aria-hidden><path d="M3 9 L6 4 L9 9 L12 4 L15 9 L18 4 L21 9" fill="none" stroke={LAGE_KARTE.feind} strokeWidth="1.4" /><path d="M2 9 H22" stroke={LAGE_KARTE.feind} strokeWidth="3" /></svg>,
       label: "Sperre quer zur Strasse",
     });
-    if (model.tracks.some((x) => x.side === "blau")) out.push({ key: "spur-b", icon: <LineSample color="#1F5FB8" dash="5 3" dots width={2} />, label: "Spur eigene" });
-    if (model.tracks.some((x) => x.side !== "blau")) out.push({ key: "spur-r", icon: <LineSample color={LAGE_KARTE.feind} dash="5 3" dots width={2} />, label: "Spur Feind" });
+    // bisherige Wege punktiert (S13: gestrichelt heisst nur «vermutet»)
+    if (model.tracks.length) {
+      const col = model.tracks.some((x) => x.side === "blau") ? LAGE_KARTE.eigen : LAGE_KARTE.feind;
+      out.push({ key: "weg", icon: <LineSample color={col} dash="0.1 5" width={3} round />, label: "· · · bisheriger Weg" });
+    }
+    if (model.items.some((i) => /\d×/.test(i.ud))) out.push({ key: "anzahl", icon: <span className="mo-tl tnum">2×</span>, label: "2× = Anzahl" });
+    // Unklar-Planquadrat (Punktzeichen mit Planquadrat) oder Unklar-Fläche: schraffiert
+    if (model.items.some((i) => i.kind === "unklar" && !i.selected && !!i.e.cells?.length)) out.push({ key: "unklar-flaeche", icon: <HatchSample />, label: "Unklar (Fläche)" });
     if (flags.nai && areas?.length) {
-      if (areas.some((a) => a.kind === "nai" || a.kind === "other")) out.push({ key: "nai", icon: <AreaSample color="#1F78D1" fill="#1F78D1" />, label: "NAI" });
-      if (areas.some((a) => a.kind === "ao")) out.push({ key: "ao", icon: <AreaSample color="#0B3D91" dash="4 3" />, label: "AO" });
+      if (areas.some((a) => a.kind === "nai" || a.kind === "other")) out.push({ key: "nai", icon: <AreaSample color={KARTE.nai} fill={KARTE.nai} />, label: "NAI" });
+      if (areas.some((a) => a.kind === "ao")) out.push({ key: "ao", icon: <AreaSample color={KARTE.ao} dash="4 3" />, label: "AO" });
       if (areas.some((a) => a.kind === "stao")) out.push({ key: "stao", icon: <AreaSample color={LAGE_KARTE.feind} dash="3 2" fill={LAGE_KARTE.feind} />, label: "Stao" });
     }
     if (model.items.some((i) => i.showTime)) out.push({ key: "zeit", icon: <span className="mo-tl tnum">hh:mm</span>, label: `Meldung jünger als ${recentMin} min` });
     if (model.items.some((i) => i.opacity < 1)) {
       const old = model.items.find((i) => i.opacity < 1)!;
-      out.push({ key: "blass", icon: <span style={{ opacity: 0.45 }}><Sym k={old.sym} aff={old.aff} size={16} /></span>, label: `blass = älter als ${recentMin} min` });
+      out.push({ key: "blass", icon: <span className="mo-alt"><Sym k={old.sym} aff={old.aff} size={16} /></span>, label: `blass = älter als ${recentMin} min` });
     }
     if (model.items.some((i) => i.kind === "eigen" && i.isUnit && i.silentMin > STALE_MIN)) out.push({ key: "alt", icon: <span className="mo-tl tnum">75 min</span>, label: `keine Meldung seit über ${STALE_MIN} min` });
-    if (layout.stacks > 0) out.push({
-      key: "stapel",
-      icon: (
-        <svg viewBox="0 0 26 18" width="26" height="18" aria-hidden>
-          <rect x="11" y="2" width="11" height="9" fill="#fff" stroke="#101414" strokeWidth="1.2" />
-          <rect x="8" y="5" width="11" height="9" fill="#fff" stroke="#101414" strokeWidth="1.2" />
-          <rect x="5" y="8" width="11" height="9" fill="#FF8080" stroke="#101414" strokeWidth="1.2" />
-          <circle cx="5" cy="8" r="4.6" fill="#101414" stroke="#fff" strokeWidth="1" />
-          <text x="5" y="10.4" fontSize="6.5" fontWeight="700" fill="#fff" textAnchor="middle" fontFamily="var(--f-mono)">3</text>
-        </svg>
-      ),
-      label: "Stapel: Zahl = Meldungen am Ort, Klick fächert auf",
-    });
+    if (layout.stacks > 0) out.push({ key: "stapel", icon: <span className="mo-stk tnum">3</span>, label: "Zeichen übereinander – antippen" });
     if (from) out.push({ key: "fenster", icon: <span className="mo-tl tnum">{from.slice(11, 16)}</span>, label: "Zeitfenster: Meldungen ab dieser Zeit, Elemente immer" });
     return out;
   }, [model, flags.nai, areas, recentMin, layout.stacks, from]);

@@ -84,14 +84,15 @@ describe("Meldung erkennen (Lageverfolgung: Melder + Inhalt)", () => {
     expect(d.where?.kind).toBe("zuletzt");
   });
 
-  it("ohne Zeit: jetzt; neues eigenes Element; Ort aus Liste und Ortsname zum Nachschlagen", () => {
+  it("ohne Zeit: jetzt; neues eigenes Element (nur über den Knopf, MVP 3.5 C12); Ort aus Liste und Ortsname zum Nachschlagen", () => {
     const a = parseMeldung("Gr 5 bei Bümpliz", ctx());
     expect(a.t).toBe("2030-05-15T14:07");
     expect(a.timeFromText).toBe(false);
     expect(a.kind).toBe("eigen");
-    expect(a.melder).toBe("Gr 5");
+    expect(a.melder).toBe("");
+    expect(a.truppNeu).toBe("Gr 5");
     expect(a.where).toEqual({ kind: "ort", label: "Bümpliz" });
-    const b = parseMeldung("Gr 3 angekommen in Wabern", ctx());
+    const b = parseMeldung("Gr 3 angekommen in Wabern", ctx({ units: { rot: ["Det 2"], blau: ["H04", "H10", "Gr 3"], ul: [] } }));
     expect(b.melder).toBe("Gr 3");
     expect(b.pos).toBeUndefined();
     expect(b.placeQuery).toBe("Wabern");

@@ -84,32 +84,44 @@ export function symbolSvg(key: string, aff: Affiliation, size = 22, text: Symbol
 }
 
 /**
- * (MVP 3.5, K3 – Variante V4, Paket B) Linienstärken für milsymbol: `strokeWidth` (Rahmen), `outlineWidth` (Halo).
- * Fehlt → wie bisher (milsymbol-Standard, Halo 4).
+ * (MVP 3.5, K3 – Variante V4, Paket B) Linienstärken für milsymbol in dessen Einheiten (Rahmen ≈ 100 Einheiten breit,
+ * 1 Einheit = `size`/100 px): `strokeWidth` (Rahmen), `outlineWidth` (Halo). V4: 7/8 → bei 26 px Linie 1.8 px, Halo
+ * 2.1 px. Das Trupp-Dreieck nimmt dann die Linie `size/13` und den Halo `size × outlineWidth / 100`.
+ * Fehlt → wie bisher (milsymbol-Standard, Halo 4; Dreieck 1.5 px).
  */
 export interface SymbolStrich { strokeWidth?: number; outlineWidth?: number }
+
+/** Schrift der Texte im Zeichen (Kurzbeschriftung «Kontr», Zusatzfelder): Plex wie die übrige Karte, sonst Arial */
+export const SYMBOL_FONT = "IBM Plex Sans, Arial, sans-serif";
 
 function draw(key: string, aff: Affiliation, size: number, text: SymbolText, outline: string, o: SymbolStrich = {}): SymbolGraphic {
   const triangle = (OLD_KEYS.has(key) ? symbolDef(key).triangle : catalogEntry(key)?.triangle) ?? false;
   const dashed = isAnticipated(text.sidc, text.status);
   if (text.sidc) aff = sidcAffiliation(text.sidc, aff);
   if (triangle) {
+    // V4 (o.strokeWidth gesetzt): Linie size/13, Halo wie milsymbol (outlineWidth/100 × size je Seite)
+    const v4 = o.strokeWidth !== undefined;
+    const lw = v4 ? +(size / 13).toFixed(2) : 1.5;
+    const halo = v4 ? +(((o.outlineWidth ?? 8) * size) / 100).toFixed(2) : 0;
+    // Rand 3 px wie bisher (der Halo darf über die viewBox hinaus: `overflow: visible`) – ein grösserer Rahmen bildete
+    // mehr Stapel (Ruhe-Kriterium der Symbolstudie)
     const w = Math.round(size * 1.15), h = Math.round(size), p = 3;
     const W = w + 2 * p, H = h + 2 * p;
     const A = [p, H - p], B = [W - p, H - p], C = [W / 2, p];
     const pts = `${A} ${B} ${C}`;
-    const coloured = outline.toLowerCase() !== "#ffffff" && outline.toLowerCase() !== "#fff";
+    const coloured = outline.toLowerCase() !== "#ffffff" && outline.toLowerCase() !== "#fff" && outline !== KARTE.haloNacht;
+    const haloW = v4 ? +(lw + 2 * halo).toFixed(2) : coloured ? 6 : 4;
     const slash = key === "beob_aufkl"
-      ? `<line x1="${A[0]}" y1="${A[1]}" x2="${(B[0]! + C[0]!) / 2}" y2="${(B[1]! + C[1]!) / 2}" stroke="#000" stroke-width="1.5"/>`
+      ? `<line x1="${A[0]}" y1="${A[1]}" x2="${(B[0]! + C[0]!) / 2}" y2="${(B[1]! + C[1]!) / 2}" stroke="#000" stroke-width="${lw}"/>`
       : "";
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`
-      + `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${coloured ? 6 : 4}" stroke-linejoin="round"/>`
-      + `<polygon points="${pts}" fill="${SYMBOL_FILL[aff]}" stroke="#000" stroke-width="1.5" stroke-linejoin="round"${dashed ? ' stroke-dasharray="3 2"' : ""}/>`
+      + `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${haloW}" stroke-linejoin="round"/>`
+      + `<polygon points="${pts}" fill="${SYMBOL_FILL[aff]}" stroke="#000" stroke-width="${lw}" stroke-linejoin="round"${dashed ? ` stroke-dasharray="${v4 ? `${(lw * 2).toFixed(1)} ${(lw * 1.4).toFixed(1)}` : "3 2"}"` : ""}/>`
       + slash
-      + `<circle cx="${W / 2}" cy="${p + (h * 2) / 3}" r="1.6" fill="#000"/></svg>`;
+      + `<circle cx="${W / 2}" cy="${p + (h * 2) / 3}" r="${v4 ? +(Math.max(1.6, size / 14)).toFixed(2) : 1.6}" fill="#000"/></svg>`;
     return { svg, w: W, h: H, anchor: [W / 2, p + (h * 2) / 3] };
   }
-  const opts: Record<string, unknown> = { size, outlineWidth: o.outlineWidth ?? 4, outlineColor: outline, fill: true, ...(o.strokeWidth !== undefined ? { strokeWidth: o.strokeWidth } : {}) };
+  const opts: Record<string, unknown> = { size, outlineWidth: o.outlineWidth ?? 4, outlineColor: outline, fill: true, fontfamily: SYMBOL_FONT, ...(o.strokeWidth !== undefined ? { strokeWidth: o.strokeWidth } : {}) };
   if (text.dir !== undefined) opts.direction = String(text.dir);
   let sym = new ms.Symbol(resolveSidc(key, aff, text), opts);
   if (!sym.isValid()) sym = new ms.Symbol(resolveSidc(key, aff, { status: text.status }), opts);

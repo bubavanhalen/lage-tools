@@ -112,10 +112,11 @@ const MELDER: Array<[string, Exp]> = [
   ["Hotel eins drei Stellung bezogen AK7", { melder: "H13", label: "AK7", problem: "«H13» gibt es in der Übung nicht" }],
   ["Hotel eins drei Personen Alpha Kilo sieben", { kind: "feind", melder: "H01", count: 3, label: "AK7" }],
   ["H05 sieht H12 bei AQ2", { melder: "H05", label: "AQ2", problem: "«H12» gibt es in der Übung nicht" }],
-  // neuer Trupp ohne Verdacht auf zusammengezogene Ziffern: wird gelernt (keine Sperre)
-  ["H06 Stellung bezogen AK7", { kind: "eigen", melder: "H06", label: "AK7" }],
+  // neuer Trupp ohne Verdacht auf zusammengezogene Ziffern: keine Sperre, aber nie still angelegt (MVP 3.5, S16/C12 –
+  // Melder leer, `truppNeu`, gelb «H06 als Trupp aufnehmen»)
+  ["H06 Stellung bezogen AK7", { kind: "eigen", melder: "", label: "AK7" }],
   ["H05 sieht H09 bei AQ2", { melder: "H05", label: "AQ2" }],
-  ["Zug 1 Stellung bezogen AK7", { kind: "eigen", melder: "Zug 1", label: "AK7" }],
+  ["Zug 1 Stellung bezogen AK7", { kind: "eigen", melder: "", label: "AK7" }],
   ["2 Fz AK7 und 3 Pers AL8 (H04)", { melder: "H04", count: null, label: "AK7", desc: "2 Fahrzeuge in AK7, 3 Personen in AL8", problem: "zwei Orte (AK7, AL8) – bitte als zwei Meldungen eintragen" }],
   ["H04 2 Fz AK7 und 2 Fz AL8", { melder: "H04", label: "AK7", problem: "zwei Orte (AK7, AL8)" }],
   ["H04 2 Fz AK7 und 3 Pers AK7", { melder: "H04", count: null, label: "AK7" }],
@@ -149,9 +150,10 @@ describe("Uhrzeit mit Ziffern-Stunde, ungefähre und relative Zeit", () => {
 });
 describe("Melder, den es nicht gibt; zwei Orte; NAI in Worten", () => {
   it.each(MELDER)("%s", (s, x) => { check(s, x); });
-  it("ohne bekannte Trupps (neue Übung): kein Problem, neuer Melder wird gelernt", () => {
+  it("ohne bekannte Trupps (neue Übung): kein Problem, neuer Trupp nur über den Knopf (MVP 3.5, S16)", () => {
     const d = parseMeldung("H13 2 Fz AK7", ctx({ units: { blau: [], rot: [], ul: [] } }));
-    expect(d.melder).toBe("H13");
+    expect(d.melder).toBe("");
+    expect(d.truppNeu).toBe("H13");
     expect(d.problems).toBeUndefined();
   });
   it("H13 bekannt: bleibt H13 (kein Aufteilen)", () => {

@@ -1,40 +1,120 @@
 /**
- * Betriebs-Status «Offline auf diesem Gerät» (Spez. MVP 3.5, S6/S7, A4): App · Karte · Ortsnamen · Speicher geschützt ·
- * Installiert · letzte Datei-Sicherung · Ladefortschritt. **Phase 0:** aus dem bisherigen `OfflineStatus` abgeleitet
- * (Karte nur ✓/✗, ohne Teilezahl); Paket A baut aus (`areaTileCoverage`, vollständige Prüfung S8) und liefert den
- * einmaligen Schutzhinweis (`useSchutzHinweis`, Phase 0: nie gezeigt).
+ * Betriebs-Status «Offline auf diesem Gerät» (Spez. MVP 3.5, S6/S7/S8, A4): App · Karte (vollständig geprüft, mit
+ * Teilezahl) · Ortsnamen · Speicher geschützt · Installiert · letzte Datei-Sicherung · Ladefortschritt. Quellen:
+ * `useOfflineStatus` (App, Karte aus `areaTileCoverage`, `storage.persisted()`, Netz), `install.ts` (standalone,
+ * `beforeinstallprompt`, iOS), `onlineAllowed`, `dateiGesichertAm`, `laden.ts`.
+ *
+ * Dazu der einmalige Schutzhinweis (S7): «Dieses Gerät schützt die Daten nicht dauerhaft.» – nur wenn der Speicher nicht
+ * geschützt **und** die App nicht installiert ist, höchstens einmal pro Übung und Gerät
+ * (`localStorage[SCHUTZHINWEIS_KEY(exId)]`, bleibt bis «OK»).
  */
-import { useEffect, useMemo, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { onlineAllowed, type Exercise } from "@lage/core";
-import type { BetriebStatus, OfflineStatus, SchutzHinweis } from "../shell/contracts";
+import { SCHUTZHINWEIS_KEY, type BetriebStatus, type OfflineStatus, type SchutzHinweis } from "../shell/contracts";
+import type { KartenAbdeckung } from "../offlineStatus";
 import { useDateiGesichert } from "./dateiSichern";
-import { installWeg, istInstalliert, onInstallWeg } from "./install";
-import { useLaden } from "./laden";
+import { installWeg, istInstalliert, onInstallWeg, type InstallWeg } from "./install";
+import { useLaden, type LadenStand } from "./laden";
+
+/** Eingaben der reinen Ableitung (testbar ohne Browser) */
+export interface BetriebQuellen {
+  offline: OfflineStatus & { abdeckung?: KartenAbdeckung };
+  onlineDienste: Exercise["onlineDienste"];
+  installiert: boolean;
+  install: InstallWeg;
+  dateiGesichert: string | null;
+  laden: LadenStand | null;
+}
+
+/** reine Ableitung des Status (Spez. 5.7): Karte ✓ nur bei 100 %, Teilezahlen aus der vollständigen Prüfung */
+export function betriebAus(q: BetriebQuellen): BetriebStatus {
+  const ab = q.offline.abdeckung;
+  const karte = ab
+    ? { share: ab.total ? ab.share : 1, total: ab.total, cached: ab.cached, geprueft: ab.geprueft }
+    : { share: q.offline.parts.karte ? 1 : 0, total: 0, cached: 0, geprueft: false };
+  return {
+    app: q.offline.parts.app,
+    karte,
+    speicher: q.offline.parts.speicher,
+    installiert: q.installiert,
+    install: q.installiert ? "fertig" : q.install,
+    online: { ortssuche: onlineAllowed({ onlineDienste: q.onlineDienste }, "ortssuche"), strassen: onlineAllowed({ onlineDienste: q.onlineDienste }, "strassen") },
+    dateiGesichert: q.dateiGesichert,
+    laden: q.laden ? { done: q.laden.done, total: q.laden.total } : null,
+    net: q.offline.net,
+  };
+}
+
+/** Kopf-Text zum Status: «Lädt 42 %» während des Ladens, sonst null */
+export function ladenText(l: { done: number; total: number } | null): string | null {
+  if (!l) return null;
+  return `Lädt ${l.total ? Math.min(99, Math.floor((l.done / l.total) * 100)) : 0} %`;
+}
+
+/** Karte im Popover: «Raster-Gebiet vollständig» · «96 % (933 von 971 Teilen)» · «noch nicht geladen» · «wird geprüft …» */
+export function karteText(k: BetriebStatus["karte"]): { ok: boolean | null; text: string } {
+  if (!k.geprueft) return { ok: null, text: "wird geprüft …" };
+  if (k.total === 0 || k.share >= 1) return { ok: true, text: k.total === 0 ? "kein Raster – nichts zu laden" : "Raster-Gebiet vollständig" };
+  if (!k.cached) return { ok: false, text: "noch nicht geladen" };
+  // nie «100 %» zeigen, solange etwas fehlt (abrunden)
+  return { ok: false, text: `${Math.floor(k.share * 100)} % (${k.cached} von ${k.total} Teilen)` };
+}
 
 export function useBetriebStatus(ex: Exercise | null, offline: OfflineStatus): BetriebStatus {
   const [n, bump] = useReducer((x: number) => x + 1, 0);
   useEffect(() => onInstallWeg(bump), []);
+  // installiert/standalone kann sich ändern (App aus dem Browser installiert): bei Sichtbarkeit neu lesen
+  useEffect(() => {
+    let mq: MediaQueryList | null = null;
+    try { mq = matchMedia("(display-mode: standalone)"); mq.addEventListener?.("change", bump); } catch { /* alter Browser */ }
+    document.addEventListener("visibilitychange", bump);
+    return () => { mq?.removeEventListener?.("change", bump); document.removeEventListener("visibilitychange", bump); };
+  }, []);
   const dateiGesichert = useDateiGesichert(ex?.id);
   const laden = useLaden();
   const online = ex?.onlineDienste;
+  const ab = (offline as OfflineStatus & { abdeckung?: KartenAbdeckung }).abdeckung;
   return useMemo(() => {
-    const karte = offline.parts.karte;
-    return {
-      app: offline.parts.app,
-      karte: { share: karte ? 1 : 0, total: 0, cached: 0, geprueft: false },
-      speicher: offline.parts.speicher,
-      installiert: istInstalliert(),
-      install: installWeg(),
-      online: { ortssuche: onlineAllowed({ onlineDienste: online }, "ortssuche"), strassen: onlineAllowed({ onlineDienste: online }, "strassen") },
-      dateiGesichert,
-      laden,
-      net: offline.net,
-    };
-  }, [offline.parts.app, offline.parts.karte, offline.parts.speicher, offline.net, online, dateiGesichert, laden, n]);
+    const inst = istInstalliert();
+    return betriebAus({ offline: { ...offline, abdeckung: ab }, onlineDienste: online, installiert: inst, install: installWeg(), dateiGesichert, laden });
+  }, [offline.parts.app, offline.parts.karte, offline.parts.speicher, offline.net, ab, online, dateiGesichert, laden, n]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-/** einmaliger Hinweis «Dieses Gerät schützt die Daten nicht dauerhaft.» (S7) – Phase 0: nie gezeigt (Paket A) */
+// ---------- einmaliger Schutzhinweis (S7)
+
+/** Hinweis zeigen? Speicher nicht geschützt ∧ nicht installiert ∧ noch nicht mit «OK» bestätigt (pro Übung und Gerät) */
+export function schutzHinweisNoetig(s: Pick<BetriebStatus, "speicher" | "installiert">, gesehen: boolean): boolean {
+  return !s.speicher && !s.installiert && !gesehen;
+}
+
+const gesehenAm = (exId: string): boolean => {
+  try { return localStorage.getItem(SCHUTZHINWEIS_KEY(exId)) !== null; } catch { return true; /* Speicher gesperrt: nicht bei jedem Start zeigen */ }
+};
+
+/** «So geht’s» im Hinweis: Popover mit aufgeklappter Anleitung öffnen (Workspace hört mit `onSchutzAnleitung`) */
+const anleitungHoerer = new Set<() => void>();
+let anleitungOffen = false;
+/** Workspace: Offline-Popover öffnen, wenn der Hinweis «So geht’s» will */
+export function onSchutzAnleitung(h: () => void): () => void { anleitungHoerer.add(h); return () => { anleitungHoerer.delete(h); }; }
+/** Popover beim Öffnen: Anleitung aufgeklappt? (einmal lesen, dann zurückgesetzt) */
+export function nimmAnleitungOffen(): boolean { const v = anleitungOffen; anleitungOffen = false; return v; }
+/** Anleitung im Popover zeigen: Hörer (Workspace) oder – solange keiner da ist – den Kopf-Knopf «⚠ Offline fehlt» drücken */
+export function zeigeSchutzAnleitung(): void {
+  anleitungOffen = true;
+  if (anleitungHoerer.size) { for (const h of anleitungHoerer) h(); return; }
+  const knopf = document.querySelector<HTMLButtonElement>(".hd button.hd-off");
+  if (knopf) knopf.click();
+  else document.querySelector<HTMLButtonElement>(".hd .mm-btn")?.click();
+}
+
 export function useSchutzHinweis(exId: string | null, s: BetriebStatus): SchutzHinweis {
-  void exId; void s;
-  return useMemo(() => ({ zeigen: false, ok() { /* Paket A */ }, mehr() { /* Paket A */ } }), []);
+  const [gesehen, setGesehen] = useState(() => (exId ? gesehenAm(exId) : true));
+  useEffect(() => { setGesehen(exId ? gesehenAm(exId) : true); }, [exId]);
+  const ok = useCallback(() => {
+    if (!exId) return;
+    try { localStorage.setItem(SCHUTZHINWEIS_KEY(exId), new Date().toISOString()); } catch { /* nur diese Sitzung */ }
+    setGesehen(true);
+  }, [exId]);
+  const zeigen = !!exId && schutzHinweisNoetig(s, gesehen);
+  return useMemo(() => ({ zeigen, ok, mehr: zeigeSchutzAnleitung }), [zeigen, ok]);
 }

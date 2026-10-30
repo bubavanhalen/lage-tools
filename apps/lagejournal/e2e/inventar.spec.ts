@@ -13,15 +13,25 @@
  * und «echt» (frisches Gerät, kein Haken: Kopf-Knopf «Offline …» sichtbar, Budget +1). Neue Budgets: `?beispiel=leer`
  * mit Kürzel ≤ 12/13, ohne Kürzel ≤ 14/15 (Kürzel-Zeile +2), Erststart ≤ 15/16. Der Kopf-Knopf öffnet das Offline-Popover
  * (kein Moduswechsel, S6). Zustände, die erst mit den Paketen entstehen (Laden, Vorschau mit Wahl, Bezug-Wahl, Popover,
- * Auswahlliste, Datei-Schritt): `inventar35.spec.ts` (darf bis Phase 2 rot sein; danach übernimmt E sie hierher).
+ * Auswahlliste, Datei-Schritt) sind seit Phase 2 (Paket E) hier (vorher `inventar35.spec.ts`): während «Alles für offline
+ * laden» (echt ≤ 13), Vorschau mit Wahl (≤ 16/17), Bezug-Wahl 64a/64b (≤ 17/18, zwei Geräte über eine Datei), Offline-
+ * Popover (Ziel ≤ 6, berichten), Auswahlliste (Zeilen 48 px, berichten), Übergabe-Schritt «Datei sichern» (Ziel ≤ 4,
+ * berichten); `--hit: 48px` auch in Popover und Kürzel-Zeile.
+ * Der einmalige Schutzhinweis (A, S7; geprüft in betrieb.spec 10) gilt in den «echt»-Messungen als schon gesehen –
+ * das Budget «echt» = «bereit» + 1 (Kopf-Knopf) misst die Grundansicht, nicht den einmaligen Hinweis.
  */
-import { UHR_T2_0730, UHR_T4_0730, ansicht, aufgabe, eintragenText, feldVon, inventarImBrowser, knopfVon, menue, modusVon, offlinePopoverVon, soll, ueberlaufImBrowser, zeilenVon, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
+import { readFileSync } from "node:fs";
+import { UHR_T2_0730, UHR_T4_0730, ansicht, aufgabe, eintragenText, feldVon, inventarImBrowser, knopfVon, menue, modusVon, offlineKnopfVon, offlinePopoverVon, soll, ueberlaufImBrowser, zeilenVon, type Geraet, type Harness, type Session, type Spec, type TestResult } from "./lib.ts";
+
+/** Schutzhinweis der Beispiel-Übungen als gesehen (nur «echt»; der Hinweis selbst: betrieb.spec 10) */
+const SCHUTZ_GESEHEN: Record<string, string> = Object.fromEntries(["ex-beispiel-bern", "ex-beispiel-bern-leer", "ex-beispiel-bern-lang"].map((id) => [`lage-tools.schutzhinweis.${id}`, "2030-05-15T05:00:00.000Z"]));
+const mitSchutz = (o: Parameters<Harness["open"]>[0]): Parameters<Harness["open"]>[0] => (o?.offline === "echt" ? { ...o, lokal: { ...SCHUTZ_GESEHEN, ...(o.lokal ?? {}) } } : o);
 
 const zaehlen = (s: Session) => s.page.evaluate(inventarImBrowser);
 
 async function messen1(h: Harness, name: string, geraet: Geraet, grenze: number | null, o: Parameters<Harness["open"]>[0], vorher?: (s: Session) => Promise<void>): Promise<TestResult> {
   return aufgabe(name, geraet, async (w) => {
-    const s = await h.open({ uhr: UHR_T2_0730, geraet, ...o });
+    const s = await h.open(mitSchutz({ uhr: UHR_T2_0730, geraet, ...o }));
     try {
       if (vorher) await vorher(s);
       await s.page.waitForTimeout(300);
@@ -58,7 +68,7 @@ const kuerzelSetzen = async (s: Session) => {
 // ---------- MVP 3 (aus inventar3.spec.ts übernommen) ----------
 async function messen3(h: Harness, name: string, geraet: Geraet, grenze: number | null, o: Parameters<Harness["open"]>[0], vorher: (s: Session) => Promise<void>, css?: string): Promise<TestResult> {
   return aufgabe(name, geraet, async (w) => {
-    const s = await h.open({ uhr: UHR_T2_0730, geraet, ...o, ...(css ? { css } : {}) });
+    const s = await h.open(mitSchutz({ uhr: UHR_T2_0730, geraet, ...o, ...(css ? { css } : {}) }));
     try {
       await vorher(s);
       await s.page.waitForTimeout(300);
@@ -83,6 +93,46 @@ const offenGewaehlt = async (s: Session) => {
   await s.page.locator(".jlist li").first().click();
 };
 const mehr = async (s: Session) => { await zeilenVon(s).first().click(); await knopfVon(s, /^Mehr/).click(); };
+
+// ---------- MVP 3.5 (vorher inventar35.spec.ts) ----------
+const popover = async (s: Session) => { await offlineKnopfVon(s).click(); soll(await offlinePopoverVon(s).isVisible(), "Popover fehlt"); };
+/** Bezug-Wahl 64a/64b: zweites Gerät trägt mit derselben Nummer ein, Datei hier zusammenführen (wie lvz35.spec 7) */
+const bezugWahl = (h: Harness, g: Geraet) => async (s: Session) => {
+  const b = await h.open({ query: "?beispiel", uhr: UHR_T2_0730, geraet: g });
+  try {
+    await eintragenText(s, "H02 3 Fz AK9");
+    await eintragenText(b, "H04 1 Pers AF11");
+    const dl = b.page.waitForEvent("download", { timeout: 5000 });
+    await menue(b, /Datei für anderes Gerät/);
+    const pfad = await (await dl).path();
+    const fc = s.page.waitForEvent("filechooser", { timeout: 5000 });
+    await menue(s, /Datei öffnen \(zusammenführen\)/);
+    await (await fc).setFiles({ name: "b.lage.json", mimeType: "application/json", buffer: readFileSync(pfad) });
+    await s.page.waitForTimeout(800);
+  } finally { await b.close(); }
+  const nr = (await zeilenVon(s).filter({ hasText: "3 Fz AK9" }).first().getAttribute("data-nr"))?.replace(/[a-z]$/, "");
+  await feldVon(s).fill(`Antwort zu ${nr}`);
+  await s.page.waitForTimeout(200);
+  soll(await knopfVon(s, new RegExp(`^${nr}b\\b`)).isVisible().catch(() => false), `Knopf «${nr}b …» fehlt`);
+};
+/** zwei Zeichen ≤ 10 px auseinander antippen → Auswahlliste «Welches Zeichen?» */
+const auswahlliste = async (s: Session) => {
+  await s.page.waitForTimeout(1500);
+  const p = await s.page.evaluate(() => {
+    const ev = [...document.querySelectorAll<HTMLElement>(".leaflet-marker-pane .lt-ev")].map((e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }).filter((q) => q.x > 450 && q.y > 100 && q.y < innerHeight - 120);
+    return ev.flatMap((a) => ev.filter((q) => q !== a && Math.hypot(q.x - a.x, q.y - a.y) <= 10).map((q) => ({ x: (a.x + q.x) / 2, y: (a.y + q.y) / 2 })))[0] ?? null;
+  });
+  soll(p, "keine zwei Zeichen ≤ 10 px auseinander");
+  await s.page.mouse.click(p!.x, p!.y);
+  await s.page.waitForTimeout(300);
+  soll(await s.page.getByRole("listbox", { name: /Welches Zeichen/ }).isVisible().catch(() => false), "Auswahlliste nicht geöffnet");
+};
+const dateiSchritt = async (s: Session) => {
+  await menue(s, /^Übergabe/);
+  await s.page.getByLabel(/übernommen von/).fill("MU");
+  await knopfVon(s, "Übergabe abschliessen").click();
+  soll(await knopfVon(s, /^Datei sichern/).isVisible().catch(() => false), "Schritt «Datei sichern» fehlt");
+};
 
 const spec: Spec = {
   name: "inventar",
@@ -161,6 +211,25 @@ const spec: Spec = {
       out.push(await messen3(h, "Dialog Lagekarte drucken (nur Bericht)", g, null, { query: "?beispiel" }, async (s) => { await menue(s, /Lagekarte drucken/); }));
       out.push(await messen3(h, "--hit 48px: Ansicht Offen", g, null, { query: "?beispiel" }, offen, ":root{--hit:48px !important}"));
       out.push(await messen3(h, "--hit 48px: «Mehr …»", g, null, { query: "?beispiel" }, mehr, ":root{--hit:48px !important}"));
+      // MVP 3.5 (Kap. 1.3, vorher inventar35.spec.ts)
+      out.push(await messen1(h, "Während «Alles für offline laden» · echt", g, 13, { query: "?beispiel", offline: "echt" }, async (s) => {
+        await popover(s);
+        await offlinePopoverVon(s).getByRole("button", { name: /Alles für offline laden/ }).click();
+        await s.page.keyboard.press("Escape");
+        soll(await s.page.getByText(/Lädt \d+ %/).first().isVisible().catch(() => false), "Kopf «Lädt …» fehlt");
+      }));
+      out.push(...await messen(h, "Vorschau mit Wahl («Personen» übernehmen)", g, 16, { query: "?beispiel" }, async (s) => {
+        await feldVon(s).fill("H03 3 Persohnen in AN6");
+        soll(await knopfVon(s, /«Personen» übernehmen/).isVisible().catch(() => false), "Knopf «Personen» übernehmen fehlt");
+      }));
+      out.push(...await messen(h, "Vorschau Bezug-Wahl (64a/64b)", g, 17, { query: "?beispiel" }, bezugWahl(h, g)));
+      out.push(await messen1(h, "Offline-Popover offen (nur Bericht, Ziel ≤ 6 im Popover)", g, null, { query: "?beispiel", offline: "echt" }, popover));
+      out.push(await messen1(h, "Auswahlliste auf der Karte (nur Bericht)", g, null, { query: "?beispiel" }, auswahlliste));
+      out.push(await messen1(h, "Übergabe-Schritt «Datei sichern» (nur Bericht, Ziel ≤ 4)", g, null, { query: "?beispiel" }, dateiSchritt));
+      out.push(await messen3(h, "--hit 48px: Offline-Popover", g, null, { query: "?beispiel", offline: "echt" }, popover, ":root{--hit:48px !important}"));
+      out.push(await messen3(h, "--hit 48px: Kürzel-Zeile", g, null, { query: "?beispiel=leer" }, async (s) => {
+        soll(await s.page.getByLabel("Dein Kürzel").isVisible().catch(() => false), "Kürzel-Zeile fehlt");
+      }, ":root{--hit:48px !important}"));
     }
     return out;
   },

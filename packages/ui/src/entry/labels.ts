@@ -48,15 +48,17 @@ export function replaceToken(text: string, token: string, by: string): string {
 
 
 /** Form und Wort je Art in der Liste (Regel «jede Farbe hat eine Form»): Meldungen wie MVP 1, sonst ✎ bzw. ⇄ in Tinte */
-export type ZeilenForm = "feind" | "eigen" | "unklar" | "neutral" | "notiz" | "vbk" | "aufheb";
+export type ZeilenForm = "feind" | "eigen" | "unklar" | "neutral" | "notiz" | "vbk" | "aufheb" | "ausgang";
 export function formOf(e: Pick<LageEvent, "side" | "aff" | "notiz" | "art" | "hebtAuf">): ZeilenForm {
   const art = artOf(e);
   if (art === "vbk") return "vbk";
+  // MVP 3.5 (S17): Ausgang nach oben «↗ Ausgang an Bat» (Tinte, kein Zeichen)
+  if (art === "ausgang") return "ausgang";
   if (art !== "meldung") return "notiz";
   if (e.hebtAuf) return "aufheb";
   return e.side === "blau" ? "eigen" : e.aff === "N" ? "neutral" : e.aff === "U" ? "unklar" : "feind";
 }
-export const FORM_ZEICHEN: Record<ZeilenForm, string> = { feind: "◆", eigen: "●", unklar: "■", neutral: "▲", notiz: "✎", vbk: "⇄", aufheb: "⊘" };
+export const FORM_ZEICHEN: Record<ZeilenForm, string> = { feind: "◆", eigen: "●", unklar: "■", neutral: "▲", notiz: "✎", vbk: "⇄", aufheb: "⊘", ausgang: "↗" };
 
 /**
  * Zeit mit Tag, wenn sie nicht am Tag `heute` liegt (Prüfung M3): «07:06» bzw. «T1 07:06» (ausserhalb der Übungstage
@@ -105,7 +107,8 @@ export function vermerkTeile(e: LageEvent, ex: Pick<Exercise, "events">, idx: Lv
   if (art === "auftrag" && e.frist) out.push({ k: "frist", t: `bis ${e.frist.slice(11, 16)}` });
   if (v.dringend) out.push({ k: "dringend", t: "dringend", stark: true });
   if (v.massnahme) out.push({ k: "massnahme", t: `Massnahme: ${v.massnahme}` });
-  if (v.weiter) out.push({ k: "weiter", t: `weitergemeldet ${v.weiter.an}${v.weiter.um ? ` ${v.weiter.um.slice(11, 16)}` : ""}` });
+  // MVP 3.5 (S17): «weitergemeldet Bat 07:31 (Nr 58)» – auch abgeleitet aus einem Ausgang mit Bezug (`weiterVon`)
+  if (v.weiter) out.push({ k: "weiter", t: `weitergemeldet ${v.weiter.an}${v.weiter.um ? ` ${v.weiter.um.slice(11, 16)}` : ""}${v.weiterVon?.nr ? ` (Nr ${v.weiterVon.nr})` : ""}` });
   if (v.quittiert) out.push({ k: "quittiert", t: `quittiert ${hm(v.quittiert.t)}` });
   if (v.beantwortet) { const n = nrVon(v.beantwortet.id); out.push({ k: "beantwortet", t: `beantwortet ${hm(v.beantwortet.t)}${n ? ` (Nr ${n})` : ""}` }); }
   if (v.status === "erledigt") out.push({ k: "status", t: v.erledigtUm ? `erledigt ${hm(v.erledigtUm)}` : "erledigt" });
@@ -114,7 +117,7 @@ export function vermerkTeile(e: LageEvent, ex: Pick<Exercise, "events">, idx: Lv
   if (e.hebtAuf) { const n = nrVon(e.hebtAuf); out.push({ k: "hebtauf", t: n ? `hebt Nr ${n} auf` : "hebt auf" }); }
   if (e.bezug && !e.hebtAuf) {
     const n = nrVon(e.bezug);
-    const w = e.bezugArt === "antwort" ? "Antwort auf" : e.bezugArt === "quittung" ? "Quittung zu" : e.bezugArt === "ausgefuehrt" ? "ausgeführt zu" : "zu";
+    const w = e.bezugArt === "antwort" ? "Antwort auf" : e.bezugArt === "quittung" ? "Quittung zu" : e.bezugArt === "ausgefuehrt" ? "ausgeführt zu" : "zu"; // «weiter»: «zu Nr 54»
     if (n) out.push({ k: "bezug", t: `${w} Nr ${n}` });
   }
   return out;

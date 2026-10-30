@@ -6,7 +6,7 @@
  * MVP 1 (Spez. Kap. 3.5): «Zeige letzte 30 min · 1 h · 2 h · alles» (nie gespeichert) und Texte für Live-Band und
  * Rückblick («RÜCKBLICK · Lage um T2 05:30 (vor 1 h 55 min)»), Eingabe «Lage um» («05:30», «T1 2300»).
  */
-import { addDays, parseLocalIso } from "./clock";
+import { addDays, parseLocalIso, zeitBis, zeitCmp, zeitMs } from "./clock";
 
 export type TimeWindow = { mode: "alles" } | { mode: "dauer"; min: number } | { mode: "ab"; t: string };
 
@@ -25,16 +25,17 @@ function isoMinutes(ms: number): string {
 export function windowStart(w: TimeWindow | null | undefined, t: string): string | null {
   if (!w || w.mode === "alles") return null;
   if (w.mode === "dauer") {
-    const ms = Date.parse(t);
+    const ms = zeitMs(t);
     return Number.isFinite(ms) ? isoMinutes(ms - Math.max(1, w.min) * 60000) : null;
   }
   // fester Anfang nach der Lagezeit (z. B. Zeitstrahl zurückgestellt): ein leeres Fenster wäre verwirrend → alles zeigen
-  return w.t > t.slice(0, 16) ? null : w.t;
+  return zeitCmp(w.t, t) > 0 ? null : w.t;
 }
 
 /** Liegt die Zeit `t` im Fenster [from, to]? (from null = offen) */
 export function inWindow(t: string, from: string | null, to: string): boolean {
-  return (!from || t >= from) && t.slice(0, 16) <= to.slice(0, 16);
+  // MVP 3.5 (S23): über den Zeitpunkt (Lagezeit mit oder ohne Offset)
+  return (!from || zeitBis(from, t)) && zeitBis(t, to);
 }
 
 /** Text für die Schnellwahl bzw. Anzeige: «Alles», «30′», «1 h», «ab 07:10» */

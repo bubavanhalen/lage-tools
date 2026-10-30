@@ -9,16 +9,20 @@
  * - Journalführung: gestrichene Einträge bleiben («gestrichen 07:22 von BSP», grau, durchgestrichen), korrigierte tragen
  *   «Nachtrag 07:34 MU: vorher «…»». Meldungen aus einem KI-Vorschlag (`via: "ki"`) sind mit «[KI]» markiert.
  * - Alte Signatur `journalPdf(ex, classification, hints, lageRot, kiNote)` bleibt als dünne Hülle (ganze Übung).
+ * - MVP 3.5 (Spez. MVP 3.5, Kap. 2.9, D8): Farbe **nur** in der Spalte «Art» (Feind/Unklar/Eigene/Ausgang), Zeilen weiss;
+ *   «Erf.» immer gefüllt (Kürzel oder «–»); Ort nie doppelt («AM5 · auf Kornhausstrasse»); dringend als Vektorzeichen
+ *   ⚠ in der Spalte «Nr» (nie «! »); das Visum steht nie allein auf einer Seite (die letzten 3 Zeilen wandern mit);
+ *   Ausgang als Art «Ausgang an Bat»; Art-Korrektur «vorher: Orientierung Bat «…»». Zeitvergleiche über `zeitCmp`.
  */
 import { jsPDF } from "jspdf";
 import {
-  ART_LABEL, artOf, isLage, kindLabel, lvzIndex, nrLabel, placeLabel, schichtenIm, vermerkeOf,
-  type Exercise, type Hint, type LageEvent,
+  ART_LABEL, artOf, artText, isLage, kindLabel, lvzIndex, nrLabel, placeLabel, schichtenIm, vermerkeOf, zeitCmp,
+  type EventRevision, type Exercise, type Hint, type LageEvent,
 } from "@lage/core";
 import { appendHintsPdf } from "./hintsExport";
 import type { LageRotState } from "./lageRot";
 import { appendLageRotPdf, pdfPageNumbers } from "./lageRotExport";
-import { safePdf } from "./pdfSafe";
+import { glyphWarn, safePdf } from "./pdfSafe";
 import { pdfInfo } from "./perf";
 import type { JournalDruck } from "./shell/contracts";
 import { datum, eintraegeIm, grenzen, localHhmm, schichtAm, spanne, tagZeile, umfangText, type JournalUmfang } from "./print/umfang";
@@ -27,7 +31,7 @@ export { tagZeile, umfangText, wochentagOf, type JournalUmfang } from "./print/u
 
 // ---------- Zeilen
 
-export type JournalPdfFill = "feind" | "unklar" | "eigen" | null;
+export type JournalPdfFill = "feind" | "unklar" | "eigen" | "ausgang" | null;
 export type JournalPdfRow =
   | { kind: "tag"; text: string }
   | {
@@ -62,12 +66,16 @@ function vonAn(e: LageEvent): string {
     case "auftrag": return e.an ? `an ${e.an}` : "";
     case "rueckfrage": return e.an ? `an ${e.an}` : e.melder ? `von ${e.melder}` : "";
     case "orientierung": return e.quelle ?? "";
+    // Ausgang: Empfänger steht in der Art («Ausgang an Bat»)
+    case "ausgang": return "";
     default: return e.melder ?? "";
   }
 }
 
 function fillOf(e: LageEvent): JournalPdfFill {
-  if (e.deleted || !isLage(e)) return null;
+  if (e.deleted) return null;
+  if (artOf(e) === "ausgang") return "ausgang";
+  if (!isLage(e)) return null;
   if (e.side === "blau") return "eigen";
   if (e.side === "rot") return e.aff === "U" ? "unklar" : "feind";
   return null;
@@ -91,12 +99,38 @@ function vermerkeText(e: LageEvent, ex: Exercise, byId: Map<string, LageEvent>, 
   if (e.hebtAuf) out.push(`hebt Nr ${nr(e.hebtAuf)} auf`);
   if (e.bezug && !e.hebtAuf && e.bezugArt !== "quittung") out.push(`${e.bezugArt === "antwort" ? "Antwort auf" : e.bezugArt === "ausgefuehrt" ? "ausgeführt:" : "zu"} Nr ${nr(e.bezug)}`);
   const hist = (e.history ?? []).filter((r) => !r.deleted);
-  const line = (r: (typeof hist)[number]) => { const p = placeLabel(r); return `«${r.text}»${p ? ` (${p})` : ""}`; };
+  // Art-Korrektur: alte Art vor dem Text («vorher: Orientierung Bat «…»»), nur wenn sie anders war
+  const artVon = (r: EventRevision) => artText({ ...e, ...r, art: r.art ?? (artOf(e) === "meldung" ? undefined : "meldung"), notiz: r.art ? r.art !== "meldung" : false } as LageEvent);
+  const line = (r: (typeof hist)[number]) => {
+    const p = placeLabel(r);
+    const alt = (r.art ?? "meldung") !== artOf(e) ? `${artVon(r)} ` : "";
+    return `${alt}«${r.text}»${p ? ` (${p})` : ""}`;
+  };
   const korr = hist.filter((r) => !r.conflict);
   if (korr.length && !e.deleted) out.push(`Nachtrag ${e.correctedAt ? localHhmm(e.correctedAt) : ""}${e.geaendertVon ? ` ${e.geaendertVon}` : ""}: vorher ${korr.map(line).join(" | ")}`.replace(/ {2,}/g, " "));
   const konf = hist.filter((r) => r.conflict);
   if (konf.length) out.push(`Konflikt, nicht übernommen: ${konf.map(line).join(" | ")}`);
   return out;
+}
+
+/** PQ-Token einer Ortsangabe («AM5», «AM5 C» → «AM5») */
+const pqOf = (s: string) => s.match(/\b[A-Z]{2}\s?\d{1,3}\b/g)?.map((x) => x.replace(/\s/, "")) ?? [];
+/** Ort einer Meldung, jedes Planquadrat nur einmal: «AM5 C · auf Kornhausstrasse», «NAI 2 · AN6» */
+export function ortOhneDoppel(e: Pick<LageEvent, "where" | "cells" | "nai" | "road">): string {
+  const teile: string[] = [];
+  const gesehen = new Set<string>();
+  const dazu = (s?: string) => {
+    if (!s || teile.includes(s)) return;
+    const pq = pqOf(s);
+    if (pq.length && pq.every((x) => gesehen.has(x))) return;
+    pq.forEach((x) => gesehen.add(x));
+    teile.push(s);
+  };
+  dazu(e.where);
+  for (const c of e.cells ?? []) dazu(c);
+  if (e.nai && !(e.where ?? "").includes(e.nai)) dazu(e.nai);
+  if (e.road && !teile.some((t) => t.includes(e.road!))) teile.push(`auf ${e.road}`);
+  return teile.join(" · ");
 }
 
 /** Zeilen des Journal-PDF im Umfang (rein): Tageszeilen und Einträge, chronologisch */
@@ -111,9 +145,7 @@ export function journalPdfRows(ex: Exercise, umfang: Pick<JournalUmfang, "from" 
     if (d !== tag) { tag = d; out.push({ kind: "tag", text: tagZeile(d, ex.days) }); }
     const art = artOf(e);
     const v = vermerkeOf(e, idx);
-    const ort = art === "meldung" && !e.hebtAuf
-      ? [e.where, ...(e.cells ?? []).filter((c) => c !== e.where)].filter(Boolean).join(", ")
-      : (e.orte ?? []).join(", ") || (e.hebtAuf ? placeLabel(e) : "");
+    const ort = art === "meldung" && !e.hebtAuf ? ortOhneDoppel(e) : (e.orte ?? []).join(", ") || (e.hebtAuf ? placeLabel(e) : "");
     out.push({
       kind: "eintrag",
       id: e.id,
@@ -121,11 +153,11 @@ export function journalPdfRows(ex: Exercise, umfang: Pick<JournalUmfang, "from" 
         nrLabel(e, ex),
         e.t.slice(11, 16),
         e.tReported ? e.tReported.slice(11, 16) : "",
-        art === "meldung" ? (e.notiz ? "Notiz" : kindText(e)) : ART_KURZ[art],
+        art === "meldung" ? (e.notiz ? "Notiz" : kindText(e)) : art === "ausgang" ? artText(e) : ART_KURZ[art],
         vonAn(e),
-        (v.dringend ? "! " : "") + (e.via === "ki" ? `${e.text} [KI]` : e.text),
+        e.via === "ki" ? `${e.text} [KI]` : e.text,
         ort,
-        e.erfasstVon ?? "",
+        e.erfasstVon || "–",
       ],
       vermerke: vermerkeText(e, ex, byId, idx),
       fill: fillOf(e),
@@ -142,11 +174,11 @@ export function journalPdfRows(ex: Exercise, umfang: Pick<JournalUmfang, "from" 
  */
 export function visumZeilen(ex: Exercise, from: string, to: string): string[] {
   const vorher = schichtAm(ex, from);
-  const im = schichtenIm(ex, from, to).filter((s) => s !== vorher && s.t > from);
+  const im = schichtenIm(ex, from, to).filter((s) => s !== vorher && zeitCmp(s.t, from) > 0);
   const out: string[] = [];
   let k = vorher?.an ?? null, a = from;
   // vor dem ersten Wechsel unbekannt geführt: Lücke zeigen (Unterschrift nachtragen)
-  if (!vorher && im[0] && im[0].art === "beginn" && im[0].t > from) { out.push(`Geführt von: ________ (${spanne(from, im[0].t, ex.days)})`); a = im[0].t; }
+  if (!vorher && im[0] && im[0].art === "beginn" && zeitCmp(im[0].t, from) > 0) { out.push(`Geführt von: ________ (${spanne(from, im[0].t, ex.days)})`); a = im[0].t; }
   for (const s of im) {
     if (k || s.art === "uebergabe") out.push(`Geführt von: ${k ?? s.von ?? "________"} (${spanne(a, s.t, ex.days)})${s.art === "uebergabe" ? ` · übergeben an: ${s.an}` : ""}`);
     k = s.an; a = s.t;
@@ -159,7 +191,10 @@ export function visumZeilen(ex: Exercise, from: string, to: string): string[] {
 
 /** Schrift nie unter 8 pt (Prüfung N) */
 const W = 210, M = 10, FS = 8, LH = 3.6, BOTTOM = 284;
-const FILL: Record<NonNullable<JournalPdfFill>, [number, number, number]> = { feind: [253, 232, 235], unklar: [252, 244, 214], eigen: [232, 240, 252] };
+const FILL: Record<NonNullable<JournalPdfFill>, [number, number, number]> = { feind: [253, 232, 235], unklar: [252, 244, 214], eigen: [232, 240, 252], ausgang: [232, 232, 232] };
+/** so viele letzte Zeilen wandern mit dem Visum auf die nächste Seite (nie allein, Kap. 2.9) */
+const VISUM_MIT = 3;
+const colX = (i: number) => M + JOURNAL_COLS.slice(0, i).reduce((s, c) => s + c.w, 0);
 
 export interface JournalPdfExtra {
   /** Hinweise zu Rot (alle zur Lagezeit), Anhang nur aus dem Zeitraum oder offen */
@@ -191,40 +226,61 @@ function layout(ex: Exercise, o: JournalDruck, extra: JournalPdfExtra): jsPDF {
     doc.text(erstellt, W - M, 13, { align: "right" });
     if (ex.days.length) doc.text(doc.splitTextToSize(ex.days.map((d, i) => `T${i + 1} = ${datum(d)}`).join(" · "), W - 2 * M) as string[], M, unten + 6);
     y = unten + 13;
-    doc.setFillColor(29, 29, 29); doc.rect(M, y - 3.4, W - 2 * M, 4.8, "F");
-    doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(FS);
+    // Kopfzeile ohne Füllung (Farbe nur in der Spalte «Art»): fett, Linie darunter
+    doc.setTextColor(0); doc.setFont("helvetica", "bold"); doc.setFontSize(FS);
     let x = M + 0.8;
     for (const c of JOURNAL_COLS) { doc.text(c.h, x, y); x += c.w; }
-    doc.setTextColor(0); doc.setFont("helvetica", "normal");
-    y += 4.2;
+    doc.setDrawColor(0); doc.setLineWidth(0.35); doc.line(M, y + 1.4, W - M, y + 1.4);
+    doc.setFont("helvetica", "normal");
+    y += 4.8;
   };
   const newPage = () => { doc.addPage(); header(); };
   header();
   doc.setFontSize(FS);
-  for (const r of rows) {
+  // Höhe je Zeile vorab (für «Visum nie allein»)
+  const mass = rows.map((r) => {
+    if (r.kind === "tag") return { lines: [] as string[][], verm: [] as string[], h: LH + 0.8 };
+    doc.setFont("helvetica", r.dringend ? "bold" : "normal"); doc.setFontSize(FS);
+    // Spalte «Nr» bei dringend: Platz für das Vektorzeichen ⚠
+    const lines = r.cells.map((c, i) => doc.splitTextToSize(c, JOURNAL_COLS[i]!.w - 1.4 - (i === 0 && r.dringend ? 3 : 0)) as string[]);
+    doc.setFont("helvetica", "italic");
+    const verm = r.vermerke.length ? doc.splitTextToSize(r.vermerke.join(" · "), JOURNAL_COLS[5].w - 1.4) as string[] : [];
+    doc.setFont("helvetica", "normal");
+    const n = Math.max(...lines.map((l, i) => l.length + (i === 5 ? verm.length : 0)), 1);
+    return { lines, verm, h: n * LH + 0.6 };
+  });
+  const visumNeed = (() => {
+    const kl = extra.kiNote ? (doc.splitTextToSize(extra.kiNote, W - 2 * M) as string[]).length * 3.6 + 3 : 0;
+    doc.setFontSize(9);
+    const vl = visumZeilen(ex, umfang.from, umfang.to).reduce((s2, v) => s2 + (doc.splitTextToSize(v, W - 2 * M) as string[]).length * 4.4 + 1, 0);
+    doc.setFontSize(FS);
+    return kl + vl + 14;
+  })();
+  let ersteDerLetzten = -1;
+  for (let i = rows.length - 1, n = 0; i >= 0; i--) { if (rows[i]!.kind === "eintrag") { ersteDerLetzten = i; if (++n >= VISUM_MIT) break; } }
+  const restHoehe = ersteDerLetzten >= 0 ? mass.slice(ersteDerLetzten).reduce((s2, m) => s2 + m.h, 0) : 0;
+  rows.forEach((r, ri) => {
+    // die letzten Zeilen samt Visum zusammen (passt alles auf eine leere Seite)
+    if (ri === ersteDerLetzten && y + restHoehe + visumNeed > BOTTOM && restHoehe + visumNeed < BOTTOM - 40) newPage();
     if (r.kind === "tag") {
       if (y + LH * 2.4 > BOTTOM) newPage();
       doc.setFont("helvetica", "bold"); doc.setFontSize(FS + 0.5);
-      doc.setFillColor(236, 236, 236); doc.rect(M, y - 2.8, W - 2 * M, LH + 0.6, "F");
       doc.text(r.text, M + 0.8, y);
+      doc.setDrawColor(150); doc.setLineWidth(0.2); doc.line(M, y + 1.1, W - M, y + 1.1);
       doc.setFont("helvetica", "normal"); doc.setFontSize(FS);
       y += LH + 0.8;
-      continue;
+      return;
     }
-    doc.setFont("helvetica", r.dringend ? "bold" : "normal");
-    const lines = r.cells.map((c, i) => doc.splitTextToSize(c, JOURNAL_COLS[i]!.w - 1.4) as string[]);
-    doc.setFont("helvetica", "italic"); doc.setFontSize(FS);
-    const verm = r.vermerke.length ? doc.splitTextToSize(r.vermerke.join(" · "), JOURNAL_COLS[5].w - 1.4) as string[] : [];
-    doc.setFontSize(FS);
-    const n = Math.max(...lines.map((l, i) => l.length + (i === 5 ? verm.length : 0)), 1);
-    const h = n * LH + 0.6;
+    const { lines, verm, h } = mass[ri]!;
     if (y + h > BOTTOM) newPage();
-    if (r.fill) { doc.setFillColor(...FILL[r.fill]); doc.rect(M, y - 2.6, W - 2 * M, h, "F"); }
+    // Farbe nur in der Spalte «Art» (Feind/Unklar/Eigene/Ausgang)
+    if (r.fill) { doc.setFillColor(...FILL[r.fill]); doc.rect(colX(3) + 0.4, y - 2.6, JOURNAL_COLS[3].w - 0.4, h, "F"); }
     if (r.gestrichen) doc.setTextColor(120);
     let x = M + 0.8;
     lines.forEach((l, i) => {
       doc.setFont("helvetica", r.dringend && (i === 5 || i === 0) ? "bold" : "normal");
       doc.text(l, x, y);
+      if (i === 0 && r.dringend && l[0]) glyphWarn(doc, x + doc.getTextWidth(l[0]) + 0.6, y);
       // gestrichen: Meldung durchstreichen (Vermerke nicht)
       if (r.gestrichen && i === 5) {
         doc.setDrawColor(120); doc.setLineWidth(0.15);
@@ -240,7 +296,7 @@ function layout(ex: Exercise, o: JournalDruck, extra: JournalPdfExtra): jsPDF {
     doc.setFont("helvetica", "normal"); doc.setTextColor(0);
     doc.setDrawColor(215); doc.setLineWidth(0.1); doc.line(M, y - 2.6 + h, W - M, y - 2.6 + h);
     y += h;
-  }
+  });
   if (!rows.length) { doc.setFontSize(9); doc.text("Keine Einträge in diesem Umfang.", M, y + 2); y += 8; }
   // KI-Vermerk und Visum (letzte Seite des Journals)
   const tail: Array<{ text: string; italic?: boolean }> = [];
@@ -279,7 +335,7 @@ export function journalPdf(ex: Exercise, a?: JournalDruck | string, b?: JournalP
   if (typeof a === "object") { o = a; extra = (b as JournalPdfExtra | undefined) ?? {}; }
   else {
     const g = grenzen(ex);
-    o = { umfang: { art: "alles", from: g.from, to: lageRot?.t && lageRot.t > g.to ? lageRot.t : g.to }, anhang: { lageRot: !!lageRot, hinweise: !!(b as Hint[] | undefined)?.length, ohneGestrichene: false }, klassifizierung: a ?? "INTERN", kuerzel: null };
+    o = { umfang: { art: "alles", from: g.from, to: lageRot?.t && zeitCmp(lageRot.t, g.to) > 0 ? lageRot.t : g.to }, anhang: { lageRot: !!lageRot, hinweise: !!(b as Hint[] | undefined)?.length, ohneGestrichene: false }, klassifizierung: a ?? "INTERN", kuerzel: null };
     extra = { hints: b as Hint[] | undefined, lageRot, kiNote };
   }
   const doc = layout(ex, o, extra);

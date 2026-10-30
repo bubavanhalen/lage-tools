@@ -7,7 +7,7 @@
  * Ohne Laufzeit-Abhängigkeiten; alle Beispiele fiktiv (Raum Bern).
  */
 import type { Area } from "./model";
-import { catalogEntry, closestTerm, isKnownTerm, isTacticalWord, readTactical, type CatalogEntry, type TacticalReading } from "./catalog";
+import { catalogEntry, closestTerm, ersatzWort, isKnownTerm, isTacticalWord, readTactical, type CatalogEntry, type TacticalReading } from "./catalog";
 import { isCountNoun, looksSpoken, normalizeSpoken, spokenNumber } from "./funk";
 import type { FoundCell, RasterSheet } from "./raster";
 import { findTimes, type FoundTime } from "./time";
@@ -343,7 +343,7 @@ const OWN_POS_RE = new RegExp(
   `(?<![${L}])(?:` +
     [
       "stellung\\w*", "bezogen", "bezieht", "beziehen", "bezug", "stao", "standort\\w*", "position", "pos", "beo", "eig", "eigen\\w*", "wir", "uns",
-      "erreicht\\w*", "angekommen", "eingetroffen", "trifft\\s+ein", "treffen\\s+ein", "ankunft", "verschieb\\w*", "verschoben", "verlegt", "verlegen",
+      "erreicht\\w*", "angekommen", "eingetroffen", "wechselt", "wechseln", "gewechselt", "trifft\\s+ein", "treffen\\s+ein", "ankunft", "verschieb\\w*", "verschoben", "verlegt", "verlegen",
       "rollt\\s+ab", "rollen\\s+ab", "abgerollt", "marsch\\w*", "unterwegs", "ablösung", "abgelöst", "befindet\\s+sich", "befinden\\s+(?:sich|uns)",
       "(?:ist|sind)\\s+(?:jetzt\\s+|nun\\s+|neu\\s+|wieder\\s+)?(?:in|im|bei|beim|am|an|auf|zurück)", "frei", "gesichert", "besetzt\\s+(?:durch\\s+)?(?:uns|eig)",
     ].join("|") +
@@ -472,7 +472,8 @@ export function stueckCount(text: string): number | undefined {
 // Anzahl in Worten (getippt): «ein Panzer», «ein Dutzend Soldaten», «ein paar Leute»
 
 /** Artikel «ein/eine/einen» als Anzahl nur vor diesen Wörtern (Fahrzeuge, Personen, Geräte, Elemente) */
-const ART_NOUN_RE = /^(?:fahrzeug|fz|person|pers|mann|soldat|sdt|pw|personenwagen|lw|lastwagen|lieferwagen|kastenwagen|transporter|drohne|spz|schützenpanzer|kpz|kampfpanzer|panzer|motorrad|töff|velo|traktor|auto|lkw|bus|kleinbus|jeep|pick-?up|geländewagen|duro|zivilist|zivilperson|bewaffnete[rn]?|helikopter|heli|minenwerfer|mw|mg|maschinengewehr|raketenwerfer|lenkwaffe|pzaw)$/i;
+const ART_NOUN_RE = /^(?:fahrzeug|fz|fzg|person|pers|mann|soldat|sdt|typ|kerl|pinz|pinzgauer|mowag|pw|personenwagen|lw|lastwagen|lieferwagen|kastenwagen|transporter|drohne|spz|schützenpanzer|kpz|kampfpanzer|panzer|motorrad|töff|velo|traktor|auto|lkw|bus|kleinbus|jeep|pick-?up|geländewagen|duro|zivilist|zivilperson|bewaffnete[rn]?|helikopter|heli|minenwerfer|mw|mg|maschinengewehr|raketenwerfer|lenkwaffe|pzaw)$/i;
+const ZAHLWORT: Record<string, number> = { zwei: 2, zwo: 2, drei: 3, vier: 4, fünf: 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10, elf: 11, zwölf: 12 };
 const SMALL_WORD: Record<string, number> = { ein: 1, eine: 1, einen: 1, zwei: 2, zwo: 2, drei: 3, vier: 4, fünf: 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10 };
 /** unbestimmte Mengen: keine Anzahl, bleiben im Sinn («ein paar gegnerische Soldaten») */
 const VAGUE_RE = /(?<![\p{L}])(ein\s+paar|einige|mehrere|etliche|viele|wenige|zahlreiche)(?![\p{L}])/iu;
@@ -487,9 +488,12 @@ export function countWords(text: string): string {
     const f = !n ? 1 : /^\d/.test(n) ? +n : SMALL_WORD[n.toLowerCase()] ?? 1;
     return String(half ? f * 6 : f * 12);
   });
+  const base = (w: string) => w.toLowerCase().replace(/(?:en|e|n|s)$/, "");
+  const noun = (w: string | undefined) => !!w && (ART_NOUN_RE.test(w) || ART_NOUN_RE.test(base(w)) || isCountNoun(w));
+  // (MVP 3.5, C2) Zahlwort vor einem Gegenstand («drei Typen», «zwei Pinz», «zwei schwarze Pw») – nur intern, der Text bleibt
+  out = out.replace(/(?<![\p{L}\d])(zwei|zwo|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf)\s+(?=([\p{L}][\p{L}\-]*)(?:\s+([\p{L}][\p{L}\-]*))?)/giu, (m, n: string, w1: string, w2: string | undefined) =>
+    noun(w1) || (/^[\p{Ll}]/u.test(w1) && noun(w2)) ? `${ZAHLWORT[n.toLowerCase()]} ` : m);
   out = out.replace(/(?<![\p{L}\d])(ein|eine|einen|einem|einer)\s+(?=([\p{L}][\p{L}\-]*)(?:\s+([\p{L}][\p{L}\-]*))?)/giu, (m, _a: string, w1: string, w2: string | undefined) => {
-    const base = (w: string) => w.toLowerCase().replace(/(?:en|e|n|s)$/, "");
-    const noun = (w: string | undefined) => !!w && (ART_NOUN_RE.test(w) || ART_NOUN_RE.test(base(w)));
     if (/^paar$/i.test(w1)) return m;
     // Nomen direkt danach oder nach einem kleingeschriebenen Beschreibungswort («einen weissen Lieferwagen»)
     if (noun(w1) || (/^[\p{Ll}]/u.test(w1) && noun(w2))) return "1 ";
@@ -654,7 +658,8 @@ export function noteIntent(text: string): { word: string; to?: string } | undefi
 const NOT_SUBJECT = new RegExp(
   `^(?:x|mal|min|minuten?|sek|sekunden?|std|stunden?|h|uhr|m|km|meter|kilometer|grad|tage?|nächte?|stück|stk|prozent|` +
     `in|im|bei|beim|an|am|auf|nach|von|vom|aus|mit|ohne|und|oder|bis|vor|hinter|neben|über|unter|ca|circa|rtg|richtung|` +
-    `n|no|ne|o|e|so|se|s|sw|w|nw|nord\\w*|ost\\w*|süd\\w*|west\\w*|uq|pq|nai|bnb|pers\\w*|fz|leute|stellung\\w*|meter|` +
+    // (MVP 3.5, C1) «pers…» nur in den richtigen Formen – «Persohnen» ist ein Tippfehler, kein Personenwort
+    `n|no|ne|o|e|so|se|s|sw|w|nw|nord\\w*|ost\\w*|süd\\w*|west\\w*|uq|pq|nai|bnb|pers|pers\\.|person|personen|personal|fz|leute|stellung\\w*|meter|` +
     `geschätzt|gezählt|gesehen|gemeldet|beobachtet|gesichtet|erkannt|weitere|andere|davon|total|insgesamt|zusätzlich|neu|neue|mehr|weniger|wörter|zeichen|stellen|zeilen|seiten)$`,
   "iu",
 );
@@ -666,21 +671,40 @@ export interface UnknownWord {
   count?: number;
   /** Vorschlag aus dem Katalog (Schlüssel), z. B. «spz» – nur Vorschlag, nie still übernommen */
   suggest?: string;
-  /** Vorschlag in Worten, z. B. «Schützenpanzer» */
+  /** Vorschlag in Worten = Ersatzwort für die Textstelle, z. B. «Schützenpanzer», «Personen» (MVP 3.5: Wort wie im Katalog) */
   suggestLabel?: string;
 }
 
-const entryWord = (e: CatalogEntry) => e.noun ?? e.name.replace(/\s*\(.*?\)\s*/g, " ").split(" / ")[0]!.trim();
+/** Ersatz aus dem Katalog (Schlüssel und Wort) */
+function ersatzOf(w: string): { suggest: string; suggestLabel: string } | undefined {
+  const c = ersatzWort(w);
+  return c ? { suggest: c.entry.key, suggestLabel: c.wort } : undefined;
+}
+
+/** gewöhnliche Wörter einer Meldung, die nie ein verstümmelter Begriff sind (ohne Anzahl, C1) */
+const COMMON_WORD = new RegExp(
+  `^(?:hier|meldet|meldung|sieht|sehe|sehen|gesehen|gesichtet|fährt|fahren|fuhr|fahrend|langsam|schnell|vorbei|steht|stehen|stehend|geht|gehen|läuft|laufen|` +
+    `ist|sind|war|waren|hat|haben|wird|werden|wurde|wir|uns|ihr|sie|der|die|das|den|dem|des|ein|eine|einen|einem|einer|und|oder|mit|ohne|` +
+    `jetzt|neu|neue|neues|nichts|alles|ruhig|keine|kein|keinen|nicht|mehr|noch|schon|wieder|weiter|bitte|dringend|sofort|` +
+    `zwei|zwo|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|etwa|circa|ungefähr|vermutlich|möglich\\w*|` +
+    `richtung|nord\\w*|ost\\w*|süd\\w*|west\\w*|links|rechts|vorne|hinten|oben|unten|strasse|weg|wald|waldrand|dorf|haus|feld|` +
+    `bewegung\\w*|lage|unverändert|verbindung|funk|meldet|melden|gemeldet|erfolgt|beendet|bereit|alle|allen|gut|schlecht|` +
+    `schwarz\\w*|weiss\\w*|rot\\w*|blau\\w*|grün\\w*|grau\\w*|gelb\\w*|braun\\w*|gross\\w*|klein\\w*)$`,
+  "iu",
+);
 
 /**
  * Unbekanntes bzw. verstümmeltes Wort an der Stelle des Gesehenen – statt einer geratenen Art:
- * - nach einer Anzahl («2 schützenpnzr»): weder Begriff noch bekanntes Sichtungswort, aber nahe an einem Katalogbegriff;
- * - als Wortteil gelesen («schützenpnzr» enthält «schützen» → Infanterie), obwohl ein anderer Begriff viel näher liegt.
+ * - nach einer Anzahl («2 schützenpnzr», «3 Persohnen»): weder Begriff noch bekanntes Sichtungswort, aber nahe an einem
+ *   Katalogbegriff;
+ * - als Wortteil gelesen («schützenpnzr» enthält «schützen» → Infanterie), obwohl ein anderer Begriff viel näher liegt;
+ * - (MVP 3.5, C1) ohne Anzahl, wenn sonst nichts Gesehenes erkannt ist (`o.ohneAnzahl`): ein Wort nahe an einem
+ *   Katalogbegriff («H01 Lastwagn AE5», «H05 drohen über AQ11»).
  * Wörter ohne nahen Begriff («2 Golf», «Militärfahrzeug») bleiben wie bisher.
  * @param skip Elementnamen und Orte (nicht prüfen)
  * @param isSightWord bekanntes Sichtungswort ohne Katalogbegriff («Lieferwagen», «Velo», «Wanderer»)
  */
-export function unknownSubject(text: string, reading: TacticalReading | null, skip: Array<[number, number]> = [], isSightWord: (w: string) => boolean = () => false): UnknownWord | undefined {
+export function unknownSubject(text: string, reading: TacticalReading | null, skip: Array<[number, number]> = [], isSightWord: (w: string) => boolean = () => false, o: { ohneAnzahl?: boolean } = {}): UnknownWord | undefined {
   const free = (a: number, b: number) => !skip.some(([x, y]) => a < y && b > x);
   // Wortteil-Treffer: gelesener Begriff ist kein ganzes Wort («schützenpnzr» als «schützen» gelesen)
   for (const [a, b] of reading?.spans ?? []) {
@@ -689,7 +713,7 @@ export function unknownSubject(text: string, reading: TacticalReading | null, sk
     const c = closestTerm(w);
     if (!c || c.entry.key === reading!.key) continue;
     const cnt = /(?<![\p{L}\d'’.:])(\d{1,3})\s*$/u.exec(text.slice(0, a))?.[1];
-    return { token: w, ...(cnt ? { count: +cnt } : {}), suggest: c.entry.key, suggestLabel: entryWord(c.entry) };
+    return { token: w, ...(cnt ? { count: +cnt } : {}), ...ersatzOf(w) };
   }
   // nach einer Anzahl
   // Zahl nach einem Namen («NAI 1», «Det 2», «Zug 3») ist keine Anzahl
@@ -700,7 +724,26 @@ export function unknownSubject(text: string, reading: TacticalReading | null, sk
     if (ok(w1) || (/^[\p{Ll}]/u.test(w1) && ok(w2))) continue;
     const c = closestTerm(w1);
     if (!c || (reading && c.entry.key === reading.key)) continue;
-    return { token: w1, count: +m[1]!, suggest: c.entry.key, suggestLabel: entryWord(c.entry) };
+    return { token: w1, count: +m[1]!, ...ersatzOf(w1) };
+  }
+  // ohne Anzahl (C1): nur wenn nichts Gesehenes erkannt ist – das erste Wort an der Stelle des Gesehenen (nach dem Melder,
+  // gewöhnliche Wörter übersprungen) nahe an einem Zeichenbegriff; sonst nichts (nie ein Wort mitten im Satz raten)
+  if (o.ohneAnzahl && !reading) {
+    const ab = skip.length ? Math.min(...skip.map(([x]) => x)) : 0;
+    const start = ab <= 3 ? Math.max(...skip.filter(([x]) => x === ab).map(([, y]) => y)) : 0;
+    // nur bis zum ersten Komma/Strichpunkt nach dem ersten Wort («H01 alles ruhig, keine Bewegung» prüft nur «alles ruhig»)
+    const vorn = text.slice(start).replace(/^[\s:,;.–-]+/, (x) => " ".repeat(x.length));
+    const ende = vorn.search(/[,;]/);
+    for (const m of (ende < 0 ? vorn : vorn.slice(0, ende)).matchAll(/(?<![\p{L}\d'’.:])([\p{L}][\p{L}\-]*)(?![\p{L}\d])/gu)) {
+      const i = start + m.index!;
+      if (!free(i, i + m[0].length)) continue;
+      const w = m[1]!;
+      if (w.length < 4 || COMMON_WORD.test(w) || OWN_POS_RE.test(w)) continue;
+      if (isKnownTerm(w) || isCountNoun(w) || NOT_SUBJECT.test(w) || PART_NOUN.test(w) || isSightWord(w)) break;
+      const c = ersatzOf(w);
+      if (c) return { token: w, ...c };
+      break;
+    }
   }
   return undefined;
 }

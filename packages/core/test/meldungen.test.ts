@@ -312,7 +312,7 @@ describe("Sichtungen ohne Katalogbegriff sind nie eigene Lage", () => {
 });
 
 describe("Lage: eigene Meldungen mit Tätigkeit/Ereignis verschieben den Melder nicht", () => {
-  it("«H02 Explosion AS2», «H02 Brand AT1», «H02 eig Verletzte AT2»: H02 bleibt, Ereignisse am Ort", () => {
+  it("«H02 Explosion AS2», «H02 Brand AT1», «H02 eig Verletzte AT2»: H02 bleibt, Ereignisse am Ort (eigene Verwundete ohne Zeichen, MVP 3.5 C7)", () => {
     const events = [...ex.events!];
     const c = { ...ctx(), lastPos: (u: string, s: Draft["side"]) => lastPosition(events, s, u) };
     const before = situationAt(events, "2030-05-15T08:00").units.find((u) => u.unit === "H02")!;
@@ -324,14 +324,19 @@ describe("Lage: eigene Meldungen mit Tätigkeit/Ereignis verschieben den Melder 
     expect(after.pos).toEqual(before.pos);
     expect(after.event.sym).toBe("beob_aufkl");
     expect(s.units.find((u) => u.unit === "H04")!.event.sym).not.toBe("kdo_po");
-    for (const sym of ["explosion", "brand", "verletzte", "kdo_po"]) expect(s.loose.some((e) => e.sym === sym), sym).toBe(true);
+    for (const sym of ["explosion", "brand", "kdo_po"]) expect(s.loose.some((e) => e.sym === sym), sym).toBe(true);
+    // (MVP 3.5, C7) eigene Verwundete: nie ein Zeichen, AT2 nur als Text
+    expect(s.loose.some((e) => e.sym === "verletzte")).toBe(false);
+    expect(events.find((e) => e.text.includes("eig Verletzte"))!.orte).toEqual(["AT2"]);
   });
   it("Einheiten-Meldung mit Ort verschiebt weiterhin («H01 verschiebt nach AC6 B»)", () => {
     const h01 = situationAt(ex.events!, "2030-05-15T08:00").units.find((u) => u.unit === "H01")!;
     expect(h01.track.length).toBeGreaterThan(1);
   });
   it("eigene Lage mit Stellung verschiebt («Zug 2 bezieht Stellung»)", () => {
-    const d = parseMeldung("T2 0800 Zug 2 bezieht Stellung AE6", ctx());
+    // (MVP 3.5, C12) nur ein Trupp der Übung ist Melder – Zug 2 ist aufgenommen
+    const c = ctx();
+    const d = parseMeldung("T2 0800 Zug 2 bezieht Stellung AE6", { ...c, units: { ...c.units, blau: [...c.units.blau, "Zug 2"] } });
     expect(d.kind).toBe("eigen");
     const s = situationAt([eventFromDraft(d, "dev")], "2030-05-15T08:00");
     expect(s.units[0]!.unit).toBe("Zug 2");

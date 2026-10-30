@@ -25,23 +25,18 @@ const MODUS = process.env.SAETZE35_STAND ?? "";
 
 /** Soll-Fälle, die Phase 0 noch nicht erfüllt (laufen als `it.fails`). Erfüllt → ID streichen. */
 const OFFEN = new Set<string>([
-  // Paket C
-  "alt58-07", "alt58-11", "alt58-12", "alt58-15", "alt58-36", "alt58-37", "alt58-58", "neu30-02",
-  "neu30-06", "neu30-09", "neu30-11", "neu30-12", "neu30-13", "neu30-14", "s12-19", "s12-21",
-  "s12-23", "s12-25", "s12-31", "erst-02", "erst-05", "erst-06", "spez-9", "spez-53",
-  "spez-54",
-  // Paket C/D
-  "alt58-23", "alt58-24", "neu30-28", "s12-28", "s16-12", "erst-01", "erst-08",
-  // Paket C/E
-  "s02-41",
-  // Paket D
-  "s12-12", "s12-13", "s12-27", "s16-02", "s16-04", "s16-05", "s16-06", "s16-07",
-  "s16-08", "s16-09", "s16-10", "s16-14", "erst-03", "erst-04", "erst-07", "spez-47",
-  "spez-48", "spez-50", "spez-51",
+  // Paket C – s12-25 (#11): H01 steht in der Folge s12 seit s12-14 («Stellungswechsel nach AC5 erfolgt») schon in AC5,
+  // «Rückzug nach AC5» kann ihn nicht mehr versetzen (Erwartung `truppNach` – Koordinator, Notizdatei)
+  "s12-25",
 ]);
 
 /** Schnappschuss-Fälle, deren Ergebnis sich bewusst ändert: ID → Begründung (Paket, Regel) */
-const ABWEICHUNG: Record<string, string> = {};
+const ABWEICHUNG: Record<string, string> = {
+  // Paket C (Notizdatei «C – Absprachen»)
+  "neu30-15": "C1/Kap. 5.4: Vorschlag bei `was` ist das Ersatzwort («Panzer») statt des Katalogschlüssels («pz»)",
+  "s02-61": "C7: eigene Verwundete ohne neues Zeichen, Ort «bei H05», Begehren Sanität (wie #20–#22)",
+  "s12-17": "C7: eigene Verwundete ohne neues Zeichen, Ort «bei H05», Begehren Sanität (wie #20–#22)",
+};
 
 const ergebnisse = alleAuswerten(SAETZE35);
 const stand: Record<string, SatzErgebnis> = MODUS !== "schreiben" && existsSync(STAND_DATEI) ? JSON.parse(readFileSync(STAND_DATEI, "utf8")) : {};

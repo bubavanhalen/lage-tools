@@ -5,16 +5,20 @@
  * colors.ts), nur für Karte, Tooltip und Legende. Nacht (.night): Halo schwarz statt weiss (Kap. 5.4).
  */
 .leaflet-container, .mo-legend {
-  --k-ink: #1B2320;
+  --k-ink: var(--karte-ink);
   --k-muted: #4F5953;
-  --k-feind: #C62828;
-  --k-eigen: #1F5FB8;
-  --k-unklar: #8A5A00;
-  --k-neutral: #2E7D32;
-  --k-halo: #fff;
+  --k-feind: var(--karte-feind);
+  --k-eigen: var(--karte-eigen);
+  --k-unklar: var(--karte-unklar);
+  --k-neutral: var(--karte-neutral);
+  --k-halo: var(--karte-halo);
   --k-text: var(--k-ink);
+  /* dunkler Kasten für Beschriftungen nachts (Spez. MVP 3.5, B5: --karte-ink 85 %, Schrift weiss) */
+  /* = --karte-ink mit 85 % Deckkraft, als rgba (die berechnete Farbe bleibt rgba – Kontrastprüfung im Test) */
+  --k-kasten-nacht: rgba(27, 35, 32, .85);
 }
-.night .leaflet-container { --k-halo: #000; --k-text: #fff; }
+/* Nacht: Rand und Halo der Zeichen schwarz (V4: der weisse 2-px-Rand blendete) */
+.night .leaflet-container { --k-halo: var(--karte-halo-nacht); --k-text: var(--karte-halo); }
 
 /* ---------- Zeichen auf der Karte (Karte bleibt hell → feste Kartenfarben) ---------- */
 .lt-ev { background: none; border: 0; cursor: pointer; }
@@ -31,8 +35,11 @@
   box-shadow: 0 0 0 2px var(--k-halo), 0 0 0 5px var(--k-ink);
   pointer-events: none;
 }
-/* weisser Halo 2 px (Kap. 5.4) */
-.lt-ev svg { display: block; overflow: visible; filter: drop-shadow(0 0 1px var(--k-halo)) drop-shadow(0 0 1px var(--k-halo)); }
+/* Halo 2 px + leichter Schatten (MVP 3.5, K3 Variante V4); nachts schwarz (--k-halo) */
+.lt-ev svg { display: block; overflow: visible; filter: drop-shadow(0 0 1px var(--k-halo)) drop-shadow(0 0 1px var(--k-halo)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, .5)); }
+/* Nacht: Rand der Zeichen schwarz (milsymbol `outline`, V4) – dazu ein feiner heller Schein, sonst verschwinden schwarze
+   Linien auf schwarzem Rand (Bewegungspfeil, Zusatzlinien) auf der dunklen Karte */
+.night .lt-ev svg { filter: drop-shadow(0 0 .8px rgba(255, 255, 255, .75)); }
 /* Auswahl: 2 px Tinte-Ring mit weissem Halo (nicht rot, nicht gelb) */
 .lt-ev.sel svg { outline: 2px solid var(--k-ink); outline-offset: 2px; border-radius: 3px; box-shadow: 0 0 0 2px var(--k-halo), 0 0 0 6px var(--k-halo); }
 .lt-ev .lt-ud { left: var(--x); }
@@ -46,7 +53,7 @@
 }
 .lt-tl {
   position: absolute;
-  top: -16px;
+  top: -17px;
   left: var(--x);
   font: 600 12px/14px var(--f-mono, "IBM Plex Mono", ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
@@ -60,19 +67,27 @@
 }
 .lt-ev.left .lt-tl { left: auto; right: var(--x); }
 .lt-ev.sel .lt-tl { background: var(--k-ink); color: #fff; border-color: var(--k-ink); }
+/* Präsentation (Beamer): Zusatz und Zeitfähnchen 16 px (ZEICHEN.beschriftungPraesentationPx) */
+.present .lt-ev .lt-ud { font-size: 16px; line-height: 1.15; }
+.present .lt-tl { font-size: 16px; line-height: 18px; top: -21px; }
+/* Nacht: Zeitfähnchen und Zusatz auf dunklem Kasten, nie weisse Kästen (B5) */
+.night .lt-tl { background: var(--k-kasten-nacht); color: var(--karte-halo); border-color: var(--k-kasten-nacht); }
+.night .lt-ev .lt-ud { background: var(--k-kasten-nacht); color: var(--karte-halo); text-shadow: none; padding: 0 3px; border-radius: 3px; }
+.night .lt-ev.sel .lt-tl { background: var(--karte-halo); color: var(--k-ink); border-color: var(--karte-halo); }
 .lt-selcell { pointer-events: none; }
 
 /* ---------- Stapel: oberstes Zeichen vorne, bis zwei weitere nach rechts oben versetzt, Zahl-Marke ---------- */
 .lt-ev.hid { display: none; }
 .lt-ev.old > svg, .lt-ev.old > .lt-ud, .lt-ev.old > .lt-tl { opacity: .45; }
-/* ruhige Karte (Grundansicht): ältere Sichtungen 55 % (= QUIET.altDeckkraft; Zahl-Marke des Stapels bleibt kräftig) */
-.lt-ev.old.q > svg, .lt-ev.old.q > .lt-ud, .lt-ev.old.q > .lt-tl { opacity: .55; }
+/* ruhige Karte (Grundansicht, V4): ältere Sichtungen 72 % und entsättigt (= QUIET.altDeckkraft, ZEICHEN.altSaettigung);
+   die Sättigung am Element, die Deckkraft am Zeichen – so bleibt die Zahl-Marke des Stapels kräftig */
+.lt-ev.old.q { filter: saturate(.55); }
+.lt-ev.old.q > svg, .lt-ev.old.q > .lt-ud, .lt-ev.old.q > .lt-tl { opacity: .72; }
 .lt-ev.fan.old > svg, .lt-ev.fan.old > .lt-ud, .lt-ev.fan.old > .lt-tl { opacity: .75; }
 .lt-ev.under .lt-ud, .lt-ev.under .lt-tl { display: none; }
 .lt-tl.opt { display: none; }
 .lt-ev.fan .lt-tl.opt { display: block; }
-.lt-ev.stacktop::after {
-  content: attr(data-n);
+.lt-ev > .lt-stk {
   position: absolute;
   left: -9px;
   top: -9px;
@@ -89,8 +104,10 @@
   text-align: center;
   box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
   pointer-events: none;
+  z-index: 1;
 }
-.lt-ev.stacktop.left::after { left: auto; right: -9px; }
+.lt-ev.stacktop.left > .lt-stk { left: auto; right: -9px; }
+.present .lt-ev > .lt-stk { min-width: 22px; height: 22px; border-radius: 11px; font-size: 16px; line-height: 19px; left: -12px; top: -12px; }
 /* aufgefächert: Zeichen über allem, kurze Bewegung beim Öffnen/Schliessen */
 .lt-ev.fan svg { filter: drop-shadow(0 0 1.5px var(--k-halo)) drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
 .lt-fanmove .leaflet-marker-pane .lt-ev { transition: transform .17s cubic-bezier(.2, .7, .3, 1), left .17s cubic-bezier(.2, .7, .3, 1), top .17s cubic-bezier(.2, .7, .3, 1); }
@@ -144,15 +161,15 @@
 .lt-tip-k.lt-tip-only { margin: 0; font-size: 12px; color: var(--k-ink); }
 @media (hover: none) { .lt-tip-k { display: none; } }
 /* Stapel: kurze Liste (Zeit, Zeichen, Melder) */
-.lt-stk-hint { margin-left: auto; font-size: 12px; color: var(--k-muted); }
-.lt-stk { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
-.lt-stk li { display: grid; grid-template-columns: auto 20px minmax(0, auto) auto; gap: 6px; align-items: center; white-space: nowrap; }
-.lt-stk li b { font: 600 12px var(--f-mono, ui-monospace, monospace); }
-.lt-stk-s { display: inline-flex; justify-content: center; }
-.lt-stk-s svg { height: 13px; width: auto; display: block; }
-.lt-stk-n { overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
-.lt-stk-w { color: var(--k-muted); font-size: 12px; }
-.lt-stk-more { color: var(--k-muted); font-size: 12px; display: block !important; }
+.lt-stkl-hint { margin-left: auto; font-size: 12px; color: var(--k-muted); }
+.lt-stkl { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.lt-stkl li { display: grid; grid-template-columns: auto 20px minmax(0, auto) auto; gap: 6px; align-items: center; white-space: nowrap; }
+.lt-stkl li b { font: 600 12px var(--f-mono, ui-monospace, monospace); }
+.lt-stkl-s { display: inline-flex; justify-content: center; }
+.lt-stkl-s svg { height: 13px; width: auto; display: block; }
+.lt-stkl-n { overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.lt-stkl-w { color: var(--k-muted); font-size: 12px; }
+.lt-stkl-more { color: var(--k-muted); font-size: 12px; display: block !important; }
 .lt-kind {
   font: 600 12px/1.4 var(--f-mono, ui-monospace, monospace);
   letter-spacing: .04em;
@@ -355,3 +372,31 @@
 .mo-winhint button { flex: none; min-height: var(--hit); padding: 2px var(--sp-12); font-size: var(--fs-14); border: 1px solid var(--line); border-radius: var(--r-4); }
 /* Nicht-Meldung im Kartenband: Art in Tinte mit Form (✎ ⇄), kein Zeichen */
 .mo-art { font-weight: 600; white-space: nowrap; color: var(--ink); }
+
+/* ---------- MVP 3.5 (B1, B6): Legende und Anzeige-Menü ---------- */
+/* Stapelmarke wie auf der Karte (nur die Zahl) */
+.mo-stk {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box; border-radius: 9px;
+  background: var(--k-ink); color: var(--karte-halo); border: 1.5px solid var(--karte-halo);
+  font: 600 12px/1 var(--f-mono); box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+/* ältere Sichtung wie auf der Karte: 72 %, entsättigt */
+.mo-alt { opacity: .72; filter: saturate(.55); }
+/* «Zeichengrösse (nur dieses Gerät)» */
+.az-h .az-hint { font: 400 var(--fs-12)/1.2 var(--f-body); letter-spacing: 0; text-transform: none; }
+/* Meldungsbanner rückt unter das Raster-Lineal (lineal.ts setzt --lt-lineal-oben/-links am Kartencontainer) */
+.mo-banner { margin-top: var(--lt-lineal-oben, 0px); margin-left: var(--lt-lineal-links, 0px); }
+.mo-legend { margin-left: var(--lt-lineal-links, 0px); }
+.mapbox .maptools { margin-top: var(--lt-lineal-oben, 0px); }
+/* Nacht: NAI- und Raum-Etiketten auf dunklem Kasten, Schrift weiss (B5) */
+.night .leaflet-container .lt-area-lbl span {
+  background: var(--k-kasten-nacht);
+  color: var(--karte-halo) !important;
+  box-shadow: none;
+  text-shadow: none;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+/* Anzeige-Menü: «Bisherige Wege» punktiert wie auf der Karte (S13: gestrichelt heisst nur «vermutet») */
+.nav-sw.sw-spur { border-top-style: dotted; border-top-width: 3px; }

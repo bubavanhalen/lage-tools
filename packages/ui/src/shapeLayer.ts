@@ -10,9 +10,10 @@
  * Das Punktzeichen am Schwerpunkt zeichnet die Lageebene (`situationLayer`) wie jedes andere Zeichen.
  */
 import L from "leaflet";
-import { eventShape, geometryOf, isLage, liftMap, shapeShortName, shapeStyleOf, type Area, type EventShape, type LageEvent, type LV95, type RasterSheet, type ShapeStyle } from "@lage/core";
+import { eventShape, geometryOf, isLage, liftMap, shapeShortName, shapeStyleOf, zeitBis, zeitCmp, zeitMs, type Area, type EventShape, type LageEvent, type LV95, type RasterSheet, type ShapeStyle } from "@lage/core";
 import { escapeHtml, isAnticipated, toLatLng } from "@lage/map";
 import { KIND_COLOR, kindOf, kindText, type ItemKind } from "./journalLayer";
+import { ensureSchraffur, SCHRAFFUR_FLAECHE_ID } from "./map/schraffur";
 import type { LayerFlags } from "./layers";
 import { quietShapeOpacity } from "./map/quiet";
 import { LAGE_KARTE } from "./colors";
@@ -59,17 +60,17 @@ export function shapeItems(events: LageEvent[], o: Omit<ShapeLayerOptions, "onCl
   // aufgehoben (Spez. MVP 3, Kap. 3.5): ab der Aufhebung weg, Rückblick davor zeigt die Form; Nicht-Meldungen nie
   const lifts = liftMap(events);
   for (const e of events) {
-    if (e.deleted || e.t > o.t || !isLage(e)) continue;
+    if (e.deleted || !zeitBis(e, o.t) || !isLage(e)) continue;
     const lift = lifts.get(e.id);
-    if (lift && lift.t <= o.t) continue;
+    if (lift && zeitBis(lift.t, o.t)) continue;
     const selected = e.id === o.selectedId;
-    if (o.from && e.t < o.from && !selected) continue;
+    if (o.from && zeitCmp(e, o.from) < 0 && !selected) continue;
     if (geometryOf(e.sym) === "punkt" && (!e.shape || e.shape.auto)) continue;
     if (!(e.side === "blau" ? o.flags.eigene : o.flags.feind)) continue;
     const shape = eventShape(e, ctx);
     if (!shape) continue;
     const kind = kindOf(e);
-    const age = (Date.parse(o.t) - Date.parse(e.t)) / 60000;
+    const age = (zeitMs(o.t) - zeitMs(e)) / 60000;
     out.push({
       e, shape, style: shapeStyleOf(e.sym), kind, color: KIND_COLOR[kind].line, dashed: isAnticipated(e.sidc, e.status), selected,
       opacity: quietShapeOpacity({ kind, ageMin: age, selected }, { quiet: !!o.quiet, neuMin: recent }),
@@ -96,6 +97,8 @@ function ensurePanes(map: L.Map): L.SVG {
     m._ltShapeRenderer.addTo(map);
     const svg = (m._ltShapeRenderer as unknown as { _container: SVGSVGElement })._container;
     svg.insertAdjacentHTML("afterbegin", patternDefs());
+    // Unklar-Flächen schraffiert statt gelb gefüllt (MVP 3.5, S11)
+    ensureSchraffur(svg, SCHRAFFUR_FLAECHE_ID);
   }
   return m._ltShapeRenderer;
 }
@@ -205,10 +208,11 @@ class ShapeLayer extends L.LayerGroup {
         // gewählt: dunkler Rahmen (Auswahl = Tinte, Kap. 5.1)
         if (it.selected) L.polygon(ll, this.base({ color: LAGE_KARTE.ink, weight: 9, opacity: 0.3, fill: false })).addTo(g);
         L.polygon(ll, this.base({ color: "#fff", weight: 5 + w, opacity: 0.75 * op, fill: false })).addTo(g);
-        const pattern = it.style === "minen" || it.style === "abc" ? `url(#lt-pat-${it.style}-${it.kind})` : undefined;
+        const pattern = it.style === "minen" || it.style === "abc" ? `url(#lt-pat-${it.style}-${it.kind})`
+          : it.kind === "unklar" ? `url(#${SCHRAFFUR_FLAECHE_ID})` : undefined;
         hit = L.polygon(ll, this.base({
           color: it.color, weight: 2.2 + w, opacity: op, dashArray: dash, lineJoin: "round",
-          fillColor: pattern ?? KIND_COLOR[it.kind].fill, fillOpacity: pattern ? op : (KIND_COLOR[it.kind].fill === it.color ? 0.12 : 0.2) * op,
+          fillColor: pattern ?? KIND_COLOR[it.kind].fill, fillOpacity: pattern ? (pattern.includes(SCHRAFFUR_FLAECHE_ID) ? 0.7 : 1) * op : (KIND_COLOR[it.kind].fill === it.color ? 0.12 : 0.2) * op,
           interactive: !!this.o.onClick, bubblingMouseEvents: false, className: "lt-shape",
         })).addTo(g);
       } else {

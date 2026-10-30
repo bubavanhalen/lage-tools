@@ -2,7 +2,7 @@
  * Zeitstrahl mit Schwimmbahnen: Spuren, Zeitachse, Stapelung gleichzeitiger Meldungen.
  * Reine Funktionen ohne Laufzeit-Abhängigkeiten (Zeiten in ms, lokale Zeit).
  */
-import { compareEvents } from "./clock";
+import { compareEvents, zeitMs } from "./clock";
 import type { Exercise, LageEvent } from "./model";
 
 export type LaneGroup = "feind" | "ul" | "eigen";
@@ -67,7 +67,7 @@ export function buildLanes(events: LageEvent[], units: Exercise["units"]): { lan
 
   const items: LaneItem[] = [];
   for (const e of live) {
-    const ms = Date.parse(e.t);
+    const ms = zeitMs(e);
     if (!Number.isFinite(ms)) continue;
     const group: LaneGroup = e.side === "blau" ? "eigen" : e.side === "ul" ? "ul" : "feind";
     const melder = e.melder?.trim() ?? "";

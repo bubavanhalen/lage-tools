@@ -22,42 +22,12 @@ export const MUSTER_RECHTS = /(?<![=>-])(<=|>=|<|>)\s*[\w.]*\.t(\.slice\(0,\s*16
 
 /** Stand Phase 0 (Datei → Zeilen mit Treffer). Nur senken, nie erhöhen. */
 const BEKANNT: Record<string, number> = {
-  // Paket C
-  "packages/core/src/demolang.ts": 1,
-  "packages/core/src/hints.ts": 2,
-  "packages/core/src/journal.ts": 5,
-  "packages/core/src/ki.ts": 3,
-  "packages/core/src/relocate.ts": 2,
-  "packages/core/src/timewindow.ts": 1,
-  // Paket D
-  "packages/core/src/lvz.ts": 4,
-  "packages/core/src/schicht.ts": 4,
-  "packages/core/src/schichtwahl.ts": 1,
-  "packages/ui/src/HintsPanel.tsx": 1,
-  "packages/ui/src/hintsExport.ts": 2,
-  "packages/ui/src/journalpdf.ts": 3,
-  "packages/ui/src/lvzui/uebergabeDaten.ts": 4,
-  "packages/ui/src/print/JournalDruckDialog.tsx": 1,
-  "packages/ui/src/print/umfang.ts": 1,
-  "packages/ui/src/red/redText.ts": 1,
-  // Paket B
-  "packages/ui/src/aufgehoben.ts": 2,
-  "packages/ui/src/journalLayer.ts": 7,
-  "packages/ui/src/print/lagekarte.ts": 1,
-  "packages/ui/src/shapeLayer.ts": 3,
+  // Paket C: alle Dateien umgestellt (0)
+  // Paket D: alle Dateien umgestellt (0)
+  // Paket B: umgestellt (aufgehoben, journalLayer, print/lagekarte, shapeLayer → 0)
   // Paket A (Zahl, keine Zeit: mit «// zeit-ok:» markieren)
   "packages/ui/src/roadsource.ts": 1,
-  // Paket E (Attachments: Zahl, keine Zeit – «// zeit-ok:»)
-  "packages/ui/src/Attachments.tsx": 1,
-  "packages/ui/src/JournalPanel.tsx": 1,
-  "packages/ui/src/Workspace.tsx": 6,
-  "packages/ui/src/entry/stateOptions.ts": 1,
-  "packages/ui/src/entry/trupp.ts": 1,
-  "packages/ui/src/journal/JournalList.tsx": 3,
-  "packages/ui/src/journal/UnifiedSearch.tsx": 2,
-  "packages/ui/src/journal/filter.ts": 3,
-  "packages/ui/src/time/TimeBand.tsx": 1,
-  "packages/ui/src/time/useLageZeit.ts": 1,
+  // Paket E: alle umgestellt (MVP 3.5, Phase 1)
 };
 
 /** Zeilen mit Zeitvergleich als Zeichenkette (ohne Kommentarzeilen und ohne `// zeit-ok:`) */

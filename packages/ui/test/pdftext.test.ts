@@ -27,7 +27,8 @@ describe("PDF-Texte nur WinAnsi (Standardschrift)", () => {
     expect(winAnsi("Annäherung AK7 → AL9 07:20")).toBe("Annäherung AK7 nach AL9 07:20");
     expect(winAnsi("Pendel AK7 ↔ AL9")).toBe("Pendel AK7 – AL9");
     expect(winAnsi("Fz ↑ fährt")).toBe("Fz Rtg N fährt");
-    expect(winAnsi("✓ 4 von 5 ≥ 2 · ≈ 3 km · 15′")).toBe("+ 4 von 5 mind. 2 · ca. 3 km · 15 min");
+    // MVP 3.5 (D8): am Zeilenanfang zeichnet safePdf ein Vektorzeichen; in winAnsi allein Klartext statt «+ »
+    expect(winAnsi("✓ 4 von 5 ≥ 2 · ≈ 3 km · 15′")).toBe("ja 4 von 5 mind. 2 · ca. 3 km · 15 min");
     expect(winAnsi("Grüsse «Bern» – € …")).toBe("Grüsse «Bern» – € …");
     expect(bad(winAnsi("◆ Feind ⚠ ⛔ ✎ 📍 ı Ł ẞ   x"))).toEqual([]);
   });

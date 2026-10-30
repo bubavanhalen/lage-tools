@@ -1,14 +1,21 @@
 /**
  * Kopf (Spez. MVP 1, Kap. 1.2, 2.1, 3.1), 48 px: Übungsname (16 px 600, abgeschnitten, voller Name als `title`),
- * rechts «✓ gespeichert 07:25», «Offline bereit ✓» bzw. Knopf «Offline nicht bereit – beheben», Menü ☰.
+ * rechts «✓ gespeichert 07:25», «Offline bereit ✓» bzw. Knopf «⚠ Offline fehlt», Menü ☰.
  * Nur das Menü ist ein Bedienelement – ausser der Offline-Status ist ✗ (kontextuell +1).
+ * MVP 3.5 (Kap. 2.3, S6, A1.6): der Knopf öffnet das Offline-Popover (kein Moduswechsel); während «Alles für offline
+ * laden» heisst er «Lädt 42 %»; Laptop und Handy «⚠ Offline fehlt» (nie «×»). Text «Online an», wenn ein Online-Dienst
+ * der Übung an ist (kein Bedienelement).
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { hasPending, persister } from "../persist";
 import { onStoreStatus } from "../store";
 import type { OfflineStatus, SaveStatus } from "./contracts";
+import { useLaden } from "../betrieb/laden";
+import { ladenText } from "../betrieb/status";
+import { useOnlinePolicy } from "../onlinePolicy";
 import "./shell.css";
 import "../lvzui/lvzui.css";
+import "../betrieb/betrieb.css";
 
 /** «speichert …» erst, wenn länger als so viele ms ausstehend (kein Flackern) */
 export const SPEICHERT_AB_MS = 2000;
@@ -67,13 +74,25 @@ export function SaveStatusView({ s }: { s: SaveStatus }) {
   );
 }
 
-export function OfflineStatusView({ s, onFix }: { s: OfflineStatus & { checked?: boolean }; onFix: () => void }) {
+/** Kopf-Text «Online an» (A1.6): title nennt die Dienste; nur wenn mindestens einer an ist */
+export const ONLINE_AN_TITEL = "Online-Dienste dieser Übung: Ortsnamen, Strassen";
+
+export function OfflineStatusView({ s, onFix, laden }: { s: OfflineStatus & { checked?: boolean }; onFix: () => void; laden?: { done: number; total: number } | null }) {
   const net = s.net ? "" : "Kein Netz · ";
+  const lt = ladenText(laden ?? null);
+  // während des Ladens: «Lädt 42 %» statt «⚠ Offline fehlt» (öffnet das Popover wieder)
+  if (lt) {
+    return (
+      <button type="button" className="hd-off fix laedt" onClick={onFix} title="Offline auf diesem Gerät: Fortschritt, Abbrechen">
+        {net}<span className="tnum">{lt}</span>
+      </button>
+    );
+  }
   if (s.checked === false) return net ? <span className="hd-off net">Kein Netz</span> : null;
   if (s.ready) return <>{net && <span className="hd-off net">Kein Netz ·</span>}<span className="hd-off ok" title="Journal und Karte funktionieren auch ohne Netz">Offline bereit ✓</span></>;
   return (
-    <button type="button" className="hd-off fix" onClick={onFix} title={s.missing.join(" · ")} aria-label={`${net}Offline nicht bereit – beheben`}>
-      {net}<span className="hd-long">Offline nicht bereit – beheben</span><span className="hd-short">Offline ✗</span>
+    <button type="button" className="hd-off fix" onClick={onFix} title={s.missing.join(" · ")}>
+      {net}<span className="bt-warnzeichen" aria-hidden="true">⚠</span><span>Offline fehlt</span>
     </button>
   );
 }
@@ -89,6 +108,13 @@ export interface HeaderProps {
   product: string;
   /** (MVP 3) Schicht dieses Geräts: «Schicht MU seit 22:00» bzw. «Kürzel fehlt» (Text, kein Bedienelement); weglassen = nichts */
   schicht?: { kuerzel: string | null; seit: string | null } | null;
+  /**
+   * (MVP 3.5, A1.6) mindestens ein Online-Dienst der Übung an → Text «Online an». Weglassen = aus der Online-Regel der
+   * angezeigten Übung (`onlinePolicy.ts`, gesetzt von der Werkzeugleiste der Karte).
+   */
+  online?: boolean;
+  /** (MVP 3.5) Fortschritt «Alles für offline laden»; weglassen = aus `betrieb/laden.ts` */
+  laden?: { done: number; total: number } | null;
 }
 
 /** Kopf-Text der Schicht (Kap. 2.1): «Schicht BSP seit 06:00»; schmal (< 860 px) nur «BSP», voller Text im Titel */
@@ -102,15 +128,19 @@ export function SchichtText({ s }: { s: { kuerzel: string | null; seit: string |
   );
 }
 
-export function Header({ name, save, offline, onFixOffline, menu, product, schicht }: HeaderProps) {
+export function Header({ name, save, offline, onFixOffline, menu, product, schicht, online, laden }: HeaderProps) {
   useEffect(() => { document.title = `${name} – ${product}`; }, [name, product]);
+  const ladenModul = useLaden();
+  const policy = useOnlinePolicy();
+  const onlineAn = online ?? (policy.ortssuche || policy.strassen);
   return (
     <header className="hd" aria-label={product}>
       <h1 className="hd-name" title={name}>{name}</h1>
       <div className="hd-status">
         {schicht && <SchichtText s={schicht} />}
         <SaveStatusView s={save} />
-        <OfflineStatusView s={offline} onFix={onFixOffline} />
+        <OfflineStatusView s={offline} onFix={onFixOffline} laden={laden === undefined ? ladenModul : laden} />
+        {onlineAn && <span className="hd-off online" title={ONLINE_AN_TITEL}>Online an</span>}
       </div>
       {menu}
     </header>

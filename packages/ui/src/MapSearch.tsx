@@ -1,13 +1,14 @@
 /**
  * Ein Suchfeld für alles: Planquadrat («AK7 C», «ak7c», «G 19 Delta»), NAI/Flächen, Elemente (letzter Standort),
- * Koordinaten (LV95/LV03/WGS84/Link), bekannte Orte und – nur online – die swisstopo-Ortssuche.
+ * Koordinaten (LV95/LV03/WGS84/Link), bekannte Orte und – nur online, erlaubt und auf Klick («‹Ort› bei swisstopo
+ * suchen», MVP 3.5 S3) – die swisstopo-Ortssuche.
  * Treffer: Karte fliegt hin (scharfe Zoomstufe) und der Bereich blitzt gelb auf.
  * Tasten: «/» oder Strg+K = Suchfeld, ↑/↓ = Auswahl, Enter = hin, Esc = schliessen.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import L from "leaflet";
 import { onlineAllowed, type Exercise } from "@lage/core";
-import { useSearch, unifiedSearchMounted, type Hit } from "./journal/useSearch";
+import { ORTSNAMEN_AUS, swisstopoVorschlag, useSearch, unifiedSearchMounted, type Hit } from "./journal/useSearch";
 import { IconClose, IconGlobe, IconSearch } from "./navicons";
 import "./navigation.css";
 
@@ -27,7 +28,9 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
   const inp = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
-  const { hits, loading, go: goHit, clearPin, examples } = useSearch(ex, map, q, open && q !== shown);
+  const { hits, loading, go: goHit, clearPin, examples, online } = useSearch(ex, map, q, open && q !== shown);
+  /** letzte Zeile «‹q› bei swisstopo suchen» (nur wenn erlaubt und sinnvoll) – zählt in der Pfeil-Auswahl mit */
+  const n = hits.length + (online.moeglich ? 1 : 0);
 
   useEffect(() => { setActive(0); setMiss(false); }, [q]);
 
@@ -73,12 +76,13 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((a) => Math.min(hits.length - 1, a + 1)); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((a) => Math.min(n - 1, a + 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(0, a - 1)); }
     else if (e.key === "Enter") {
       e.preventDefault();
-      const h = hits[active] ?? hits[0];
-      if (h) { go(h); inp.current?.blur(); }
+      const h = hits[active] ?? (active >= hits.length && online.moeglich ? null : hits[0]);
+      if (!h && online.moeglich) online.suchen();
+      else if (h) { go(h); inp.current?.blur(); }
       else if (q.trim()) { setMiss(true); setOpen(true); }
     } else if (e.key === "Escape") {
       e.preventDefault();
@@ -88,8 +92,8 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
     } else if (e.key === "Tab") setOpen(false);
   };
 
-  const showList = open && (q.trim() ? hits.length > 0 || loading || miss || q.trim().length >= 2 : true);
-  const activeId = hits[active] ? `${listId}-${active}` : undefined;
+  const showList = open && (q.trim() ? hits.length > 0 || loading || miss || online.moeglich || q.trim().length >= 2 : true);
+  const activeId = active < n ? `${listId}-${active}` : undefined;
 
   return (
     <div className="nav-search" ref={box}>
@@ -127,7 +131,7 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
                   <span>{x.k}</span><code>{x.v}</code>
                 </button>
               ))}
-              <div className="nav-foot">{!onlineAllowed(ex, "ortssuche") ? "Online-Ortssuche für diese Übung aus (Ebenen-Menü)" : navigator.onLine ? "Ortsnamen zusätzlich online (swisstopo)" : "Offline: Planquadrat, NAI, Element, Koordinate"}</div>
+              <div className="nav-foot">{!onlineAllowed(ex, "ortssuche") ? ORTSNAMEN_AUS : navigator.onLine ? "Ortsnamen auf Wunsch bei swisstopo (Vorschlag in der Liste)" : "Offline: Planquadrat, NAI, Element, Koordinate"}</div>
             </div>
           ) : (
             <>
@@ -148,11 +152,20 @@ export function MapSearch({ ex, map, onSelectEvent }: { ex: Exercise; map: L.Map
                     <span className="nav-det" title={h.detail}>{"online" in h && <IconGlobe />}{h.detail}</span>
                   </li>
                 ))}
+                {online.moeglich && (
+                  <li id={`${listId}-${hits.length}`} role="option" aria-selected={active === hits.length} className={"nav-online" + (active === hits.length ? " act" : "")}
+                    onPointerEnter={() => setActive(hits.length)} onPointerDown={(e) => e.preventDefault()} onClick={() => online.suchen()}>
+                    <span className="nav-badge b-ort"><IconGlobe /></span>
+                    <span className="nav-lbl">{swisstopoVorschlag(q)}</span>
+                    <span className="nav-det">Text geht ans Internet</span>
+                  </li>
+                )}
               </ul>
-              {hits.length === 0 && !loading && (
+              {online.fehler && <div className="nav-foot">{online.fehler}</div>}
+              {hits.length === 0 && !loading && !online.moeglich && (
                 <div className="nav-none">
                   <b>Nichts gefunden.</b> Planquadrat z. B. <code>{examples.find((x) => x.k === "Planquadrat")?.v ?? "W18"}</code>, NAI-Name, Element, Koordinate <code>2600000 1200000</code>
-                  {!onlineAllowed(ex, "ortssuche") ? " – Online-Ortssuche ist aus." : navigator.onLine ? "" : " – Ortsnamen nur online."}
+                  {!onlineAllowed(ex, "ortssuche") ? ` – ${ORTSNAMEN_AUS}.` : navigator.onLine ? "" : " – Ortsnamen nur online."}
                 </div>
               )}
               {loading && <div className="nav-foot">swisstopo-Ortssuche …</div>}

@@ -9,10 +9,13 @@
  * Beschriftungen werden nur für den sichtbaren Ausschnitt gezeichnet (eine SVG, neu nach Verschieben/Zoom).
  * Während einer Zoom-Bewegung folgt die SVG der Karte per CSS-Transform wie Leaflets Vektor-Renderer:
  * `zoomanim` (Mausrad, +/−, Doppelklick) und `zoom` in jedem Bild (Kamerafahrt `flyTo`, Pinch-Zoom).
+ * MVP 3.5 (B3): Jedes Blatt meldet sich beim Lineal der Karte an (`lineal.ts`) – liegt sein beschrifteter Rand
+ * ausserhalb des Bildes, stehen Buchstaben und Zahlen am Bildschirmrand.
  */
 import L from "leaflet";
 import { sheetBounds, type RasterSheet } from "@lage/core";
 import { toLatLng } from "./swissmap";
+import { linealBild, linealBlattWahl, type LinealBlatt } from "./lineal";
 
 export interface RasterLayerOptions {
   /** Linienfarbe (Standard #111111) */
@@ -88,12 +91,14 @@ class RasterLabels extends L.Layer {
     svg.style.overflow = "visible";
     map.getPane(PANE)!.appendChild(svg);
     this.draw();
+    linealOf(map).add(this.sheet);
     return this;
   }
 
-  override onRemove(): this {
+  override onRemove(map: L.Map): this {
     this.svg?.remove();
     this.svg = null;
+    linealOf(map).remove(this.sheet);
     return this;
   }
 
@@ -220,4 +225,77 @@ class RasterLabels extends L.Layer {
     }
     svg.innerHTML = parts.join("");
   }
+}
+
+// ---------------------------------------------------------------- Raster-Lineal (MVP 3.5, B3; Rechnung in lineal.ts): eines je Karte
+const LINEAL_PANE = "lt-lineal";
+
+class Lineal {
+  private sheets = new Map<RasterSheet, number>();
+  private pane: HTMLElement;
+  private raf = 0;
+  private sig = "";
+  constructor(private map: L.Map) {
+    this.pane = map.getPane(LINEAL_PANE) ?? map.createPane(LINEAL_PANE, map.getContainer());
+    this.pane.style.pointerEvents = "none";
+    map.on("move zoom resize viewreset zoomend moveend", this.soon, this);
+  }
+  add(s: RasterSheet) { this.sheets.set(s, (this.sheets.get(s) ?? 0) + 1); this.soon(); }
+  remove(s: RasterSheet) {
+    const n = (this.sheets.get(s) ?? 0) - 1;
+    if (n > 0) this.sheets.set(s, n); else this.sheets.delete(s);
+    this.soon();
+  }
+  private soon() {
+    if (this.raf) return;
+    this.raf = requestAnimationFrame(() => { this.raf = 0; this.draw(); });
+  }
+  /** sofort zeichnen (z. B. nach Präsentation an/aus) */
+  draw() {
+    const t0 = performance.now();
+    const map = this.map;
+    const cont = map.getContainer();
+    if (!cont.isConnected) return;
+    const size = map.getSize();
+    const big = !!cont.closest(".present");
+    const band = big ? 28 : 22, fs = big ? 16 : 12;
+    const blaetter: LinealBlatt[] = [...this.sheets.keys()].map((sh) => {
+      const sb = sheetBounds(sh);
+      const p0 = map.latLngToContainerPoint(toLatLng({ e: sb.minE, n: sb.maxN }));
+      const p1 = map.latLngToContainerPoint(toLatLng({ e: sb.maxE, n: sb.minN }));
+      return { cols: sh.colLabels, rows: sh.rowLabels, x0: p0.x, y0: p0.y, cw: (p1.x - p0.x) / sh.colLabels.length, ch: (p1.y - p0.y) / sh.rowLabels.length };
+    });
+    const i = linealBlattWahl(blaetter, size.x, size.y);
+    const bild = i >= 0 ? linealBild(blaetter[i]!, size.x, size.y, band, fs) : { oben: null, links: null, band };
+    const parts: string[] = [];
+    const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
+    if (bild.oben) {
+      parts.push(`<div class="lt-lineal-band oben" style="left:${bild.oben.von.toFixed(0)}px;width:${(bild.oben.bis - bild.oben.von).toFixed(0)}px;height:${band}px"></div>`);
+      for (const e of bild.oben.eintraege) parts.push(`<span class="lt-lineal-t oben" style="left:${e.pos.toFixed(1)}px;height:${band}px;line-height:${band}px">${esc(e.text)}</span>`);
+    }
+    if (bild.links) {
+      parts.push(`<div class="lt-lineal-band links" style="top:${bild.links.von.toFixed(0)}px;height:${(bild.links.bis - bild.links.von).toFixed(0)}px;width:${band}px"></div>`);
+      for (const e of bild.links.eintraege) parts.push(`<span class="lt-lineal-t links" style="top:${e.pos.toFixed(1)}px;width:${band}px">${esc(e.text)}</span>`);
+    }
+    const html = parts.join("");
+    if (html !== this.sig) { this.sig = html; this.pane.innerHTML = html; }
+    // Platz für die Kartensteuerung (Zoom ±, Banner, Werkzeuge) neben dem Band – CSS-Variablen am Container
+    const o = bild.oben ? `${band}px` : "0px", l = bild.links ? `${band}px` : "0px";
+    // am Container und an seinem Elternelement (Banner, Werkzeuge und Legende liegen neben dem Leaflet-Container)
+    for (const el of [cont, cont.parentElement]) {
+      if (!el) continue;
+      if (el.style.getPropertyValue("--lt-lineal-oben") !== o) el.style.setProperty("--lt-lineal-oben", o);
+      if (el.style.getPropertyValue("--lt-lineal-links") !== l) el.style.setProperty("--lt-lineal-links", l);
+    }
+    cont.classList.toggle("lt-lineal-an", !!(bild.oben || bild.links));
+    try { performance.measure("lt:lineal", { start: t0 }); } catch { /* ältere Browser */ }
+  }
+}
+
+const lineale = new WeakMap<L.Map, Lineal>();
+/** Lineal der Karte (wird beim ersten Raster angelegt) */
+export function linealOf(map: L.Map): { add(s: RasterSheet): void; remove(s: RasterSheet): void; draw(): void } {
+  let l = lineale.get(map);
+  if (!l) { l = new Lineal(map); lineale.set(map, l); }
+  return l;
 }

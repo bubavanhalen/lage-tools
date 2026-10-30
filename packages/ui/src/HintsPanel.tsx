@@ -5,7 +5,7 @@
  * Der Zfhr entscheidet «Trifft zu» / «Trifft nicht zu» (rückgängig).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Exercise, Hint, HintGroup, HintLevel, LageEvent } from "@lage/core";
+import { zeitCmp, type Exercise, type Hint, type HintGroup, type HintLevel, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { decide, decisionOf, decisionRec, GROUPS, GROUP_LABEL, groupOf, hhmm, isOpen, isOver, nextLabel, ruleOf, type DecisionState } from "./hintsData";
 import { decidedText, EMPTY_RED, hintLine } from "./red/redText";
@@ -181,7 +181,7 @@ function HintRow({ h, ex, t, state, open, evById, compact, onToggle, onMap, onEv
   const nx = nextLabel(h, t, ex.days);
   const timeTitle = over
     ? `galt ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)} bis ${dayLabel(h.until!, ex.days)} ${h.until!.slice(11, 16)}`
-    : `gilt seit ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)}${h.last && h.last > h.t ? `, zuletzt ${h.last.slice(11, 16)}` : ""}${nx ? ` · ${nx.text}` : ""}`;
+    : `gilt seit ${dayLabel(h.t, ex.days)} ${h.t.slice(11, 16)}${h.last && zeitCmp(h.last, h.t) > 0 ? `, zuletzt ${h.last.slice(11, 16)}` : ""}${nx ? ` · ${nx.text}` : ""}`;
   return (
     <li className={`hrow l-${h.level} d-${state}` + (open ? " open" : "") + (over ? " over" : "")} data-hint={h.id}>
       <button className="hr-line" aria-expanded={open} onClick={onToggle}

@@ -9,13 +9,14 @@ const ctx = (): JournalContext => ({
   sheets: ex.sheets, areas: ex.areas, units: ex.units, days: ex.days, day: ex.days[1]!, now: new Date(2030, 4, 15, 8, 0),
   lastPos: (u, s) => lastPosition(ex.events!, s, u),
 });
-type S = { n?: number; time?: string; melder?: string; unit?: string; kind?: string; sym?: string; wo?: string; count?: number; dir?: number; from?: number; road?: string };
+type S = { n?: number; time?: string; melder?: string; truppNeu?: string; unit?: string; kind?: string; sym?: string; wo?: string; count?: number; dir?: number; from?: number; road?: string };
 const C: Array<[string, S]> = [
   ["Hotel 04, zwei Fahrzeuge, Alpha Golf 13, Richtung Nord.", { melder: "H04", kind: "feind", sym: "fz", wo: "AG13", count: 2, dir: 0 }],
   ["Hotel 04 2 Fahrzeuge Alpha Golf 1 3 Richtung Nord", { melder: "H04", sym: "fz", wo: "AG13", count: 2, dir: 0 }],
   ["Hotel null vier, äh, zwo Fahrzeuge, Alpha Golf eins drei, Richtung Norden, kommen.", { melder: "H04", sym: "fz", wo: "AG13", count: 2, dir: 0 }],
   ["LVZ von Hotel 02, drei Personen gegnerisch bei Alpha Charlie 5, verschieben nach Westen, kommen.", { melder: "H02", kind: "feind", sym: "inf_trp", wo: "AC5", count: 3, dir: 270 }],
-  ["Hier Hotel 06, Detachement zwo, vier Fahrzeuge, Planquadrat Alpha Delta 9, Richtung Nordost. Kommen.", { melder: "H06", unit: "Det 2", sym: "fz", wo: "AD9", count: 4, dir: 45 }],
+  // H06 ist kein Trupp des Beispiels: Melder leer, `truppNeu` (MVP 3.5, C12 – nur der Knopf legt ihn an)
+  ["Hier Hotel 06, Detachement zwo, vier Fahrzeuge, Planquadrat Alpha Delta 9, Richtung Nordost. Kommen.", { truppNeu: "H06", unit: "Det 2", sym: "fz", wo: "AD9", count: 4, dir: 45 }],
   ["Hotel 05 Beobachtungsposten bezogen Alpha Foxtrot 12 Delta.", { melder: "H05", kind: "eigen", wo: "AF12 D" }],
   ["07:20 Hotel 03 ein Schützenpanzer in November Alpha India 3 Richtung Süd", { time: "07:20", melder: "H03", sym: "spz", wo: "NAI 3", count: 1, dir: 180 }],
   ["Null acht fünfzehn, Hotel eins, Checkpoint bezogen in Alpha Kilo sieben Charlie.", { time: "08:15", melder: "H01", kind: "eigen", wo: "AK7 C" }],
@@ -40,7 +41,7 @@ const C: Array<[string, S]> = [
   ["Hotel 04, zwei Fahrzeuge, Alpha Golf 13.", { melder: "H04", wo: "AG13", count: 2 }],
   ["Hotel 03, ein weisser Lieferwagen, Alpha Lima 4, fährt Richtung Bern.", { melder: "H03", wo: "AL4", count: 1 }],
   ["Hotel null eins, Standort Alpha Echo fünf Charlie, keine Feindsicht.", { melder: "H01", kind: "eigen", wo: "AE5 C" }],
-  ["Hotel 06, zwanzig nach sieben, eine Patrouille, drei Mann, Alpha India 11.", { time: "07:20", melder: "H06", wo: "AI11" }],
+  ["Hotel 06, zwanzig nach sieben, eine Patrouille, drei Mann, Alpha India 11.", { time: "07:20", truppNeu: "H06", wo: "AI11" }],
   ["Hotel 02, um halb acht, zwei Personen steigen aus Fahrzeug, Alpha Juliett 8.", { time: "07:30", melder: "H02", wo: "AJ8", count: 2 }],
   ["Hotel 04, äh, ähm, Alpha, äh, Golf 13, zwei Fahrzeuge.", { melder: "H04", wo: "AG13", count: 2 }],
   ["Hotel 04. Zwei Fahrzeuge. Alpha Golf. 13. Richtung Nord.", { melder: "H04", wo: "AG13", count: 2, dir: 0 }],
@@ -75,6 +76,7 @@ describe("Prüfer-Tabelle Funksprache (normalizeSpoken → splitMeldungen → pa
     const d = parseMeldung(parts[0] ?? "", ctx());
     if (s.time) expect(d.t.slice(11, 16), "Zeit").toBe(s.time);
     if (s.melder) expect(d.melder, "Melder").toBe(s.melder);
+    if (s.truppNeu) { expect(d.melder, "Melder").toBe(""); expect(d.truppNeu, "neuer Trupp").toBe(s.truppNeu); }
     if (s.unit) expect(d.unit, "Element").toBe(s.unit);
     if (s.kind) expect(d.kind, "Art").toBe(s.kind);
     if (s.sym) expect(d.sym, "Zeichen").toBe(s.sym);

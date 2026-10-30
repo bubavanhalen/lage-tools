@@ -17,6 +17,7 @@ import { rueckblickInfo } from "../time/RueckblickBanner";
 import type { EntryBoxProps } from "../shell/contracts";
 import { HelpPopover } from "./HelpPopover";
 import { KuerzelAsk } from "./KuerzelAsk";
+import { KuerzelZeile } from "./KuerzelZeile";
 import { PreviewLine } from "./PreviewLine";
 import { knopfText } from "./labels";
 import { TruppChips } from "./TruppChips";
@@ -82,17 +83,6 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
   const trupps = truppOrder(ex);
   const last = useMemo(() => lastMelder(ex), [ex.events, ex.units]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Taste «N» (ausserhalb von Eingabefeldern): zurück ins Meldungsfeld
-  useEffect(() => {
-    const key = (ev: KeyboardEvent) => {
-      const el = ev.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
-      if ((ev.key === "n" || ev.key === "N") && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); d.inputRef.current?.focus(); }
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const lvl = state?.level ?? null;
   const asked = lvl === "pruefen" && d.armed === d.text;
   const stateText = !state ? "" : lvl === "bereit" ? "Bereit" : asked ? knopfText(state.reasons[0]?.ask ?? "", { coarse: grob(), korr }) : `${lvl === "pruefen" ? "Bitte prüfen" : "Geht nicht"}: ${state.reasons[0]?.text ?? ""}`;
@@ -104,6 +94,17 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
   addRef.current = (u: string) => { const n = d.addUnit(u); d.tell(`«${n}» als neuer Trupp aufgenommen.`); d.inputRef.current?.focus(); };
   const addUnit = useCallback((u: string) => addRef.current(u), []);
   const dLater = useDeferredValue(d);
+  /** (MVP 3.5, E4) Kürzel-Zeile beim Öffnen: Übung ohne Kürzel auf diesem Gerät, Rückfall-Abfrage nicht übergangen */
+  const sch = props.schicht;
+  // solange die Rückfall-Abfrage «Wer erfasst?» offen ist, fragt nur sie (eine Frage auf einmal)
+  const kuerzelZeile = !!sch && !sch.kuerzel && !sch.gefragt && !korr && !d.askKuerzel;
+  const setKuerzel = (k: string) => {
+    sch?.setKuerzel(k, { neu: true });
+    props.say(`Schicht ${k} beginnt jetzt.`);
+    requestAnimationFrame(() => d.inputRef.current?.focus({ preventScroll: true }));
+  };
+  /** (S7) einmaliger Schutzhinweis – erst wenn es Daten zu schützen gibt (Übung mit Einträgen) */
+  const schutz = props.schutzHinweis?.zeigen && (ex.events ?? []).some((e) => !e.deleted) ? props.schutzHinweis : null;
 
   // Bildschirmtastatur geht auf/zu bzw. Vorschau wächst: Knopfzeile sichtbar halten
   useEffect(() => {
@@ -128,10 +129,11 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
         </div>
       )}
       {korr && <EditConflict kind={d.conflict} nudge={d.nudge} onForce={() => d.submit(true)} onDiscard={() => d.endKorr()} />}
+      {kuerzelZeile && <KuerzelZeile exId={ex.id} onSet={setKuerzel} autoFocus={wideScreen()} />}
       <p className="eb-label" id="eb-wer">Wer meldet?</p>
       <TruppChips trupps={trupps} selected={draft?.melder} last={last} onPick={d.chooseTrupp} onAdd={(u) => { const n = d.addUnit(u); if (n) d.chooseTrupp(n); }} />
       <div className="eb-fieldwrap">
-        <textarea ref={d.inputRef} className="eb-field" data-meldungsfeld value={d.text} rows={1} autoFocus={wideScreen()}
+        <textarea ref={d.inputRef} className="eb-field" data-meldungsfeld value={d.text} rows={1} autoFocus={wideScreen() && !kuerzelZeile}
           placeholder="Was wurde gemeldet?" aria-label="Was wurde gemeldet?" aria-describedby="eb-live" spellCheck={false}
           enterKeyHint={korr ? "done" : "send"} autoCorrect="off" autoCapitalize="off" autoComplete="off"
           onFocus={() => keepVisible(d.inputRef.current)}
@@ -154,20 +156,7 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
         onClose={() => { setHelp(false); d.inputRef.current?.focus(); }}
         onPick={(t) => { setHelp(false); d.setText(t); d.fitInput(); requestAnimationFrame(() => { const x = d.inputRef.current; if (x) { x.focus(); x.setSelectionRange(t.length, t.length); } }); }} />}
       </div>
-      <p className="eb-keys" aria-hidden="true">Enter eintragen · Esc leeren · ↑ korrigieren · Ctrl+K suchen · L LIVE</p>
-      <span id="eb-live" className="eb-sr" aria-live="polite">{live}</span>
-      {info && <p className="eb-info"><span aria-hidden="true">ⓘ </span>{info}</p>}
-      <VoiceStatus v={d.voice} />
-      {d.askKuerzel && draft && (
-        <KuerzelAsk value={d.kuerzelText} onChange={d.setKuerzelText} onSubmit={() => d.submit()} onCancel={d.cancelKuerzel}
-          error={d.kuerzelErr} inputRef={d.kuerzelRef} />
-      )}
-      {draft && state ? (
-        <div className={`eb-prev lvl-${state.level}`} data-zustand={state.level}>
-          <PreviewLine d={d} part="kopf" onAddUnit={addUnit} />
-          <PreviewLater d={dLater.draft && dLater.state ? dLater : d} part="rest" onAddUnit={addUnit} />
-        </div>
-      ) : !korr && <p className="eb-hint">Zeit · Trupp · was · wo</p>}
+      {/* MVP 3.5 (E1): Knopfzeile direkt unter dem Feld (≥ 860 px; schmaler: CSS-Reihenfolge Feld → Vorschau → Knöpfe) */}
       <div className="eb-btns">
         <button type="button" className={"eb-btn primary eb-main" + (blocked ? " blocked" : "")} aria-disabled={blocked || undefined}
           onClick={() => d.submit()}>
@@ -182,8 +171,35 @@ export function EntryBox(props: EntryBoxProps & { onCorrecting?: (id: string | n
         {d.pendingAtt && !korr && <PendingAttachment att={d.pendingAtt} onRemove={d.removePending} />}
         {d.manualPos && <span className="eb-coord mono">{formatLv95(d.manualPos)}</span>}
       </div>
+      <span id="eb-live" className="eb-sr" aria-live="polite">{live}</span>
+      {info && <p className="eb-info"><span aria-hidden="true">ⓘ </span>{info}</p>}
+      <VoiceStatus v={d.voice} />
+      {d.askKuerzel && draft && (
+        <KuerzelAsk value={d.kuerzelText} onChange={d.setKuerzelText} onSubmit={() => d.submit()} onCancel={d.cancelKuerzel}
+          error={d.kuerzelErr} inputRef={d.kuerzelRef} />
+      )}
+      {draft && state ? (
+        <div className={`eb-prev lvl-${state.level}`} data-zustand={state.level}>
+          <PreviewLine d={d} part="kopf" onAddUnit={addUnit} />
+          <PreviewLater d={dLater.draft && dLater.state ? dLater : d} part="rest" onAddUnit={addUnit} />
+        </div>
+      ) : !korr && <p className="eb-hint">Zeit · Trupp · was · wo</p>}
+      <p className="eb-keys" aria-hidden="true">Enter eintragen · Esc leeren · ↑ korrigieren · Ctrl+K suchen · Alt+L LIVE</p>
       {blocked && <p className="eb-blocked">geht nicht – siehe oben</p>}
+      {d.restored && d.text.trim() !== "" && (
+        <p className="eb-notice eb-restored" role="status">
+          <span>Entwurf von {d.restored.hm} wiederhergestellt</span>
+          <button type="button" className="eb-btn" onClick={d.discardRestored}>Verwerfen</button>
+        </p>
+      )}
       {d.notice && <p className="eb-notice" role="status">{d.notice}</p>}
+      {schutz && (
+        <p className="eb-notice eb-schutz" role="status">
+          <span>Dieses Gerät schützt die Daten nicht dauerhaft.</span>
+          <button type="button" className="eb-btn" onClick={() => schutz.mehr()}>So geht’s</button>
+          <button type="button" className="eb-btn" onClick={() => schutz.ok()}>OK</button>
+        </p>
+      )}
       {!d.voice.available && !korr && <p className="eb-nomic" id="eb-nomic">Kein Mikrofon gefunden – Tippen und Foto gehen weiter.</p>}
       <JournalUndoBar />
     </section>

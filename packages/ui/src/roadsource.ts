@@ -108,7 +108,7 @@ async function tileRoads(tile: RoadTile, o: { signal?: AbortSignal; refresh?: bo
     const refresh = !!o.refresh;
     run = (async () => {
       const rec = await readTile(tile.key);
-      const fresh = rec && rec.f === FORMAT && Date.now() - rec.t < MAX_AGE_DAYS * 864e5;
+      const fresh = rec && rec.f === FORMAT && Date.now() - rec.t < MAX_AGE_DAYS * 864e5; // zeit-ok: rec.t ist eine Zahl (ms), keine Lagezeit
       if (rec && rec.f === FORMAT && (fresh || !isOnline()) && !refresh) {
         const segs = rec.segs.map(unpack);
         mem.set(tile.key, segs);

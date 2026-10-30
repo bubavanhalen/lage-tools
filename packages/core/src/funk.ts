@@ -54,7 +54,7 @@ const TENS: Record<string, number> = {
 const EIN_RE = /^(?:ein|eine|einen|einem|einer)$/i;
 /** zählbare Wörter (Personen, Fahrzeuge, Geräte) – vor diesen ist eine kleine Zahl die Anzahl */
 const COUNT_NOUN_RE =
-  /^(?:fahrzeug(?:e|en)?|fahrzüg|fz|person(?:en)?|persone|pers|mann|leute|männer|frauen|kinder|soldat(?:en)?|sdt|pw|pws|personenwagen|lw|lastwagen|lieferwagen|kastenwagen|transporter|drohnen?|spz|schützenpanzer|kpz|kampfpanzer|panzer|motorr(?:ad|äder)|töffs?|velos?|traktor(?:en)?|autos?|lkws?|busse?|kleinbus(?:se)?|jeeps?|pick-?ups?|geländewagen|duros?|zivilist(?:en)?|zivilperson(?:en)?|bewaffnete[rn]?|gegner|kolonne|kisten?|helikopter|helis?|minenwerfer|mw|mg|maschinengewehre?|stgw|sturmgewehre?|raketenwerfer|lenkwaffen?|kpz|pzaw|halbzug|hz|zug|gruppe|gr|trupp|trp|kompanie|kp|patrouille|pat)$/i;
+  /^(?:fahrzeug(?:e|en)?|fahrzüg|fz|fzg|person(?:en)?|persone|pers|mann|leute|männer|frauen|kinder|soldat(?:en)?|sdt|typen|kerle|pinz|pinzgauer|pw|pws|personenwagen|lw|lastwagen|lieferwagen|kastenwagen|transporter|drohnen?|spz|schützenpanzer|kpz|kampfpanzer|panzer|motorr(?:ad|äder)|töffs?|velos?|traktor(?:en)?|autos?|lkws?|busse?|kleinbus(?:se)?|jeeps?|pick-?ups?|geländewagen|duros?|zivilist(?:en)?|zivilperson(?:en)?|bewaffnete[rn]?|gegner|kolonne|kisten?|helikopter|helis?|minenwerfer|mw|mg|maschinengewehre?|stgw|sturmgewehre?|raketenwerfer|lenkwaffen?|kpz|pzaw|halbzug|hz|zug|gruppe|gr|trupp|trp|kompanie|kp|patrouille|pat)$/i;
 
 /** Himmelsrichtungen → Kürzel wie in `parseMeldung` */
 const DIRWORD: Record<string, string> = {

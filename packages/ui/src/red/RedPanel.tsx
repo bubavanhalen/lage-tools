@@ -8,8 +8,8 @@
  * weitere Möglichkeiten, KI-Lagebericht (nur bei eingeschalteter KI).
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { CoaIndicator, Hint, HintGroup, RedCoa } from "@lage/core";
-import { decide, GROUPS, groupOf, hhmm, isDone, isOpen, type DecisionState, type RedBadge } from "../hintsData";
+import { offeneHinweise, type CoaIndicator, type Hint, type HintGroup, type RedCoa } from "@lage/core";
+import { decide, GROUPS, groupOf, hhmm, type DecisionState, type RedBadge } from "../hintsData";
 import { KiLageberichtButton } from "../ki/KiFeatures";
 import { useAnalyseLaeuft } from "../analyseClient";
 import { ForceTable } from "./ForceTable";
@@ -105,8 +105,10 @@ export function RedPanel(p: RedPanelProps) {
   const [showMore, setShowMore] = useState(false);
   const inGroup = (h: Hint) => !experte || !group || groupOf(h) === group;
   const main = hints.filter((h) => h.level !== "info");
-  const open = main.filter((h) => isOpen(ex, h, t));
-  const done = main.filter((h) => isDone(ex, h, t)).sort((a, b) => (b.until ?? b.t).localeCompare(a.until ?? a.t));
+  // eine Zahl (S25, D5): offen = `offeneHinweise` (wie Reiter, Offen, Übergabe)
+  const offenIds = new Set(offeneHinweise(hints, ex.hintDecisions, t).ids);
+  const open = main.filter((h) => offenIds.has(h.id));
+  const done = main.filter((h) => !offenIds.has(h.id)).sort((a, b) => (b.until ?? b.t).localeCompare(a.until ?? a.t));
   const refs = experte ? hints.filter((h) => h.level === "info") : [];
   const groupCount = new Map<HintGroup, number>();
   if (experte) for (const h of open) groupCount.set(groupOf(h), (groupCount.get(groupOf(h)) ?? 0) + 1);

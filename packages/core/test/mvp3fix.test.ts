@@ -146,8 +146,9 @@ const S: Schritt[] = [
   { text: "H03 Vbk i.O.", art: "vbk", zustand: ["bereit"], zeichen: "nein", ff: 2 },
   { text: "H04 3 Pers bauen Sperre AG12", art: "meldung", zustand: ["bereit"], zeichen: "ja" },
   { text: "H04 Sperre AG13 geräumt", art: "meldung", zustand: ["bereit"], zeichen: "aufhebung" },
-  { text: "H05 1 Verletzter eigene Trp, San benötigt", art: "meldung", zustand: ["bereit"], zeichen: "ja",
-    pruef: (d, ex, _e, t) => { expect(d.where?.label).toBe("AQ12"); expect(ort(ex, "H05", t)).toBe("AQ12"); } },
+  // (MVP 3.5, C7) eigene Verwundete: kein Zeichen, Ort «bei H05», Begehren Sanität – H05 bleibt in AQ12
+  { text: "H05 1 Verletzter eigene Trp, San benötigt", art: "meldung", zustand: ["bereit"], zeichen: "nein",
+    pruef: (d, ex, _e, t) => { expect(d.where?.label).toBe("bei H05"); expect(d.begehren).toEqual({ was: "Sanität" }); expect(ort(ex, "H05", t)).toBe("AQ12"); } },
   { text: "NB: Batterien Funk H02 schwach", art: "notiz", zustand: ["bereit"], zeichen: "nein" },
   { text: "H01 2 Pers AD8 C Rtg SW", art: "meldung", zustand: ["bereit"], zeichen: "ja", ff: 1 },
   // H5: «weg» ohne Gesehenes → gelb «Kein Zeichen?» → Notiz
@@ -372,9 +373,10 @@ describe("Standort bleibt (Einsatz H4)", () => {
     const ex = demoExercise();
     const T = "2030-05-15T07:30";
     const seit = lageBlau(ex, T).find((z) => z.trupp === "H04")!.seit;
-    for (const [s, u, o] of [["H04 nichts Neues", "H04", "AF12 A"], ["H05 1 Verletzter, Sanität angefordert", "H05", "AQ11 C"]] as const) {
+    // (MVP 3.5, C7) eigene Verwundete mit Sanitätsbegehren: Ort der Meldung «bei H05», der Standort des Trupps bleibt
+    for (const [s, u, o, w] of [["H04 nichts Neues", "H04", "AF12 A", "AF12 A"], ["H05 1 Verletzter, Sanität angefordert", "H05", "AQ11 C", "bei H05"]] as const) {
       const e = trage(ex, lies(ex, s, at("0730")).d, at("0730"));
-      expect(e.where).toBe(o);
+      expect(e.where).toBe(w);
       expect(ort(ex, u, T)).toBe(o);
     }
     expect(lageBlau(ex, T).find((z) => z.trupp === "H04")!.seit).toBe(seit);
@@ -439,7 +441,8 @@ describe("Übergabe-Daten (Übergabe H2, Frage 2)", () => {
     }
     const g = trage(ex, lies(ex, "Kdt: Ruhe ab 2300", at("0604")).d, at("0604"));
     ex.events = ex.events!.map((e) => (e.id === g.id ? { ...e, deleted: true } : e));
-    const v = vonOben(ex, "2030-05-15T06:10");
+    // MVP 3.5 (D4): vonOben liefert alle – hier die letzten 3 (früherer Standard)
+    const v = vonOben(ex, "2030-05-15T06:10", 3);
     expect(v.map((z) => [z.quelle, z.text])).toEqual([["Bat", "Lagerapport neu 0800"], ["Kp", "Verpflegung 1200"], ["Bat", "Feind Kp-Stärke ab 2200"]]);
     expect(v[0]!.nr).toBeTruthy();
     expect(vonOben(ex, "2030-05-15T03:10")).toHaveLength(1);
@@ -634,7 +637,7 @@ describe("Satz-Läufer der Nachprüfung (review4, MVP 3 Fix 3): 0 still falsch",
     trage(ex, lies(ex, "Bat: Nachbar Kp 61/2 links", at("0847")).d, at("0847"));
     trage(ex, lies(ex, "Bat: Feind 40 Pers erwartet ab 0900", at("0851")).d, at("0851"));
     trage(ex, lies(ex, "Kdt: ab sofort Funkstille bis 1100", at("0900")).d, at("0900"));
-    const v = vonOben(ex, "2030-05-15T10:10");
+    const v = vonOben(ex, "2030-05-15T10:10", 3);
     expect(v.map((z) => [z.text, z.vorbei ?? false])).toEqual([["ab sofort Funkstille bis 1100", false], ["Feind 40 Pers erwartet ab 0900", false], ["Nachbar Kp 61/2 links", false]]);
     const v4 = vonOben(ex, "2030-05-15T10:10", 4);
     expect(v4[3]).toMatchObject({ text: "Lagerapport 1000 im KP Bat", termin: "2030-05-15T10:00", vorbei: true });

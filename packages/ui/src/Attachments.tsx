@@ -134,7 +134,7 @@ export function AttachmentViewer({ list, start = 0, title, onClose }: { list: At
     if (!g) return;
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
     // Wischen (nicht vergrössert): nächstes/voriges Foto
-    if (z === 1 && !g.d && Math.abs(dx) > 60 && Math.abs(dx) > 1.5 * Math.abs(dy) && Date.now() - g.t < 800) go(dx < 0 ? 1 : -1);
+    if (z === 1 && !g.d && Math.abs(dx) > 60 && Math.abs(dx) > 1.5 * Math.abs(dy) && Date.now() - g.t < 800) go(dx < 0 ? 1 : -1); // zeit-ok: Millisekunden einer Wischgeste, keine Lagezeit
   };
   const lastTap = useRef(0);
   const tap = (e: RMouseEvent) => {

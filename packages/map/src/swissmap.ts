@@ -6,6 +6,7 @@
 import L from "leaflet";
 import proj4 from "proj4";
 import type { LV95 } from "@lage/core";
+import { massstab } from "./massstab";
 
 const EPSG2056 =
   "+proj=somerc +lat_0=46.9524055555556 +lon_0=7.43958333333333 +k_0=1 +x_0=2600000 +y_0=1200000 +ellps=bessel +towgs84=674.374,15.056,405.346,0,0,0,0 +units=m +no_defs";
@@ -48,6 +49,8 @@ export const CRS_LV95: L.CRS = L.Util.extend({}, L.CRS, {
   transformation: new L.Transformation(1, -ORIGIN.e, -1, ORIGIN.n),
   scale: (z: number) => 1 / resolutionAt(z),
   zoom: (s: number) => zoomFor(1 / s),
+  // Distanz in Metern in der Ebene LV95 (für den Massstab, `map.distance`); L.CRS selbst kennt keine Distanz
+  distance: (a: L.LatLng, b: L.LatLng) => { const p = projection.project(a), q = projection.project(b); return Math.hypot(p.x - q.x, p.y - q.y); },
   infinite: false,
 }) as unknown as L.CRS;
 
@@ -118,10 +121,14 @@ export function createSwissMap(el: HTMLElement, opts: { basemap?: Basemap; cente
     minZoom: 14,
     maxZoom: 28,
     zoomSnap: 0.5,
-    zoomDelta: 0.5,
+    // ohne 3D-Transformation rundet Leaflet auf ganze Stufen (zoomSnap gilt dann nicht): ein halber Schritt «−» würde
+    // wieder aufgerundet und «−» zoomte nie heraus – dann ganze Schritte (MVP 3.5, Paket A, betrieb.spec 12)
+    zoomDelta: L.Browser.any3d ? 0.5 : 1,
     wheelPxPerZoomLevel: 90,
   });
   map.attributionControl.setPrefix(false);
+  // Massstab unten links (MVP 3.5, B3)
+  massstab(map);
   const mark = (kind: Basemap) => el.classList.toggle("lt-base-grau", kind === "grau");
   let kind0 = opts.basemap ?? "lk";
   let layer = swisstopoLayer(kind0).addTo(map);

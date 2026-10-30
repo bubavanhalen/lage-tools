@@ -147,6 +147,13 @@ export function auswerten(f: SatzFall, ex: Exercise): SatzErgebnis {
   // «geht nicht» trägt nie ein; gelb: zweites Enter trägt den Entwurf ein, wie er ist
   if (st.level !== "geht-nicht") {
     ev = eventFromDraft(d, "dev-satz", now, { nr: nextNr(ex, 0), kuerzel: "BSP" });
+    // wie useEntryDraft `commitNew` (MVP 3.5, S16): unbekannter Trupp – das zweite Enter trägt ohne ihn ein (nie still angelegt)
+    const neu = d.truppNeu ?? st.reasons.find((r) => r.code === "trupp-neu")?.token;
+    if (neu) {
+      const gleich = (u?: string) => !!u && u.toLowerCase() === neu.toLowerCase() && !ex.units.blau.some((b) => b.toLowerCase() === u.toLowerCase());
+      if (gleich(ev.melder)) delete ev.melder;
+      if (gleich(ev.unit)) ev.unit = "";
+    }
     eintragen(ex, ev);
   }
   const nach = lage(ex, now);

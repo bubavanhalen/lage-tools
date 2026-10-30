@@ -150,3 +150,12 @@
 /* «Ersetzen durch Datei …» weit weg von «OK» (ganz links), nie aus Versehen getroffen */
 .mn-acts .mn-link { margin-right: auto; }
 .mn-acts { gap: var(--sp-24); }
+
+/* MVP 3.5 (D4): Grund neben gesperrtem «Übergabe abschliessen», Schritt «Datei sichern», Normalisierung des Kürzels */
+.ueb-foot .ueb-fehlt { margin: 0; align-self: center; }
+.ueb-norm { margin: var(--sp-4) 0 0; font-size: var(--fs-14); color: var(--muted); }
+.ueb-fertig { display: flex; flex-direction: column; gap: var(--sp-12); padding-top: var(--sp-24); padding-bottom: var(--sp-24); }
+.ueb-fertig p { margin: 0; font-size: var(--fs-16); }
+.ueb-fertig .ueb-ok { font-weight: 600; }
+.ueb-fertig-acts { display: flex; gap: var(--sp-8); flex-wrap: wrap; }
+.ueb-fertig-acts .ueb-primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }

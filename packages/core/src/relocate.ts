@@ -4,6 +4,7 @@
  */
 import { pointInRing } from "./geo";
 import { unitKey } from "./journal";
+import { zeitCmp } from "./clock";
 import type { LV95 } from "./lv95";
 import type { Area, LageEvent, Side } from "./model";
 import { cellAtAny, type RasterSheet } from "./raster";
@@ -50,9 +51,10 @@ export function positionSource(events: LageEvent[], side: Side, unit: string, t:
   const k = unitKey(side, unit);
   let best: LageEvent | undefined;
   let any: LageEvent | undefined;
-  const later = (a: LageEvent, b?: LageEvent) => !b || a.t > b.t || (a.t === b.t && a.id > b.id);
+  // MVP 3.5 (S23): Reihenfolge über den Zeitpunkt (`zeitCmp`), bei gleicher Zeit die ID
+  const later = (a: LageEvent, b?: LageEvent) => { if (!b) return true; const c = zeitCmp(a, b); return c > 0 || (c === 0 && a.id > b.id); };
   for (const e of events) {
-    if (e.deleted || !e.pos || !e.unit || e.t > t || unitKey(e.side, e.unit) !== k) continue;
+    if (e.deleted || !e.pos || !e.unit || zeitCmp(e, t) > 0 || unitKey(e.side, e.unit) !== k) continue;
     if (later(e, any)) any = e;
     if (pos && e.pos.e === pos.e && e.pos.n === pos.n && later(e, best)) best = e;
   }

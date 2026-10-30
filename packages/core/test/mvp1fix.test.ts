@@ -38,28 +38,29 @@ describe("Zeit in der Zukunft (K1)", () => {
 });
 
 describe("Unbekannter Trupp (H1, M4) und Schreibweise «h3»", () => {
-  it("Trupps vorbereitet: neuer Name gelb «neu anlegen?»", () => {
+  it("Trupps vorbereitet: neuer Name gelb (MVP 3.5: «H07 ist kein Trupp dieser Übung.», 2. Enter ohne Trupp)", () => {
     const s = state("H07 2 Fz in AK7", bern, prepared);
     expect(s.level).toBe("pruefen");
     expect(s.reasons[0]).toMatchObject({ code: "trupp-neu", token: "H07", suggest: "H07" });
-    expect(s.reasons[0]!.text).toBe("H07 ist kein Trupp dieser Übung – neu anlegen?");
-    expect(s.reasons[0]!.ask).toContain("Nochmals Enter");
+    expect(s.reasons[0]!.text).toBe("H07 ist kein Trupp dieser Übung.");
+    expect(s.reasons[0]!.ask).toBe("Nochmals Enter trägt ohne Trupp ein.");
   });
-  it("ohne vorbereitete Trupps weiter lernen", () => {
-    expect(state("H07 2 Fz in AK7").level).toBe("bereit");
-    expect(state("H07 2 Fz in AK7", bern, { knownUnits: bern.units.blau }).level).toBe("bereit");
+  it("(MVP 3.5, S16) auch ohne vorbereitete Trupps gelb – nie still lernen", () => {
+    expect(state("H07 2 Fz in AK7").level).toBe("pruefen");
+    expect(state("H07 2 Fz in AK7", bern, { knownUnits: bern.units.blau }).reasons.map((r) => r.code)).toContain("trupp-neu");
+    expect(parse("H07 2 Fz in AK7")).toMatchObject({ melder: "", truppNeu: "H07" });
   });
   it("«h3», «H3» → H03 (bekannt, bereit); «H6» → H06 (neu)", () => {
     for (const t of ["h3 2 Fz in AK7", "H3 2 Fz in AK7", "h03 2 Fz in AK7"]) {
       expect(parse(t).melder).toBe("H03");
       expect(state(t, bern, prepared).level).toBe("bereit");
     }
-    expect(parse("H6 2 Fz in AK7").melder).toBe("H06");
+    expect(parse("H6 2 Fz in AK7")).toMatchObject({ melder: "", truppNeu: "H06" });
     expect(state("H6 2 Fz in AK7", bern, prepared).reasons[0]!.text).toContain("H06 ist kein Trupp");
   });
   it("leere Übung: «h3» wird H03; «H13» bei H01 bleibt gesperrt (kein doppelter Grund)", () => {
     const leer = newExercise("Leer (fiktiv)");
-    expect(parseMeldung("h3 2 Fz", ctxOf(leer)).melder).toBe("H03");
+    expect(parseMeldung("h3 2 Fz", ctxOf(leer))).toMatchObject({ melder: "", truppNeu: "H03" });
     const s = state("H13 2 Fz in AK7", bern, prepared);
     expect(s.level).toBe("geht-nicht");
     expect(s.reasons.map((r) => r.code)).not.toContain("trupp-neu");
@@ -104,8 +105,11 @@ describe("Unbekanntes Wort statt geratener Art", () => {
     expect(d.unknownWord).toMatchObject({ token: "schützenpnzr", suggest: "spz", suggestLabel: "Schützenpanzer" });
     const s = entryState(d, opt(bern));
     expect(s.level).toBe("pruefen");
-    expect(s.reasons[0]).toMatchObject({ code: "was", token: "schützenpnzr", suggest: "spz" });
-    expect(s.reasons[0]!.text).toBe("Was gesehen? «schützenpnzr» nicht erkannt – meinst du «Schützenpanzer»?");
+    // (MVP 3.5, C1) Vorschlag = Ersatzwort, Text nach Kap. 4
+    expect(s.reasons[0]).toMatchObject({ code: "was", token: "schützenpnzr", suggest: "Schützenpanzer" });
+    expect(s.reasons[0]!.text).toBe("Was gesehen? «schützenpnzr» – meinst du «Schützenpanzer»?");
+    expect(s.reasons[0]!.ask).toBe("Nochmals Enter trägt «2 ?» als Unklar ein.");
+    expect(d.ersatz).toEqual({ token: "schützenpnzr", wort: "Schützenpanzer" });
   });
   it("richtig geschrieben bzw. ausdrücklich Feind", () => {
     expect(parse("H03 2 Schützenpanzer in AK7")).toMatchObject({ sym: "spz", kind: "feind" });

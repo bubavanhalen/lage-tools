@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  addMinuten, compareEvents, eventFromDraft, jetztLagezeit, lesart, mitOffset, offsetOf, offsetsAt, parseLocalIso, umstellTage, zeitBis,
-  zeitCmp, zeitMax, zeitMs, zeitTeile, zeitText, type Draft, type ZeitEreignis,
+  addMinuten, compareEvents, entryState, eventFromDraft, jetztLagezeit, lesart, mitOffset, offsetOf, offsetsAt, parseLocalIso, situationAt, umstellTage, zeitBis,
+  zeitCmp, zeitMax, zeitMs, zeitTeile, zeitText, type Draft, type EntryStateOptions, type LageEvent, type ZeitEreignis,
 } from "../src";
 
 const Z = "Europe/Zurich";
@@ -189,5 +189,50 @@ describe("eventFromDraft: LageEvent.t bleibt 16 Zeichen, tOffset aus dem Entwurf
   it("Draft.tOffset (Lesart) gilt vor offsetFor", () => {
     const e = eventFromDraft(draft("2030-10-27T02:55", "+02:00"), "dev-test", new Date("2030-10-27T02:10:00+01:00"));
     expect(e.tOffset).toBe("+02:00");
+  });
+});
+
+// ---- Paket C: Lesart in der Erkennung, Zukunft, Lage über den Zeitpunkt (unabhängig von der Zone des Rechners)
+describe("entryState: Zukunft über den Zeitpunkt (zeitMs), fehlende Stunde rot (Paket C)", () => {
+  const draft = (t: string, o: Partial<Draft> = {}): Draft => ({
+    minutes: +t.slice(11, 13) * 60 + +t.slice(14, 16), day: t.slice(0, 10), t, timeFromText: true, kind: "feind", kindFrom: "inhalt", side: "rot",
+    melder: "H01", unit: "", sym: "inf_trp", aff: "H", sidc: "", status: "present", text: "H01 1 Pers AC7", art: "meldung", artFrom: "standard",
+    pos: { e: 2600000, n: 1199000 }, where: { kind: "raster", label: "AC7" }, ...o,
+  });
+  const opts = (now: Date): EntryStateOptions => ({ hasRaster: true, online: false, placePending: false, manualPos: false, now, zone: Z, knownUnits: ["H01"] });
+  it("«0255» um 02:10 MEZ mit Offset der Lesart (MESZ) liegt nicht in der Zukunft", () => {
+    const now = new Date("2030-10-27T02:10:00+01:00");
+    expect(entryState(draft("2030-10-27T02:55", { tOffset: "+02:00" }), opts(now)).level).toBe("bereit");
+    // dieselbe Zeit als MEZ läge 45 min nach jetzt → Zukunft (geht nicht)
+    expect(entryState(draft("2030-10-27T02:55", { tOffset: "+01:00" }), opts(now)).reasons.map((r) => r.code)).toContain("zukunft");
+  });
+  it("Toleranz LIVE (S22): 4 min nach jetzt ist keine Zukunft, 15 min schon", () => {
+    const now = new Date("2030-05-15T07:31:00+02:00");
+    expect(entryState(draft("2030-05-15T07:35", { tOffset: "+02:00" }), opts(now)).level).toBe("bereit");
+    expect(entryState(draft("2030-05-15T07:46", { tOffset: "+02:00" }), opts(now)).level).toBe("geht-nicht");
+  });
+  it("`zeitFehlt` → rot «02:30 gibt es heute nicht (Uhr um 02:00 auf 03:00 vorgestellt).», Vorschlag 0330", () => {
+    const now = new Date("2030-03-31T03:40:00+02:00");
+    const st = entryState(draft("2030-03-31T02:30", { zeitFehlt: { zeit: "02:30", vorschlag: "0330", von: "02:00", bis: "03:00" }, timeToken: "0230" }), opts(now));
+    expect(st.level).toBe("geht-nicht");
+    expect(st.reasons[0]).toEqual(expect.objectContaining({ code: "zeit-fehlt", suggest: "0330", token: "0230", text: "02:30 gibt es heute nicht (Uhr um 02:00 auf 03:00 vorgestellt)." }));
+    expect(st.reasons.map((r) => r.code)).not.toContain("zukunft");
+  });
+});
+
+describe("Lage über den Zeitpunkt (situationAt, Paket C)", () => {
+  const ev = (id: string, t: string, tOffset: string, unit: string, e: number): LageEvent => ({
+    id, rev: 1, device: "d", updatedAt: "", t, tOffset, side: "blau", aff: "F", unit, melder: unit, text: `${unit} AC7`, sym: "einheit", pos: { e, n: 1199000 }, confirmed: true,
+  });
+  it("doppelte Stunde: 02:45 MESZ ist bei LIVE 02:10 MEZ (+10 min) schon Lage, 02:45 MEZ noch nicht", () => {
+    const a = ev("a", "2030-10-27T02:45", "+02:00", "H01", 2600000);
+    const b = ev("b", "2030-10-27T02:45", "+01:00", "H02", 2601000);
+    const s = situationAt([a, b], addMinuten("2030-10-27T02:10+01:00", 10, Z));
+    expect(s.units.map((u) => u.unit)).toEqual(["H01"]);
+  });
+  it("Rückblick mit Lagezeit ohne Offset bleibt wie bisher", () => {
+    const a = ev("a", "2030-05-15T07:20", "+02:00", "H01", 2600000);
+    expect(situationAt([a], "2030-05-15T07:19").units).toEqual([]);
+    expect(situationAt([a], "2030-05-15T07:20").units.length).toBe(1);
   });
 });

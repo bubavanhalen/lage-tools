@@ -2,9 +2,9 @@
  * Hinweise mit Entscheid exportieren: CSV «Hinweise» und Anhang im Journal-PDF.
  */
 import type { jsPDF } from "jspdf";
-import type { Exercise, Hint } from "@lage/core";
+import { zeitBis, zeitCmp, type Exercise, type Hint } from "@lage/core";
 import { decisionOf, decisionRec, GROUP_LABEL, groupOf, isOpen, LEVEL_LABEL, ruleOf } from "./hintsData";
-import { safePdf } from "./pdfSafe";
+import { glyphBreite, safePdf, textMitGlyph } from "./pdfSafe";
 
 const csvCell = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 const dayOf = (t: string, days: string[]) => { const i = days.indexOf(t.slice(0, 10)); return i >= 0 ? `T${i + 1}` : t.slice(0, 10); };
@@ -39,7 +39,7 @@ export function hintsToCsv(ex: Exercise, hints: Hint[]): string {
  */
 export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classification: string, page: number, o: { nur?: { from: string | null; to: string } } = {}): void {
   const nur = o.nur;
-  const list = nur ? hints.filter((h) => (h.t <= nur.to && (!nur.from || (h.until ?? h.last ?? h.t) >= nur.from)) || isOpen(ex, h, nur.to)) : hints;
+  const list = nur ? hints.filter((h) => (zeitBis(h.t, nur.to) && (!nur.from || zeitBis(nur.from, h.until ?? h.last ?? h.t))) || isOpen(ex, h, nur.to)) : hints;
   if (!list.length) return;
   safePdf(doc); // «N↔S» → «N–S», «→» → «nach» (Standardschrift nur WinAnsi)
   const k = !!nur;
@@ -60,12 +60,13 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
     const verm = doc.splitTextToSize(`Hinweise, keine Fakten – Entscheid durch Zfhr${nur ? " · nur Hinweise aus dem Zeitraum des Journals und noch offene" : ""}`, W - 2 * M) as string[];
     doc.text(verm, M, unten + 5.5);
     y = unten + 11 + (verm.length - 1) * 3.8;
-    doc.setFillColor(29, 29, 29); doc.rect(M, y - 4, W - 2 * M, 6, "F");
-    doc.setTextColor(255); doc.setFont("helvetica", "bold");
+    // Kopfzeile ohne Füllung (MVP 3.5, Kap. 2.9): fett, Linie darunter
+    doc.setTextColor(0); doc.setFont("helvetica", "bold");
     let x = M + 1;
     for (const c of cols) { doc.text(c.h, x, y); x += c.w; }
-    doc.setTextColor(0); doc.setFont("helvetica", "normal");
-    y += 5;
+    doc.setDrawColor(0); doc.setLineWidth(0.35); doc.line(M, y + 1.4, W - M, y + 1.4); doc.setLineWidth(0.2);
+    doc.setFont("helvetica", "normal");
+    y += 5.5;
   };
   header();
   doc.setFontSize(k ? 8 : 8.5);
@@ -75,7 +76,8 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
     const trig = k ? r.ausloeser.slice(-2) : r.ausloeser;
     const main = [titel, r.text, ...(r.prognose ? [`Prognose: ${r.prognose}`] : []), ...trig.map((a) => `· ${a}`), ...(r.quelle && !k ? [`Quelle: ${r.quelle}`] : [])].join("\n");
     const cells = [r.tag, r.zeit, r.stufe, r.regel, main, `${r.entscheid}${r.um ? `\n${r.um}` : ""}`];
-    const lines = cells.map((c, i) => doc.splitTextToSize(c, cols[i]!.w - 2) as string[]);
+    // Stufe «hoch»: Vektorzeichen ⚠ vor dem Wort (statt farbiger Zeile)
+    const lines = cells.map((c, i) => doc.splitTextToSize(c, cols[i]!.w - 2 - (i === 2 && r.h.level === "hoch" ? glyphBreite(doc) : 0)) as string[]);
     return { r, lines, h: Math.max(...lines.map((l) => l.length)) * LH + 1.6 };
   };
   let todo = all.map(layoutRow);
@@ -83,7 +85,7 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
     // eine Seite: offene und wichtige zuerst, dann neueste; gezeigt in zeitlicher Reihenfolge
     const room = 280 - y - 6;
     const rank = (x: (typeof todo)[number]) => (nur && isOpen(ex, x.r.h, nur.to) ? 4 : 0) + (x.r.h.level === "hoch" ? 2 : x.r.h.level === "mittel" ? 1 : 0);
-    const order = todo.map((x, i) => ({ x, i })).sort((a, b) => rank(b.x) - rank(a.x) || (a.x.r.h.t < b.x.r.h.t ? 1 : a.x.r.h.t > b.x.r.h.t ? -1 : 0));
+    const order = todo.map((x, i) => ({ x, i })).sort((a, b) => rank(b.x) - rank(a.x) || zeitCmp(b.x.r.h.t, a.x.r.h.t));
     const keep = new Set<number>();
     let used = 0;
     for (const { x, i } of order) { if (used + x.h > room) continue; used += x.h; keep.add(i); }
@@ -93,11 +95,10 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
   for (const { r, lines, h } of todo) {
     if (y + h > (k ? 280 : 285)) header();
     if (voll) break;
-    if (r.stufe === LEVEL_LABEL.hoch) { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
-    else if (r.stufe === LEVEL_LABEL.mittel) { doc.setFillColor(252, 244, 214); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
     let x = M + 1;
     lines.forEach((l, i) => {
-      if (i === 4) { doc.setFont("helvetica", "bold"); doc.text(l[0] ?? "", x, y); doc.setFont("helvetica", "normal"); doc.text(l.slice(1), x, y + LH); }
+      if (i === 2 && r.h.level === "hoch") { doc.setFont("helvetica", "bold"); textMitGlyph(doc, "warn", l, x, y); doc.setFont("helvetica", "normal"); }
+      else if (i === 4) { doc.setFont("helvetica", "bold"); doc.text(l[0] ?? "", x, y); doc.setFont("helvetica", "normal"); doc.text(l.slice(1), x, y + LH); }
       else doc.text(l, x, y);
       x += cols[i]!.w;
     });
@@ -107,7 +108,7 @@ export function appendHintsPdf(doc: jsPDF, ex: Exercise, hints: Hint[], classifi
   }
   if (shown < all.length) {
     doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(80);
-    doc.text(`+ ${all.length - shown} weitere (ältere bzw. erledigte) Hinweise – vollständig als Tabelle «Hinweise» (CSV) oder in der App`, M, y + 2);
+    doc.text(`Dazu ${all.length - shown} weitere (ältere bzw. erledigte) Hinweise – vollständig als Tabelle «Hinweise» (CSV) oder in der App`, M, y + 2);
     doc.setFont("helvetica", "normal"); doc.setTextColor(0);
   }
 }

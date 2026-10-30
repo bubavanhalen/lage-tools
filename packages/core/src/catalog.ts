@@ -162,9 +162,11 @@ export const CATALOG: CatalogEntry[] = [
   E("fsch", "Fallschirmtruppen", "Kampftruppen", "S?GPUCIA-------", ["fsch", "fallschirm", "fallschirmjäger", "fallschirmaufklärer", "fsch aufkl", "luftlande", "luftlandetruppen"], "einheit", { ...UNIT, noun: "Fallschirmtruppen", g: "p" }),
   E("spez", "Spezialkräfte / Grenadiere", "Kampftruppen", "S?FPG----------", ["spez", "spezialkräfte", "spez kr", "sof", "kommando", "ksk", "gren", "grenadiere", "grenadier"], "einheit", { ...UNIT, noun: "Spezialkräfte", g: "p" }),
   E("scharfschuetze", "Scharfschütze", "Kampftruppen", "O?VPS----------", ["schaf", "scharfschütze", "scharfschützen", "sniper", "heckenschütze"], "einheit", { lean: "feind", hostile: true, pl: "Scharfschützen" }),
-  E("inf_trp", "Personen / Inf Trupp", "Kampftruppen", "S?GPUCI--------", ["personen", "person", "pers", "soldaten", "soldat", "sdt", "mann", "angehörige", "zu fuss", "fussgänger", "bewaffnete"], "einheit", { ...UNIT, echelon: "trp", noun: "Personen", g: "p", prio: 1,
+  E("inf_trp", "Personen / Inf Trupp", "Kampftruppen", "S?GPUCI--------", ["personen", "person", "pers", "soldaten", "soldat", "sdt", "mann", "angehörige", "zu fuss", "fussgänger", "bewaffnete", "typen", "kerle"], "einheit", { ...UNIT, echelon: "trp", noun: "Personen", g: "p", prio: 1,
     forms: { person: ["Person", "Personen", "f"], personen: ["Person", "Personen", "f", true], pers: ["Person", "Personen", "f", true], soldat: ["Soldat", "Soldaten", "m"],
-      soldaten: ["Soldat", "Soldaten", "m", true], sdt: ["Soldat", "Soldaten", "m", true], mann: ["Mann", "Mann", "m"], bewaffnete: ["Bewaffneter", "Bewaffnete", "m", true] } }),
+      soldaten: ["Soldat", "Soldaten", "m", true], sdt: ["Soldat", "Soldaten", "m", true], mann: ["Mann", "Mann", "m"], bewaffnete: ["Bewaffneter", "Bewaffnete", "m", true],
+      // (MVP 3.5, C2) Umgangssprache: «drei Typen», «zwei Kerle» = Personen
+      typen: ["Person", "Personen", "f", true], kerle: ["Person", "Personen", "f", true] } }),
   E("inf_gr", "Inf Gruppe", "Kampftruppen", "S?GPUCI--------", [], "einheit", { ...UNIT, echelon: "gr", noun: "Personen", g: "p", prio: 1, hidden: true }),
 
   // ---------- Unterstützung
@@ -205,10 +207,15 @@ export const CATALOG: CatalogEntry[] = [
   E("spz_rad", "Schützenpanzer (Rad)", "Fahrzeuge", "S?GPEVAI--MP---", ["spz rad", "rad spz", "radschützenpanzer", "piranha", "btr"], "geraet", { ...DEV, noun: "Radschützenpanzer", unit: "pz_gren", prio: 4 }),
   E("mtw", "Mannschaftstransportwagen", "Fahrzeuge", "S?GPEVAA-------", ["mtw", "mannschaftstransportwagen", "m113", "gmtf", "pz mtw", "schützenpanzerwagen"], "geraet", { ...DEV, unit: "pz_gren", prio: 4 }),
   E("aufkl_fz", "Aufklärungsfahrzeug", "Fahrzeuge", "S?GPUCRVA------", ["aufkl fz", "aufklärungsfahrzeug", "eagle", "spähpanzer", "aufkl pz"], "geraet", { ...DEV, noun: "Aufklärungsfahrzeug", g: "n", pl: "Aufklärungsfahrzeuge", unit: "aufkl", prio: 4 }),
-  E("gw", "Geländewagen", "Fahrzeuge", "S?GPEVUX-------", ["gw", "geländewagen", "gelände pw", "jeep", "pinzgauer", "mowag", "pickup", "pick up"], "geraet", { ...DEV, prio: 4 }),
-  E("fz", "Fahrzeug (allg.)", "Fahrzeuge", "S?GPEVU--------", ["fahrzeug", "fz", "pw", "auto", "personenwagen", "g klasse", "g wagen", "puch", "wagen"], "geraet", { ...DEV, noun: "Fahrzeug", g: "n", pl: "Fahrzeuge", prio: 3,
-    forms: { pw: ["Personenwagen", "Personenwagen", "m"], personenwagen: ["Personenwagen", "Personenwagen", "m"], auto: ["Auto", "Autos", "n"] } }),
-  E("ziv_fz", "Ziviles Fahrzeug", "Fahrzeuge", "S?GPEVCA-------", ["ziv fz", "ziv pw", "ziv fahrzeug", "zivil fz", "zivilfahrzeug", "privatauto", "privat pw", "ziviles fahrzeug", "zivil pw", "zivilauto"], "geraet", { lean: "unklar", noun: "ziviles Fahrzeug", g: "n", pl: "zivile Fahrzeuge", prio: 4 }),
+  E("gw", "Geländewagen", "Fahrzeuge", "S?GPEVUX-------", ["gw", "geländewagen", "gelände pw", "jeep", "pickup", "pick up"], "geraet", { ...DEV, prio: 4 }),
+  E("fz", "Fahrzeug (allg.)", "Fahrzeuge", "S?GPEVU--------", ["fahrzeug", "fz", "fzg", "fahrzg", "pw", "auto", "personenwagen", "g klasse", "g wagen", "puch", "wagen", "pinz", "pinzgauer", "mowag"], "geraet", { ...DEV, noun: "Fahrzeug", g: "n", pl: "Fahrzeuge", prio: 3,
+    forms: { pw: ["Personenwagen", "Personenwagen", "m"], personenwagen: ["Personenwagen", "Personenwagen", "m"], auto: ["Auto", "Autos", "n"],
+      // (MVP 3.5, C2) Typen der Armee: Fahrzeug, Typ im Zusatz («2 gegnerische Fahrzeuge (Pinzgauer)»)
+      pinz: ["Fahrzeug (Pinzgauer)", "Fahrzeuge (Pinzgauer)", "n"], pinzgauer: ["Fahrzeug (Pinzgauer)", "Fahrzeuge (Pinzgauer)", "n"],
+      mowag: ["Fahrzeug (Mowag)", "Fahrzeuge (Mowag)", "n"] } }),
+  E("ziv_fz", "Ziviles Fahrzeug", "Fahrzeuge", "S?GPEVCA-------", ["ziv fz", "ziv pw", "ziv fahrzeug", "zivil fz", "zivilfahrzeug", "privatauto", "privat pw", "ziviles fahrzeug", "zivil pw", "zivilauto", "golf", "passat"], "geraet", { lean: "unklar", noun: "ziviles Fahrzeug", g: "n", pl: "zivile Fahrzeuge", prio: 4,
+    // (MVP 3.5, C2) Automarken sind Personenwagen (Zugehörigkeit unklar), Marke im Zusatz
+    forms: { golf: ["Personenwagen (Golf)", "Personenwagen (Golf)", "m"], passat: ["Personenwagen (Passat)", "Personenwagen (Passat)", "m"] } }),
   E("lw", "Lastwagen", "Fahrzeuge", "S?GPEVUL-------", ["lastwagen", "lkw", "lw", "duro", "camion", "lastw", "laster"], "geraet", { ...DEV, prio: 4 }),
   E("motorrad", "Motorrad", "Fahrzeuge", "S?GPEVCAL------", ["motorrad", "motorräder", "töff", "mrd", "quad", "motorradfahrer"], "geraet", { ...DEV, g: "n", pl: "Motorräder", prio: 4 }),
   E("kolonne", "Fahrzeugkolonne", "Fahrzeuge", "S?GPEVU--------", ["kolonne", "kolonnen", "fz kolonne", "fahrzeugkolonne", "konvoi", "marschkolonne", "lastwagenkolonne", "lw kolonne", "pw kolonne"], "geraet", { ...DEV, noun: "Fahrzeug", g: "n", pl: "Fahrzeuge", placement: "strasse", prio: 6 }),
@@ -291,7 +298,7 @@ export const CATALOG: CatalogEntry[] = [
   // ---------- Tätigkeiten
   E("patrouille", "Patrouille", "Tätigkeiten", "G?OPPT----****X", ["patrouille", "patr", "pat", "streife", "patrouillieren", "patrouilliert"], "taetigkeit", { lean: "feind", g: "f", pl: "Patrouillen", prio: 3 }),
   E("hinterhalt", "Hinterhalt", "Tätigkeiten", "G?OPVU----****X", ["hinterhalt", "überfall", "hinterhalte", "auflauern"], "taetigkeit", { ...ACT, hostile: true, placement: "strasse", pl: "Hinterhalte" }),
-  E("kontakt", "Kontakt / Feuerkontakt", "Tätigkeiten", "E?IPBF---------", ["kontakt", "feuerkontakt", "feuergefecht", "gefecht", "schusswechsel", "schuss", "schüsse", "schuss gehört", "schüsse gehört", "schussabgabe", "schussabgaben", "schiesserei", "beschossen", "angegriffen", "überfallen", "attackiert", "entdeckt", "feuer eröffnet"], "taetigkeit", { ...ACT, noun: "Kontakt",
+  E("kontakt", "Kontakt / Feuerkontakt", "Tätigkeiten", "E?IPBF---------", ["kontakt", "feuerkontakt", "feuergefecht", "feuerkampf", "unter feuer", "gefecht", "schusswechsel", "schuss", "schüsse", "schuss gehört", "schüsse gehört", "schussabgabe", "schussabgaben", "schiesserei", "beschossen", "angegriffen", "überfallen", "attackiert", "entdeckt", "feuer eröffnet"], "taetigkeit", { ...ACT, noun: "Kontakt",
     forms: { schuss: ["Schuss", "Schüsse", "m"], "schuss gehört": ["Schuss gehört", "Schüsse gehört", "m"], schüsse: ["Schuss", "Schüsse", "m", true], "schüsse gehört": ["Schuss gehört", "Schüsse gehört", "m", true] } }),
   E("beschuss", "Beschuss / Einschlag", "Tätigkeiten", "G?OPVI----****X", ["beschuss", "einschlag", "einschläge", "art feuer", "mw feuer", "granateinschlag", "steilfeuer", "indirektes feuer", "artilleriefeuer"], "taetigkeit", { ...ACT, hostile: true, noun: "Beschuss" }),
   E("zerstoerung", "Zerstörung", "Tätigkeiten", "G?TPD-----****X", ["zerstörung", "vernichtung"], "taetigkeit", { ...EVT, g: "f" }),
@@ -661,10 +668,11 @@ export function describeTactical(r: DescribeInput, aff: Affiliation | null): str
   if (adjAllowed && aff === "F") adjs.push(inflect("eigen", head.g));
   const suffix: string[] = [];
   if (r.extra) suffix.push(r.extra);
-  if (persons) suffix.push(`(${r.persons} ${r.persons === 1 ? "Person" : "Personen"})`);
+  // Stärke steht schon im Zusatz («Kontakt mit 4 Personen»): nicht doppelt
+  if (persons && !(r.extra && new RegExp(`(?<!\\d)${r.persons}\\s+Person`).test(r.extra))) suffix.push(`(${r.persons} ${r.persons === 1 ? "Person" : "Personen"})`);
   if (e.key === "kolonne") suffix.push(r.parts ? `(Kolonne: ${r.parts})` : "(Kolonne)");
   if (r.action && !actionOnly) suffix.push(`(${r.action})`);
-  const parts = [r.count !== undefined && !persons ? String(r.count) : "", ...adjs, head.s, ...suffix].filter(Boolean);
+  const parts = [r.count !== undefined && !persons && !(r.persons !== undefined && r.count === r.persons) ? String(r.count) : "", ...adjs, head.s, ...suffix].filter(Boolean);
   // Satzanfang gross («Elektronische Kriegsführung»), nach Adjektiv klein («gegnerische elektronische Kriegsführung»)
   return parts[0] === head.s ? capFirst(parts.join(" ")) : parts.join(" ");
 }
@@ -797,7 +805,19 @@ export function readTactical(text: string, o: ReadOptions = {}): TacticalReading
   const mitFirst = mitFirst0 && toks.slice(mitIdx + 1, mitFirst0.i).every((_, k) => isNum(mitIdx + 1 + k) || skipKinds.has(mitIdx + 1 + k)) ? mitFirst0 : undefined;
   const mitE = mitEnts.find((f) => mitFirst && Math.abs(f.i - mitFirst.i) <= 2);
   const mitEch = mitEchs.find((f) => mitFirst && Math.abs(f.i - mitFirst.i) <= 2);
+  let mitPersonen: number | undefined;
   if (mitE || mitEch) {
+    const me = mitE ? ent(mitE) : catalogEntry("einheit")!;
+    const mi = Math.min(mitE?.i ?? Infinity, mitEch?.i ?? Infinity);
+    const n = numBefore(mi, mitIdx);
+    const ech = mitEch && me.echelonable ? (mitEch.h as { ech: Echelon }).ech : undefined;
+    // (MVP 3.5, C2) «drei Typen mit Gewehr»: Personen mit Waffe sind bewaffnet – nie das Zeichen «Sturmgewehr»
+    // (MVP 3.5, C6) «Kontakt mit 4 Pers»: die Anzahl gehört zum Kontakt (Stärke in Personen)
+    if (me.key === "inf_trp" && n !== undefined && !ech && (entry.key === "kontakt" || entry.key === "beschuss")) mitPersonen = n;
+  }
+  const bewaffnet = !!mitE && ent(mitE).key === "stgw" && /^gewehre?$/.test(mitE.key) && (entry.key === "inf_trp" || entry.key === "inf_gr" || entry.key === "inf") && numBefore(mitE.i, mitIdx) === undefined;
+  if (bewaffnet) extras.push("(bewaffnet)");
+  else if (mitE || mitEch) {
     const me = mitE ? ent(mitE) : catalogEntry("einheit")!;
     const mi = Math.min(mitE?.i ?? Infinity, mitEch?.i ?? Infinity);
     const n = numBefore(mi, mitIdx);
@@ -815,6 +835,7 @@ export function readTactical(text: string, o: ReadOptions = {}): TacticalReading
   }
   // Stärke in Personen: «Pat 3 Pers»
   let persons: number | undefined;
+  if (mitPersonen !== undefined && count === undefined) { count = mitPersonen; persons = mitPersonen; }
   if (entry.key !== "inf_trp" && entry.key !== "inf_gr" && entry.key !== "kolonne") {
     const p = others.find((f) => ent(f).key === "inf_trp");
     const n = p ? numBefore(p.i) : undefined;
@@ -975,7 +996,7 @@ function editDistance(a: string, b: string, max: number): number {
 }
 
 /** Zeichen-Begriffe (ein Wort, ≥ 4 Zeichen) für die unscharfe Suche */
-let FUZZY: Array<[string, CatalogEntry]> | undefined;
+let FUZZY: Array<[string, CatalogEntry, string]> | undefined;
 
 /**
  * Nächster Katalogbegriff zu einem unbekannten Wort («schützenpnzr» → Schützenpanzer, «lastwgen» → Lastwagen) – nur als
@@ -983,20 +1004,34 @@ let FUZZY: Array<[string, CatalogEntry]> | undefined;
  * Buchstabe muss stimmen. Kurze Wörter (< 4 Zeichen), bekannte Begriffe und blosse Beugungen («zivile» → «ziviler»)
  * liefern nichts.
  */
-export function closestTerm(word: string): { entry: CatalogEntry; term: string; dist: number } | undefined {
+export function closestTerm(word: string): { entry: CatalogEntry; term: string; dist: number; wort: string } | undefined {
   const w = umlautFree(normTerm(word)).replace(/\s+/g, "");
   if (w.length < 4 || /\d/.test(w) || isKnownTerm(word)) return undefined;
   FUZZY ??= [...DICT.entries()].flatMap(([k, hs]) => {
     const e = hs.find((h) => h.t === "e") as { e: CatalogEntry } | undefined;
-    return e && !k.includes(" ") && k.length >= 4 && !e.e.hidden ? [[umlautFree(k), e.e] as [string, CatalogEntry]] : [];
+    // Umlaut-Variante («schuetzenpanzer») nur, wenn es keine mit Umlaut gibt – `wort` ist der Begriff wie im Katalog
+    return e && !k.includes(" ") && k.length >= 4 && !e.e.hidden ? [[umlautFree(k), e.e, k] as [string, CatalogEntry, string]] : [];
   });
   const max = w.length <= 7 ? 1 : w.length <= 13 ? 2 : 3;
-  let best: { entry: CatalogEntry; term: string; dist: number } | undefined;
-  for (const [k, e] of FUZZY) {
+  let best: { entry: CatalogEntry; term: string; dist: number; wort: string } | undefined;
+  for (const [k, e, orig] of FUZZY) {
     if (k[0] !== w[0] || k.startsWith(w) || w.startsWith(k)) continue;
     const dd = editDistance(w, k, best ? Math.min(best.dist, max) : max);
     if (dd > max) continue;
-    if (!best || dd < best.dist || (dd === best.dist && k.length > best.term.length)) best = { entry: e, term: k, dist: dd };
+    // gleiche Distanz: gleiche Länge wie das Wort zuerst («drohen» → «drohne», nicht «drohnen»), dann der längere Begriff
+    const lenD = (x: string) => Math.abs(x.length - w.length);
+    if (!best || dd < best.dist || (dd === best.dist && (lenD(k) < lenD(best.term) || (lenD(k) === lenD(best.term) && k.length > best.term.length)))
+      || (dd === best.dist && k === best.term && orig !== k)) best = { entry: e, term: k, dist: dd, wort: orig };
   }
   return best;
+}
+
+/**
+ * (MVP 3.5, C1) Ersatzwort für eine unbekannte Textstelle in der Schreibweise des Katalogs, gross wie ein Nomen
+ * («persohnen» → «Personen», «lastwagn» → «Lastwagen», «drohen» → «Drohne», «schützenpnzr» → «Schützenpanzer»).
+ */
+export function ersatzWort(word: string): { wort: string; entry: CatalogEntry } | undefined {
+  const c = closestTerm(word);
+  if (!c) return undefined;
+  return { wort: c.wort.replace(/^\p{Ll}/u, (x) => x.toUpperCase()), entry: c.entry };
 }

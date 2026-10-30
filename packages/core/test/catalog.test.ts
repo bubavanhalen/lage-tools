@@ -217,7 +217,8 @@ describe("Meldung erkennen mit Katalog (parseMeldung)", () => {
     const a = parseMeldung("0955 H04 Beo Stao C12 D", ctx());
     expect(a.kind).toBe("eigen");
     expect(a.sym).toBe("beob_aufkl");
-    const b = parseMeldung("1000 Zug 2 bezieht Stellung C12", ctx());
+    // (MVP 3.5, C12) Melder nur, wenn der Trupp zur Übung gehört
+    const b = parseMeldung("1000 Zug 2 bezieht Stellung C12", ctx({ units: { rot: [], blau: ["H04", "Zug 2"], ul: [] } }));
     expect(b.kind).toBe("eigen");
     expect(b.melder).toBe("Zug 2");
     expect(b.sym).toBe("stellung");

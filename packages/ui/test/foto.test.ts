@@ -165,10 +165,11 @@ describe("Eintrage-Weg (commit.ts)", () => {
     // Reihenfolge eindeutig (gleiche Zeit → IDs steigen)
     expect(new Set(evs.map((e) => e.id)).size).toBe(3);
   });
-  it("neue Elemente werden gemerkt, spätere Meldung sieht frühere", () => {
+  it("unbekannter Trupp wird nie still angelegt (MVP 3.5, S16): Meldungen ohne Melder, H09 nur über den Knopf", () => {
     const { ex, evs } = run(["0700 H09 Beo Stao AE5 C", "0710 H09 2 Fz AG13"]);
     expect(evs).toHaveLength(2);
-    expect(ex.units.blau).toContain("H09");
+    expect(ex.units.blau).not.toContain("H09");
+    expect(evs.every((e) => !e.melder)).toBe(true);
   });
   it("Trupp, der nach zusammengezogenen Ziffern aussieht («H13» bei H01–H05): nicht still als neuer Trupp eintragen", () => {
     let skipped: string[] = [];

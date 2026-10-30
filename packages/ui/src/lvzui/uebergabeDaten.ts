@@ -3,9 +3,14 @@
  * dasselbe zeigen. Abschnitte: Lage Blau · Lage Rot · Offene Punkte · Neu seit der letzten Übergabe · Zahlen für den
  * Rapport · Visum. Kurz gehalten (≤ 900 Wörter auch bei 800 Meldungen): Neu höchstens 12 Zeilen, Offen höchstens 12,
  * Lage Rot höchstens zwei Möglichkeiten.
+ * MVP 3.5 (Spez. MVP 3.5, Kap. 2.7, D4/D5/D7): «Von oben (gültig)» mit allen Orientierungen und Aufträgen von oben
+ * (höchstens `VON_OBEN_MAX` gültige, dann «+n weitere im Journal», darunter höchstens `VON_OBEN_VORBEI` «(vorbei 08:00)»;
+ * Beginn «ab 09:07»), «Stand» = Geräteuhr (`tUhr`), Zahlen mit «Ausgang an Bat / Kp» und «Begehren (offen)», offene
+ * Hinweise = `offeneHinweise` (eine Zahl), Übergabe-Einträge zählen nicht. Zeitvergleiche über `zeitCmp`.
  */
 import {
   artOf, catalogEntry, coaHeadline, letzteRotAktivitaet, placeLabel, schichtEintraege, vonOben, kurzText, compareEvents, istStill, isLage, lageBlau, lvzIndex, nrLabel, rapportZahlen, vermerkeOf,
+  VON_OBEN_MAX as OBEN_MAX, VON_OBEN_VORBEI, zeitBis, zeitCmp, zeitMs,
   type Exercise, type Hint, type LageEvent, type OffenItem, type RapportZahlen,
 } from "@lage/core";
 import type { LageRotState } from "../lageRot";
@@ -15,8 +20,8 @@ import { hm, textMitTag, zeitKurz } from "../entry/labels";
 
 export const NEU_MAX = 12;
 export const OFFEN_MAX = 12;
-/** «Von oben (gültig)»: so viele Orientierungen */
-export const VON_OBEN_MAX = 3;
+/** «Von oben (gültig)»: so viele gültige (entscheide.ts, D4); dazu höchstens `VON_OBEN_VORBEI` vorbei */
+export const VON_OBEN_MAX = OBEN_MAX;
 
 export interface UebergabeZeileBlau { trupp: string; ort: string; seit: string; letzte: string; vbk: string; offen: string; still: string | null }
 export interface UebergabeZeileOffen { key: string; mark: string; t: string; nr: string; text: string; meta: string }
@@ -33,6 +38,8 @@ export interface UebergabeDaten {
   rot: { gesehen: string | null; zuletzt: string | null; aktivitaet: string | null; moeglich: string[] };
   /** «Von oben (gültig)»: die letzten Orientierungen (Bat, Kp …), unabhängig von der Schicht, jüngste zuerst */
   vonOben: UebergabeZeileNeu[];
+  /** (D4) gültige von oben, die nicht mehr Platz haben – «+3 weitere im Journal» */
+  vonObenWeitere: number;
   offen: UebergabeZeileOffen[];
   offenTotal: number;
   offenWeitere: number;
@@ -56,11 +63,14 @@ export function dauerText(min: number): string {
   return m ? `${h} h ${m} min` : `${h} h`;
 }
 const kurz = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
-const minutes = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000));
+const minutes = (a: string, b: string) => Math.max(0, Math.round((zeitMs(b) - zeitMs(a)) / 60000));
+/** «ab 0907» → «ab 09:07» (Zeiten nach ab/bis/um/ca. im Text von oben, Kap. 2.7) */
+const zeitenLesbar = (s: string) => s.replace(/(?<![\p{L}\d])(ab|bis|um|ca\.?|gegen)\s+([01]\d|2[0-3])[.:h]?([0-5]\d)(?![\d:])/giu, "$1 $2:$3");
 /** Meldungstext ohne führenden Melder («H05: 4 Pers …» → «4 Pers …») */
 const ohneMelder = (e: Pick<LageEvent, "melder" | "text">) => (e.melder ? e.text.replace(new RegExp(`^${e.melder}\\s*(?:meldet)?\\s*[:,]?\\s*`), "") : e.text).trim() || e.text;
 
 const MARK: Record<OffenItem["art"], string> = { dringend: "!", auftrag: "✎", rueckfrage: "✎", verbindung: "⇄", still: "⇄", "ohne-ort": "◆", offen: "•", konflikt: "⚠", "rueckfrage-oben": "✎", begehren: "●" };
+/** Nummer «Nr 56» (D7, `nrText`): Übergabe-Zeilen tragen `nr` ohne «Nr», die Anzeige setzt «Nr » davor */
 
 /** Beginn von «Neu»: eigene Schicht, sonst letzte Übergabe der Übung (ISO UTC) – null = noch keine */
 export function neuSeit(ex: Pick<Exercise, "schichten">, seit: string | null): { at: string; t: string | null } | null {
@@ -79,13 +89,16 @@ export function neueEintraege(ex: Exercise, at: string | null, t: string): LageE
 export interface UebergabeInput {
   ex: Exercise; tLive: string; hints: Hint[]; lage: LageRotState; items: OffenItem[];
   kuerzel: string | null; seit: string | null; seitT: string | null;
+  /** (MVP 3.5, S22) Geräteuhr mit Offset – «Stand T2 15.05.2030 07:31»; fehlt → `tLive` */
+  tUhr?: string;
 }
 
 export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
   const { ex, tLive: t, lage, items } = i;
   const days = ex.days;
   const neuAb = neuSeit(ex, i.seit);
-  const neuList = neueEintraege(ex, neuAb?.at ?? null, t);
+  // Übergabe-Einträge (S20) sind keine neuen Einträge der Schicht
+  const neuList = neueEintraege(ex, neuAb?.at ?? null, t).filter((e) => !e.system);
 
   // Kopf
   const schichtZeile = i.kuerzel
@@ -107,15 +120,15 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
   const row = (k: string) => lage.compare.find((c) => c.row.key === k);
   const seen = (k: string) => { const c = row(k)?.found; return c ? c.min || c.max : 0; };
   const exp = (["pers", "fz"] as const).map((k) => [k, row(k)?.expected] as const).filter(([, v]) => v !== undefined);
-  const anyRed = (ex.events ?? []).some((e) => isLage(e) && e.side === "rot" && e.t.slice(0, 16) <= t);
+  const anyRed = (ex.events ?? []).some((e) => isLage(e) && e.side === "rot" && zeitBis(e, t));
   const gesehen = anyRed
     ? `Rot gesehen: mind. ${seen("pers")} Pers, ${seen("fz")} Fz${exp.length ? ` · erwartet ${exp.map(([k, v]) => `${v} ${k === "pers" ? "Pers" : "Fz"}`).join(", ")}` : ""}`
     : null;
   // zuletzt gesehene benannte Feindelemente
   const lastRed = new Map<string, LageEvent>();
-  for (const e of [...(ex.events ?? [])].filter((x) => isLage(x) && x.side === "rot" && x.unit && x.t.slice(0, 16) <= t).sort(compareEvents)) lastRed.set(e.unit, e);
+  for (const e of [...(ex.events ?? [])].filter((x) => isLage(x) && x.side === "rot" && x.unit && zeitBis(x, t)).sort(compareEvents)) lastRed.set(e.unit, e);
   const notSeen = new Map(lage.force.notSeen.map((n) => [n.unit, n.minutes]));
-  const zuletzt = [...lastRed.values()].sort((a, b) => (a.t < b.t ? 1 : -1)).slice(0, 4).map((e) => {
+  const zuletzt = [...lastRed.values()].sort((a, b) => zeitCmp(b, a)).slice(0, 4).map((e) => {
     const ns = notSeen.get(e.unit);
     const ort = e.where ?? e.cells?.[0] ?? e.nai ?? "";
     const wann = e.t.slice(0, 10) === t.slice(0, 10) ? hhmm(e.t) : tagZeit(e.t, days);
@@ -137,7 +150,7 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
   // 3 Offene Punkte
   const offen = items.slice(0, OFFEN_MAX).map((it): UebergabeZeileOffen => ({
     key: it.key, mark: MARK[it.art], t: it.art === "still" ? "" : zeitKurz(it.t, t, days), nr: it.nr ?? "", text: textMitTag(it.text, it.t, t, days),
-    meta: it.art === "auftrag" ? (it.ueberfaellig ? "⚠ Frist vorbei" : `seit ${dauerText(it.seitMin)}`) : it.art === "rueckfrage" ? `seit ${dauerText(it.seitMin)}` : "",
+    meta: it.art === "auftrag" ? (it.ueberfaellig ? "⚠ Frist vorbei" : `seit ${dauerText(it.seitMin)}`) : it.art === "rueckfrage" || it.art === "rueckfrage-oben" || it.art === "begehren" ? `seit ${dauerText(it.seitMin)}` : "",
   }));
 
   // 4 Neu: dringend → Feind → Auftrag/Rückfrage → Rest, je jüngste zuerst
@@ -149,7 +162,7 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     if (a === "auftrag" || a === "rueckfrage") return 2;
     return 3;
   };
-  const sorted = [...neuList].sort((a, b) => rang(a) - rang(b) || (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
+  const sorted = [...neuList].sort((a, b) => rang(a) - rang(b) || zeitCmp(b, a));
   const blauNamen = ex.units?.blau ?? [];
   /** Status eines dringenden Eintrags in «Neu» (Prüfung M5): «erledigt 07:40 · Massnahme: …» bzw. «offen» */
   const status = (e: LageEvent): string => {
@@ -170,33 +183,40 @@ export function uebergabeDaten(i: UebergabeInput): UebergabeDaten {
     : eigenerBeginn && eigenerBeginn.art === "beginn" ? `Neu in dieser Schicht (seit ${tagZeit(eigenerBeginn.t ?? i.seitT ?? t, days)}) – ${n}`
     : `Neu seit der letzten Übergabe (${tagZeit(neuAb.t ?? i.seitT ?? t, days)}) – ${n}`;
 
-  // Von oben (gültig): die letzten Orientierungen, unabhängig von der Schicht
+  // Von oben (gültig, D4): alle Orientierungen und Aufträge von oben, unabhängig von der Schicht – höchstens
+  // `VON_OBEN_MAX` gültige (Rest «+n weitere im Journal»), darunter höchstens `VON_OBEN_VORBEI` vorbei
   const byId = new Map((ex.events ?? []).map((e) => [e.id, e]));
-  const oben = vonOben(ex, t, VON_OBEN_MAX).map((z): UebergabeZeileNeu => {
+  const alleOben = vonOben(ex, t);
+  const gueltig = alleOben.filter((z) => !z.vorbei);
+  const obenListe = [...gueltig.slice(0, VON_OBEN_MAX), ...alleOben.filter((z) => z.vorbei).slice(0, VON_OBEN_VORBEI)];
+  const oben = obenListe.map((z): UebergabeZeileNeu => {
     const e = byId.get(z.id);
-    // Fix 3: Abgelaufenes nie als gültig – «Lagerapport 1000 im KP · vorbei (10:00)»
-    const meta = [z.vorbei && z.termin ? `vorbei (${zeitKurz(z.termin, t, days)})` : "", e ? status(e) : ""].filter(Boolean).join(" · ");
-    return { key: z.id, t: zeitKurz(z.t, t, days), nr: z.nr, bang: !!e && vermerkeOf(e, idx).dringend, text: kurz(`${z.quelle ? `${z.quelle}: ` : ""}${z.text}`, 140), meta };
+    // Fix 3: Abgelaufenes nie als gültig – «Lagerapport 1000 im KP · (vorbei 10:00)»
+    const meta = [z.vorbei && z.termin ? `(vorbei ${zeitKurz(z.termin, t, days)})` : "", e ? status(e) : ""].filter(Boolean).join(" · ");
+    return { key: z.id, t: zeitKurz(z.t, t, days), nr: z.nr, bang: !!e && vermerkeOf(e, idx).dringend, text: kurz(zeitenLesbar(`${z.quelle ? `${z.quelle}: ` : ""}${z.text}`), 140), meta };
   });
 
   // 5 Zahlen
   const zs = rapportZahlen(ex, neuAb?.at ?? null, t, i.hints);
   const za = rapportZahlen(ex, null, t, i.hints);
-  const zahl = (z: RapportZahlen, k: "auftraege" | "rueckfragen" | "dringend") => `${z[k].total} (${z[k].offen})`;
+  const zahl = (z: RapportZahlen, k: "auftraege" | "rueckfragen" | "dringend" | "begehren") => `${z[k].total} (${z[k].offen})`;
   const zahlen: Array<[string, string, string]> = [
     ["Einträge", String(zs.eintraege), String(za.eintraege)],
     ["Feind / Unklar / Eigene gesehen", `${zs.gesehen.feind}/${zs.gesehen.unklar}/${zs.gesehen.eigen}`, `${za.gesehen.feind}/${za.gesehen.unklar}/${za.gesehen.eigen}`],
     ["Aufträge (offen)", zahl(zs, "auftraege"), zahl(za, "auftraege")],
     ["Rückfragen (offen)", zahl(zs, "rueckfragen"), zahl(za, "rueckfragen")],
     ["Dringend (offen)", zahl(zs, "dringend"), zahl(za, "dringend")],
+    ["Begehren (offen)", zahl(zs, "begehren"), zahl(za, "begehren")],
+    ["Ausgang an Bat / Kp", `${zs.ausgang.bat} / ${zs.ausgang.kp}`, `${za.ausgang.bat} / ${za.ausgang.kp}`],
     ["Korrigiert / gestrichen", `${zs.korrigiert} / ${zs.gestrichen}`, `${za.korrigiert} / ${za.gestrichen}`],
-    ["Hinweise zu Rot offen / erledigt", "", za.hinweise ? `${za.hinweise.offen} / ${za.hinweise.erledigt}` : "–"],
+    // eine Zahl (S25): dieselbe wie Reiter «Was Rot ⚠n» und «Offen» (`offeneHinweise`)
+    ["Hinweise zu Rot offen", "", za.hinweise ? `${za.hinweise.offen} (${za.hinweise.erledigt} erledigt)` : "–"],
   ];
 
   return {
-    titel: ex.name, klass: klassifizierungOf(ex), stand: standText(t, days), schichtZeile, blau,
+    titel: ex.name, klass: klassifizierungOf(ex), stand: standText(i.tUhr ?? t, days), schichtZeile, blau,
     rot: { gesehen, zuletzt: zuletzt.length ? `Zuletzt gesehen: ${zuletzt.join(" · ")}` : null, aktivitaet, moeglich },
-    vonOben: oben,
+    vonOben: oben, vonObenWeitere: Math.max(0, gueltig.length - VON_OBEN_MAX),
     offen, offenTotal: items.length, offenWeitere: Math.max(0, items.length - OFFEN_MAX),
     neu: { titel: neuTitel, zeilen: neuZeilen, weitere: Math.max(0, neuList.length - NEU_MAX), total: neuList.length },
     zahlen, von: i.kuerzel,

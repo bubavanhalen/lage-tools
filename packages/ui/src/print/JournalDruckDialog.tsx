@@ -5,7 +5,7 @@
  * jsPDF wird erst beim Öffnen nachgeladen (wie bisher beim Direktdruck).
  */
 import { useEffect, useId, useMemo, useState } from "react";
-import { aktuelleSchicht, journalDruckVorwahl, type Exercise, type Hint, type SchichtWechsel } from "@lage/core";
+import { aktuelleSchicht, journalDruckVorwahl, zeitBis, type Exercise, type Hint, type SchichtWechsel } from "@lage/core";
 import { Dialog } from "../shell/Dialog";
 import { klassifizierungOf, type JournalDruck } from "../shell/contracts";
 import type { LageRotState } from "../lageRot";
@@ -43,7 +43,7 @@ type Art = JournalDruck["umfang"]["art"] | "letzte";
 /** Schichtbeginn dieses Geräts als Wechsel (Lagezeit), sonst jüngster Wechsel der Übung bis jetzt */
 function eigeneSchicht(ex: Exercise, device: string | undefined, tLive: string, seit: string | null | undefined): SchichtWechsel | null {
   const mine = device ? aktuelleSchicht(ex, device) : null;
-  if (mine && mine.t <= tLive) return mine;
+  if (mine && zeitBis(mine.t, tLive)) return mine;
   if (seit) {
     const s = (ex.schichten ?? []).find((x) => x.at === seit);
     if (s) return s;

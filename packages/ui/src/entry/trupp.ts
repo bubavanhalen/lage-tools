@@ -1,7 +1,7 @@
 /**
  * «Wer meldet?» ohne Browser (Spez. MVP 1, Kap. 3.2): Trupp als Text an den Anfang, Reihenfolge der Chips.
  */
-import type { Exercise } from "@lage/core";
+import { zeitCmp, type Exercise } from "@lage/core";
 
 const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
 
@@ -27,11 +27,12 @@ export function truppOrder(ex: Pick<Exercise, "units">): string[] {
 
 /** Trupp der zuletzt eingegangenen Meldung (für die Hervorhebung «zuletzt gemeldet»), sonst null */
 export function lastMelder(ex: Pick<Exercise, "events" | "units">): string | null {
-  let best: { m: string; t: string; c: string } | null = null;
+  let best: { m: string; e: NonNullable<Exercise["events"]>[number]; c: string } | null = null;
   for (const e of ex.events ?? []) {
     if (e.deleted || !e.melder) continue;
     const c = e.createdAt ?? "";
-    if (!best || e.t > best.t || (e.t === best.t && c > best.c)) best = { m: e.melder, t: e.t, c };
+    const d = best ? zeitCmp(e, best.e) : 1;
+    if (d > 0 || (d === 0 && c > best!.c)) best = { m: e.melder, e, c };
   }
   if (!best) return null;
   return ex.units.blau.find((u) => u.toLowerCase() === best!.m.toLowerCase()) ?? null;

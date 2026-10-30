@@ -12,6 +12,12 @@
  * (`onNr`, sonst `takeNr`), `erfasstVon`, Messpunkt `lt:enter`, Wahl des Ziels bei mehreren Aufhebungs-Kandidaten,
  * Vorschlag «Als T2 07:26 eintragen» (Tag fremd). Text von aussen ins Feld: `prefillEntry` (Offen, «Antwort eintragen»).
  *
+ * MVP 3.5 (E5): Knöpfe der Vorschau – Vorschlag übernehmen (`draft.ersatz`, ersetzt die Textstelle im Feld mit
+ * Rückgängig Ctrl+Z), «Als zwei Einträge» (`draft.teile`, zwei Einträge mit gleicher Zeit und fortlaufenden Nummern, eine
+ * Rückgängig-Leiste), «nicht abschliessen» (`ctx.abschlussAus`), Bezug-/Auftrag-Wahl (`ctx.bezugWahl`); das zweite
+ * Enter bei `trupp-neu` trägt **ohne** Melder ein (der Trupp entsteht nur über den Knopf); ↑ = zuletzt erfasst
+ * (`createdAt`); Grund `ort-online-aus` über `ortsnamen`; verwaister Entwurf eines geschlossenen Fensters (E7).
+ *
  * Korrigieren = Eintragen: Feld enthält den Meldungstext, «jetzt» = Zeit der Meldung, Trupp fällt auf den der Meldung
  * zurück. Ohne Textänderung bleiben Ort, Zeichen, Strasse; mit Textänderung gilt die neue Erkennung, ausser der Text
  * nennt keinen Ort (dann bleibt der bisherige, auch «Karte»). Speichern über `correctEvent` (alte Fassung in
@@ -132,7 +138,14 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const [text, setTextState] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fitInput = useCallback(() => requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 120) + "px"; } }), []);
-  useDraftPersist(ex.id, text, setTextState, fitInput);
+  /** (MVP 3.5, E7) verwaister Entwurf eines geschlossenen Fensters übernommen: «Entwurf von 07:31 wiederhergestellt» */
+  const [restored, setRestored] = useState<{ hm: string; t: string } | null>(null);
+  useDraftPersist(ex.id, text, setTextState, fitInput, (at) => {
+    const d = new Date(at);
+    setRestored({ hm: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, t: "" });
+  });
+  // Hinweis gilt nur für den übernommenen Text: eingetragen oder geleert → weg
+  useEffect(() => { if (restored && !text.trim()) setRestored(null); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [mode, setMode] = useState<EntryMode>({ art: "neu" });
   const korr = useRef<StoredKorr | null>(null);
@@ -149,6 +162,9 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const [kuerzelErr, setKuerzelErr] = useState(false);
   const kuerzelRef = useRef<HTMLInputElement>(null);
   const [symOverride, setSymOverride] = useState<SymbolChoice | null>(null);
+  /** (MVP 3.5, D2) «nicht abschliessen» gewählt; gewählter Bezug bei «64a/64b» bzw. «Welcher Auftrag ist erledigt?» */
+  const [abschlussAus, setAbschlussAus] = useState(false);
+  const [bezugWahl, setBezugWahl] = useState<string | null>(null);
   const [roadPick, setRoadPick] = useState<RoadPick | null>(null);
   const [shapeDraft, setShapeDraft] = useState<LageEvent["shape"]>(undefined);
   const [found, setFound] = useState<{ q: string; name: string; pos: LV95 } | null>(null);
@@ -187,11 +203,11 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
    * (z. B. Feld markiert und neu getippt, Diktat) – beim Eintragen kommt er als Text an den Anfang. Gelöscht mit dem Feld.
    */
   const [chosen, setChosen] = useState<string | null>(null);
-  const resetExtras = () => { setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setArtMenu(false); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); setAskKuerzel(false); setKuerzelErr(false); };
+  const resetExtras = () => { setAbschlussAus(false); setBezugWahl(null); setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setArtMenu(false); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setFound(null); setArmed(null); setAskKuerzel(false); setKuerzelErr(false); };
   const setText = useCallback((t: string) => {
     setTextState(t);
     if (t) setNotice(null);
-    if (!t) { setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setAskKuerzel(false); kiTaken.current = false; }
+    if (!t) { setAbschlussAus(false); setBezugWahl(null); setChosen(null); setManualPos(null); setKindOverride(null); setArtOverride(null); setLiftPick(null); setSymOverride(null); setRoadPick(null); setShapeDraft(undefined); setAskKuerzel(false); kiTaken.current = false; }
   }, []);
   // Text geändert → nicht mehr «bestätigt». Nur wenn die Bestätigung zu einem anderen Text gehört: läuft dieser
   // Effekt verspätet (Seite beschäftigt) erst nach dem ersten Enter, darf er dessen Bestätigung nicht löschen
@@ -265,7 +281,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   useEffect(() => { if (p.reportAt) { setManualPos(p.reportAt.pos); inputRef.current?.focus(); } }, [p.reportAt?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   // in diesem Fenster gelöscht (Liste): laufende Korrektur dieser Meldung abbrechen
   useEffect(() => {
-    const h = (ev: Event) => { if (korr.current && (ev as CustomEvent<string>).detail === korr.current.id) { endKorr(); tell("Korrektur abgebrochen – die Meldung wurde gelöscht."); } };
+    // MVP 3.5 (N): nach «Streichen» keine alte Rückmeldung («Als Orientierung eingetragen …») mehr stehen lassen
+    const h = (ev: Event) => { if (korr.current && (ev as CustomEvent<string>).detail === korr.current.id) { endKorr(); tell("Korrektur abgebrochen – die Meldung wurde gelöscht."); } else setNotice(null); };
     window.addEventListener(DELETED_EVENT, h);
     return () => window.removeEventListener(DELETED_EVENT, h);
   }, [endKorr, tell]);
@@ -278,8 +295,10 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     sheets: ex.sheets, areas: ex.areas, units: ex.units, places: ex.places ?? [], kind: kindOverride ?? undefined, days: ex.days, day, now, dayFromClock: clk.follow,
     lastPos: (u: string, s: Side) => lastPosition(events, s, u),
     ...(artOverride ? { art: artOverride } : {}),
+    ...(abschlussAus ? { abschlussAus: true } : {}),
+    ...(bezugWahl ? { bezugWahl } : {}),
     events, ex,
-  }), [ex, kindOverride, artOverride, day, events, now, clk.follow]);
+  }), [ex, kindOverride, artOverride, day, events, now, clk.follow, abschlussAus, bezugWahl]);
   /** Text, der gelesen wird (mit angetipptem Trupp, wenn der Text keinen nennt) */
   const srcText = useMemo(() => {
     if (base || !chosen || !text.trim()) return text;
@@ -377,7 +396,10 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
   const effWhere = road ? `${effWhere0} · auf ${road.road ?? "Strasse"}` : effWhere0;
   const manualCell = manualPos ? cellAtAny(ex.sheets, manualPos)?.label : undefined;
   /** Ort in Worten für «Ort: …» */
-  const placeText = manualPos ? (manualCell ? `Karte (${manualCell})` : "Karte") : keepPlace && base && !roadPick ? placeLabel(base) : effWhere ?? "";
+  // MVP 3.5 (C8): «bei H05 (AQ11 C)» – Ort am genannten Trupp mit seinem Planquadrat
+  const beiZelle = !manualPos && !keepPlace && effPos && /^bei /.test(effWhere ?? "") ? cellAtAny(ex.sheets, effPos)?.label : undefined;
+  const placeText = manualPos ? (manualCell ? `Karte (${manualCell})` : "Karte") : keepPlace && base && !roadPick ? placeLabel(base)
+    : (effWhere ?? "") + (beiZelle && !(effWhere ?? "").includes(beiZelle) ? ` (${beiZelle})` : "");
   const oldPlace = base ? placeLabel(base) || "ohne Ort" : null;
 
   // gleiche Regeln wie Foto-/Sprach-Übersicht (entryOptions); Korrektur: Trupp der Meldung gilt als bekannt
@@ -390,6 +412,7 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     alsoKnown: base?.melder,
     follow: !!base || clk.follow,
     lastReport,
+    ortsnamen: !onlineAllowed(ex, "ortssuche") ? "aus" : online ? "an" : "kein-netz",
   })) : null;
 
   const pickOnMap = async () => {
@@ -441,6 +464,13 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     }, at);
     const lage = isLageDraft(d) && !d.hebtAuf;
     if (lage && manualPos && !sd) { ev.cells = manualCell ? [manualCell] : undefined; ev.nai = undefined; }
+    // (MVP 3.5, S16/C12) unbekannter Trupp: das zweite Enter trägt **ohne** Trupp ein – nie still angelegt (nur der Knopf)
+    const neu = d.truppNeu ?? state?.reasons.find((x) => x.code === "trupp-neu")?.token;
+    if (neu) {
+      const gleich = (u?: string) => !!u && u.toLowerCase() === neu.toLowerCase() && !ex.units.blau.some((b) => b.toLowerCase() === u.toLowerCase());
+      if (gleich(ev.melder)) delete ev.melder;
+      if (gleich(ev.unit)) ev.unit = "";
+    }
     kiTaken.current = false;
     update((x) => addEvents(x, [ev], { place: found && foundPos ? found : undefined, attachments: pendingAtt ? [pendingAtt] : undefined }));
     setPendingAtt(null);
@@ -555,11 +585,15 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     offerUndo("Meldung verworfen", () => { setTextState(old); fitInput(); inputRef.current?.focus(); });
   };
 
-  /** ↑ im leeren Feld: letzte selbst eingetragene Meldung korrigieren */
+  /**
+   * ↑ im leeren Feld: zuletzt **eingetragene** eigene Meldung korrigieren (MVP 3.5, E5: grösstes `createdAt`, nicht
+   * `updatedAt` – eine Korrektur macht eine ältere Meldung nicht zur «letzten»)
+   */
   const correctLast = (): boolean => {
     const live = events.filter((x) => !x.deleted);
     const own = live.filter((x) => x.device === device);
-    const last = (own.length ? own : live).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    const erfasst = (x: LageEvent) => x.createdAt ?? x.updatedAt;
+    const last = [...(own.length ? own : live)].sort((a, b) => erfasst(b).localeCompare(erfasst(a)))[0];
     if (!last) return false;
     startKorr(last.id);
     return true;
@@ -571,6 +605,61 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     resetExtras();
     fitInput();
     inputRef.current?.focus();
+  };
+
+  /**
+   * (MVP 3.5, C1/E5) Vorschlag übernehmen: die Textstelle `token` im Feld durch `wort` ersetzen – über die Eingabe des
+   * Browsers (Rückgängig mit Ctrl+Z im Feld bleibt möglich); ohne Feld/Fundstelle über den Text.
+   */
+  const takeErsatz = (token: string, wort: string) => {
+    const el = inputRef.current;
+    const cur = el?.value ?? text;
+    const i = cur.toLowerCase().indexOf(token.toLowerCase());
+    if (el && i >= 0) {
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(i, i + token.length);
+      let ok = false;
+      try { ok = document.execCommand("insertText", false, wort); } catch { ok = false; }
+      if (ok && el.value !== cur) { const end = el.value.length; el.setSelectionRange(end, end); fitInput(); return; }
+    }
+    const next = i >= 0 ? cur.slice(0, i) + wort + cur.slice(i + token.length) : cur;
+    if (next === cur) return;
+    setText(next);
+    fitInput();
+    requestAnimationFrame(() => { const t = inputRef.current; if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(next.length, next.length); } });
+  };
+
+  /**
+   * (MVP 3.5, C6/E5) «Als zwei Einträge»: beide Teile (`draft.teile`, je mit Melder vorne) sofort eintragen – gleiche Zeit
+   * wie der ganze Satz, fortlaufende Nummern, Originaltext in `source.ref`; eine Rückgängig-Leiste nimmt beide zurück.
+   */
+  const commitTeile = () => {
+    const teile = draft?.teile;
+    if (!teile || korr.current) return;
+    markEnter();
+    const at = new Date();
+    const clkAt = clockDay(ex.days, at);
+    const ctxAt = { ...ctx, now: at, day: clkAt.day, dayFromClock: clkAt.follow };
+    const full = parseMeldung(srcText, ctxAt);
+    const evs: LageEvent[] = [];
+    let work: Exercise = ex;
+    for (const teil of teile) {
+      const d0 = parseMeldung(teil, { ...ctxAt, events: work.events ?? [], ex: work });
+      const d1: Draft = { ...d0, minutes: full.minutes, day: full.day, t: full.t, ...(full.tOffset ? { tOffset: full.tOffset } : {}) };
+      const ev = buildEvent(d1, device, work, {
+        nr: p.onNr ? p.onNr() : takeNr(work), kuerzel: p.schicht?.kuerzel ?? null, source: { kind: "text", ref: srcText },
+      }, at);
+      evs.push(ev);
+      work = addEvents({ ...work, units: { ...work.units, blau: [...work.units.blau], rot: [...work.units.rot] }, events: [...(work.events ?? [])], days: [...work.days] }, [ev]);
+    }
+    const ids = new Set(evs.map((e) => e.id));
+    update((x) => addEvents(x, evs));
+    setTextState("");
+    resetExtras();
+    onCommitted(evs.map((e) => e.id));
+    fitInput();
+    if (wideScreen()) inputRef.current?.focus();
+    offerUndo("Als zwei Einträge eingetragen", () => update((x) => ({ ...x, events: (x.events ?? []).filter((e) => !ids.has(e.id)) })));
   };
 
   // ---------- Foto, Sprache
@@ -596,6 +685,8 @@ export function useEntryDraft(p: EntryBoxProps & { onCorrecting?: (id: string | 
     shapeDraft, setShapeDraft, pendingAtt, setPendingAtt, removePending,
     chooseTrupp, addUnit, submit, escape, correctLast, startKorr, endKorr, takeKi,
     voice, commitBatch, day, online, notice: notice?.t ?? null, tell,
+    restored, discardRestored: () => { setRestored(null); setText(""); fitInput(); inputRef.current?.focus(); },
+    now, abschlussAus, setAbschlussAus, bezugWahl, setBezugWahl, takeErsatz, commitTeile,
   };
 }
 

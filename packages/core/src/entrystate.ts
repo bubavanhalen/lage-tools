@@ -19,6 +19,7 @@
 import type { Draft, DraftProblem } from "./journal";
 import { sameUnitName } from "./erkennung";
 import { ART_LABEL } from "./arten";
+import { zeitMs } from "./clock";
 import { catalogEntry } from "./catalog";
 import type { Area } from "./model";
 import type { RasterSheet } from "./raster";
@@ -207,7 +208,10 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
   // unsicheres Wort: immer zuerst und immer gelb (nie grün ein Zeichen, nie eine Trupp-Verschiebung)
   if (d.unscharf) check.push(unscharfReason(d, note, lift));
   if (note && d.notizGrund) check.push(notizGrundReason(d));
-  else if (note && !d.unscharf && (d.kindHint === "notiz" || d.artStark === false)) {
+  else if (note && !d.unscharf && art === "auftrag" && d.an && d.artStark === false) {
+    // (MVP 3.5, Kap. 4) schwacher Auftrag von oben («Kdt: H05 sofort Stellungswechsel nach AR12»): der Trupp bleibt
+    check.push({ code: "art-schwach", text: `Auftrag an ${d.an}?`, hint: "Ist es eine Lage: Feind, Eigene oder Unklar wählen.", ask: `Nochmals Enter trägt als Auftrag ein (${d.an} bleibt, wo er ist).` });
+  } else if (note && !d.unscharf && (d.kindHint === "notiz" || d.artStark === false)) {
     // schwacher Hinweis («… ?», «befohlen»): einmal fragen (Code `art-schwach`; MVP 1 hiess er `notiz`)
     const w = ART_LABEL[art === "meldung" ? "notiz" : art];
     check.push({ code: "art-schwach", text: `Als ${w} ohne Zeichen?`, hint: `Nochmals Enter trägt als ${w} ein. Ist es eine Lage: Feind, Eigene oder Unklar wählen.`, ask: `Als ${w} ohne Zeichen eintragen? Nochmals Enter.` });
@@ -215,38 +219,69 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
   if (note) {
     if (art === "auftrag" && !d.an) check.push({ code: "an", text: "An wen? Trupp nennen, z. B. «Auftrag an H01».", hint: "Trupp im Text nennen oder so eintragen.", ask: "Ohne Empfänger eintragen? Nochmals Enter." });
     if (art === "vbk" && !d.melder.trim()) check.push({ code: "melder", text: "Mit welchem Trupp? Trupp oben antippen.", hint: "Trupp oben antippen oder an den Anfang schreiben.", ask: "Ohne Trupp eintragen? Nochmals Enter." });
-  } else if (!d.melder.trim() && !(d.bezug && d.bezugArt === "antwort")) {
+  } else if (!d.melder.trim() && !d.truppNeu && !(d.bezug && d.bezugArt === "antwort")) {
     check.push({ code: "melder", text: "Wer meldet? fehlt", hint: "Trupp oben antippen oder an den Anfang schreiben.", ask: "Ohne Trupp eintragen? Nochmals Enter." });
   }
   if (note && d.sichtung) {
     check.push({ code: "sichtung", text: "Sichtung in der Antwort – als Meldung eintragen?", hint: "Ja: bei «Was ist es?» Feind, Eigene oder Unklar wählen. Nochmals Enter trägt die Antwort ohne Zeichen ein.", ask: "Als Antwort ohne Zeichen eintragen? Nochmals Enter." });
+  }
+  // (MVP 3.5, D2 – Paket D) mehrere mögliche Bezüge: gelb mit je einem Knopf («64a …», «Nr 66 …», «keiner»)
+  if (d.wahl && d.bezugKandidaten?.length) {
+    const auftrag = d.wahl.grund === "auftrag-wahl";
+    check.push({
+      code: d.wahl.grund, text: d.wahl.text, choices: d.wahl.choices,
+      hint: auftrag ? "Den erledigten Auftrag antippen – oder «keiner»." : "Die gemeinte Nummer antippen.",
+      ask: auftrag ? "Ohne Abschluss eintragen? Nochmals Enter." : "Ohne Bezug eintragen? Nochmals Enter.",
+    });
   }
   if (d.bezugFehlt && d.bezugNr) {
     check.push({ code: "bezug", token: d.bezugNr, text: `Nr ${d.bezugNr} gibt es nicht – ohne Bezug eintragen?`, hint: "Nummer prüfen (steht unter der Zeit in der Liste).", ask: "Ohne Bezug eintragen? Nochmals Enter." });
   }
   // Aufheben zeichnet nie neu (Entscheid): mehrere Ziele → rot, bis eines gewählt ist; keines bei gewählter Einordnung → rot
   if (!note && !lift && d.hebtAufKandidaten) stop.push(aufhebReason(d));
-  // unbekannter Trupp, obwohl Trupps vorbereitet sind (nicht bei «H13» – das sperrt schon als Problem)
-  const m = d.melder.trim();
-  if (m && o.unitsPrepared && o.knownUnits && !o.knownUnits.some((u) => sameUnitName(u, m)) && !(d.problems ?? []).some((p) => p.kind === "melder")) {
-    check.push({ code: "trupp-neu", token: m, suggest: m, text: `${m} ist kein Trupp dieser Übung – neu anlegen?`, hint: "Trupp im Text korrigieren oder neu anlegen.", ask: `${m} als neuen Trupp anlegen? Nochmals Enter.` });
+  // (MVP 3.5, C12) unbekannter Trupp – immer gelb, auch ohne vorbereitete Trupps (`Draft.truppNeu`, Melder leer); das zweite
+  // Enter trägt ohne Trupp ein, nur der Knopf legt ihn an (nicht bei «H13» – das sperrt schon als Problem)
+  const m = d.truppNeu ?? (o.unitsPrepared && o.knownUnits ? d.melder.trim() : "");
+  if (m && (d.truppNeu || !o.knownUnits!.some((u) => sameUnitName(u, m))) && !(d.problems ?? []).some((p) => p.kind === "melder")) {
+    check.push({ code: "trupp-neu", token: m, suggest: m, text: `${m} ist kein Trupp dieser Übung.`, hint: `Trupp im Text korrigieren oder «${m} als Trupp aufnehmen».`, ask: "Nochmals Enter trägt ohne Trupp ein." });
   }
   if (d.unknownWord && !note && !lift) {
+    // (MVP 3.5, C1) Vorschlag = Ersatzwort («Personen»), Knopf «‹Wort› übernehmen» (E)
     const u = d.unknownWord;
+    const wort = u.suggestLabel;
     check.push({
-      code: "was", token: u.token, ...(u.suggest ? { suggest: u.suggest } : {}),
-      text: `Was gesehen? «${u.token}» nicht erkannt${u.suggestLabel ? ` – meinst du «${u.suggestLabel}»?` : ""}`,
-      hint: u.suggestLabel ? `Wort korrigieren (z. B. «${u.suggestLabel}») oder so eintragen (Art unklar).` : "Wort korrigieren oder so eintragen (Art unklar).",
-      ask: "So eintragen (Art unklar)? Nochmals Enter.",
+      code: "was", token: u.token, ...(wort ? { suggest: wort } : {}),
+      text: wort ? `Was gesehen? «${u.token}» – meinst du «${wort}»?` : `Was gesehen? «${u.token}» nicht erkannt`,
+      hint: wort ? `Wort korrigieren (z. B. «${wort}») oder so eintragen (Art unklar).` : "Wort korrigieren oder so eintragen (Art unklar).",
+      ask: `Nochmals Enter trägt «${u.count !== undefined ? `${u.count} ` : ""}?» als Unklar ein.`,
+    });
+  }
+  // (MVP 3.5, C5) eigener Trupp ohne Standortverb an einen Ort: «H01 selbst nach AC5?»
+  if (d.seiteFrage && !note && !lift) {
+    const { trupp, ort } = d.seiteFrage;
+    check.push({ code: "seite", token: ort, text: `${trupp} selbst nach ${ort}?`, hint: "Ist es der Feind: Feind wählen.", ask: `Nochmals Enter: ${trupp} nach ${ort}. Ist es der Feind: Feind wählen.` });
+  }
+  // (MVP 3.5, C6) zwei Orte: Bewegung des Trupps und Sichtung – Knopf «Als zwei Einträge» (E, `Draft.teile`)
+  if (d.zweiOrte && !note && !lift) {
+    const z = d.zweiOrte;
+    check.push({
+      code: "zwei-orte", text: `Zwei Orte – ${z.seite} in ${z.sicht}, ${z.trupp} nach ${z.ziel}?`, hint: "«Als zwei Einträge» trägt beide ein.",
+      ask: `Nochmals Enter: nur ${z.seite === "Feind" ? "den Feind" : "die Sichtung"} in ${z.sicht} eintragen (${z.trupp} bleibt${z.bleibt ? ` in ${z.bleibt}` : ", wo er ist"}).`,
     });
   }
 
   const hasPlace = o.manualPos || !!o.hasPos || !!d.pos;
   const ortAsk = "Ohne Ort eintragen? Nochmals Enter.";
-  if (note || lift) {
-    // Nicht-Meldung bzw. Aufhebung: ohne Ort
+  if (note || lift || d.ohneZeichen) {
+    // Nicht-Meldung bzw. Aufhebung: ohne Ort; (MVP 3.5, C7/C11) eigene Verwundete, Begehren: Trupp bleibt, Ort nicht nötig
   } else if (!hasPlace && !pqOhneRaster && !stop.some((r) => r.problem === "ort" || r.problem === "orte")) {
-    if (d.placeQuery && o.placePending) {
+    if (d.placeQuery && !o.placePending && o.ortsnamen === "aus") {
+      // (MVP 3.5, K2) Online-Dienst «Ortsnamen» dieser Übung ist aus: nichts geht ans Netz
+      check.push({ code: "ort-online-aus", text: `Ort «${d.placeQuery}» – Ortsnamen sind aus (nichts geht ans Netz).`, token: d.placeQuery, hint: "Planquadrat dazuschreiben oder Ort auf Karte setzen.", ask: "Nochmals Enter: ohne Ort eintragen." });
+    } else if (d.ortUnbekannt && !d.placeQuery) {
+      // (MVP 3.5, C13) genannter Ort ohne Treffer: kein Ersatzort
+      check.push({ code: "ort", text: `Ort «${d.ortUnbekannt}» unbekannt`, token: d.ortUnbekannt, hint: "Planquadrat oder NAI dazuschreiben oder Ort auf Karte setzen.", ask: ortAsk });
+    } else if (d.placeQuery && o.placePending) {
       check.push({ code: "ort-suche", text: `Ort «${d.placeQuery}» wird gesucht …`, token: d.placeQuery, hint: "Kurz warten, Planquadrat angeben oder Ort auf Karte setzen.", ask: ortAsk });
     } else if (d.placeQuery && !o.online) {
       check.push({ code: "ort-offline", text: "Ortsnamen gehen nur mit Netz.", token: d.placeQuery, hint: "Planquadrat angeben oder Ort auf Karte setzen.", ask: ortAsk });
@@ -255,13 +290,18 @@ export function entryState(d: Draft, o: EntryStateOptions): EntryState {
     } else {
       check.push({ code: "ort", text: "Ort fehlt", hint: "Planquadrat oder NAI dazuschreiben oder Ort auf Karte setzen.", ask: ortAsk });
     }
-  } else if (!o.manualPos && !o.hasPos && d.where?.kind === "melder") {
+  } else if (!o.manualPos && !o.hasPos && d.where?.kind === "melder" && !d.amTrupp) {
     check.push({ code: "ort-bei-trupp", text: `Ort nur «${d.where.label}» angenommen`, hint: "Genauen Ort nennen oder Ort auf Karte setzen.", ask: "So eintragen? Nochmals Enter." });
   }
 
   // Zeit in der Zukunft: ohne Tagesangabe «geht nicht» (verschöbe sonst LIVE und das ganze Lagebild), mit Tag nur prüfen.
   // Nur wenn die Meldung zur laufenden Übung gehört (Tag höchstens 1 Tag von der Uhr) – nicht in einer Übung in der Zukunft.
-  const dt = Date.parse(d.t) - o.now.getTime();
+  // (MVP 3.5, S23) Zeitpunkt mit Offset (doppelte Stunde richtig)
+  if (d.zeitFehlt) {
+    const z = d.zeitFehlt;
+    stop.push({ code: "zeit-fehlt", ...(d.timeToken ? { token: d.timeToken } : {}), suggest: z.vorschlag, text: `${z.zeit} gibt es heute nicht (Uhr um ${z.von} auf ${z.bis} vorgestellt).`, hint: `Zeit korrigieren, z. B. ${z.vorschlag}.` });
+  }
+  const dt = d.zeitFehlt ? 0 : zeitMs({ t: d.t, tOffset: d.tOffset }, o.zone) - o.now.getTime();
   if (dt > FUTURE_MS && Math.abs(dayDiff(d.day, localDayOf(o.now))) <= 1) {
     const g = d.dayFromText ? undefined : futureGuess(d.minutes, o.now);
     const ti = o.days?.indexOf(d.day) ?? -1;
@@ -349,6 +389,15 @@ function notizGrundReason(d: Draft): EntryReason {
   const ask = "Als Notiz ohne Zeichen eintragen? Nochmals Enter.";
   if (d.notizGrund === "kein-ziel") {
     return { code: "aufheben", text: "Kein Ziel gefunden – als Notiz eintragen?", hint: "Ort prüfen oder an der gemeinten Zeile «Mehr …» → «Aufgehoben (jetzt)». Nochmals Enter trägt als Notiz ein.", ask };
+  }
+  if (d.notizGrund === "kein-zeichen") {
+    // (MVP 3.5, C3) Verneinung/Abgang: «Kein neues Zeichen? «Feind hat AD7 verlassen».»
+    const m = d.melder.trim();
+    let satz = d.text.trim();
+    if (m) satz = satz.replace(new RegExp(`^${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[:,]?\\s*`, "i"), "");
+    satz = satz.replace(/\s+(?:rtg|richtung)\.?\s+\S+\s*$/i, "").replace(/[.!\s]+$/, "");
+    if (satz.length > 48) satz = `${satz.slice(0, 46).trimEnd()} …`;
+    return { code: "kein-zeichen", text: `Kein neues Zeichen? «${satz}».`, hint: "Ist es eine Sichtung: Feind oder Unklar wählen.", ask: "Nochmals Enter trägt als Notiz ein. Ist es eine Sichtung: Feind oder Unklar wählen." };
   }
   return { code: "aufheben", text: "Kein Zeichen? – als Notiz eintragen?", hint: "Nochmals Enter trägt als Notiz ein. Ist es eine Lage: Feind, Eigene oder Unklar wählen.", ask };
 }

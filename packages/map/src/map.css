@@ -5,7 +5,8 @@
 /* ---------- Grundkarte «Grau» (MVP 1, Spez. 5.4): farbige Landeskarte mit Filter – offline aus demselben Kachel-Cache ---------- */
 .leaflet-container.lt-base-grau { background: #fff; }
 /* Deckkraft .7 setzt swissmap.ts als Leaflet-Option (inline) – eine CSS-Deckkraft überschriebe Leaflet mit 1 */
-.lt-tiles-grau { filter: grayscale(1) contrast(.95) brightness(1.05); }
+/* MVP 3.5 (K3, V4): ruhigere Tageskarte – Häuser und Ortsnamen treten hinter die Zeichen zurück (= TAGESKARTE_FILTER) */
+.lt-tiles-grau { filter: grayscale(1) contrast(.62) brightness(1.22); }
 /* Nacht: dunkel und farblos auf Schwarz (ersetzt den allgemeinen Nachtfilter der Kachelebene); volle Deckkraft,
    sonst würde die Karte auf Schwarz zusätzlich abgedunkelt (inline .7 → hier mit !important übersteuert) */
 .night .leaflet-container.lt-base-grau { background: #000; }
@@ -46,10 +47,19 @@
   text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 3px #fff;
   pointer-events: none;
 }
-/* NAI / Stao: beginnt am Schwerpunkt-x, 20 px über der obersten Ecke */
-.lt-area-lbl.top span { transform: translate(0, -6px); }
+/* NAI / Stao / Räume (MVP 3.5, B5): in der Fläche am Pol der Unerreichbarkeit, Schild mit hellem Grund; die Lage-Ebene
+   verschiebt es bei Kollision (translate) oder blendet es aus (.lt-lbl-aus) */
+.lt-area-lbl.pol span {
+  transform: translate(-50%, 50%);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .86);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .6);
+  text-shadow: none;
+}
+.lt-area-lbl span.lt-lbl-aus { visibility: hidden; }
 /* AO: an der westlichsten Ecke, innen (links daneben stünde sie auf der Randbeschriftung des Rasters) */
-.lt-area-lbl.ao span { font-size: 13px; transform: translate(8px, calc(100% + 5px)); }
+.lt-area-lbl.ao span { font-size: 12px; transform: translate(8px, calc(100% + 5px)); }
 
 /* ---------- Taktische Zeichen ---------- */
 .lt-sym { background: none; border: 0; }
@@ -65,3 +75,41 @@
 /* Nacht: Raster hell auf dunkler Karte */
 .night path.lt-grid { stroke: #fff; stroke-opacity: .45; }
 .night path.lt-grid-casing { stroke: #000; }
+
+/* ---------- Raster-Lineal am Bildschirmrand (MVP 3.5, B3; lineal.ts) ---------- */
+.leaflet-lt-lineal-pane { position: absolute; inset: 0; z-index: 640; pointer-events: none; overflow: hidden; }
+.lt-lineal-band {
+  position: absolute;
+  background: color-mix(in srgb, var(--surface, #F9FAF7) 92%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line, #7F8882) 70%, transparent);
+}
+.lt-lineal-band.oben { top: 0; }
+.lt-lineal-band.links { left: 0; }
+.lt-lineal-t {
+  position: absolute;
+  font: 600 12px/1 var(--f-mono, "IBM Plex Mono", ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink, #1B2320);
+  white-space: nowrap;
+}
+.lt-lineal-t.oben { top: 0; transform: translateX(-50%); }
+.lt-lineal-t.links { left: 0; text-align: center; transform: translateY(-50%); }
+.present .lt-lineal-t { font-size: 16px; }
+/* Nacht: dunkles Band */
+.night .lt-lineal-band { background: color-mix(in srgb, var(--karte-ink, #1B2320) 92%, transparent); box-shadow: 0 0 0 1px rgba(255, 255, 255, .25); }
+.night .lt-lineal-t { color: var(--karte-halo, #fff); }
+/* Kartensteuerung rückt neben das Band (Zoom ±, Massstab, Quellenangabe) */
+.leaflet-container .leaflet-top { top: var(--lt-lineal-oben, 0px); }
+.leaflet-container .leaflet-left { left: var(--lt-lineal-links, 0px); }
+
+/* ---------- Massstab unten links (MVP 3.5, B3; massstab.ts) ---------- */
+.leaflet-control-scale.lt-massstab { margin-bottom: 6px; }
+.lt-massstab .leaflet-control-scale-line {
+  font: 600 12px/1.3 var(--f-mono, "IBM Plex Mono", ui-monospace, monospace);
+  color: var(--ink, #1B2320);
+  background: color-mix(in srgb, var(--surface, #F9FAF7) 85%, transparent);
+  border: 2px solid var(--ink, #1B2320);
+  border-top: 0;
+  padding: 1px 5px 0;
+}
+.night .lt-massstab .leaflet-control-scale-line { color: var(--karte-halo, #fff); background: color-mix(in srgb, var(--karte-ink, #1B2320) 85%, transparent); border-color: var(--karte-halo, #fff); }

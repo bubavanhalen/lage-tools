@@ -2,7 +2,7 @@
  * Aufgehobene Sperren, Checkpoints, Flächen und Linien (Spez. MVP 3, Kap. 3.5) für Karte, Legende und Lagekarte –
  * ohne Leaflet (auch in Tests und im Druck).
  */
-import { liftMap, type LageEvent } from "@lage/core";
+import { liftMap, zeitBis, type LageEvent } from "@lage/core";
 
 const OHNE = new WeakMap<LageEvent[], { lifts: Map<string, { t: string; by: string }>; byT: Map<string, LageEvent[]> }>();
 /**
@@ -17,8 +17,8 @@ export function ohneAufgehobene(events: LageEvent[], t: string): LageEvent[] {
   let out = m.byT.get(t);
   if (out) return out;
   const lifts = m.lifts;
-  out = events.some((e) => { const l = lifts.get(e.id); return !!l && l.t <= t; })
-    ? events.filter((e) => { const l = lifts.get(e.id); return !l || l.t > t; })
+  out = events.some((e) => { const l = lifts.get(e.id); return !!l && zeitBis(l.t, t); })
+    ? events.filter((e) => { const l = lifts.get(e.id); return !l || !zeitBis(l.t, t); })
     : events;
   if (m.byT.size > 20) m.byT.clear();
   m.byT.set(t, out);

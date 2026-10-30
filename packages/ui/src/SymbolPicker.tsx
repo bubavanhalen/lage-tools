@@ -155,9 +155,12 @@ export function SymbolPicker(p: SymbolPickerProps) {
     if (!flat.some((f) => f.id === active)) setActive(flat.find((f) => f.e.key === p.value.key)?.id ?? flat[0]!.id);
   }, [flat]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Popover: Fokus ins Suchfeld, schliessen bei Klick daneben / Esc
+  // Popover: Fokus ins Suchfeld (MVP 3.5, E5: nicht auf Touch – sonst geht die Bildschirmtastatur auf und verdeckt die
+  // Zeichen; dort bekommt die Auswahl selbst den Fokus, Esc schliesst weiter), schliessen bei Klick daneben / Esc
   useEffect(() => {
-    if (anchor === "popover") input.current?.focus({ preventScroll: true });
+    if (anchor !== "popover") return;
+    if (window.matchMedia?.("(pointer: coarse)").matches) root.current?.focus({ preventScroll: true });
+    else input.current?.focus({ preventScroll: true });
   }, [anchor]);
   useEffect(() => {
     if (anchor !== "popover" || !p.onClose) return;
@@ -237,7 +240,7 @@ export function SymbolPicker(p: SymbolPickerProps) {
     : null;
 
   return (
-    <div ref={root} lang="de" className={`sp sp-${anchor}${p.compact ? " sp-compact" : ""}`} role="dialog" aria-label="Taktisches Zeichen wählen" onKeyDown={onKey}>
+    <div ref={root} lang="de" className={`sp sp-${anchor}${p.compact ? " sp-compact" : ""}`} role="dialog" aria-label="Taktisches Zeichen wählen" tabIndex={-1} onKeyDown={onKey}>
       <div className="sp-head">
         <label className="sp-search">
           <IconSearch />

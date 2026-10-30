@@ -61,7 +61,7 @@ export function JournalUndoBar() {
   const more = l.length - 1;
   return (
     <div className="undobar wsundo jundo" role="status">
-      <span>{cur.label}{more > 0 ? <span className="undomore"> · {more} {more === 1 ? "weiterer Schritt" : "weitere Schritte"}</span> : null}</span>
+      <span>{cur.label}{more > 0 ? <span className="undomore"> · davor {more} {more === 1 ? "weitere Änderung" : "weitere Änderungen"} rückgängig machbar</span> : null}</span>
       <button type="button" onClick={() => runUndo()}>Rückgängig</button>
     </div>
   );

@@ -44,50 +44,82 @@ export function estimateTiles(b: Bounds, finest: number, layer: TileLayer = "lk"
   return { count, mb: (count * AVG_KB[layer]) / 1024 };
 }
 
-export async function downloadTiles(b: Bounds, finest: number, layer: TileLayer, onProgress: (done: number, total: number) => void, signal?: AbortSignal): Promise<{ saved: number; failed: number }> {
-  try { await navigator.storage?.persist?.(); } catch { /* egal */ }
-  const cache = await caches.open(TILE_CACHE);
+/** alle Kachel-URLs des Gebiets von der Übersicht bis `finest` (m/px) */
+export function tileUrls(b: Bounds, finest: number, layer: TileLayer = "lk"): string[] {
   const urls: string[] = [];
   for (const z of levels(finest)) {
     const r = tileRange(b, z);
-    for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) urls.push(`https://wmts.geo.admin.ch/1.0.0/${WMTS_LAYER[layer]}/default/current/2056/${z}/${x}/${y}.jpeg`);
+    for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) urls.push(tileUrl(layer, z, x, y));
   }
-  let done = 0, saved = 0, failed = 0;
+  return urls;
+}
+
+/**
+ * Kartenteile, die swisstopo beim Vorladen mit 4xx nicht liefert (gibt es dort nicht, z. B. ausserhalb der Landeskarte):
+ * eigener Zwischenspeicher mit leerer Antwort und Kopf `x-lt-fehlt: 1` (Spez. MVP 3.5, S8/A5). Sie zählen als vorhanden –
+ * sonst würde die Ampel «Karte» nie grün.
+ */
+export const TILES_FEHLEN = "lt-tiles-fehlen";
+
+/** eine Makrotask abwarten (zwischen Bündeln: kein Long Task > 50 ms, Eingaben bleiben flüssig) */
+const pause = () => new Promise<void>((ok) => setTimeout(ok, 0));
+
+export async function downloadTiles(b: Bounds, finest: number, layer: TileLayer, onProgress: (done: number, total: number) => void, signal?: AbortSignal): Promise<{ saved: number; failed: number; fehlen: number }> {
+  const cache = await caches.open(TILE_CACHE);
+  const fehltCache = await caches.open(TILES_FEHLEN).catch(() => null);
+  const urls = tileUrls(b, finest, layer);
+  let done = 0, saved = 0, failed = 0, fehlen = 0;
   const queue = [...urls];
   await Promise.all(Array.from({ length: 6 }, async () => {
     while (queue.length && !signal?.aborted) {
       const u = queue.shift()!;
       try {
-        if (!(await cache.match(u))) {
+        if (!(await cache.match(u)) && !(await fehltCache?.match(u))) {
           const r = await fetch(u, { mode: "cors", signal });
-          if (r.ok) { await cache.put(u, r); saved++; } else failed++;
+          if (r.ok) { await cache.put(u, r); saved++; }
+          else if (r.status >= 400 && r.status < 500) {
+            // gibt es bei swisstopo nicht: merken, zählt als erledigt (S8)
+            await fehltCache?.put(u, new Response("", { status: 200, headers: { "x-lt-fehlt": "1" } }));
+            fehlen++;
+          } else failed++;
         }
-      } catch { failed++; }
+      } catch { if (!signal?.aborted) failed++; }
       onProgress(++done, urls.length);
     }
   }));
-  return { saved, failed };
+  return { saved, failed, fehlen };
 }
 
 /**
- * Ist das Gebiet offline vorhanden (Landeskarte bis Übersicht 5 m)? Nur Cache-Abfragen, keine Netzanfragen.
- * Bei sehr vielen Kacheln wird gleichmässig eine Stichprobe (`maxCheck`) geprüft. Für den Offline-Status (Kap. 3.1).
+ * Ist das Gebiet offline vorhanden (Landeskarte bis Übersicht 5 m)? **Vollständige** Prüfung aller Kacheln (Spez. MVP 3.5,
+ * S8/A5 – keine Stichprobe mehr): Bündel à 64 `cache.match`, zwischen den Bündeln eine Makrotask Pause (kein Long Task).
+ * Kacheln in `lt-tiles-fehlen` (4xx beim Vorladen) zählen als vorhanden. Nur Cache-Abfragen, keine Netzanfragen.
+ * Messpunkte `lt:offline-pruefung:start|ende`. Ohne Cache-API (unsicherer Ursprung): nichts vorhanden.
  */
-export async function areaTilesCached(b: Bounds, finest = 5, maxCheck = 160): Promise<boolean> {
+export async function areaTileCoverage(b: Bounds, finest = 5): Promise<{ share: number; total: number; cached: number }> {
+  const urls = tileUrls(b, finest, "lk");
+  const total = urls.length;
+  if (!total) return { share: 1, total: 0, cached: 0 };
+  const mark = (n: string) => { try { performance.mark(n); } catch { /* egal */ } };
+  mark("lt:offline-pruefung:start");
   try {
-    if (typeof caches === "undefined") return false;
+    if (typeof caches === "undefined") return { share: 0, total, cached: 0 };
     const cache = await caches.open(TILE_CACHE);
-    const urls: string[] = [];
-    for (const z of levels(finest)) {
-      const r = tileRange(b, z);
-      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) urls.push(`https://wmts.geo.admin.ch/1.0.0/${WMTS_LAYER.lk}/default/current/2056/${z}/${x}/${y}.jpeg`);
+    const fehlt = (await caches.has(TILES_FEHLEN).catch(() => false)) ? await caches.open(TILES_FEHLEN) : null;
+    let cached = 0;
+    for (let i = 0; i < total; i += 64) {
+      if (i) await pause();
+      const part = urls.slice(i, i + 64);
+      const hits = await Promise.all(part.map((u) => cache.match(u)));
+      const miss = part.filter((_, k) => !hits[k]);
+      cached += part.length - miss.length;
+      if (fehlt && miss.length) cached += (await Promise.all(miss.map((u) => fehlt.match(u)))).filter(Boolean).length;
     }
-    if (!urls.length) return true;
-    const step = Math.max(1, Math.ceil(urls.length / maxCheck));
-    for (let i = 0; i < urls.length; i += step) if (!(await cache.match(urls[i]!))) return false;
-    return !!(await cache.match(urls[urls.length - 1]!));
+    return { share: cached / total, total, cached };
   } catch {
-    return false;
+    return { share: 0, total, cached: 0 };
+  } finally {
+    mark("lt:offline-pruefung:ende");
   }
 }
 
@@ -124,7 +156,7 @@ export async function tileCacheCount(): Promise<number> {
 }
 
 export async function clearTileCache(): Promise<void> {
-  try { await caches.delete(TILE_CACHE); } catch { /* egal */ }
+  try { await caches.delete(TILE_CACHE); await caches.delete(TILES_FEHLEN); } catch { /* egal */ }
 }
 
 export async function storageEstimate(): Promise<{ usedMb: number; quotaMb: number } | null> {

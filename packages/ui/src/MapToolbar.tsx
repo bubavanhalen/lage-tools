@@ -6,6 +6,8 @@
  *   Anzeige zusätzlich Flächen und Linien, Bisherige Wege, Uhrzeit an Zeichen, Hinweise, Was Rot tun könnte, Fotos,
  *   «alles zeigen». Auf schmaler Karte (< 1180 px) wandern die Werkzeuge hinter «⋯».
  * Wahl pro Gerät gemerkt, getrennt für Basis und Experte (layers.ts); «Zeige letzte» nie (Paket C, `ZeitApi`).
+ * MVP 3.5 (K3, B1): «Zeichengrösse S | M | L» (nur dieses Gerät, Standard M; `useZeichenGroesse`, map/symbolSize.ts) –
+ * eine Gruppe (`data-zaehl="zeichengroesse"`), nur im Anzeige-Menü.
  * Messen: Klick setzt Punkte, Doppelklick/Enter beendet, Backspace = Rückgängig, Esc = Abbrechen.
  */
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -24,6 +26,7 @@ import {
 import type { Exercise } from "@lage/core";
 import { DEFAULT_FLAGS, isLocked, setLocked, subscribeLock, type LayerFlags } from "./layers";
 import { setOnlinePolicy } from "./onlinePolicy";
+import { useZeichenGroesse, type ZeichenStufe } from "./map/symbolSize";
 import type { ShowLast } from "./shell/contracts";
 import { IconCell, IconCheck, IconChevron, IconClose, IconFit, IconMore, IconQuad, IconRuler, IconUndo } from "./navicons";
 import "./navigation.css";
@@ -58,6 +61,12 @@ const BASEMAPS: Array<{ id: Basemap; label: string }> = [
   { id: "grau", label: "Grau" },
   { id: "lk", label: "Landeskarte" },
   { id: "img", label: "Luftbild" },
+];
+
+const STUFEN: Array<{ v: ZeichenStufe; title: string }> = [
+  { v: "S", title: "Zeichen klein" },
+  { v: "M", title: "Zeichen mittel (Standard)" },
+  { v: "L", title: "Zeichen gross" },
 ];
 
 const SHOW_LAST: Array<{ v: ShowLast; label: string }> = [
@@ -131,6 +140,7 @@ export function MapToolbar(p: MapToolbarProps) {
   const showBtn = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
   const width = useMapWidth(p.map);
+  const [stufe, setStufe] = useZeichenGroesse();
   // Strassennetz (roadsource) hat keine Übung: Einstellung hier spiegeln
   setOnlinePolicy(p.online);
   const locked = useSyncExternalStore(subscribeLock, isLocked);
@@ -234,6 +244,12 @@ export function MapToolbar(p: MapToolbarProps) {
               {x && hidden.length > 0 && (
                 <button type="button" className="az-link" onClick={() => p.onFlags({ ...DEFAULT_FLAGS, legende: p.flags.legende })}>alles zeigen</button>
               )}
+              <div className="az-h" id="az-zg">Zeichengrösse <span className="az-hint">(nur dieses Gerät)</span></div>
+              <div className="az-seg az-seg3" role="group" aria-labelledby="az-zg" data-zaehl="zeichengroesse">
+                {STUFEN.map((x) => (
+                  <button key={x.v} type="button" aria-pressed={stufe === x.v} title={x.title} onClick={() => setStufe(x.v)}>{x.v}</button>
+                ))}
+              </div>
               {p.onShowLast && (
                 <>
                   <div className="az-h">Zeige letzte</div>

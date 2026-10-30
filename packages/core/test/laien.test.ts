@@ -53,8 +53,8 @@ const ROWS: Array<[string, Exp]> = [
   ["H04: nichts los, alles ruhig", { kind: "eigen", melder: "H04", wo: "zuletzt" }],
   // MVP 3: Verbindungskontrolle ist keine Lage (kein Zeichen, kein Standort) – Art «vbk», siehe arten.test.ts
   ["H02 Verbindungskontrolle i.O.", { kind: "eigen", melder: "H02", unit: "", wo: null }],
-  // «bei der Brücke» ist der Ort, nicht das Zeichen
-  ["Det 1 gesichtet bei der Brücke", { kind: "feind", melder: "", unit: "Det 1", sym: "einheit", wo: "zuletzt" }],
+  // «bei der Brücke» ist der Ort, nicht das Zeichen; (MVP 3.5, C13) genannter, unbekannter Ort: kein letzter Standort als Ersatz
+  ["Det 1 gesichtet bei der Brücke", { kind: "feind", melder: "", unit: "Det 1", sym: "einheit", wo: null }],
   ["H04 zwei feindliche Soldaten zu Fuss Richtung Wald", { kind: "feind", melder: "H04", sym: "inf_trp", count: 2, wo: "melder" }],
   ["1 LKW AK 7", { kind: "feind", melder: "", sym: "lw", count: 1, wo: "raster", label: "AK7" }],
   ["zwei fz ak7", { kind: "feind", melder: "", sym: "fz", count: 2, wo: "raster", label: "AK7" }],
@@ -63,7 +63,8 @@ const ROWS: Array<[string, Exp]> = [
   ["Hotel 4 meldet zwei Fahrzeuge in Alpha Kilo 7", { kind: "feind", melder: "H04", sym: "fz", count: 2, wo: "raster", label: "AK7", q: null }],
   ["H04 2 Pw parkiert bei Kreuzung, Insassen steigen aus", { kind: "feind", melder: "H04", sym: "fz", count: 2, wo: "melder", q: null }],
   ["Sperre auf Strasse AG13 von H04", { kind: "feind", melder: "H04", sym: "sperre", wo: "raster", label: "AG13" }],
-  ["Verletzter bei H02, brauchen Sanität", { kind: "unklar", melder: "H02", sym: "verletzte", wo: "melder" }],
+  // (MVP 3.5, C7) eigene Verwundete mit Sanitätsbegehren: Eigene, kein Zeichen, Ort «bei H02»
+  ["Verletzter bei H02, brauchen Sanität", { kind: "eigen", melder: "H02", sym: "verletzte", wo: "melder" }],
   // Bedarf ist kein Munitionslager
   ["H05 Mun Nachschub benötigt", { kind: "eigen", melder: "H05", sym: "einheit", wo: "zuletzt" }],
   ["H01 hört Schüsse aus Süden", { kind: "feind", melder: "H01", sym: "kontakt", wo: "melder" }],
@@ -77,8 +78,8 @@ const ROWS: Array<[string, Exp]> = [
   ["Feind Patrouille 4 Mann AK7", { kind: "feind", melder: "", sym: "patrouille", count: 4, wo: "raster", label: "AK7" }],
   ["zivilist mit Hund AK7 verdächtig", { kind: "unklar", melder: "", sym: "zivil", wo: "raster", label: "AK7" }],
   ["H04 Position unverändert", { kind: "eigen", melder: "H04", wo: "zuletzt" }],
-  // Ziel, kein feindlicher Checkpoint
-  ["H04 erreicht Checkpoint 2", { kind: "eigen", melder: "H04", sym: "einheit", wo: "zuletzt" }],
+  // Ziel, kein feindlicher Checkpoint; (MVP 3.5, C13) unbekannter Ort: H04 bleibt, gelb «Ort «Checkpoint 2» unbekannt»
+  ["H04 erreicht Checkpoint 2", { kind: "eigen", melder: "H04", sym: "einheit", wo: null }],
   ["H02 wurde angegriffen, 1 Verwundeter", { kind: "feind", melder: "H02", sym: "kontakt", wo: "melder", desc: "1 Verwundeter" }],
   ["H04 2 Fz AK 7 C", { kind: "feind", melder: "H04", count: 2, wo: "raster", label: "AK7 C" }],
   ["H04 2 Fz Planquadrat AK7 Unterquadrant C", { kind: "feind", melder: "H04", count: 2, wo: "raster", label: "AK7 C" }],

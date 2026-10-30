@@ -5,7 +5,7 @@
 import type { jsPDF } from "jspdf";
 import { indicatorSummary, type Exercise } from "@lage/core";
 import { COA_KICKER, coaLine, indicatorGroups, indicatorLine } from "./red/redText";
-import { safePdf, winAnsi } from "./pdfSafe";
+import { glyphBreite, safePdf, textMitGlyph, winAnsi, type GlyphArt } from "./pdfSafe";
 import {
   COA_LABEL, countLabel, durLabel, expectedLabel, foundLabel, indSign, inWindowLabel, rowName, shownIndicators, STATE_LABEL, windowLabel,
   type LageRotState,
@@ -89,7 +89,9 @@ export function lageRotCsv(ex: Exercise, lage: LageRotState, t: string): string 
 }
 
 /**
- * Anhang «Lage Rot» (neue Seite A4 hoch); gibt die neue Seitenzahl zurück. `kompakt` (Journal-PDF, Spez. MVP 3,
+ * Anhang «Lage Rot» (neue Seite A4 hoch); gibt die neue Seitenzahl zurück. MVP 3.5 (Kap. 2.9): erste Spalte 38 mm,
+ * Zeilenhöhe aus `splitTextToSize` (keine Überlappung «Am wahrscheinlichsten»/«Anzeichen»), Aufzählungen als
+ * Vektorzeichen (✓ erfüllt, • offen/prüfen, ✗ dagegen), keine Füllflächen. `kompakt` (Journal-PDF, Spez. MVP 3,
  * Kap. 3.9): kleinere Schrift, je Möglichkeit nur zutreffende Indikatoren und höchstens zwei Prüfpunkte, **höchstens
  * eine Seite** – was nicht passt, fällt weg und die Seite sagt es («gekürzt»).
  */
@@ -114,12 +116,13 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
   };
   /** Platz für `h` mm? Sonst neue Seite (kompakt: nichts mehr, `false`) */
   const need = (h: number): boolean => { if (y + h > 285) header(); return !voll; };
+  /** Abschnitt: fett, Linie darunter (keine Füllfläche – Farbe trägt im Journal-PDF nur die Spalte «Art», Kap. 2.9) */
   const section = (s: string) => {
     if (!need(12)) return;
-    doc.setFillColor(29, 29, 29); doc.rect(M, y - 4, W - 2 * M, 6, "F");
-    doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
+    doc.setTextColor(0); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
     doc.text(s.toUpperCase(), M + 1.5, y);
-    doc.setTextColor(0); doc.setFont("helvetica", "normal");
+    doc.setDrawColor(0); doc.setLineWidth(0.35); doc.line(M, y + 1.3, W - M, y + 1.3);
+    doc.setFont("helvetica", "normal"); doc.setLineWidth(0.2);
     y += 6;
   };
   header();
@@ -127,32 +130,45 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
   doc.setFontSize(FS);
   if (!r.coas.length) { doc.text("Keine Vermutung möglich (mindestens zwei Anzeichen aus verschiedenen Meldungen nötig).", M + 1.5, y); y += 6; }
   const txt = pdfText;
+  /** erste Spalte 38 mm (Einordnung bzw. Schlüssel), Inhalt daneben; Zeilenhöhe aus `splitTextToSize` (keine Überlappung) */
+  const C1 = 38, XI = M + C1, WI = W - M - XI - 1.5;
+  type Punkt = { g?: GlyphArt; text: string };
   r.coas.forEach((c, k) => {
     const coa = lage.coas[k]!;
     const g = indicatorGroups(coa);
     const pro = k ? g.pro.slice(0, 4) : g.pro;
-    const body: Array<[string, string[]]> = [
-      ["Anzeichen", [indicatorSummary(coa), ...pro.map((i) => `+ ${indicatorLine(i)}`), ...(k ? [] : g.open.map((i) => `o ${indicatorLine(i)} (offen)`)), ...g.contra.map((i) => `x ${indicatorLine(i)} (spricht dagegen)`)].map(txt)],
-      ...(c.annaeherung ? [["Annäherung", [txt(c.annaeherung)]] as [string, string[]]] : []),
-      ...(c.pruefen.length ? [["Prüfen", (k ? c.pruefen.slice(0, 2) : c.pruefen).map((p) => `- ${txt(p)}`)] as [string, string[]]] : []),
+    const body: Array<[string, Punkt[]]> = [
+      ["Anzeichen", [{ text: indicatorSummary(coa) }, ...pro.map((i): Punkt => ({ g: "haken", text: indicatorLine(i) })),
+        ...(k ? [] : g.open.map((i): Punkt => ({ g: "punkt", text: `${indicatorLine(i)} (offen)` }))), ...g.contra.map((i): Punkt => ({ g: "kreuz", text: `${indicatorLine(i)} (spricht dagegen)` }))]],
+      ...(c.annaeherung ? [["Annäherung", [{ text: c.annaeherung }]] as [string, Punkt[]]] : []),
+      ...(c.pruefen.length ? [["Prüfen", (k ? c.pruefen.slice(0, 2) : c.pruefen).map((p): Punkt => ({ g: "punkt", text: p }))] as [string, Punkt[]]] : []),
     ];
-    const wrapped = body.map(([key, ls]) => [key, ls.flatMap((l) => doc.splitTextToSize(l, W - 2 * M - 34) as string[])] as const);
-    const titleLines = doc.splitTextToSize(txt(coaLine(coa)), W - 2 * M - 70) as string[];
-    const h = titleLines.length * 4.4 + wrapped.reduce((sum, [, ls]) => sum + ls.length * LH + 1, 0) + 4;
+    doc.setFontSize(FS);
+    const wrapped = body.map(([key, ps]) => [key, ps.map((p) => ({ g: p.g, lines: doc.splitTextToSize(txt(p.text), WI - (p.g ? glyphBreite(doc) : 0)) as string[] }))] as const);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+    const kicker = doc.splitTextToSize(COA_KICKER[coa.label], C1 - 3) as string[];
+    doc.setFontSize(TS);
+    const zr = c.zeitraumKurz ? (() => { doc.setFont("helvetica", "normal"); doc.setFontSize(FS); return doc.splitTextToSize(txt(c.zeitraumKurz), 34) as string[]; })() : [];
+    doc.setFont("helvetica", "bold"); doc.setFontSize(TS);
+    const titleLines = doc.splitTextToSize(txt(coaLine(coa)), WI - (zr.length ? 37 : 0)) as string[];
+    const kopfH = Math.max(titleLines.length * 4.4, kicker.length * 3.5, zr.length * LH);
+    const h = kopfH + wrapped.reduce((sum, [, ps]) => sum + ps.reduce((s2, p) => s2 + p.lines.length * LH, 0) + 1, 0) + 4;
     if (!need(h)) return;
-    const top = y - 3.6;
-    if (coa.label !== "weitere") { doc.setFillColor(253, 232, 235); doc.rect(M, top, W - 2 * M, titleLines.length * 4.4 + 1.6, "F"); }
     doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(150, 30, 35);
-    doc.text(doc.splitTextToSize(COA_KICKER[coa.label], 30) as string[], M + 1.5, y);
+    doc.text(kicker, M + 1.5, y);
     doc.setTextColor(0); doc.setFontSize(TS);
-    doc.text(titleLines, M + 34, y);
+    doc.text(titleLines, XI, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(FS);
-    if (c.zeitraumKurz) doc.text(txt(c.zeitraumKurz), W - M - 1.5, y, { align: "right" });
-    y += titleLines.length * 4.4 + 1.2;
-    for (const [key, ls] of wrapped) {
+    if (zr.length) doc.text(zr, W - M - 1.5, y, { align: "right" });
+    y += kopfH + 1.2;
+    for (const [key, ps] of wrapped) {
       doc.setTextColor(90); doc.setFontSize(8); doc.text(key.toUpperCase(), M + 1.5, y);
-      doc.setTextColor(0); doc.setFontSize(FS); doc.text(ls, M + 34, y);
-      y += ls.length * LH + 1;
+      doc.setTextColor(0); doc.setFontSize(FS);
+      for (const p of ps) {
+        if (p.g) textMitGlyph(doc, p.g, p.lines, XI, y); else doc.text(p.lines, XI, y);
+        y += p.lines.length * LH;
+      }
+      y += 1;
     }
     doc.setDrawColor(210); doc.line(M, y - 2.2, W - M, y - 2.2);
     y += 3;
@@ -173,9 +189,15 @@ export function appendLageRotPdf(doc: jsPDF, ex: Exercise, lage: LageRotState, t
     const lines = cells.map((s, i) => doc.splitTextToSize(txt(s), cols[i]!.w - 2) as string[]);
     const h = Math.max(...lines.map((l) => l.length)) * LH + 1.6;
     if (!need(h)) break;
-    if (kr.stand === STATE_LABEL.unerwartet || kr.stand.startsWith(STATE_LABEL.mehr)) { doc.setFillColor(253, 232, 235); doc.rect(M, y - 3.2, W - 2 * M, h, "F"); }
+    // mehr als erwartet / unerwartet: Stand fett und rot (keine Füllfläche)
+    const auffaellig = kr.stand === STATE_LABEL.unerwartet || kr.stand.startsWith(STATE_LABEL.mehr);
     x = M + 1.5;
-    lines.forEach((l, i) => { doc.setFont("helvetica", i === 0 ? "bold" : "normal"); doc.text(l, x, y); x += cols[i]!.w; });
+    lines.forEach((l, i) => {
+      const stand = auffaellig && i === lines.length - 1;
+      doc.setFont("helvetica", i === 0 || stand ? "bold" : "normal");
+      if (stand) doc.setTextColor(150, 30, 35);
+      doc.text(l, x, y); doc.setTextColor(0); x += cols[i]!.w;
+    });
     doc.setDrawColor(210); doc.line(M, y - 3.2 + h, W - M, y - 3.2 + h);
     y += h;
   }

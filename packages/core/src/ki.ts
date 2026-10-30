@@ -16,7 +16,7 @@ import { compareStrength, estimateRedForce, parseStrength } from "./redforce";
 import { decisionFor, hintRule, type Hint } from "./hints";
 import type { RedCoa } from "./coa";
 import { baseCellAt } from "./hintgeo";
-import { compareEvents } from "./clock";
+import { compareEvents, zeitBis, zeitCmp, zeitMs } from "./clock";
 import { kindLabel, lastPosition, parseMeldung, situationAt, type JournalContext } from "./journal";
 import { findCoordinates, type LV95 } from "./lv95";
 import type { Area, Exercise, LageEvent } from "./model";
@@ -484,7 +484,7 @@ function placesDescription(ex: Exercise): string[] {
 
 /** aktuelle, nicht gelöschte Meldungen bis zur Lagezeit, chronologisch */
 function liveEvents(ex: Exercise, t?: string): LageEvent[] {
-  return currentEvents(ex.events ?? []).filter((e) => !e.deleted && (!t || e.t <= t)).sort(compareEvents);
+  return currentEvents(ex.events ?? []).filter((e) => !e.deleted && (!t || zeitBis(e, t))).sort(compareEvents);
 }
 
 /** Meldung für die Anfrage: «T2 0640 [Feind] H05: 6 Pers AP10 am Waldrand» (gekürzt, Koordinaten als PQ, ohne ID/Gerät) */
@@ -874,7 +874,7 @@ const LEVEL_LABEL: Record<string, string> = { hoch: "hoch (Handeln prüfen)", mi
 /** Auslöser-Meldungen (gekürzt, chronologisch; zu viele → die neuesten) */
 function triggerLines(ids: string[], events: LageEvent[], ctx: KiContext): { lines: string[]; evs: LageEvent[]; omitted: number } {
   const set = new Set(ids);
-  const evs = currentEvents(events).filter((e) => set.has(e.id) && !e.deleted && e.t <= ctx.t).sort(compareEvents);
+  const evs = currentEvents(events).filter((e) => set.has(e.id) && !e.deleted && zeitBis(e, ctx.t)).sort(compareEvents);
   const kept = evs.slice(-LIM.EXPLAIN_EVENTS);
   return { lines: kept.map((e) => `- ${eventLine(e, ctx.ex)}`), evs: kept, omitted: evs.length - kept.length };
 }
@@ -1033,9 +1033,9 @@ export function buildLageberichtRequest(ctx: KiContext, o: { hints: Hint[]; coas
   }
 
   // neue Meldungen seit
-  const tMs = Date.parse(t);
+  const tMs = zeitMs(t);
   const since = o.since ?? (Number.isFinite(tMs) ? isoLocal(tMs - LIM.LAGEBERICHT_SINCE_MIN * 60000) : undefined);
-  const recent = evs.filter((e) => !since || e.t > since).reverse().slice(0, LIM.LAGEBERICHT_EVENTS);
+  const recent = evs.filter((e) => !since || zeitCmp(e, since) > 0).reverse().slice(0, LIM.LAGEBERICHT_EVENTS);
   lines.push("", since ? `Meldungen seit ${lageZeit(ex, since)} (${recent.length}, neueste zuerst, gekürzt):` : `Meldungen (${recent.length}, neueste zuerst, gekürzt):`);
   lines.push(...(recent.length ? recent.map((e) => `- ${eventLine(e, ex)}`) : ["- keine"]));
   if (recent.length) items.push(`${recent.length} Meldung${recent.length === 1 ? "" : "en"} ${timeSpan(ex, recent)} (gekürzt)`);

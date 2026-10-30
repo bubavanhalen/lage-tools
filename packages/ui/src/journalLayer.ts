@@ -2,7 +2,7 @@
  * Lagebild-Modell für Karte und Legende: was ist zum Zeitpunkt `t` sichtbar, wie kräftig, mit welchem Zusatz.
  * Reine Berechnung (ohne Leaflet), damit Karte und Legende garantiert dasselbe zeigen.
  */
-import { artOf, artText, CATALOG, catalogEntry, ECHELONS, kindLabel, situationAt, SYMBOLS, symbolDef, unitKey, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status } from "@lage/core";
+import { artOf, artText, CATALOG, catalogEntry, ECHELONS, kindLabel, situationAt, SYMBOLS, symbolDef, unitKey, zeitBis, zeitCmp, zeitMs, type Affiliation, type Echelon, type LageEvent, type LV95, type Side, type Status, type ZeitArg } from "@lage/core";
 import { isAnticipated, sidcAffiliation } from "@lage/map";
 import type { LayerFlags } from "./layers";
 import { roadMark, type RoadMark } from "./roadmark";
@@ -107,7 +107,8 @@ export const kindText = (e: Pick<LageEvent, "side" | "aff"> & Partial<LageEvent>
   (e.art || e.notiz) && artOf(e as LageEvent) !== "meldung" ? artText(e as LageEvent)
     : e.side !== "blau" && e.side !== "ul" && e.aff === "N" ? "Neutral" : kindLabel(e);
 
-const minutesBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 60000);
+/** Minuten von a bis b über den Zeitpunkt (Offset der Meldung bzw. der Lagezeit, Spez. MVP 3.5 S23) */
+const minutesBetween = (a: ZeitArg, b: ZeitArg) => Math.round((zeitMs(b) - zeitMs(a)) / 60000);
 
 /** Alter kurz und ohne Kürzel: «75 min», ab 2 h «3 h» (Prüfbericht M1: «62′» war unklar) */
 export const ageText = (min: number) => (min < 120 ? `${min} min` : `${Math.floor(min / 60)} h`);
@@ -125,33 +126,35 @@ export function situationModel(
   const st = situationAt(events, t);
   const byId = new Map(events.map((e) => [e.id, e]));
   // letzte Meldung jedes eigenen Elements (als Melder oder mit eigener Lage) bis t
-  const lastReport = new Map<string, string>();
+  const lastReport = new Map<string, LageEvent>();
   for (const e of events) {
-    if (e.deleted || e.t > t) continue;
+    if (e.deleted || !zeitBis(e, t)) continue;
     for (const name of [e.melder, e.side === "blau" ? e.unit : undefined]) {
       if (!name) continue;
       const k = unitKey("blau", name);
-      if ((lastReport.get(k) ?? "") < e.t) lastReport.set(k, e.t);
+      const have = lastReport.get(k);
+      if (!have || zeitCmp(have, e) < 0) lastReport.set(k, e);
     }
   }
   // letzter bekannter SIDC je Element (z. B. «gn Hz Inf»), damit spätere Meldungen ohne Zeichen die Stufe behalten
   const lastSidc = new Map<string, LageEvent>();
   for (const e of events) {
-    if (e.deleted || e.t > t || !e.sidc || !e.unit) continue;
+    if (e.deleted || !e.sidc || !e.unit || !zeitBis(e, t)) continue;
     const k = unitKey(e.side, e.unit);
-    if ((lastSidc.get(k)?.t ?? "") <= e.t) lastSidc.set(k, e);
+    const have = lastSidc.get(k);
+    if (!have || zeitBis(have, e)) lastSidc.set(k, e);
   }
   const show = (side: Side) => (side === "blau" ? flags.eigene : flags.feind);
   const items: SituationItem[] = [];
   const make = (ev: LageEvent, sym: string, pos: LV95, isUnit: boolean, unitName: string): SituationItem => {
     const e = byId.get(ev.id) ?? ev;
     const kind = kindOf(e);
-    const ageMin = Math.max(0, minutesBetween(e.t, t));
+    const ageMin = Math.max(0, minutesBetween(e, t));
     const fresh = ageMin <= recent;
     const selected = e.id === sel;
     const own = kind === "eigen";
     let ud = "";
-    const silent = own && isUnit ? Math.max(0, minutesBetween(lastReport.get(unitKey("blau", unitName)) ?? e.t, t)) : 0;
+    const silent = own && isUnit ? Math.max(0, minutesBetween(lastReport.get(unitKey("blau", unitName)) ?? e, t)) : 0;
     if (own) ud = unitName + (silent > STALE_MIN ? ` · ${ageText(silent)}` : "");
     else ud = [e.count && e.count > 1 ? `${e.count}×` : "", unitName].join(" ").trim();
     // SIDC nur, wenn das Zeichen wirklich zu dieser Meldung gehört (Elemente behalten sonst ihr bekanntes Zeichen)
@@ -174,17 +177,17 @@ export function situationModel(
     items.push(make(u.event, u.event.sym, u.pos, true, u.unit));
   }
   for (const e of st.loose) {
-    if (!e.pos || !show(e.side) || (from && e.t < from)) continue;
+    if (!e.pos || !show(e.side) || (from && zeitCmp(e, from) < 0)) continue;
     items.push(make(e, e.sym, e.pos, false, e.side === "blau" ? e.unit : (catalogEntry(e.sym)?.activity ?? symbolDef(e.sym).activity) ? "" : e.unit));
   }
   // gewählte Meldung immer zeigen (auch wenn sie inzwischen von einer neueren Meldung überholt ist)
   if (sel && !items.some((i) => i.e.id === sel)) {
     const e = byId.get(sel);
-    if (e && !e.deleted && e.pos && e.t <= t && show(e.side)) items.push(make(e, e.sym, e.pos, false, e.unit));
+    if (e && !e.deleted && e.pos && zeitBis(e, t) && show(e.side)) items.push(make(e, e.sym, e.pos, false, e.unit));
   }
   for (const it of items) if (it.e.id === sel) it.selected = true;
   // Spuren: im Zeitfenster nur die Standorte ab dem Anfang (beginnend beim Standort zu Fensterbeginn)
-  const before = flags.spuren && from ? new Map(situationAt(events.filter((e) => e.t < from), from).units.map((u) => [u.key, u.track.length])) : null;
+  const before = flags.spuren && from ? new Map(situationAt(events.filter((e) => zeitCmp(e, from) < 0), from).units.map((u) => [u.key, u.track.length])) : null;
   const tracks: SituationTrack[] = flags.spuren
     ? st.units.filter((u) => show(u.side)).map((u) => ({ side: u.side, unit: u.unit, pts: before ? u.track.slice(Math.max(0, (before.get(u.key) ?? 0) - 1)) : u.track }))
       .filter((x) => x.pts.length > 1)

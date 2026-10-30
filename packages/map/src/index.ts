@@ -8,3 +8,5 @@ export * from "./cellzoom";
 export * from "./measure";
 export * from "./flash";
 export * from "./kartenfarben";
+export * from "./lineal";
+export * from "./massstab";

@@ -30,7 +30,7 @@ import {
   angleDiff, baseCellAt, bearing, centroid, dist, distToRing, sameCell, sameOrNeighbor, type BaseCell,
 } from "./hintgeo";
 import { areaCenter } from "./journal";
-import { zeitMax } from "./clock";
+import { zeitCmp, zeitMax, zeitMs } from "./clock";
 import { isLage, lebenszeichen } from "./arten";
 import { istAufhebbar, liftMap } from "./lvz";
 import type { LV95 } from "./lv95";
@@ -367,8 +367,9 @@ interface Ctx {
   cache: Map<string, unknown>;
 }
 
-const parseMs = (t: string | undefined) => {
-  const ms = t ? Date.parse(t) : NaN;
+/** Zeitpunkt einer Lagezeit (mit oder ohne Offset) bzw. Meldung (MVP 3.5: `zeitMs`, doppelte Stunde richtig) */
+const parseMs = (t: string | { t: string; tOffset?: string; createdAt?: string } | undefined) => {
+  const ms = t ? zeitMs(t) : NaN;
   return Number.isFinite(ms) ? ms : NaN;
 };
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -412,7 +413,7 @@ function vehicleSig(text: string): Ev["sig"] {
 }
 
 function toEv(e: LageEvent, ex: Pick<Exercise, "sheets" | "areas">, nais: Area[]): Ev | null {
-  const ms = parseMs(e.t);
+  const ms = parseMs(e);
   if (!Number.isFinite(ms)) return null;
   const cat = catalogEntry(e.sym);
   const text = e.text ?? "";
@@ -676,19 +677,27 @@ function qualityOf(evs: Ev[]): Map<string, EventQuality> {
 
 /**
  * (MVP 3.5, C14) Verschiedene Melder, die dieselbe Sichtung gesehen haben – die Meldung selbst zuerst, dann die
- * bestätigenden (ohne Doppel): H02 einmal, H04 zweimal → ["H02", "H04"] («von 2 Trupps gesehen», Trupps im `title`).
- * Ohne Bestätigung []. Phase 0: aus `eventQuality(...).confirmedBy` (Lagezeit = späteste Meldung); Paket C baut aus.
+ * bestätigenden (ohne Doppel, gleicher Trupp in anderer Schreibweise zählt einmal): H02 einmal, H04 zweimal →
+ * ["H02", "H04"] («von 2 Trupps gesehen», Trupps im `title`). Weniger als zwei verschiedene Trupps → [] (eine Zählung
+ * der Bestätigungen wie früher `confirmedBy.length` gibt es nicht mehr).
+ * `q` = schon gerechnete Qualität (`eventQuality`/`analyzeJournal`, z. B. die der Liste) – sonst wird sie hier bis zur
+ * spätesten Meldung gerechnet (teuer: in Listen immer `q` mitgeben).
  */
-export function bestaetigtVon(e: LageEvent, events: LageEvent[]): string[] {
-  let t = e.t;
-  for (const x of events) if (!x.deleted) t = zeitMax(t, x.t);
-  const ids = eventQuality(events, t).get(e.id)?.confirmedBy ?? [];
-  const byId = new Map(events.map((x) => [x.id, x]));
-  const out: string[] = e.melder ? [e.melder] : [];
-  for (const id of ids) {
-    const x = byId.get(id);
-    if (x && !x.deleted && x.melder && !out.includes(x.melder)) out.push(x.melder);
+export function bestaetigtVon(e: LageEvent, events: LageEvent[], q?: Map<string, EventQuality>): string[] {
+  let quality = q;
+  if (!quality) {
+    let t = e.t;
+    for (const x of events) if (!x.deleted) t = zeitMax(t, x.t);
+    quality = eventQuality(events, t);
   }
+  const ids = quality.get(e.id)?.confirmedBy ?? [];
+  if (!ids.length) return [];
+  const byId = new Map(events.map((x) => [x.id, x]));
+  const out: string[] = [];
+  const key = (m: string) => m.replace(/[\s.]/g, "").replace(/(\D)0+(\d)/g, "$1$2").toLowerCase();
+  const add = (m?: string) => { const v = m?.trim(); if (v && !out.some((o) => key(o) === key(v))) out.push(v); };
+  add(e.melder);
+  for (const id of ids) { const x = byId.get(id); if (x && !x.deleted) add(x.melder); }
   return out.length > 1 ? out : [];
 }
 
@@ -1475,7 +1484,7 @@ export function analyzeJournal(ex: Exercise, o: HintOptions): { hints: Hint[]; q
     if (stale) {
       for (const h of list) {
         if (h.until) continue;
-        const end = Date.parse(h.last ?? h.t) + stale * MIN;
+        const end = parseMs(h.last ?? h.t) + stale * MIN;
         if (end <= c.tMs) h.until = iso(end);
       }
     }
@@ -1510,13 +1519,15 @@ function liftNachlauf(hints: Hint[], events: LageEvent[], t: string): void {
     if (!NACHLAUF_RULES.has(h.rule)) continue;
     const trig = h.events.map((id) => byId.get(id)).filter((e): e is LageEvent => !!e && istAufhebbar(e));
     if (!trig.length) continue;
+    // MVP 3.5 (S23): Zeitvergleiche über den Zeitpunkt (Offset der aufhebenden Meldung)
     let end = "";
     for (const e of trig) {
       const l = lifts.get(e.id);
-      if (!l || l.t > t) { end = ""; break; }
-      if (l.t > end) end = l.t;
+      const le = l ? byId.get(l.by) ?? { t: l.t } : undefined;
+      if (!l || zeitCmp(le!, t) > 0) { end = ""; break; }
+      if (!end || zeitCmp(le!, end) > 0) end = l.t;
     }
-    if (end && (!h.until || h.until > end)) h.until = end;
+    if (end && (!h.until || zeitCmp(h.until, end) > 0)) h.until = end;
   }
 }
 

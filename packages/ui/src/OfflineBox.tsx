@@ -1,44 +1,39 @@
 /**
- * Karte für den Einsatz ohne Netz vorbereiten (Vorbereiten, Schritt 6; Spez. MVP 1, Kap. 2.9, 3.1):
- * ein Knopf «Alles für offline laden» = Speicher schützen (`storage.persist()`), Strassen und Landeskarte fürs
- * Raster-Gebiet speichern. Detailstufe und Luftbild unter «Genauer einstellen». Danach Offline-Status neu prüfen.
- * Texterkennung und Spracherkennung (optional) stehen in `prepare/OfflineStep.tsx`.
+ * Karte für den Einsatz ohne Netz vorbereiten (Vorbereiten, Schritt 6; Spez. MVP 1, Kap. 2.9, 3.1; MVP 3.5, A4):
+ * ein Knopf «Alles für offline laden» = gleiche Logik wie im Offline-Popover (`betrieb/laden.ts`, keine doppelte):
+ * Speicher schützen, Strassen nur mit Online-Dienst «Strassen», Landeskarte fürs Raster-Gebiet. Fortschritt und Abbruch
+ * gelten für beide Orte. Detailstufe und Luftbild unter «Genauer einstellen». Danach prüft der Status die Karte neu.
  */
-import { useEffect, useRef, useState } from "react";
-import L from "leaflet";
-import type { Exercise } from "@lage/core";
-import { toLv95 } from "@lage/map";
-import { clearTileCache, downloadTiles, estimateTiles, tileCacheCount } from "./offline";
-import { clearRoads, estimateRoadTiles, prefetchRoads, roadTileCount } from "./roadsource";
+import { useEffect, useState } from "react";
+import type L from "leaflet";
+import { onlineAllowed, type Exercise } from "@lage/core";
+import { clearTileCache, tileCacheCount } from "./offline";
+import { clearRoads, roadTileCount } from "./roadsource";
+import { notifyOfflineChanged } from "./offlineStatus";
+import { allesOffline, areaOf as areaOfLaden, DETAIL_NORMAL, ladenAbbrechen, ladenUmfang, useLaden, useLadenErgebnis } from "./betrieb/laden";
 import type { Bounds } from "./tiles";
-import { requestPersist } from "./persist";
-import { notifyOfflineChanged, rasterArea } from "./offlineStatus";
 import { useKi } from "./ki/context";
 
 const DETAIL: Array<[number, string]> = [[5, "Übersicht (bis 5 m)"], [2, "Normal (bis 2 m)"], [1, "Detail (bis 1 m)"]];
 
+/** Gebiet des Kartenpakets (Raster-Gebiet + 10 %, sonst Kartenausschnitt) – jetzt in `betrieb/laden.ts` */
 export function areaOf(ex: Exercise, map: L.Map): { b: Bounds; label: string } {
-  const r = rasterArea(ex);
-  if (r) return { b: r, label: "das Raster-Gebiet" };
-  const v = map.getBounds();
-  const sw = toLv95(v.getSouthWest()), ne = toLv95(v.getNorthEast());
-  return { b: { minE: sw.e, maxE: ne.e, minN: sw.n, maxN: ne.n }, label: "den aktuellen Kartenausschnitt" };
+  return areaOfLaden(ex, map)!;
 }
 
 export function OfflineBox({ ex, map }: { ex: Exercise; map: L.Map }) {
   // KI-Hinweis nur, wenn sie auf diesem Gerät wirklich eingeschaltet ist (Übung an + eigene Einwilligung)
   const ki = useKi();
   const kiOn = !!ex.ki?.enabled && !!ki && ki.state !== "aus" && ki.state !== "einwilligung";
-  const [finest, setFinest] = useState(2);
+  const [finest, setFinest] = useState(DETAIL_NORMAL);
   const [img, setImg] = useState(false);
-  const [prog, setProg] = useState<{ done: number; total: number } | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [roadCount, setRoadCount] = useState<number | null>(null);
-  const [roadProg, setRoadProg] = useState<{ done: number; total: number; failed?: number } | null>(null);
-  const [failed, setFailed] = useState(0);
   const [online, setOnline] = useState(navigator.onLine);
   const [more, setMore] = useState(false);
-  const ctl = useRef<AbortController | null>(null);
+  const [fehler, setFehler] = useState<string | null>(null);
+  const prog = useLaden();
+  const erg = useLadenErgebnis();
   useEffect(() => {
     void tileCacheCount().then(setCount);
     void roadTileCount().then(setRoadCount);
@@ -46,59 +41,36 @@ export function OfflineBox({ ex, map }: { ex: Exercise; map: L.Map }) {
     window.addEventListener("online", on); window.addEventListener("offline", on);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); };
   }, []);
-  const { b, label } = areaOf(ex, map);
-  const est = estimateTiles(b, finest, "lk");
-  const estImg = img ? estimateTiles(b, finest, "img") : { count: 0, mb: 0 };
-  const total = est.count + estImg.count;
-  const tooBig = total > 25000;
-  // Strassen (für Sperren, Checkpoints … im Gelände) nur fürs Raster-Gebiet, max. 400 km²
-  const roadTiles = ex.sheets.length ? estimateRoadTiles(b) : 0;
-  const withRoads = roadTiles > 0 && roadTiles <= 400;
-  const mb = Math.max(1, Math.round(est.mb + estImg.mb));
+  // nach dem Laden die Zahlen neu lesen
+  useEffect(() => { if (erg) { void tileCacheCount().then(setCount); void roadTileCount().then(setRoadCount); } }, [erg]);
+  const u = ladenUmfang(ex, map, { finest, img })!;
+  const tooBig = u.kacheln > 25000;
+  const strassenAus = !onlineAllowed(ex, "strassen");
 
-  const run = async () => {
-    ctl.current = new AbortController();
-    setFailed(0);
-    await requestPersist();
-    notifyOfflineChanged();
-    setProg({ done: 0, total });
-    // Strassen zuerst (klein, schnell), Fortschritt separat
-    if (withRoads) {
-      setRoadProg({ done: 0, total: roadTiles });
-      const r = await prefetchRoads(b, (d, t) => setRoadProg({ done: d, total: t }), ctl.current.signal);
-      setRoadProg(r.failed ? { done: roadTiles, total: roadTiles, failed: r.failed } : null);
-      setRoadCount(await roadTileCount());
-    }
-    let base = 0, bad = 0;
-    for (const layer of (img ? ["lk", "img"] : ["lk"]) as Array<"lk" | "img">) {
-      const n = layer === "lk" ? est.count : estImg.count;
-      const r = await downloadTiles(b, finest, layer, (d) => setProg({ done: base + d, total }), ctl.current.signal);
-      bad += r.failed;
-      base += n;
-    }
-    setFailed(bad);
-    setProg(null);
-    setCount(await tileCacheCount());
-    notifyOfflineChanged();
+  const run = () => {
+    setFehler(null);
+    allesOffline(ex, map, { finest, img }).catch((e: Error) => setFehler(e.message));
   };
 
   return (
     <div className="pp-offline">
       {prog ? (
         <>
-          {roadProg && !roadProg.failed && <div className="progress"><div style={{ width: `${Math.round((roadProg.done / Math.max(1, roadProg.total)) * 100)}%` }} /><span>Strassen {roadProg.done} / {roadProg.total} km²</span></div>}
-          <div className="progress"><div style={{ width: `${Math.round((prog.done / Math.max(1, prog.total)) * 100)}%` }} /><span>Karte {prog.done} / {prog.total} Kacheln</span></div>
-          <button type="button" className="pp-btn" onClick={() => ctl.current?.abort()}>Abbrechen</button>
+          <div className="progress"><div style={{ width: `${Math.round((prog.done / Math.max(1, prog.total)) * 100)}%` }} />
+            <span>{prog.teil === "pruefen" ? "Karte wird geprüft …" : `${prog.teil === "strassen" ? "Strassen" : "Karte"} ${prog.teilDone} von ${prog.teilTotal} …`}</span></div>
+          <button type="button" className="pp-btn" onClick={ladenAbbrechen}>Abbrechen</button>
         </>
       ) : (
         <>
-          <button type="button" className="pp-btn primary" disabled={!online || tooBig} onClick={run}>Alles für offline laden</button>
-          <p className="pp-note">Karte für {label} (≈ {mb} MB){withRoads ? ", Strassen" : ""} und Speicherschutz. Bereits angesehene Kartenteile sind automatisch gespeichert.</p>
+          <button type="button" className="pp-btn primary" disabled={!online || tooBig} onClick={run}>Alles für offline laden · ca. {u.mb} MB</button>
+          <p className="pp-note">Karte für {u.label}{u.strassen ? ", Strassen" : ""} und Speicherschutz. Angesehene Kartenteile werden ab dem zweiten Öffnen automatisch gespeichert.</p>
+          {strassenAus && ex.sheets.length > 0 && <p className="pp-note">Strassen werden nicht geladen: Online-Dienst «Strassen» ist aus (Schritt 1 «Übung»).</p>}
         </>
       )}
       {!online && !prog && <p className="pp-note">Zum Laden braucht es einmal Netz.</p>}
-      {failed > 0 && <p className="pp-warn">⚠ {failed} Kartenteile nicht geladen – später nochmals «Alles für offline laden».</p>}
-      {roadProg?.failed ? <p className="pp-warn">⚠ Strassen: {roadProg.failed} von {roadProg.total} km² nicht geladen – später nochmals laden.</p> : null}
+      {fehler && <p className="pp-warn">⚠ {fehler}.</p>}
+      {!prog && erg && !erg.abgebrochen && erg.failed > 0 && <p className="pp-warn">⚠ {erg.failed} Kartenteile nicht geladen – später nochmals «Alles für offline laden».</p>}
+      {!prog && erg && erg.strassenFehlt > 0 && <p className="pp-warn">⚠ Strassen: {erg.strassenFehlt} km² nicht geladen – später nochmals laden.</p>}
       {tooBig && <p className="pp-warn">⚠ Zu gross – unter «Genauer einstellen» die Detailstufe senken oder ein kleineres Raster wählen.</p>}
       <button type="button" className="pp-link" aria-expanded={more} onClick={() => setMore(!more)}>{more ? "▾" : "▸"} Genauer einstellen</button>
       {more && (
@@ -109,17 +81,17 @@ export function OfflineBox({ ex, map }: { ex: Exercise; map: L.Map }) {
             </select>
             <label className="pp-check"><input type="checkbox" checked={img} onChange={(e) => setImg(e.target.checked)} /> Luftbild dazu</label>
           </div>
-          <p className="pp-note">{total.toLocaleString("de-CH")} Kacheln, ≈ {mb} MB.</p>
+          <p className="pp-note">{u.kacheln.toLocaleString("de-CH")} Kacheln, ≈ {u.mb} MB.</p>
           {count !== null && count > 0 && (
             <div className="pp-btns">
               <span className="pp-note">Gespeichert: {count.toLocaleString("de-CH")} Kacheln</span>
-              <button type="button" className="pp-btn" onClick={async () => { await clearTileCache(); setCount(0); notifyOfflineChanged(); }}>Karte löschen</button>
+              <button type="button" className="pp-btn" disabled={!!prog} onClick={async () => { await clearTileCache(); setCount(0); notifyOfflineChanged(); }}>Karte löschen</button>
             </div>
           )}
           {roadCount !== null && roadCount > 0 && (
             <div className="pp-btns">
               <span className="pp-note">Strassen gespeichert: {roadCount.toLocaleString("de-CH")} km²</span>
-              <button type="button" className="pp-btn" onClick={async () => { await clearRoads(); setRoadCount(0); }}>Strassen löschen</button>
+              <button type="button" className="pp-btn" disabled={!!prog} onClick={async () => { await clearRoads(); setRoadCount(0); }}>Strassen löschen</button>
             </div>
           )}
         </div>

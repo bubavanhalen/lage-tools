@@ -3,7 +3,7 @@
  * Zeitspannen «T2 06:00–07:31», Einträge im Umfang, Kopftext, Eingabe «T2 0731». Rein, ohne jsPDF (der Dialog lädt
  * jsPDF erst beim Erstellen).
  */
-import { compareEvents, schichtEintraege, schichtenIm, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
+import { compareEvents, schichtEintraege, schichtenIm, zeitBis, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
 import type { JournalDruck } from "../shell/contracts";
 
 const WOCHENTAG = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
@@ -69,7 +69,7 @@ export function umfangText(ex: Exercise, u: JournalUmfang): string {
 export function eintraegeIm(ex: Exercise, u: Pick<JournalUmfang, "from" | "to" | "at">, ohneGestrichene = false): LageEvent[] {
   if (u.at) return schichtEintraege(ex, { at: u.at.von, bis: u.at.bis ?? null }, u.to, { gestrichene: !ohneGestrichene }).sort(compareEvents);
   return (ex.events ?? [])
-    .filter((e) => (!u.from || e.t.slice(0, 16) >= u.from) && e.t.slice(0, 16) <= u.to && !(ohneGestrichene && e.deleted))
+    .filter((e) => (!u.from || zeitBis(u.from, e)) && zeitBis(e, u.to) && !(ohneGestrichene && e.deleted))
     .sort(compareEvents);
 }
 

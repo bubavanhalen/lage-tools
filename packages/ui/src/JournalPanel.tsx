@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import L from "leaflet";
-import type { EventQuality, Exercise, LV95 } from "@lage/core";
+import { zeitBis, type EventQuality, type Exercise, type LV95 } from "@lage/core";
 import { EntryBox } from "./entry/EntryBox";
 import { prefillEntry, requestCorrection } from "./entry/useEntryDraft";
 import { deleteEvent, restoreEvent } from "./journal/actions";
@@ -48,7 +48,7 @@ interface Props {
   // ---------- MVP 1 (alle optional)
   experte?: boolean;
   /** Lagezeit (Paket C); ohne Angabe LIVE */
-  zeit?: Pick<ZeitApi, "zeit" | "tNow">;
+  zeit?: Pick<ZeitApi, "zeit" | "tNow"> & { tUhr?: string };
   /** nach Eintragen/Korrektur (Paket A: `goLive("eintragen")`); die Zeile wird hier schon gewählt */
   onCommitted?: (ids: string[]) => void;
   /** «Zeige letzte» in Minuten (für den Leerzustand) */
@@ -105,14 +105,16 @@ export function JournalPanel(p: Props) {
   }, [p.lvz, device, kuerzel, update]);
   /** Übergaben als Zeile im Journal: im gezeigten Zeitraum; bei Suche nur, wenn nach «Übergabe»/«Schichtwechsel» gesucht wird */
   const wechsel = useMemo(() => {
-    const ws = (ex.schichten ?? []).filter((w) => w.art === "uebergabe" && (!to || w.t <= to.slice(0, 16)) && (!p.win?.from || w.t >= p.win.from.slice(0, 16)));
+    // MVP 3.5 (S20): gibt es den Übergabe-Eintrag (`system: "uebergabe"`, `schichtId`), entfällt die virtuelle Zeile
+    const mitEintrag = new Set(events.filter((e) => e.system === "uebergabe" && e.schichtId && !e.deleted).map((e) => e.schichtId!));
+    const ws = (ex.schichten ?? []).filter((w) => w.art === "uebergabe" && !mitEintrag.has(w.id) && (!to || zeitBis(w.t.slice(0, 16), to)) && (!p.win?.from || zeitBis(p.win.from, w.t.slice(0, 16))));
     if (art) return [];
     if (!q) return ws;
     const qq = q.trim().toLowerCase();
     // «Schichtwechsel», «Schichtw», «Übergabe», «Schichtwechsel 07:30 BSP → MU» (Vorschlag) bzw. ein Kürzel
     if (wechselSuche(q)) return ws;
     return ws.filter((w) => qq === w.an.toLowerCase() || qq === (w.von ?? "").toLowerCase());
-  }, [ex.schichten, to, p.win?.from, q, art]);
+  }, [ex.schichten, events, to, p.win?.from, q, art]); // eslint-disable-line react-hooks/exhaustive-deps
   const empty: JournalEmpty = list.length || wechsel.length ? null : !any ? "erststart" : q || art ? "suche" : rueckblick ? "rueckblick" : p.win ? "zeige-letzte" : null;
 
   /** zuletzt eingetragene Zeilen: bei aktivem Suchfilter sagen, wenn sie dadurch ausgeblendet sind (Filter bleibt, Klartext) */
@@ -132,41 +134,54 @@ export function JournalPanel(p: Props) {
   const hiddenNew = (q || art) && justIds.length > 0
     && justIds.some((id) => events.some((e) => e.id === id && !e.deleted) && !list.some((e) => e.id === id));
 
+  /** Ansicht unter dem Umschalter: Liste (mit Suche) bzw. «Offen»/«Was Rot» – alle im Scroll-Behälter `.lc-list` */
+  const liste = p.tab === "journal" || p.tab === undefined || (p.tab === "offen" && !p.offen);
   return (
-    <div className="panel journal jpanel">
-      <EntryBox ex={ex} map={map} device={device} experte={!!p.experte} update={update} say={say} zeit={zeit}
-        onCommitted={onCommitted} correct={correct} reportAt={p.reportAt ?? null} onCorrecting={setCorrecting}
-        schicht={p.schicht} onNr={p.onNr} schutzHinweis={p.schutzHinweis} />
-      <hr className="jp-sep" />
-      {any && p.between}
-      {p.tab === "rot" ? p.rot : p.tab === "offen" && p.offen ? p.offen : (
-        <>
-          {/* ohne Meldungen: dieselbe Suche als Ortssuche (Karte hinfliegen), sobald es Meldungen gibt auch Listenfilter */}
-          <UnifiedSearch ex={ex} map={map} today={dayLabel(zeit.tNow, ex.days)} reset={resetSearch} variant={any ? "journal" : "ort"}
-            onQuery={(qq, a) => { setQ(qq); setArt(a); }}
-            onPickEvent={(id) => onSelect(id)} />
-          {hiddenNew && (
-            <p className="jp-hidden" role="status">
-              <span>Eingetragen – durch Suchfilter ausgeblendet</span>
-              <button type="button" className="jl-btn" onClick={() => { setResetSearch((n) => n + 1); setJustIds([]); }}>Filter löschen</button>
-            </p>
-          )}
-          <JournalList ex={ex} events={list} selected={selected} onSelect={(id) => onSelect(id)} quality={quality} empty={empty}
-            onCorrect={(id) => { if (!requestCorrection(id)) setOwnReq({ id, n: Date.now() }); }}
-            onDelete={(id) => { deleteEvent(update, ex, id, device, kuerzel); if (selected === id && !gestrichene) onSelect(null); }}
-            onRestore={(id) => restoreEvent(update, ex, id, device, kuerzel)}
-            gestrichene={gestrichene} onGestrichene={setGestrichene} gestricheneN={nDel} schichtSeit={schichtSeit} lvz={lvz} onNr={p.onNr} wechsel={wechsel}
-            correcting={correcting} zeit={zeit} query={q} showLast={p.showLast ?? null} stand={rueckblick ? zeit.tNow : null}
-            onClearSearch={() => setResetSearch((n) => n + 1)} onShowAll={p.onWinClear}
-            onPrepare={p.onPrepare ?? (p.onGoto ? () => p.onGoto!("raster") : undefined)} onDemo={p.onDemo} />
-          {p.onExport && any && (
-            <div className="jp-filter">
-              <button type="button" className="jl-btn" onClick={() => p.onExport!("pdf")}>Journal drucken (PDF)</button>
-              <button type="button" className="jl-btn" onClick={() => p.onExport!("csv")}>Journal als Tabelle (CSV)</button>
-            </div>
-          )}
-        </>
-      )}
+    // MVP 3.5 (E1, S21): Spaltenkopf fest (≥ 860 px) – Meldungsfeld, Umschalter und Suche scrollen nie, nur `.lc-list`
+    <div className="panel journal jpanel lc">
+      <div className="lc-entry">
+        <EntryBox ex={ex} map={map} device={device} experte={!!p.experte} update={update} say={say} zeit={zeit}
+          onCommitted={onCommitted} correct={correct} reportAt={p.reportAt ?? null} onCorrecting={setCorrecting}
+          schicht={p.schicht} onNr={p.onNr} schutzHinweis={p.schutzHinweis} />
+      </div>
+      <div className="lc-switch">
+        <hr className="jp-sep" />
+        {any && p.between}
+        {liste && (
+          <>
+            {/* ohne Meldungen: dieselbe Suche als Ortssuche (Karte hinfliegen), sobald es Meldungen gibt auch Listenfilter */}
+            <UnifiedSearch ex={ex} map={map} today={dayLabel(zeit.tNow, ex.days)} reset={resetSearch} variant={any ? "journal" : "ort"}
+              onQuery={(qq, a) => { setQ(qq); setArt(a); }}
+              onPickEvent={(id) => onSelect(id)} gestricheneN={nDel} onGestrichene={() => setGestrichene(true)} />
+            {hiddenNew && (
+              <p className="jp-hidden" role="status">
+                <span>Eingetragen – durch Suchfilter ausgeblendet</span>
+                <button type="button" className="jl-btn" onClick={() => { setResetSearch((n) => n + 1); setJustIds([]); }}>Filter löschen</button>
+              </p>
+            )}
+          </>
+        )}
+      </div>
+      <div className="lc-list">
+        {p.tab === "rot" ? p.rot : p.tab === "offen" && p.offen ? p.offen : (
+          <>
+            <JournalList ex={ex} events={list} selected={selected} onSelect={(id) => onSelect(id)} quality={quality} empty={empty}
+              onCorrect={(id) => { if (!requestCorrection(id)) setOwnReq({ id, n: Date.now() }); }}
+              onDelete={(id) => { deleteEvent(update, ex, id, device, kuerzel); if (selected === id && !gestrichene) onSelect(null); }}
+              onRestore={(id) => restoreEvent(update, ex, id, device, kuerzel)}
+              gestrichene={gestrichene} onGestrichene={setGestrichene} gestricheneN={nDel} schichtSeit={schichtSeit} lvz={lvz} onNr={p.onNr} wechsel={wechsel}
+              correcting={correcting} zeit={zeit} query={q} showLast={p.showLast ?? null} stand={rueckblick ? zeit.tNow : null}
+              onClearSearch={() => setResetSearch((n) => n + 1)} onShowAll={p.onWinClear}
+              onPrepare={p.onPrepare ?? (p.onGoto ? () => p.onGoto!("raster") : undefined)} onDemo={p.onDemo} />
+            {p.onExport && any && (
+              <div className="jp-filter">
+                <button type="button" className="jl-btn" onClick={() => p.onExport!("pdf")}>Journal drucken (PDF)</button>
+                <button type="button" className="jl-btn" onClick={() => p.onExport!("csv")}>Journal als Tabelle (CSV)</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

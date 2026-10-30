@@ -4,7 +4,7 @@
  */
 import { useMemo } from "react";
 import {
-  compareHints, decisionFor, hintRule,
+  compareHints, decisionFor, hintRule, offeneHinweise,
   type EventQuality, type Exercise, type Hint, type HintDecision, type HintGroup, type HintLevel, type HintRule,
 } from "@lage/core";
 import "./perf"; // Messpunkte lt:enter/lt:zeile/lt:bereit und window.__ltPerf (P1)
@@ -112,7 +112,9 @@ export const hasOpenHoch = (ex: Exercise, hints: Hint[], t: string): boolean => 
 export interface RedBadge { n: number; hoch: boolean; text: string; aria: string }
 export function redBadge(ex: Exercise | null, hints: Hint[], t: string): RedBadge {
   if (!ex) return { n: 0, hoch: false, text: "", aria: "" };
-  const open = hints.filter((h) => isOpen(ex, h, t));
+  // MVP 3.5 (S25, D5): eine Zahl überall – `offeneHinweise` (wie Offen, Übergabe, Rapport)
+  const ids = new Set(offeneHinweise(hints, ex.hintDecisions, t).ids);
+  const open = hints.filter((h) => ids.has(h.id));
   const n = open.length, hoch = open.some((h) => h.level === "hoch");
   return {
     n, hoch,

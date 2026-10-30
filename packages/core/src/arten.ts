@@ -133,7 +133,7 @@ export function artText(e: LageEvent): string {
     case "meldung": return e.notiz ? "Notiz" : e.hebtAuf ? "Aufhebung" : lageWort(e);
     case "auftrag": return e.an ? `Auftrag an ${e.an}` : "Auftrag";
     case "orientierung": return e.quelle ? `Orientierung ${e.quelle}` : "Orientierung";
-    case "rueckfrage": return e.an ? `Rückfrage an ${e.an}` : e.melder ? `Rückfrage von ${e.melder}` : "Rückfrage";
+    case "rueckfrage": return e.an ? `Rückfrage an ${e.an}` : e.quelle ? `Rückfrage von ${e.quelle}` : e.melder ? `Rückfrage von ${e.melder}` : "Rückfrage";
     case "vbk": return ["Verbindung", e.melder, e.vbk ? VBK_WORT[e.vbk] : ""].filter(Boolean).join(" ");
     case "notiz": return e.bezugArt === "antwort" ? (e.an ? `Antwort an ${e.an}` : e.melder ? `Antwort von ${e.melder}` : "Antwort") : "Notiz";
     // MVP 3.5 (Phase 0, Paket D baut aus): «Ausgang an Bat»
@@ -168,7 +168,7 @@ export interface ArtLesung {
   rest: string;
   /**
    * (MVP 3.5, D1.7) Meldung meldet «erledigt/ausgeführt» ohne das Wort «Auftrag» → Abschluss des offenen Auftrags an den
-   * Melder vorschlagen (`bezugAufloesen`, lvz.ts). Phase 0: nie gesetzt.
+   * Melder vorschlagen (`bezugAufloesen`, lvz.ts).
    */
   abschluss?: boolean;
 }
@@ -243,6 +243,118 @@ function bezugOf(text: string): { bezugNr?: string; bezugToken?: string } {
   return {};
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// MVP 3.5 (Spez. MVP 3.5, Kap. 3.4 D1): Auftrag und Rückfrage von oben, Ausgang nach oben, Quittung, Abschluss,
+// Funkverbindung verloren. Laufen **vor** den bestehenden Regeln (Reihenfolge D1.1–D1.8).
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Absender bzw. Empfänger «oben» (nie ein eigener Trupp): Bat, Btl, Kp, Kdt, Rgt, Br, S2, Nachbar, «Kp 61/2» … */
+const OBEN_Y = String.raw`(?:Kp\s?\d{1,3}\/\d{1,3}|Bat(?:aillon)?|Btl|Kp|Kdt|Kdo|Rgt|Br|S\s?[1-6]|Nachbar(?:\s+(?:links|rechts))?|Gfs)`;
+/** Absender von oben am Anfang («Kp Kdt», «Bat», «S2») – Gruppe 1 */
+const OBEN_ABS = String.raw`(?:Kp\s+)?(Kdt|Bat|Btl|Kp|Kdo|Rgt|Br|S\s?2)`;
+/** Name von oben in der Schreibweise des Journals: «Btl»/«Bataillon» → «Bat», «S 2» → «S2», «kp 61/2» → «Kp 61/2» */
+function obenName(raw: string): string {
+  const s = raw.replace(/\s+/g, " ").trim();
+  if (/^(btl|bat)/i.test(s)) return "Bat";
+  if (/^s\s?\d$/i.test(s)) return `S${s.slice(-1)}`;
+  if (/^kp\s?\d/i.test(s)) return `Kp ${s.replace(/^kp\s?/i, "")}`;
+  return s[0]!.toUpperCase() + s.slice(1).toLowerCase();
+}
+/** eigener Trupp: in den Trupps der Übung, ohne vorbereitete Trupps jedes «H…» */
+function eigenerTrupp(raw: string, blau: string[]): boolean {
+  return blau.length ? blau.some((b) => sameName(b, raw)) : /^H\d{1,3}$/i.test(raw.trim());
+}
+/** Tätigkeit eines Auftrags (D1.5): «Kdt: H05 sofort Stellungswechsel nach AR12» – Nennform/Hauptwort; «Bat: H02 verschiebt nach AL9» (Mitteilung) bleibt Orientierung */
+const TAETIGKEIT_RE = re(String.raw`(?<!${L})(?:stellungswechsel|stellungsbezug|verschieben|verlegen|beo|beobachten|halten|überwachen|sperren|sichern|aufklären|erkunden|besetzen|beziehen|zurückziehen|rückzug|vorgehen|patrouillieren|kontrollieren|ablösen)(?!${L})`);
+/** Quittung eines Trupps (D1.6): «H03 Auftrag erhalten», «H02 Verstanden», «H05 wird ausgeführt», «wilco» */
+const QUITT_WORT_RE = re(String.raw`(?<!${L})(?:(?:auftrag|befehl)\s+erhalten|verstanden|wird\s+ausgeführt|wilco|roger)(?!${L})`, "giu");
+/** Abschluss ohne das Wort «Auftrag» (D1.7) */
+const ABSCHLUSS_RE = re(String.raw`(?<!${L})(?:erledigt|ausgeführt|erfüllt|abgeschlossen)(?!${L})`);
+/** Bezug in einem Ausgang: «Nr 54», «zu 54», «zu Nr 54» */
+const AUSGANG_NR_RE = re(String.raw`(?<!${L})(?:nr\.?\s*|zu\s+(?:nr\.?\s*)?)(\d{1,4}[a-z]?)(?!${L})`);
+
+/** Absender von oben am Anfang wie bei der Orientierung (ohne Doppelpunkt nicht vor einer Truppengattung: «Kp Pz») */
+function obenAm(t: string): { quelle: string; len: number } | null {
+  const m = re(String.raw`^${OBEN_ABS}\.?(?!${L})\s*([:,])?\s*`).exec(t);
+  if (!m) return null;
+  const nach = /^[\p{L}][\p{L}\d-]*/u.exec(t.slice(m[0].length))?.[0] ?? "";
+  if (!m[2] && (stufeVor(nach) || (/^kdo$/i.test(m[1]!) && /^(po|pos|posten|stao)$/i.test(nach)))) return null;
+  return { quelle: obenName(m[1]!), len: m[0].length };
+}
+
+/** D1.1–D1.8 (null = keine der neuen Regeln trifft; dann gelten die bestehenden) */
+function readArtOben(t: string, o: { blau: string[] }): ArtLesung | null {
+  const blau = o.blau;
+  // D1.1 «Kp Kdt: Auftrag an H03 …», «Bat: Befehl an H02 …», «Bat befiehlt: H02 Beo AK10 halten bis 1000»
+  let m = re(String.raw`^${OBEN_ABS}\.?\s*[:,]?\s*(?:auftrag|befehl)\s+(?:an|für)\s+(${EL})(?!${L})\s*[:,]?`).exec(t);
+  if (m && eigenerTrupp(m[2]!, blau)) return { art: "auftrag", stark: true, token: m[0].trim(), an: unitName(m[2]!, blau), quelle: obenName(m[1]!), ...fristOf(t), rest: cut(t, m) };
+  m = re(String.raw`^${OBEN_ABS}\.?\s*(?:befiehlt|befahl)(?!${L})\s*[:,]?\s*(?:an\s+)?(${EL})(?!${L})\s*[:,]?`).exec(t);
+  if (m && eigenerTrupp(m[2]!, blau)) return { art: "auftrag", stark: true, token: m[0].trim(), an: unitName(m[2]!, blau), quelle: obenName(m[1]!), ...fristOf(t), rest: cut(t, m) };
+  // D1.2 «an H02: Stellungswechsel nach AH10 bis 0900», «An H01 Beo NAI 1» – nur am Anfang (nie «2 Fz fahren an H02 vorbei»)
+  m = re(String.raw`^an\s+(${EL})(?!${L})\s*(?:[:,]\s*|\s+(?=\S))`).exec(t);
+  if (m && eigenerTrupp(m[1]!, blau)) return { art: "auftrag", stark: true, token: m[0].trim(), an: unitName(m[1]!, blau), ...fristOf(t), rest: cut(t, m) };
+  // D1.3 Ausgang nach oben: «Meldung an Bat: …», «An Bat: …», «Weitergemeldet an Bat: Nr 54», «Antwort an Bat: 2 Kpz»
+  const ausgang = (mm: RegExpExecArray, y: string, antwort: boolean): ArtLesung => {
+    const rest = cut(t, mm);
+    const nr = AUSGANG_NR_RE.exec(rest);
+    return {
+      art: "ausgang", stark: true, token: mm[0].trim(), an: obenName(y),
+      ...(nr ? { bezugNr: nr[1]!.toLowerCase(), bezugToken: nr[0].trim(), bezugArt: antwort ? "antwort" : "weiter" } : antwort ? { bezugArt: "antwort" } : {}),
+      rest,
+    };
+  };
+  m = re(String.raw`^(?:lvz\s*[:,]?\s*)?(meldung|lagemeldung|weitermeldung|lagebericht|antwort)\s+an\s+(${OBEN_Y})(?![\p{L}\d/])\s*[:,]?`).exec(t);
+  if (m) return ausgang(m, m[2]!, /^antwort$/i.test(m[1]!));
+  m = re(String.raw`^an\s+(${OBEN_Y})(?![\p{L}\d/])\s*[:,]`).exec(t);
+  if (m) return ausgang(m, m[1]!, false);
+  m = re(String.raw`(?<!${L})(?:weiter(?:gemeldet|geleitet)|gemeldet)\s+an\s+(${OBEN_Y})(?![\p{L}\d/])\s*[:,]?`).exec(t)
+    ?? re(String.raw`(?<!${L})an\s+(${OBEN_Y})\s+weiter(?:gemeldet|geleitet)(?!${L})\s*[:,]?`).exec(t);
+  if (m) return ausgang(m, m[1]!, false);
+  // D1.4 Rückfrage von oben: «Bat fragt: …», «Rückfrage Bat: …», «Rückfrage von Kdt: …», «Kdt: … ?»
+  m = re(String.raw`^(?:rückfrage|rueckfrage|frage|anfrage)\s+(?:von\s+)?${OBEN_ABS}(?!${L})\s*[:,]`).exec(t);
+  if (m) return { art: "rueckfrage", stark: true, token: m[0].trim(), quelle: obenName(m[1]!), rest: cut(t, m) };
+  const ob = obenAm(t);
+  if (ob) {
+    const nach = t.slice(ob.len);
+    const fm = re(String.raw`^(?:fragt(?:\s+an)?|frage|rückfrage|rueckfrage|anfrage)(?!${L})\s*[:,]?\s*`).exec(nach);
+    if (fm) return { art: "rueckfrage", stark: true, token: t.slice(0, ob.len + fm[0].length).trim(), quelle: ob.quelle, rest: nach.slice(fm[0].length).trim() };
+    if (/\?\s*$/.test(t) && /[:,]/.test(t.slice(0, ob.len))) return { art: "rueckfrage", stark: true, token: t.slice(0, ob.len).trim(), quelle: ob.quelle, rest: nach.replace(/\?\s*$/, "").trim() };
+    // D1.5 Absender von oben + eigener Trupp + Tätigkeit, ohne «Auftrag»: schwach (gelb «Auftrag an H05?»)
+    const xm = re(String.raw`^(?:an\s+)?(${EL})(?!${L})\s*[:,]?\s*`).exec(nach);
+    if (xm && eigenerTrupp(xm[1]!, blau) && TAETIGKEIT_RE.test(nach) && !re(String.raw`(?<!${L})(?:auftrag|befehl)`).test(nach)) {
+      return { art: "auftrag", stark: false, token: t.slice(0, ob.len + xm[0].length).trim(), an: unitName(xm[1]!, blau), quelle: ob.quelle, ...fristOf(t), rest: t };
+    }
+  }
+  // D1.6 Quittung eines Trupps ohne Ort/Sichtung: «H03 Auftrag erhalten», «H02 Verstanden» → Notiz, Bezug auf den Auftrag
+  const kopf = re(String.raw`^(${EL})(?!${L})\s*[:,]?\s*`).exec(t);
+  if (kopf && eigenerTrupp(kopf[1]!, blau)) {
+    const nach = t.slice(kopf[0].length);
+    QUITT_WORT_RE.lastIndex = 0;
+    if (QUITT_WORT_RE.test(nach)) {
+      QUITT_WORT_RE.lastIndex = 0;
+      const uebrig = nach.replace(QUITT_WORT_RE, " ").replace(/(?<![\p{L}])(?:und|ok|danke|ist|wurde|hat)(?![\p{L}])/giu, " ").replace(/[\s,.;:!–-]+/g, "");
+      if (!uebrig) return { art: QUITTUNG_ART, stark: true, token: nach.trim(), bezugArt: "quittung", rest: "" };
+    }
+    // D1.7 «H03 erledigt» (ohne «Auftrag»): bleibt Meldung, schlägt den Abschluss des offenen Auftrags vor (bezugAufloesen)
+    if (ABSCHLUSS_RE.test(nach) && !re(String.raw`(?<!${L})(?:auftrag|befehl)`).test(nach)) {
+      const bez = bezugOf(t);
+      return { art: "meldung", stark: true, abschluss: true, ...bez, ...(bez.bezugNr ? { bezugArt: "ausgefuehrt" } : {}), rest: t };
+    }
+  }
+  // D1.8 Funkverbindung verloren → Vbk «keine» mit diesem Trupp
+  m = re(String.raw`(?<!${L})(?:funkkontakt|funkverbindung|verbindung)\s+verloren\s+(?:zu|mit)\s+(${EL})(?!${L})`).exec(t)
+    ?? re(String.raw`(?<!${L})(?:funkkontakt|funkverbindung|verbindung)\s+(?:zu|mit)\s+(${EL})\s+(?:verloren|abgebrochen)(?!${L})`).exec(t)
+    ?? re(String.raw`(?<!${L})keine\s+funkverbindung\s+(?:zu|mit)\s+(${EL})(?!${L})`).exec(t);
+  if (m) return { art: "vbk", stark: true, token: m[0], vbk: "keine", an: unitName(m[1]!, blau), rest: cut(t, m) };
+  return null;
+}
+
+/** D1.9 Art «Auftrag» gewählt, Text ohne Auftrag-Hinweis: «an H02» irgendwo im Text ist der Empfänger (nicht «An wen?») */
+function anImText(t: string, blau: string[]): ArtLesung | null {
+  const m = re(String.raw`(?<!${L})an\s+(${EL})(?!${L})`).exec(t);
+  return m && eigenerTrupp(m[1]!, blau) ? { art: "auftrag", stark: true, token: m[0], an: unitName(m[1]!, blau), ...fristOf(t), rest: t } : null;
+}
+
 /** Text ohne die Stelle [a, b) (Satzzeichen am Anfang weg) */
 const cutAt = (text: string, a: number, b: number) => (text.slice(0, a) + " " + text.slice(b)).replace(/\s+/g, " ").replace(/^[\s,:;–-]+/, "").trim();
 const cut = (text: string, m: RegExpExecArray) => (text.slice(0, m.index) + " " + text.slice(m.index + m[0].length)).replace(/\s+/g, " ").replace(/^[\s,:;–-]+/, "").trim();
@@ -251,9 +363,18 @@ const cut = (text: string, m: RegExpExecArray) => (text.slice(0, m.index) + " " 
  * Art aus dem Text lesen (Kap. 3.1, Reihenfolge = Vorrang): Auftrag · Rückfrage · Orientierung · Verbindungskontrolle ·
  * Notiz · Meldung. Starke Hinweise stehen am Anfang (bzw. nach dem Melder), schwache irgendwo («befohlen», «?» am Ende).
  * `o.blau` = eigene Trupps der Übung (Schreibweise «H01»). Reine Funktion; Zeiten und Orte liest `parseMeldung`.
+ * MVP 3.5 (D1): zuerst Auftrag/Rückfrage von oben, Ausgang, Quittung, Abschluss, Funkverbindung verloren (`readArtOben`);
+ * `o.vorgabe` = gewählte Art («Auftrag» → «an H02» irgendwo ist der Empfänger, D1.9).
  */
-export function readArt(text: string, o: { blau: string[] }): ArtLesung {
+export function readArt(text: string, o: { blau: string[]; vorgabe?: EntryArt }): ArtLesung {
   const t = text.trim().replace(LEAD_TIME_RE, "");
+  const l = readArtOben(t, o) ?? readArtBisher(t, o);
+  if (o.vorgabe === "auftrag" && l.art !== "auftrag") return anImText(t, o.blau) ?? l;
+  return l;
+}
+
+/** Regeln aus MVP 3 (inkl. Nachbesserungen), nach den MVP-3.5-Regeln */
+function readArtBisher(t: string, o: { blau: string[] }): ArtLesung {
   const lead = String.raw`^(?:(${EL})\s*[:,]?\s+)?`;
   const L0 = String.raw`^(?:${EL}\s*[:,]?\s+)?`;
   const bez = bezugOf(t);

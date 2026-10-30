@@ -80,9 +80,11 @@ export function pickPoint(map: L.Map): Promise<LV95 | null> {
 
 /**
  * Zeichnet NAI / Räume wie im Lagebild-Prototyp: zuerst weisse Unterlage (5 px), dann farbig.
- * NAI: durchgezogen 2.5 px, Füllung 10 %, Beschriftung über der obersten Ecke (ab Schwerpunkt-x).
- * AO: gestrichelt «10 6», ohne Füllung, Beschriftung links neben der westlichsten Ecke.
- * Stao: rot gestrichelt «6 4», Füllung 10 %.
+ * NAI: durchgezogen 2.5 px, Füllung 10 %. AO: gestrichelt «10 6», ohne Füllung, Beschriftung innen an der westlichsten
+ * Ecke. Stao: rot gestrichelt «6 4», Füllung 10 %.
+ * MVP 3.5 (B5): Beschriftung von NAI, Stao und Räumen innerhalb der Fläche am Pol der Unerreichbarkeit (`polPunkt`,
+ * Klasse `lt-nai-lbl`); die Lage-Ebene lässt sie Zeichen, Lineal, Randbeschriftung und einander ausweichen
+ * (`data-bb` = Umriss in LV95) und blendet sie aus, wenn nichts passt – der Name steht dann im `title` der Fläche.
  */
 export function areasLayer(areas: Area[], opts: { onClick?: (a: Area) => void; selectedId?: string } = {}): L.LayerGroup {
   const g = L.layerGroup();
@@ -95,24 +97,77 @@ export function areasLayer(areas: Area[], opts: { onClick?: (a: Area) => void; s
     L.polygon(ring, { color: "#fff", weight: sel ? 7 : 5, opacity: 0.8, fill: false, interactive: false }).addTo(g);
     const poly = L.polygon(ring, {
       color, weight: sel ? 4 : 2.5, dashArray: style.dash, fill: style.fill > 0, fillColor: a.kind === "stao" ? KARTE.feind : color, fillOpacity: style.fill,
-      interactive: !!opts.onClick, bubblingMouseEvents: false,
+      // der Klick geht auch an die Karte (MVP 3.5, S12: Tipp neben ein Zeichen in einer NAI trifft das Zeichen); hat die
+      // Lage-Ebene dabei ein Zeichen getroffen (`__ltGetroffen` am Ereignis), entfällt der Klick auf die Fläche
+      interactive: !!opts.onClick, bubblingMouseEvents: true,
     }).addTo(g);
-    if (opts.onClick) poly.on("click", () => opts.onClick!(a));
+    if (opts.onClick) poly.on("click", (ev: L.LeafletMouseEvent) => {
+      const oe = ev.originalEvent as (MouseEvent & { __ltGetroffen?: boolean }) | undefined;
+      window.setTimeout(() => { if (!oe?.__ltGetroffen) opts.onClick!(a); }, 0);
+    });
+    // Name auch als Hinweis der Fläche (falls das Etikett keinen Platz findet)
+    poly.on("add", () => { const el = poly.getElement(); if (el && !el.querySelector("title")) el.insertAdjacentHTML("afterbegin", `<title>${escapeHtml(a.name)}</title>`); });
     let at: LV95;
-    let cls = "top";
+    let cls = "pol";
     if (a.kind === "ao") {
       at = a.ring.reduce((m, p) => (p.e < m.e ? p : m), a.ring[0]!);
       cls = "ao";
     } else {
-      const top = a.ring.reduce((m, p) => (p.n > m.n ? p : m), a.ring[0]!);
-      at = a.kind === "stao" ? top : { e: a.ring.reduce((s, p) => s + p.e, 0) / a.ring.length, n: top.n };
+      at = polPunkt(a.ring);
     }
+    const bb = a.ring.reduce((m, p) => [Math.min(m[0]!, p.e), Math.min(m[1]!, p.n), Math.max(m[2]!, p.e), Math.max(m[3]!, p.n)], [Infinity, Infinity, -Infinity, -Infinity]);
     L.marker(toLatLng(at), {
       interactive: false, keyboard: false, zIndexOffset: -1000,
-      icon: L.divIcon({ className: `lt-area-lbl ${cls}`, html: `<span style="color:${color}">${escapeHtml(a.name)}</span>`, iconSize: [0, 0] }),
+      icon: L.divIcon({
+        className: `lt-area-lbl ${cls}`, iconSize: [0, 0],
+        html: `<span class="lt-nai-lbl" data-bb="${bb.map((v) => Math.round(v)).join(",")}" style="color:${color}">${escapeHtml(a.name)}</span>`,
+      }),
     }).addTo(g);
   }
   return g;
+}
+
+/**
+ * Pol der Unerreichbarkeit (Punkt im Innern mit dem grössten Abstand zum Rand), angenähert über ein Gitter mit zwei
+ * Verfeinerungen – für Etiketten innerhalb von NAI/Räumen. Ohne Fläche: Schwerpunkt der Ecken.
+ */
+export function polPunkt(ring: readonly LV95[]): LV95 {
+  const n = ring.length;
+  if (n < 3) return n ? ring[0]! : { e: 0, n: 0 };
+  const inside = (e: number, nn: number) => {
+    let c = false;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const a = ring[i]!, b = ring[j]!;
+      if ((a.n > nn) !== (b.n > nn) && e < ((b.e - a.e) * (nn - a.n)) / (b.n - a.n) + a.e) c = !c;
+    }
+    return c;
+  };
+  const segDist = (e: number, nn: number) => {
+    let d = Infinity;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const a = ring[i]!, b = ring[j]!;
+      const dx = b.e - a.e, dy = b.n - a.n, L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((e - a.e) * dx + (nn - a.n) * dy) / L2)) : 0;
+      d = Math.min(d, Math.hypot(e - (a.e + t * dx), nn - (a.n + t * dy)));
+    }
+    return d;
+  };
+  let minE = Infinity, minN = Infinity, maxE = -Infinity, maxN = -Infinity;
+  for (const p of ring) { minE = Math.min(minE, p.e); maxE = Math.max(maxE, p.e); minN = Math.min(minN, p.n); maxN = Math.max(maxN, p.n); }
+  let best = { e: ring.reduce((s, p) => s + p.e, 0) / n, n: ring.reduce((s, p) => s + p.n, 0) / n };
+  let bestD = inside(best.e, best.n) ? segDist(best.e, best.n) : -1;
+  let w = maxE - minE, h = maxN - minN, cE = (minE + maxE) / 2, cN = (minN + maxN) / 2;
+  for (let round = 0; round < 3; round++) {
+    const k = 12;
+    for (let i = 0; i <= k; i++) for (let j = 0; j <= k; j++) {
+      const e = cE - w / 2 + (w * i) / k, nn = cN - h / 2 + (h * j) / k;
+      if (!inside(e, nn)) continue;
+      const d = segDist(e, nn);
+      if (d > bestD) { bestD = d; best = { e, n: nn }; }
+    }
+    cE = best.e; cN = best.n; w /= 4; h /= 4;
+  }
+  return best;
 }
 
 const AREA_STYLE: Record<Area["kind"], { line: string; dash?: string; fill: number }> = {

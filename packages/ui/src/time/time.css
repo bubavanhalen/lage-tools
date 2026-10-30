@@ -168,3 +168,17 @@
   color: var(--rueckblick-ink);
   font: 600 var(--fs-14)/1.4 var(--f-body);
 }
+
+/* ---------- MVP 3.5 (E6): doppelte Stunde – zwei Lesarten zur Wahl; «Zurückblicken» schmal nur «« ---------- */
+.tb-wahl { display: inline-flex; gap: var(--sp-4); flex: none; }
+@container (max-width: 760px) { .tb-rb .tb-wahl { order: 8; } }
+@container (max-width: 420px) {
+  .tb-back .tb-back-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tb-back { gap: 0; padding: 0 var(--sp-8); }
+}
+/* sehr schmal (Handy 360/390 px): nichts abgeschnitten – «letzte 07:30» weicht, Chip und «««» umbrechen in eine zweite Zeile */
+@container (max-width: 420px) {
+  .tb:not(.tb-rb) { flex-wrap: wrap; row-gap: var(--sp-4); }
+  .tb:not(.tb-rb) .tb-last { flex: 1 1 0; }
+  .tb:not(.tb-rb) .tb-chip { order: 5; }
+}

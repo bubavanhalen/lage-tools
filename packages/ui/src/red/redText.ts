@@ -2,7 +2,7 @@
  * Texte für «Was Rot vorhaben könnte» (Spez. MVP 1, Kap. 2.7, 3.6, 4.2–4.5): reine Funktionen, ohne React.
  * Klartext in der Grundansicht – Codes und Reglementsziffern nur unter «Woher kommt das?».
  */
-import { coaHeadline, hintHeadline, indicatorText, type CoaIndicator, type Exercise, type Hint, type LageEvent, type RedCoa } from "@lage/core";
+import { coaHeadline, hintHeadline, indicatorText, zeitBis, zeitCmp, type CoaIndicator, type Exercise, type Hint, type LageEvent, type RedCoa } from "@lage/core";
 import { hhmm, nextLabel } from "../hintsData";
 import type { LageRotState } from "../lageRot";
 
@@ -28,9 +28,9 @@ export const dayTime = (t: string, ex: Pick<Exercise, "days">): string => `${day
 
 /** Zeile unter dem Titel im Detail: «Seit T2 07:05 · zuletzt 07:20 · NAI 3 ist eine Engstelle» bzw. «Vorbei seit …» */
 export function hintMeta(h: Hint, ex: Exercise, t: string): string {
-  const over = !!h.until && h.until <= t;
+  const over = !!h.until && zeitBis(h.until, t);
   const parts = [over ? `Vorbei seit ${dayTime(h.until!, ex)}` : `Seit ${dayTime(h.t, ex)}`];
-  if (!over && h.last && h.last > h.t) parts.push(`zuletzt ${hhmm(h.last, ex.days, t)}`);
+  if (!over && h.last && zeitCmp(h.last, h.t) > 0) parts.push(`zuletzt ${hhmm(h.last, ex.days, t)}`);
   const nx = nextLabel(h, t, ex.days);
   if (nx) parts.push(nx.text);
   const nai = h.nai ? (ex.areas ?? []).find((a) => a.kind === "nai" && a.name === h.nai) : undefined;

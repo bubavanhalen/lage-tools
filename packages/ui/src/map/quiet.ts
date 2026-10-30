@@ -3,19 +3,20 @@
  *
  * Beschriftungsregel (Grundansicht, `quiet`):
  * - Feind/Unklar (auch Neutral, UL) beschriftet – Zeit-Fähnchen und Zusatz («2× Det 1») – nur wenn
- *   t ≥ Lagezeit − 30 min oder gewählt; ältere 55 % Deckkraft ohne Fähnchen und ohne Zusatz (Nachbesserung: 40 % ging
- *   auf der grauen Karte unter),
+ *   t ≥ Lagezeit − 30 min oder gewählt; ältere 72 % Deckkraft und entsättigt (`saturate(.55)`, mapoverlays.css) ohne
+ *   Fähnchen und ohne Zusatz (MVP 3.5, K3 Variante V4: 55 % ging auf der grauen Karte unter),
  * - eigene Trupps: Name immer (Altersangabe > 60 min macht `situationModel`), volle Deckkraft,
  * - gewählt: immer kräftig und beschriftet; die Stapel-Zahl bleibt immer kräftig (CSS, nicht hier).
  * Experte (`quiet: false`): wie bis MVP 0 (ältere 45 %, Zusatz bleibt).
  */
+import { ZEICHEN } from "@lage/core";
 import type { ItemKind } from "../journalLayer";
 
 export const QUIET = {
   /** so lange gilt eine Meldung als neu (beschriftet, kräftig) */
   neuMin: 30,
-  /** Deckkraft älterer Sichtungen in der Grundansicht */
-  altDeckkraft: 0.55,
+  /** Deckkraft älterer Sichtungen in der Grundansicht (V4: 0.72, dazu entsättigt – `ZEICHEN.altSaettigung`) */
+  altDeckkraft: ZEICHEN.altDeckkraft,
   /** Deckkraft älterer Sichtungen im Experten-Modus (wie bisher) */
   altDeckkraftExperte: 0.45,
   /** Flächen/Linien älterer Sichtungen (Experte, wie bisher) */

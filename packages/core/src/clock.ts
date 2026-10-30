@@ -259,10 +259,13 @@ export function offsetsAt(t: string, zone?: string): string[] {
 }
 
 const TAGE = new Map<string, Set<string>>();
+/** zuletzt gefragt (Schnellweg für `zeitCmp` über viele Meldungen desselben Jahres, ohne Schlüssel-Zeichenkette) */
+let tageZuletzt: { z: string | null; jahr: number; s: Set<string> } | null = null;
 function umstellSet(z: string | null, jahr: number): Set<string> {
+  if (tageZuletzt && tageZuletzt.z === z && tageZuletzt.jahr === jahr) return tageZuletzt.s;
   const key = `${z ?? ""}|${jahr}`;
   let s = TAGE.get(key);
-  if (s) return s;
+  if (s) { tageZuletzt = { z, jahr, s }; return s; }
   s = new Set<string>();
   const t0 = Date.UTC(jahr, 0, 1) - 2 * 86400000;
   let prev = offMin(t0, z);
@@ -278,6 +281,7 @@ function umstellSet(z: string | null, jahr: number): Set<string> {
   }
   if (TAGE.size > 200) TAGE.clear();
   TAGE.set(key, s);
+  tageZuletzt = { z, jahr, s };
   return s;
 }
 /** Kalendertage der Umstellungen eines Jahres in der Zone (gemerkt), z. B. Europe/Zurich 2030 → ["2030-03-31", "2030-10-27"] */

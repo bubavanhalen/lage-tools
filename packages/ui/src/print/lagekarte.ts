@@ -11,7 +11,7 @@
  * - jsPDF wird erst beim Erstellen geladen; das Modul selbst ist leicht (Dialog, Abdeckung).
  */
 import type { jsPDF } from "jspdf";
-import { sheetBounds, type Area, type Exercise, type LV95, type RasterSheet } from "@lage/core";
+import { sheetBounds, zeitCmp, type Area, type Exercise, type LV95, type RasterSheet } from "@lage/core";
 import { KARTE, RESOLUTIONS, symbolSvg, toLv95 } from "@lage/map";
 import type L from "leaflet";
 import { renderTiles, tileLevel, type Bounds } from "../tiles";
@@ -270,12 +270,13 @@ export async function lagekartePdf(ex: Exercise, o: LagekarteDruck & { signal?: 
   }
   // Beschriftung der Zeichen: freie Stelle neben dem Zeichen (rechts, links, oben, unten …), eigene Trupps zuerst,
   // dann neueste; ohne freie Stelle keine Beschriftung (auf dem Blatt vermerkt – nie still)
-  const fs = o.paper === "A3" ? 6.5 : 6;
+  // Zeitfähnchen ≥ 8 pt, schwarz auf weissem Kasten (MVP 3.5, B6) – das Rot tragen die Zeichen
+  const fs = o.paper === "A3" ? 8.5 : 8;
   const pxMm = F.w / W;
   type R = { x0: number; y0: number; x1: number; y1: number };
   const hit = (a: R, b2: R) => a.x0 < b2.x1 && b2.x0 < a.x1 && a.y0 < b2.y1 && b2.y0 < a.y1;
   const busy: R[] = drawn.map((d) => { const r = (d.w * pxMm) * 0.85; const [x, y] = [F.x + d.x * pxMm, F.y + d.y * pxMm]; return { x0: x - r, y0: y - r, x1: x + r, y1: y + r }; });
-  const prio = [...drawn].sort((a, c) => Number(c.it.kind === "eigen") - Number(a.it.kind === "eigen") || (a.it.e.t < c.it.e.t ? 1 : a.it.e.t > c.it.e.t ? -1 : 0));
+  const prio = [...drawn].sort((a, c) => Number(c.it.kind === "eigen") - Number(a.it.kind === "eigen") || zeitCmp(c.it.e, a.it.e));
   let ohnePlatz = 0;
   doc.setFont("helvetica", "normal"); doc.setFontSize(fs);
   for (const d of prio) {
@@ -293,7 +294,7 @@ export async function lagekartePdf(ex: Exercise, o: LagekarteDruck & { signal?: 
       .find((r) => r.x0 >= F.x && r.x1 <= F.x + F.w && r.y0 >= F.y && r.y1 <= F.y + F.h && !busy.some((b2) => hit(r, b2)));
     if (!spot) { ohnePlatz++; continue; }
     busy.push(spot);
-    const col: [number, number, number] = d.it.kind === "eigen" ? rgb(LAGE_KARTE.eigen) : d.it.kind === "unklar" ? rgb(LAGE_KARTE.unklar) : d.it.kind === "neutral" ? rgb(LAGE_KARTE.neutral) : rgb(LAGE_KARTE.feind);
+    const col: [number, number, number] = d.it.kind === "eigen" ? rgb(LAGE_KARTE.eigen) : rgb(LAGE_KARTE.ink);
     haloText(doc, s, spot.x0 + 0.4, spot.y0 + th * 0.78, { size: fs, bold: d.it.kind === "eigen", color: col });
   }
   doc.restoreGraphicsState();

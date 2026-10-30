@@ -42,6 +42,10 @@ import {
   newEventId,
   localIso,
   type EntryArt,
+  zeitBis,
+  zeitCmp,
+  mitOffset,
+  offsetOf,
 } from "@lage/core";
 import {
   AffineImageLayer,
@@ -109,6 +113,7 @@ import { KuerzelDialog } from "./lvzui/KuerzelDialog";
 import { KiNotizCtx } from "./ki/KiFeatures";
 import { prefillEntry } from "./entry/useEntryDraft";
 import { HILFE_ANDERE, HILFE_BEISPIELE } from "./entry/HelpPopover";
+import { useTypeToField } from "./entry/useTypeToField";
 import { takeNr } from "./commit";
 import { perfMark } from "./perf";
 import { klassifizierungOf } from "./shell/contracts";
@@ -119,7 +124,7 @@ import { LagekarteDialog } from "./print/LagekarteDialog";
 // MVP 3.5 (Phase 0): `beforeinstallprompt` früh abfangen (Modul fängt es beim Laden ab, Paket A)
 import "./betrieb/install";
 import { OfflinePopover } from "./betrieb/OfflinePopover";
-import { useBetriebStatus, useSchutzHinweis } from "./betrieb/status";
+import { onSchutzAnleitung, useBetriebStatus, useSchutzHinweis } from "./betrieb/status";
 import { useWakeLock } from "./betrieb/wakeLock";
 import { dateiText, markDateiGesichert, useDateiGesichert } from "./betrieb/dateiSichern";
 import { useZeichenGroesse } from "./map/symbolSize";
@@ -242,6 +247,10 @@ export function Workspace({ product, tagline }: Props) {
   const dateiAm = useDateiGesichert(ex?.id);
   /** Offline-Popover offen (am Kopf-Knopf bzw. am Menü), kein Moduswechsel (S6) */
   const [offlinePop, setOfflinePop] = useState<{ anker: HTMLElement | null } | null>(null);
+  /** Anker des Popovers: Kopf-Knopf «⚠ Offline fehlt» bzw. «Lädt 42 %», sonst das Menü ☰ */
+  const offlineAnker = () => document.querySelector<HTMLElement>(".hd button.hd-off") ?? document.querySelector<HTMLElement>(".hd .mm-btn");
+  // Schutzhinweis «So geht’s» (A): Popover mit aufgeklappter Anleitung
+  useEffect(() => onSchutzAnleitung(() => setOfflinePop({ anker: offlineAnker() })), []);
   // ---------- MVP 3.5 (Phase 0 verdrahtet): Zeichengrösse S/M/L pro Gerät (Paket B baut die Lage-Ebene um)
   const [zeichenStufe] = useZeichenGroesse();
 
@@ -480,7 +489,7 @@ export function Workspace({ product, tagline }: Props) {
     pendingRef.current = g;
     for (const id of ids) {
       const e = (ex.events ?? []).find((x) => x.id === id);
-      if (!e || e.deleted || !e.pos || e.t.slice(0, 16) > tNow || (winFrom && e.t < winFrom)) continue;
+      if (!e || e.deleted || !e.pos || !zeitBis(e, tNow) || (winFrom && zeitCmp(e, winFrom) < 0)) continue;
       L.marker(toLatLng(e.pos), { icon: symbolIcon(e.sym, e.aff, 18, { sidc: e.sidc, dir: e.dir }, "lt-ev lt-pending"), interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(g);
     }
   }, [ex?.events]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -610,7 +619,7 @@ export function Workspace({ product, tagline }: Props) {
   const selectEvent = (id: string | null) => {
     setSelEvent(id);
     const e = (ex?.events ?? []).find((x) => x.id === id);
-    if (e && zeit.zeit.kind === "rueckblick" && e.t > zeit.zeit.t) zeit.lookBack(e.t);
+    if (e && zeit.zeit.kind === "rueckblick" && zeitCmp(e, zeit.zeit.t) > 0) zeit.lookBack(mitOffset(e.t.slice(0, 16), offsetOf(e)));
     if (e) focusEvent(e);
   };
   const selectEventRef = useRef(selectEvent);
@@ -619,7 +628,7 @@ export function Workspace({ product, tagline }: Props) {
   const [reveal, setReveal] = useState<{ id: string; n: number } | null>(null);
   const zurMeldung = (id: string) => {
     const e = (ex?.events ?? []).find((x) => x.id === id);
-    if (e && winFrom && e.t.slice(0, 16) < winFrom) {
+    if (e && winFrom && zeitCmp(e, winFrom) < 0) {
       zeit.setShowLast(null); zeit.setAb?.(null);
       say("«Zeige letzte» aufgehoben – alles sichtbar");
     }
@@ -726,12 +735,10 @@ export function Workspace({ product, tagline }: Props) {
   /** «Letzte Übergabe als PDF» (Menü): nach dem Abschliessen auf diesem Gerät gemerkt */
   const [letzteUeb, setLetzteUeb] = useState(() => (ex ? ladeLetzteUebergabe(ex.id) : null));
   useEffect(() => { setLetzteUeb(ex ? ladeLetzteUebergabe(ex.id) : null); return onLetzteUebergabe(() => setLetzteUeb(exRef.current ? ladeLetzteUebergabe(exRef.current.id) : null)); }, [ex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Taste U (ausserhalb von Eingabefeldern, ohne Ctrl/Alt/⌘): Übergabe
+  // Alt+U: Übergabe (MVP 3.5, E2 – die Einzeltaste U ist Text; `code`, weil macOS mit Option ein Sonderzeichen liefert)
   useEffect(() => {
     const key = (ev: KeyboardEvent) => {
-      if (ev.defaultPrevented || ev.ctrlKey || ev.altKey || ev.metaKey || (ev.key !== "u" && ev.key !== "U")) return;
-      const t = ev.target as HTMLElement | null;
-      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (ev.defaultPrevented || ev.ctrlKey || ev.metaKey || !ev.altKey || ev.code !== "KeyU") return;
       if (dialog !== null || present || !lage) return;
       ev.preventDefault();
       openUebergabe();
@@ -739,6 +746,8 @@ export function Workspace({ product, tagline }: Props) {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [dialog, present, lage, openUebergabe]);
+  // MVP 3.5 (E2, S21): ein druckbares Zeichen ausserhalb eines Felds springt ins Meldungsfeld («Lage führen», kein Dialog)
+  useTypeToField(lage && !present && dialog === null && offlinePop === null);
   /** KI-Lagebericht als Notiz (Kap. 3.11): `art: notiz`, `via: ki`, Lagezeit des Entwurfs, Kürzel; gibt die Nummer zurück */
   const kiNotiz = useCallback((text: string, t: string): string | null => {
     const cur = exRef.current;
@@ -866,7 +875,7 @@ export function Workspace({ product, tagline }: Props) {
         const i = list.findIndex((e) => e.id === selEvent);
         const j = i < 0 ? (ev.key === "ArrowRight" ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, i + (ev.key === "ArrowRight" ? 1 : -1)));
         const e = list[j]!;
-        setSelEvent(e.id); zeit.lookBack(e.t); focusEvent(e);
+        setSelEvent(e.id); zeit.lookBack(mitOffset(e.t.slice(0, 16), offsetOf(e))); focusEvent(e);
         ev.preventDefault();
       }
     };
@@ -885,10 +894,10 @@ export function Workspace({ product, tagline }: Props) {
     if (!map || !ex) return null;
     let best: { e: LageEvent; d: number } | null = null;
     for (const e of ex.events ?? []) {
-      if (e.deleted || !e.pos || e.t > tNow || (winFrom && e.t < winFrom)) continue;
+      if (e.deleted || !e.pos || !zeitBis(e, tNow) || (winFrom && zeitCmp(e, winFrom) < 0)) continue;
       const q = map.latLngToContainerPoint(toLatLng(e.pos));
       const d = Math.hypot(q.x - pt.x, q.y - pt.y);
-      if (d <= 22 && (!best || d < best.d - 4 || (Math.abs(d - best.d) <= 4 && e.t > best.e.t))) best = { e, d };
+      if (d <= 22 && (!best || d < best.d - 4 || (Math.abs(d - best.d) <= 4 && zeitCmp(e, best.e) > 0))) best = { e, d };
     }
     return best ? { id: best.e.id, label: `${best.e.t.slice(11, 16)} ${best.e.melder ?? best.e.unit}`.trim() } : null;
   };
@@ -903,7 +912,7 @@ export function Workspace({ product, tagline }: Props) {
   const map = mapReady ? sm.current?.map ?? null : null;
   const hasEvents = (ex.events ?? []).some((e) => !e.deleted);
   // Meldungsband nur für eine Meldung bis zur Lagezeit (Rückblick zeigt nie eine spätere, M4)
-  const selEv = (ex.events ?? []).find((e) => e.id === selEvent && !e.deleted && e.t.slice(0, 16) <= tNow) ?? null;
+  const selEv = (ex.events ?? []).find((e) => e.id === selEvent && !e.deleted && zeitBis(e, tNow)) ?? null;
 
   const menu = (
     <WorkspaceMenu exName={ex.name} aw={aw} setModus={setModus} setExperte={setExperte} offlineReady={offline.ready}
@@ -965,7 +974,7 @@ export function Workspace({ product, tagline }: Props) {
     <TimeBand ex={ex} zeit={zeit} experte={experte || present} lastReport={lastReportUntil(ex.events, zeit.tLive)}
       swim={{
         events: ex.events ?? [], days: ex.days, units: ex.units, selectedId: selEvent, compact: present,
-        onSelect: (id) => { setSideView("journal"); const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) { zeit.lookBack(e.t); focusEvent(e); } },
+        onSelect: (id) => { setSideView("journal"); const e = (ex.events ?? []).find((x) => x.id === id); setSelEvent(id); if (e) { zeit.lookBack(mitOffset(e.t.slice(0, 16), offsetOf(e))); focusEvent(e); } },
         extra: present ? <>
           <button className={"swt-chip" + (presentHints ? " on" : "")} aria-pressed={presentHints} onClick={() => { setPresentHints(!presentHints); window.setTimeout(() => sm.current?.map.invalidateSize(), 50); }}>
             Was Rot vorhaben könnte{badge.n ? ` (${badge.n})` : ""}</button>
@@ -980,7 +989,8 @@ export function Workspace({ product, tagline }: Props) {
       <AppShell aw={aw} lagezeit={zeit.zeit.kind} night={night} present={present}
         header={<Header name={ex.name} product={product} save={saveStatus} offline={offline} menu={menu}
           schicht={{ kuerzel: schicht.kuerzel, seit: seitText(schicht.seitT) }}
-          onFixOffline={() => setOfflinePop({ anker: document.querySelector<HTMLElement>(".hd .hd-off.fix") })} />}
+          online={betrieb.online.ortssuche || betrieb.online.strassen}
+          onFixOffline={() => setOfflinePop({ anker: offlineAnker() })} />}
         bands={<>
           <StatusBands ex={ex} dbBlocked={dbBlocked} onSaveFile={saveFile} />
         </>}
@@ -1029,8 +1039,7 @@ export function Workspace({ product, tagline }: Props) {
         {undo.bar}
         {offlinePop && (
           <OfflinePopover ex={ex} map={map} status={betrieb} anker={offlinePop.anker} onClose={() => setOfflinePop(null)}
-            onSaveFile={() => void saveFile()} say={say}
-            onVorbereiten={() => { setOfflinePop(null); setModus("vorbereiten"); setPrepStep(6); }} />
+            onSaveFile={() => void saveFile()} say={say} />
         )}
         <ViewerHost />
         {dialog === "uebungen" && (
@@ -1077,17 +1086,18 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
       <ul className="dlg-ex">
         {BEISPIELE.map(([t, d]) => <li key={t}><code>{t}</code><span>{d}</span></li>)}
       </ul>
-      <p className="dlg-note">Planquadrate gehen erst mit Führungsraster (Vorbereiten). Neu in deiner Schicht: seit deinem Kürzel bzw. der letzten Übergabe.</p>
+      <p className="dlg-note">Planquadrate gehen erst mit Führungsraster (Vorbereiten). «T2» = zweiter Übungstag. Neu in deiner Schicht: seit deinem Kürzel bzw. der letzten Übergabe. Trupp-Knopf unterstrichen = zuletzt gemeldet.</p>
       <h3>Tastenkürzel</h3>
       <dl className="dlg-keys">
         <dt><kbd>Enter</kbd></dt><dd>eintragen</dd>
         <dt><kbd>Esc</kbd></dt><dd>Feld leeren, Korrektur abbrechen, Fenster schliessen</dd>
         <dt><kbd>↑</kbd></dt><dd>im leeren Feld: letzte eigene Meldung korrigieren</dd>
         <dt><kbd>Ctrl+K</kbd></dt><dd>suchen</dd>
-        <dt><kbd>L</kbd></dt><dd>zurück zu LIVE</dd>
-        <dt><kbd>U</kbd></dt><dd>Übergabe</dd>
+        <dt><kbd>Alt+L</kbd></dt><dd>zurück zu LIVE</dd>
+        <dt><kbd>Alt+U</kbd></dt><dd>Übergabe</dd>
         <dt><kbd>Ctrl+Z</kbd></dt><dd>Streichen, Korrektur, Vermerk rückgängig machen</dd>
       </dl>
+      <p className="dlg-note">Tippen geht nie verloren: ein Buchstabe ausserhalb eines Felds springt ins Meldungsfeld.</p>
     </Dialog>
   );
 }

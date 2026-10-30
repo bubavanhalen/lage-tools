@@ -8,11 +8,15 @@
  * mit Ausweg, «Verstanden:» (Zeit, Trupp), «gelesen als» (Funksprache), Zeichen ▾ und Einordnung Feind|Eigene|Unklar,
  * Ort (mit Strassenwahl) und «Ort auf Karte setzen». In der Korrektur: geänderte Werte fett mit «(vorher …)».
  * Experte: «Fläche zeichnen». KI deuten nur bei eingeschalteter KI (KiMeldungSuggest blendet sich sonst aus).
+ * MVP 3.5 (Kap. 2.4, E5): Knöpfe ««Personen» übernehmen» (`draft.ersatz`), «Als zwei Einträge» (`draft.teile`), «H06 als
+ * Trupp aufnehmen» (`trupp-neu`), «03:30 einsetzen» (`zeit-fehlt`), «schliesst Auftrag Nr 66 ab … [nicht abschliessen]»
+ * (`draft.abschluss`), Bezug-/Auftrag-Wahl (`reason.choices`); Zeit «T2 07:35 (4 min nach jetzt – Uhr des Melders?)» bzw.
+ * in der doppelten Stunde «02:55 MESZ (vor 15 min)».
  * Testhaken: `data-zustand` am Block (= EntryState.level, setzt EntryBox sofort, nie nachgezogen).
  */
 import { createPortal } from "react-dom";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
-import { artOf, catalogEntry, describeTactical, nrLabel, type Draft, type Kind, type LageEvent } from "@lage/core";
+import { artOf, catalogEntry, describeTactical, nrLabel, zeitMs, zeitText, type Draft, type Kind, type LageEvent } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { LAGE_KARTE } from "../colors";
 import { useDraftMissing } from "../QualityMarks";
@@ -93,7 +97,11 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
   const more = state.reasons.length - 1;
   const asked = lvl === "pruefen" && d.armed === d.text;
   const korr = d.mode.art === "korrektur";
-  const time = `${dayLabel(draft.t, ex.days)} ${draft.t.slice(11, 16)}${!korr && !draft.timeFromText ? " (jetzt)" : ""}`;
+  // MVP 3.5 (S22, S23): getippte Zeit nach der Uhr «(4 min nach jetzt – Uhr des Melders?)»; doppelte Stunde «02:55 MESZ (vor 15 min)»
+  const zt = zeitText({ t: draft.t, tOffset: draft.tOffset });
+  const abst = draft.timeFromText ? Math.round((zeitMs({ t: draft.t, tOffset: draft.tOffset }) - Math.floor(d.now.getTime() / 60000) * 60000) / 60000) : 0;
+  const zusatz = korr ? "" : !draft.timeFromText ? " (jetzt)" : abst > 0 ? ` (${abst} min nach jetzt – Uhr des Melders?)` : zt.length > 5 && abst < 0 ? ` (vor ${-abst} min)` : "";
+  const time = `${dayLabel(draft.t, ex.days)} ${zt}${zusatz}`;
   const timeChanged = korr && base && draft.timeFromText && draft.t !== base.t;
   const what = d.keepSymbol && base ? base.desc : d.symOverride ? choiceText(d.symOverride, draft.count) : draft.desc;
   const kindNow = d.effKind ?? draft.kind;
@@ -113,9 +121,14 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
   const placeChanged = korr && d.oldPlace !== null && (d.placeText || "ohne Ort") !== d.oldPlace;
   const ortProblem = state.reasons.some((x) => x.problem === "ort" || x.problem === "orte");
   const melderProblems = state.reasons.filter((x) => (x.problem === "melder" || x.code === "trupp-neu") && x.token);
+  /** (MVP 3.5) Wahl-Knöpfe (Bezug 64a/64b, welcher Auftrag erledigt) */
+  const wahl = state.reasons.find((x) => (x.code === "bezug-wahl" || x.code === "auftrag-wahl") && x.choices?.length);
+  const zweiOrte = !korr && !!draft.teile && state.reasons.some((x) => x.code === "zwei-orte");
   /** Vorschläge der Erkennung, die in den Text übernommen werden können («meintest du 07:35?», «Schützenpanzer») */
   const offers = state.reasons.flatMap((x) => {
-    if (x.code === "zukunft" && x.suggest && x.token) return [{ key: "z", label: `${x.suggest.slice(0, 2)}:${x.suggest.slice(2)} einsetzen`, token: x.token, by: x.suggest }];
+    if ((x.code === "zukunft" || x.code === "zeit-fehlt") && x.suggest && x.token) return [{ key: "z", label: `${x.suggest.slice(0, 2)}:${x.suggest.slice(2)} einsetzen`, token: x.token, by: x.suggest }];
+    // MVP 3.5 (C1): Ersatzwort aus dem Wörterbuch ««Personen» übernehmen» (ersetzt die Textstelle, Ctrl+Z im Feld)
+    if (x.code === "was" && draft.ersatz) return [{ key: "e", label: `«${draft.ersatz.wort}» übernehmen`, token: draft.ersatz.token, by: draft.ersatz.wort, ersatz: true }];
     if (x.code === "was" && x.token && draft.unknownWord?.suggestLabel) return [{ key: "w", label: `«${draft.unknownWord.suggestLabel}» einsetzen`, token: x.token, by: draft.unknownWord.suggestLabel }];
     // (MVP 3, E17) heute kein Tag der Übung: Tag und Zeit vorne einsetzen
     if (x.code === "tag-fremd" && x.suggest) return [{ key: "t", label: `Als ${tagZeit(x.suggest)} eintragen`, token: "", by: x.suggest }];
@@ -153,11 +166,15 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
           {r0.hint && <p className="eb-state-t">{r0.hint}</p>}
           {state.reasons.slice(1).filter((x) => x.problem).map((x, i) => <p key={i} className="eb-state-t">⛔ {x.text}</p>)}
         </>}
-        {(melderProblems.length > 0 || offers.length > 0 || (ortProblem && lvl === "geht-nicht")) && (
+        {(melderProblems.length > 0 || offers.length > 0 || zweiOrte || !!wahl || (ortProblem && lvl === "geht-nicht")) && (
           <div className="eb-acts">
-            {offers.map((o) => <button key={o.key} type="button" className="eb-btn" onClick={() => take(o.token, o.by)}>{o.label}</button>)}
+            {offers.map((o) => <button key={o.key} type="button" className="eb-btn" onClick={() => ("ersatz" in o ? d.takeErsatz(o.token, o.by) : take(o.token, o.by))}>{o.label}</button>)}
+            {zweiOrte && <button type="button" className="eb-btn" onClick={() => d.commitTeile()}>Als zwei Einträge</button>}
             {melderProblems.map((x) => (
-              <button key={x.token} type="button" className="eb-btn" onClick={() => onAddUnit(x.token!)}>«{x.token}» als neuen Trupp aufnehmen</button>
+              <button key={x.token} type="button" className="eb-btn" onClick={() => onAddUnit(x.token!)}>{x.token} als Trupp aufnehmen</button>
+            ))}
+            {wahl?.choices!.slice(0, 3).map((c) => (
+              <button key={c.id} type="button" className="eb-btn" aria-pressed={d.bezugWahl === c.id} onClick={() => { d.setBezugWahl(c.id); d.inputRef.current?.focus(); }}>{c.label}</button>
             ))}
             {ortProblem && !state.reasons.some((x) => x.problem === "orte") && (
               <button type="button" className="eb-btn" onClick={d.pickOnMap} disabled={d.picking}>{d.picking ? "Auf Karte tippen …" : "Ort auf Karte setzen"}</button>
@@ -175,11 +192,16 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
         {note && draft.art === "auftrag" && draft.frist && <span> · bis {draft.frist.slice(11, 16)}</span>}
         {note && draft.art === "rueckfrage" && draft.artStark && <span> · offen bis Antwort</span>}
         {zeitInhalt && <span> · Zeiten im Text sind Inhalt</span>}
-        {bezugNr && <span> · {draft.bezugArt === "quittung" ? "Quittung zu" : draft.bezugArt === "ausgefuehrt" ? "ausgeführt zu" : "Antwort auf"} Nr {bezugNr}</span>}
+        {bezugNr && !draft.abschluss && <span> · {draft.bezugArt === "quittung" ? "Quittung zu" : draft.bezugArt === "ausgefuehrt" ? "ausgeführt zu" : draft.bezugArt === "weiter" ? "zu" : "Antwort auf"} Nr {bezugNr}</span>}
+        {draft.abschluss && !d.abschlussAus && <span> · schliesst Auftrag Nr {draft.abschluss.nr} ab{draft.abschluss.text ? ` (${draft.abschluss.text})` : ""}</span>}
+        {draft.begehren && <span> · Begehren: {draft.begehren.was} – kommt in Offen</span>}
         {draft.dringend && <span className="eb-dringend"> · dringend</span>}
         {lvl === "geht-nicht" && !note && <span> · {whatText}</span>}
         {fehlt.length > 0 && <span className="eb-fehlt"> · Fehlt noch: {fehlt.join(", ")}</span>}
       </p>
+      {draft.abschluss && !d.abschlussAus && (
+        <div className="eb-row"><button type="button" className="eb-btn" onClick={() => { d.setAbschlussAus(true); d.inputRef.current?.focus(); }}>nicht abschliessen</button></div>
+      )}
       {draft.felder
         ? <p className="eb-readas eb-felder">{felderText(draft.felder)}</p>
         : draft.normalized && draft.normalized !== draft.text && <p className="eb-readas">gelesen als: <span className="mono">{draft.normalized}</span></p>}
@@ -199,7 +221,7 @@ export function PreviewLine({ d, onAddUnit, part }: { d: EntryDraft; onAddUnit(n
         <div className="eb-row eb-symrow">
           <ArtSwitch art={note ? draft.art : "meldung"} kind={note ? null : kindNow} neutral={d.symOverride?.aff === "N"} onKind={d.setKind} onArt={d.setArt}
             open={d.artMenu} setOpen={d.setArtMenu} onDone={() => d.inputRef.current?.focus()} />
-          <span className="eb-note">{note ? "kein Zeichen, nichts auf der Karte" : "keine Meldung? Art hier wählen"}</span>
+          <span className="eb-note">{note ? "kein Zeichen, nichts auf der Karte" : "Keine Sichtung? Andere Art wählen (Auftrag, Rückfrage …)"}</span>
         </div>
       )}
       {lvl !== "geht-nicht" && note && <>

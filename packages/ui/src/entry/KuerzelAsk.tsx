@@ -3,8 +3,11 @@
  * Meldung bleibt im Feld. Enter im Kürzel-Feld speichert das Kürzel (2–6 Zeichen, A–Z/0–9, gross) **und** trägt ein;
  * leer + Enter trägt ohne Kürzel ein (Abfrage erst wieder nach Neuladen). Esc zurück ins Meldungsfeld.
  * Testhaken: Feld mit Label «Kürzel», Text «Wer erfasst?».
+ * MVP 3.5 (S24): Rückfall, wenn die Kürzel-Zeile übergangen wurde; eine Regel (`kuerzelNorm`), kein `maxLength`, der
+ * still abschneidet («Wm M» → «wird zu WMM»).
  */
 import { useEffect, useId, type RefObject } from "react";
+import { KUERZEL_HINWEIS, kuerzelNorm } from "../shell/contracts";
 
 export function KuerzelAsk({ value, onChange, onSubmit, onCancel, error, inputRef }: {
   value: string;
@@ -23,16 +26,18 @@ export function KuerzelAsk({ value, onChange, onSubmit, onCancel, error, inputRe
       <p className="eb-kz-q" id={`${id}-q`}><b>Wer erfasst?</b> Dein Kürzel steht im Journal und bei der Übergabe.</p>
       <div className="eb-kz-row">
         <label className="eb-kz-l" htmlFor={`${id}-k`}>Kürzel</label>
-        <input ref={inputRef} id={`${id}-k`} className="eb-kz-f mono" value={value} placeholder="z. B. MU" maxLength={6}
+        <input ref={inputRef} id={`${id}-k`} className="eb-kz-f mono" value={value} placeholder="z. B. MU"
           autoComplete="off" autoCorrect="off" autoCapitalize="characters" spellCheck={false} enterKeyHint="send"
           aria-invalid={error || undefined} aria-describedby={`${id}-h`}
-          onChange={(e) => onChange(e.target.value.toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, ""))}
+          onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); onSubmit(); }
             else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onCancel(); }
           }} />
         <span className="eb-kz-h" id={`${id}-h`}>
-          {error ? <b className="eb-kz-err">2–6 Buchstaben oder Ziffern, z. B. MU</b> : <>Enter trägt ein · ohne Kürzel: Feld leer lassen</>}
+          {error || (value.trim() && !kuerzelNorm(value)) ? <b className={error ? "eb-kz-err" : undefined}>{KUERZEL_HINWEIS}</b>
+            : value.trim() && kuerzelNorm(value) !== value.trim() ? <>wird zu <b className="mono">{kuerzelNorm(value)}</b> · Enter trägt ein</>
+            : <>Enter trägt ein · ohne Kürzel: Feld leer lassen</>}
         </span>
       </div>
     </div>

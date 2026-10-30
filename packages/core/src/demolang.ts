@@ -10,6 +10,7 @@
 import { artOf } from "./arten";
 import { demoExercise } from "./demo";
 import { eventFromDraft, lastPosition, parseMeldung } from "./journal";
+import { zeitBis, zeitCmp } from "./clock";
 import type { EntryArt, EventRevision, Exercise, LageEvent, SchichtWechsel } from "./model";
 
 export const DEMO_LANG_ID = "ex-beispiel-bern-lang";
@@ -233,7 +234,8 @@ export function demoLang(o: { meldungen?: number; tage?: number; seed?: number }
 
   const schichten: SchichtWechsel[] = wechselZeiten.map((m, k) => {
     const t = isoAt(m, days);
-    const neu = events.filter((e) => e.t >= isoAt(wechselZeiten[k - 1] ?? start, days) && e.t < t).length;
+    const ab = isoAt(wechselZeiten[k - 1] ?? start, days);
+    const neu = events.filter((e) => zeitBis(ab, e) && zeitCmp(e, t) < 0).length;
     return {
       id: `schicht-lang-${k}`, art: k === 0 ? "beginn" : "uebergabe", at: utcOf(t), t, an: kuerzelOf(k), device: DEMO_LANG_DEVICE,
       ...(k > 0 ? { von: kuerzelOf(k - 1), stand: { offen: 1 + Math.floor(r() * 4), neu } } : {}),

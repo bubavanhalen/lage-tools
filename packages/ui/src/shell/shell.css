@@ -81,11 +81,35 @@ button.hd-off.fix::before { content: "⚠ "; color: var(--warn-sym); }
 .xl-undo { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); padding: var(--sp-8) var(--sp-12); background: var(--ink); color: var(--surface); border-radius: var(--r-8); }
 .xl-undo button { min-height: var(--hit); background: transparent; color: var(--surface); border-color: var(--surface); }
 
-/* ---------- Linke Spalte «Lage führen» ---------- */
-.lc { display: flex; flex-direction: column; min-height: 100%; }
-.lc-switch { padding: var(--sp-8) var(--spalte-pad) 0; background: var(--surface); position: sticky; top: 0; z-index: 3; }
-.lc-list { flex: 1; min-height: 0; }
+/* ---------- Linke Spalte «Lage führen» (MVP 3.5, E1, S21: Spaltenkopf fest, nur die Liste scrollt) ---------- */
+/* `.lc` = JournalPanel: Kopf (Meldungsfeld) · Umschalter und Suche · Liste (`.lc-list`, Scroll-Behälter der Liste) */
+.lc-entry, .lc-switch { display: flex; flex-direction: column; gap: var(--sp-12); min-width: 0; }
+/* Vorschläge der Suche liegen über der Liste */
+.lc-switch { position: relative; z-index: 4; }
+.lc-list { min-width: 0; }
+@media (min-width: 861px) {
+  /* nur in «Lage führen»: Vorbereiten und Experte-Ansichten scrollen wie bisher. Kein Scrollen der Spalte selbst –
+     nur als Rückfall, wenn Kopf und Vorschau zusammen höher als die Spalte würden (nie etwas abgeschnitten) */
+  .app.shell.m-lage .sh-side { overflow: hidden auto; }
+  .app.shell.m-lage .sh-side > .jpanel.lc { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); padding-bottom: 0; }
+  .app.shell.m-lage .lc-list { overflow: auto; overscroll-behavior: contain; min-height: 0; margin: 0 calc(-1 * var(--sp-16)); padding: 0 var(--sp-16) var(--sp-16); }
+  /* Vorschau höchstens die halbe Spaltenhöhe, darin scrollbar (die Liste bleibt sichtbar) */
+  .app.shell.m-lage .lc-entry .eb-prev { max-height: calc((100dvh - var(--kopf-h)) * .5); overflow: auto; overscroll-behavior: contain; }
+}
+@media (max-width: 860px) {
+  /* Tablet hoch, Handy: der Eingabeblock haftet beim Scrollen oben (die Seite scrollt) */
+  .app.shell.m-lage .lc-entry {
+    position: sticky; top: 0; z-index: 6; background: var(--surface);
+    margin: calc(-1 * var(--sp-16)) calc(-1 * var(--sp-16)) 0; padding: var(--sp-16) var(--sp-16) var(--sp-8);
+    box-shadow: 0 6px 10px -10px rgba(0, 0, 0, .5);
+  }
+  .app.shell.m-lage .lc-entry .eb-prev { max-height: 40vh; overflow: auto; overscroll-behavior: contain; }
+}
 .sw2 { display: grid; grid-template-columns: auto 1fr; border: 1px solid var(--line); border-radius: var(--r-8); overflow: hidden; }
+/* MVP 3.5 (S25): drei gleich breite Reiter; Text kürzt mit «…», Name für Screenreader voll */
+.sw-box .sw2.sw3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sw-box .sw2.sw3 button { min-width: 0; padding: 0 var(--sp-8); }
+.sw-box .sw2.sw3 button > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sw2 button { min-height: var(--hit); border: 0; border-radius: 0; background: var(--surface); color: var(--ink); font: 600 var(--fs-14)/1.2 var(--f-body); padding: 0 var(--sp-16); display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-8); white-space: nowrap; overflow: hidden; }
 .sw2 button + button { border-left: 1px solid var(--line); }
 .sw2 button[aria-selected="true"] { background: var(--ink); color: var(--surface); }

@@ -9,13 +9,13 @@ import { findCoordinates, type LV95 } from "./lv95";
 import { newEventId, revisionOf, type Area, type EntryArt, type Exercise, type LageEvent, type MeldeFelder, type Place, type RoadHint, type Side } from "./model";
 import { ART_LABEL, artOf, artText, isLage, istDringend, readArt, unscharfTreffer, type ArtLesung } from "./arten";
 import { readMeldeFelder, felderZuText } from "./felder";
-import { aufhebZiele, bezugAufloesen as lvzBezugAufloesen, istAufhebbar, liftMap, lvzIndex, vermerkeOf } from "./lvz";
+import { aufhebZiele, bezugAufloesen as lvzBezugAufloesen, istAufhebbar, liftMap, lvzIndex, vermerkeOf, type BezugWahl } from "./lvz";
 import { findByNr, nrLabel } from "./nummer";
-import { boundsCenter, cellAtAny, cellBounds, findCells, type RasterSheet } from "./raster";
+import { boundsCenter, cellAtAny, cellBounds, findCells, type FoundCell, type RasterSheet } from "./raster";
 import { buildSidc, catalogEntry, describeTactical, isCountableWord, isTacticalWord, readTactical, type CatalogEntry, type Echelon, type Status } from "./catalog";
 import { symbolDef, type Affiliation } from "./symbols";
 import { findTimes } from "./time";
-import { addDays, compareEvents, localDay, localIso, nearestDay, offsetFor, zeitTeile } from "./clock";
+import { addDays, compareEvents, lesart, localDay, localIso, nearestDay, offsetFor, offsetsAt, umstellTage, zeitBis, zeitCmp, zeitMs, zeitTeile } from "./clock";
 import { schichtZuordnung } from "./schichtwahl";
 import { autoShape, shapeCenter } from "./shapes";
 import { countWords, hourTimes, isGenericPlace, isNeedNote, listParts, looseTime, melderProblems, namesPlace, normalizeMelder, normalizeTyped, observedOwn, ownDirection, partPlaces, pickTime, placeProblems, placeSpans, sameUnitName, splitMelderCount, staysOwn, stripLead, stueckCount, timeProblems, unknownSubject, vagueAmount, type UnknownWord } from "./erkennung";
@@ -174,7 +174,7 @@ export interface Draft {
    * (MVP 3 Nachbesserung) Weshalb eine Meldung zur Notiz wurde (gelb, 2. Enter = Notiz): «kein-ziel» = «… aufgehoben»
    * ohne aktives Ziel (Aufheben zeichnet nie), «weg» = «Feind weg aus AK9» ohne Gesehenes («Kein Zeichen?»).
    */
-  notizGrund?: "kein-ziel" | "weg";
+  notizGrund?: "kein-ziel" | "weg" | "kein-zeichen";
   /**
    * (MVP 3 Fix 3) Art bzw. Aufheben nur aus einem unscharfen Wort gelesen («Auftarg», «antwrt», «Batt», «aufgehobn»):
    * `wort` = gemeinte Sache in Klartext («Auftrag», «Antwort», «Orientierung von Bat», «Aufheben»), `token` wie getippt.
@@ -204,6 +204,28 @@ export interface Draft {
   ersatz?: { token: string; wort: string };
   /** C12: unbekannter Trupp («H06») – nur Anzeige/Knopf «H06 als Trupp aufnehmen», `melder` bleibt leer */
   truppNeu?: string;
+  /** (D2, additiv) Wahl-Knöpfe zu `bezugKandidaten` (Grund, Text, Beschriftungen) – `entryState` → `EntryReason.choices` */
+  wahl?: BezugWahl;
+
+  // ---- MVP 3.5, Paket C (additiv): Gründe der Erkennung für die Vorschau (`entryState`, Texte Kap. 4) ----
+  /**
+   * C8: Ereignis am ausdrücklich genannten eigenen Trupp («H05 hat Kontakt», «Drohne über H05», «2 Fz fahren an H02
+   * vorbei»): Ort «bei H05 (AQ11 C)» ist sicher – kein gelbes `ort-bei-trupp`.
+   */
+  amTrupp?: boolean;
+  /**
+   * C7/C11: eigene Meldung ohne neues Zeichen – «verwundet» (eigene Verwundete, Ort nur als Text) bzw. «begehren»
+   * (Nachschub, Mun-Stand): Trupp bleibt, kein «Ort fehlt», nie ein Zeichen auf der Karte.
+   */
+  ohneZeichen?: "verwundet" | "begehren";
+  /** C13: genannter, aber unbekannter Ort («erreicht Checkpoint 2», «bei der Brücke») – kein Ersatzort, gelb `ort` */
+  ortUnbekannt?: string;
+  /** C5: eigener Trupp ohne Standortverb an einen Ort («H01 Rückzug nach AC5») – gelb `seite` «H01 selbst nach AC5?» */
+  seiteFrage?: { trupp: string; ort: string };
+  /** C6: zwei Orte (Bewegung des Trupps + Sichtung) – gelb `zwei-orte`; der Entwurf ist die Sichtung, `teile` die Aufteilung */
+  zweiOrte?: { trupp: string; ziel: string; sicht: string; seite: string; bleibt?: string };
+  /** S23: getippte Uhrzeit gibt es an diesem Tag nicht (Uhr vorgestellt) – rot `zeit-fehlt`, Vorschlag «0330» */
+  zeitFehlt?: { zeit: string; vorschlag: string; von: string; bis: string };
 }
 
 /** Grund, weshalb ein Entwurf so nicht eingetragen werden darf (Klartext für die Vorschau). */
@@ -245,6 +267,8 @@ const DIRS: Record<string, number> = {
   N: 0, NORD: 0, NORDEN: 0, NO: 45, NE: 45, NORDOST: 45, NORDOSTEN: 45, O: 90, E: 90, OST: 90, OSTEN: 90,
   SO: 135, SE: 135, SÜDOST: 135, SÜDOSTEN: 135, S: 180, SÜD: 180, SÜDEN: 180, SW: 225, SÜDWEST: 225, SÜDWESTEN: 225,
   W: 270, WEST: 270, WESTEN: 270, NW: 315, NORDWEST: 315, NORDWESTEN: 315,
+  // (MVP 3.5, C2) Kurzformen wie getippt: «Rtg Nrd», «Sd», «Wst»
+  NRD: 0, NRDN: 0, SD: 180, WST: 270,
 };
 
 /** «3 Pers», «2 Fz» – nicht in Elementnamen wie «H05», «Det 2» (Lookbehind: kein Buchstabe/Ziffer davor) */
@@ -264,6 +288,33 @@ const FROM_RE = /(?<![\p{L}\d])(?:aus|von)\s+(?:der\s+)?(?:(rtg|richtung)\.?\s+)
 /** Strassenart: «auf Hauptstrasse», «auf der HS», «auf Autobahn», «auf A1» – geht nicht in die Ortssuche */
 const ROAD_HAUPT_RE = /(?<![\p{L}\d])(?:(?:auf|entlang)\s+(?:der\s+|die\s+)?)?haupt(?:strasse|straße|trasse|achse|verkehrsstrasse|verkehrsachse)(?![\p{L}\d])|(?<![\p{L}\d])auf\s+(?:der\s+)?hs(?![\p{L}\d])/iu;
 const ROAD_AB_RE = /(?<![\p{L}\d])(?:(?:auf|entlang)\s+(?:der\s+|die\s+)?)?(?:autobahn|autostrasse)(?![\p{L}\d])|(?<![\p{L}\d])auf\s+(?:der\s+)?(?:ab|a\s?\d{1,2})(?![\p{L}\d])/iu;
+// ---- MVP 3.5, Paket C (Spez. MVP 3.5, Kap. 3.3): Regeln C3–C11
+/** C8: Ereignis am Trupp – Kontakt, Beschuss, Angriff (grün «bei H05», wenn der Trupp genannt ist) */
+const KONTAKT_AM_RE = /(?<![\p{L}])(kontakt|feuerkontakt|beschossen|beschuss|unter\s+feuer|angegriffen|überfallen|attackiert|feuerkampf|feuergefecht|gefecht|schusswechsel)(?![\p{L}])/iu;
+/** C8: Wahrnehmung ohne Sicht («hört Schüsse», «Lärm von Motoren»): Ort beim Trupp bleibt nur angenommen (gelb) */
+const HOER_RE = /(?<![\p{L}])(hört|höre|hören|gehört|lärm|motorenlärm|geräusch\p{L}*|motorengeräusch\p{L}*|knall)(?![\p{L}])/iu;
+/** C10: Gefecht am Trupp → dringend */
+const GEFECHT_RE = /(?<![\p{L}])(feuerkampf|feuergefecht|gefecht|schusswechsel|beschossen|unter\s+feuer|angegriffen|überfallen|attackiert)(?![\p{L}])/iu;
+/** C7: Sanität (Wort) und Anforderung (in beiden Reihenfolgen: «San angefordert», «verlangt Sanität») */
+const SAN_WORT_RE = /(?<![\p{L}])(san|sanität|sanitäter|sanitätsdienst|arzt|ambulanz)(?![\p{L}])/iu;
+const ANFORDERN_RE = /(?<![\p{L}])(angefordert|anfordern|fordert|fordern|benötig\p{L}*|braucht|brauchen|verlangt|verlangen|nötig)(?![\p{L}])/iu;
+/** C7: Bezug auf den eigenen Trupp («bei uns», «eig», «eigene Trp», «wir») */
+const EIGEN_BEZUG_RE = /(?<![\p{L}])(bei\s+uns|eig|eigene[nrs]?|wir|unser\p{L}*)(?![\p{L}])/iu;
+/** C7: Sichtung durch den Trupp («H03 sieht 2 Verletzte») – dann sind es nicht die eigenen */
+const SICHT_VERB_RE = /(?<![\p{L}])(sieht|sah|sehen|beobachtet|gesichtet|sichtet|erkennt)(?![\p{L}])/iu;
+/** C11: Begehren eines eigenen Trupps («benötigt», «Nachschub», «Mun Stand 60%», «fordert … an», «Bedarf») */
+const BEGEHREN_RE = /(?<![\p{L}])(benötig\p{L}*|braucht|brauchen|\p{L}*nachschub|mun(?:itions)?[\s-]?stand|verlangt|verlangen|fordert\s+\S+(?:\s+\S+)?\s+an|angefordert|anfordern|bedarf)(?![\p{L}])/iu;
+/** C11: Wörter, die im Begehren selbst nicht stehen («H05 Mun Nachschub benötigt» → «Mun Nachschub») */
+const BEGEHREN_WEG_RE = /(?<![\p{L}])(benötig\p{L}*|braucht|brauchen|verlangt|verlangen|angefordert|anfordern|fordert|an|bitte|dringend|sofort|wir|uns|hier|meldet|meldung)(?![\p{L}])/giu;
+/** C3: Verneinung/Abgang – ohne Gesehenes kein neues Zeichen («Feind hat AD7 verlassen», «Det 2 Standort unbekannt») */
+const KEIN_ZEICHEN_RE = /(?<![\p{L}])(verlassen|weg\s+aus|nicht\s+mehr\s+(?:da|gesehen|sichtbar|in\s+sicht)|(?:standort|aufenthalt(?:sort)?)\s+unbekannt|keine\s+sicht|ausser\s+sicht|aus\s+der\s+sicht)(?![\p{L}])/iu;
+/** C5: Ausweichen/Rückzug – kein Standortverb («H01 Rückzug nach AC5» → gelb «H01 selbst nach AC5?») */
+const RUECKZUG_RE = /(?<![\p{L}])(rückzug|zurück\p{L}*|weich\p{L}*\s+(?:\p{L}+\s+)?aus|ausweichen|ausgewichen|absetzen|setz\p{L}*\s+(?:uns|sich)\s+ab)(?![\p{L}])/iu;
+/** C2: Automarken ohne Zahl sind ein einzelnes Fahrzeug («schwarzer Golf» = 1 Personenwagen) */
+const EINZEL_TYP = new Set(["golf", "passat"]);
+/** C13: Ort mit Präposition und Artikel bzw. Gattungswort («bei der Brücke», «beim Waldrand») – genannt, aber kein Ortsname */
+const ORT_PHRASE_RE = /(?<![\p{L}])(?:bei|beim|an|am|auf|vor|hinter|neben|nahe|im|in)\s+(?:der|dem|den|die|das)\s+([\p{L}][\p{L}\-]+(?:\s+\d{1,3})?)/iu;
+
 /** Elementnamen, die immer Namen sind (nie Anzahl/Stufe): «H05», «Det 2» */
 const NAME_ALWAYS_RE = /^(?:H\d|Det)/i;
 
@@ -305,7 +356,37 @@ interface CoreParse {
   zeitWahl: DraftProblem[];
 }
 
-function parseCore(input: string, ctx: JournalContext): CoreParse {
+/** Begehren in Worten: Text ohne Melder und ohne Bedarfsverb («H05 Mun Nachschub benötigt» → «Mun Nachschub») */
+function begehrenWas(text: string, hits: Array<{ index: number; len: number }>): string {
+  let t = text;
+  for (const h of hits) t = blank(t, h.index, h.index + h.len);
+  return t.replace(BEGEHREN_WEG_RE, " ").replace(/\s+/g, " ").replace(/^[\s:,;.!–-]+|[\s:,;.!?–]+$/g, "").trim();
+}
+/** Bedarf an Logistik/Anlage («Mun», «Nachschub», «Sanität») – kein Lagezeichen */
+const begehrenArt = (key: string) => { const c = catalogEntry(key); return !!c && (c.category === "Führung und Logistik" || c.kind === "anlage"); };
+/**
+ * (MVP 3.5, S23) Lesart der Ereigniszeit: Offset; doppelte Stunde → die Lesart, die nicht (mehr als die Toleranz) in der
+ * Zukunft liegt; fehlende Stunde (Uhr vorgestellt) bei getippter Zeit → `zeitFehlt` (rot) mit Vorschlag. Der Offset steht
+ * nur am Umstellungstag im Entwurf – sonst bestimmt ihn `eventFromDraft` wie bisher (`offsetFor`, gleiches Ergebnis).
+ */
+function zeitLesart(day: string, minutes: number, timeFromText: boolean, ctx: JournalContext): Pick<Draft, "tOffset" | "zeitFehlt"> {
+  const lz = lesart(day, minutes, ctx.now, ctx.zone);
+  if (lz.fehlt && timeFromText) {
+    let von = minutes;
+    while (von > minutes - 180 && !offsetsAt(isoOf(day, ((von - 1) % 1440 + 1440) % 1440), ctx.zone).length) von--;
+    const vorschlag = lz.vorschlag ?? hhmmText(minutes + 60);
+    const sprung = ((+vorschlag.slice(0, 2) * 60 + +vorschlag.slice(3)) - minutes + 1440) % 1440 || 60;
+    return { zeitFehlt: { zeit: hhmmText(minutes), vorschlag: vorschlag.replace(":", ""), von: hhmmText(von), bis: hhmmText(von + sprung) } };
+  }
+  if (lz.off && (lz.mehrdeutig || umstellTage(ctx.zone ?? "", +day.slice(0, 4)).includes(day))) return { tOffset: lz.off };
+  return {};
+}
+
+/** Peilung von a nach b in Grad, auf 45° gerundet (0 = Nord) */
+const peilung = (a: LV95, b: LV95) => (Math.round(((Math.atan2(b.e - a.e, b.n - a.n) * 180) / Math.PI + 360) % 360 / 45) * 45) % 360;
+const hhmmText = (min: number) => `${pad(Math.floor(((min % 1440) + 1440) % 1440 / 60))}:${pad((((min % 1440) + 1440) % 1440) % 60)}`;
+
+function parseCore(input: string, ctx: JournalContext, o: { teilen?: boolean } = {}): CoreParse {
   // getippte Funk-/Sprechsprache wie beim Diktat lesen («Hotel 4 … zwei Fz … Alpha Kilo 7»); Kurzmeldungen unverändert
   const typed0 = normalizeTyped(input.trim(), { blau: ctx.units.blau, now: ctx.now });
   // «Hotel eins drei Personen» → «H13 Pers»: gibt es H13 nicht, aber H01 → «H01 3 Pers» (sichtbar als «gelesen als»)
@@ -411,10 +492,13 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   // taktische Begriffe zuerst lesen: «Kp» in «1 Kp Pz» ist eine Stufe, kein Melder
   // Ziel nach «erreicht» und Anlage nach «bei der …» sind Ort, nicht Sichtung; Bedarf («Mun Nachschub benötigt») ist kein Lager
   const elementBefore = (i: number) => hits.some((h) => h.index < i) || UNIT_RE.test(text.slice(0, i));
-  let reading = readTactical(text, { skip: [...skip, ...placeSpans(text, elementBefore)] });
+  const ortSpans = placeSpans(text, elementBefore);
+  let reading = readTactical(text, { skip: [...skip, ...ortSpans] });
   if (isNeedNote(text, reading)) reading = null;
   // unbekanntes / verstümmeltes Wort an der Stelle des Gesehenen («2 schützenpnzr»): keine geratene Art
-  const unknown = note ? undefined : unknownSubject(text, reading, skip, (w) => SIGHT_RE.test(`1 ${w}`));
+  // (MVP 3.5, C1) auch ohne Anzahl, wenn sonst nichts Gesehenes da ist – nicht bei Begehren, Wahrnehmung, Verneinung
+  const ohneAnzahl = !SIGHT_RE.test(text) && !BLOCKADE_RE.test(text) && !BEGEHREN_RE.test(text) && !HOER_RE.test(text) && !KEIN_ZEICHEN_RE.test(text);
+  let unknown = note ? undefined : unknownSubject(text, reading, skip, (w) => SIGHT_RE.test(`1 ${w}`), { ohneAnzahl });
   if (unknown) reading = null;
   for (const m of text.matchAll(new RegExp(UNIT_RE.source, "gi"))) {
     if (reading?.spans.some(([a, b]) => m.index! >= a && m.index! < b)) continue;
@@ -430,9 +514,30 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   // eigenes Element, das es in der Übung nicht gibt («H13» bei H01–H05): Problem statt still neuer Trupp
   problems.push(...melderProblems(hits.filter((h) => h.side === null).map((h) => h.u), ctx.units.blau));
 
+  // ---- (MVP 3.5, C7/C11) eigene Meldung ohne neues Zeichen: eigene Verwundete, Begehren (nur bekannter Trupp, kein Feindwort)
+  const melderBekannt = !!melder && ctx.units.blau.some((u) => sameUnitName(u, melder));
+  const feindWort = !!enemyHit || STRONG_ENEMY_RE.test(text) || ENEMY_RE.test(text);
+  let ohneZeichen: Draft["ohneZeichen"];
+  let begehren: { was: string } | undefined;
+  if (!note && (!ctx.kind || ctx.kind === "eigen") && melderBekannt && !feindWort) {
+    // eigene Verwundete nur mit Bezug auf den Trupp: Sanität angefordert, «bei uns», «eig/eigene», «bei H02», «wir» –
+    // «H02 2 Verletzte» allein bleibt eine Sichtung (unklar)
+    const san = SAN_WORT_RE.test(text) && ANFORDERN_RE.test(text);
+    const beiUns = EIGEN_BEZUG_RE.test(text) || new RegExp(`(?<![\\p{L}])(?:bei|beim)\\s+${melder.replace(/\s/g, "\\s?")}(?![\\p{L}\\d])`, "iu").test(text);
+    if (reading?.key === "verletzte" && (san || beiUns) && !/(?<![\p{L}])ziv/iu.test(text) && !SICHT_VERB_RE.test(text)) {
+      ohneZeichen = "verwundet";
+      if (san) begehren = { was: "Sanität" };
+    } else if (BEGEHREN_RE.test(text) && (!reading || begehrenArt(reading.key))) {
+      ohneZeichen = "begehren";
+      reading = null;
+      unknown = undefined;
+      begehren = { was: begehrenWas(text, hits) || "Nachschub" };
+    }
+  }
+
   // ---- Sichtung ohne Katalogbegriff («1 weisser Lieferwagen AO2»): Anzahl und allgemeines Zeichen
   let sight: { count: number; sym: string; civil: boolean } | undefined;
-  if (!reading && !unknown) {
+  if (!reading && !unknown && !ohneZeichen) {
     const m = SIGHT_RE.exec(text);
     if (m && !skip.some(([a, b]) => m.index < b && m.index + m[1]!.length > a)) {
       sight = { count: +m[1]!, sym: SIGHT_SYM(m[2]!), civil: SIGHT_CIVIL_RE.test(m[2]!) };
@@ -455,12 +560,16 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   // Aufzählung («1 Auto 1 Lw und 3 Pers»): alle Teile in den Sinn, keine irreführende Einzelanzahl
   let parts = reading?.parts ? undefined : listParts(text, skip);
   if (unknown) parts = undefined;
-  const count = unknown ? unknown.count : parts ? undefined : reading?.count ?? cmCount ?? sight?.count ?? stueckCount(text);
+  let count = unknown ? unknown.count : parts ? undefined : reading?.count ?? cmCount ?? sight?.count ?? stueckCount(text);
+  // (C2) «schwarzer Golf»: Automarke ohne Zahl = ein Fahrzeug
+  if (count === undefined && !parts && reading?.word && EINZEL_TYP.has(reading.word)) count = 1;
   let kindFrom: Draft["kindFrom"] = explicit ? "text" : "inhalt";
   if (ctx.kind) { kind = ctx.kind; kindFrom = "vorgabe"; }
   if (!kind) kind = kindOf(text, reading, entry, { melder, enemy: !!enemyHit, count: count ?? (parts ? 2 : undefined), civil: sight?.civil });
   // unbekanntes Wort: Zugehörigkeit nicht raten (ausser «gn», «Feind» im Text oder bekanntes Feindelement)
   if (unknown && kindFrom === "inhalt" && !enemyHit && !STRONG_ENEMY_RE.test(text) && !ENEMY_RE.test(text)) kind = "unklar";
+  // (C7/C11) eigene Verwundete und Begehren sind eigene Lage (nie Feind/Unklar, nie in Rot-Zahlen)
+  if (ohneZeichen && kindFrom === "inhalt") kind = "eigen";
   // «H02 sieht H04 in AK9»: das gesehene eigene Element ist am Ort, nicht der Melder
   const seenOwn = observedOwn(text, hits, ctx.units.blau);
   let side = sideOf(kind);
@@ -470,12 +579,14 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   let locText = text;
   let from: number | undefined;
   let fromLabel: string | undefined;
-  const fm = FROM_RE.exec(text);
-  if (fm) {
+  // (MVP 3.5, C9) erste Herkunftsangabe im Satz («Lärm von Motoren aus Rtg AP5» → «aus Rtg AP5»); «von AP5 her» ebenso
+  for (const fm of text.matchAll(new RegExp(FROM_RE.source, "giu"))) {
     const w = fm[2]!.toUpperCase();
+    const her = /^\s+her(?![\p{L}])/iu.exec(text.slice(fm.index! + fm[0].length));
     if (w in DIRS) from = DIRS[w];
     else if (fm[1]) fromLabel = `aus Rtg ${fm[2]}`;
-    if (from !== undefined || fromLabel) locText = blank(locText, fm.index, fm.index + fm[0].length);
+    else if (her && /^(?:von)/i.test(fm[0]) && /^[A-Z]{1,2}\d/.test(w)) fromLabel = `aus Rtg ${fm[2]}`;
+    if (from !== undefined || fromLabel) { locText = blank(locText, fm.index!, fm.index! + fm[0].length + (her ? her[0].length : 0)); break; }
   }
   let dir: number | undefined;
   let dirLabel: string | undefined;
@@ -494,6 +605,8 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   if (ownDir && dir === undefined && !dirLabel) dirLabel = ownDir.label;
 
   // ---- Ort
+  let amTrupp = false;
+  let ortUnbekannt: string | undefined;
   let pos: LV95 | undefined;
   let where: Draft["where"];
   let cells: string[] | undefined;
@@ -506,6 +619,12 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   }
   const exclude = [...known.map(([u]) => u), ...hits.map((h) => h.u)].map((u) => u.replace(/\s/g, ""));
   const found = findCells(locText, ctx.sheets, { exclude });
+  // (MVP 3.5, C9) «von AK7 nach AM9»: eine Bewegung – Ort AK7, Richtung = Peilung AK7 → AM9, Zusatz «nach AM9»
+  let vonNach: [FoundCell, FoundCell] | undefined;
+  for (let i = 0; i + 1 < found.length; i++) {
+    const a = found[i]!, b = found[i + 1]!;
+    if (/(?<![\p{L}])von\s+$/iu.test(locText.slice(0, a.index)) && /^\s+nach\s+$/iu.test(locText.slice(a.index + a.raw.length, b.index))) { vonNach = [a, b]; break; }
+  }
   // Aufzählung an mehreren Orten («2 Fz AK7 und 3 Pers AL8»): Ort je Teil in den Sinn (Zeichen steht am ersten Ort)
   if (parts && found.length > 1) parts = listParts(text, skip, found.map((f) => ({ index: f.index, label: f.label }))) ?? parts;
   // die Karte zeigt nur einen Ort: Teile an verschiedenen Orten als einzelne Meldungen eintragen
@@ -535,8 +654,9 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   // Ort, den es nicht gibt («AK77», «ZZ3», «NAI 9»): Problem statt Ersatzort («bei H04»)
   const ortProblems = placeProblems(locText, { sheets: ctx.sheets, areas: ctx.areas, found, exclude });
   problems.push(...ortProblems);
+  let seiteFrage: Draft["seiteFrage"];
   // Sichtung verschiebt nie den Melder: «eigen» mit Ort, aber ohne Standortwort → Sichtung (unklar) am Ort
-  if (kind === "eigen" && kindFrom === "inhalt" && pos && !seenOwn) {
+  if (kind === "eigen" && kindFrom === "inhalt" && pos && !seenOwn && !ohneZeichen) {
     let own = locText;
     for (const [a, b] of [...hits.map((h) => [h.index, h.index + h.len]), ...found.map((f) => [f.index, f.index + f.raw.length]),
       ...areaHits.map((x) => [x.m!.index, x.m!.index + x.m![0].length]), ...coords.map((c) => [c.index, c.index + c.raw.length]),
@@ -544,7 +664,13 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
       ...(where?.kind === "ort" ? [flexRe(where.label).exec(locText)].filter((m) => !!m).map((m) => [m!.index, m!.index + m![0].length]) : [])] as Array<[number, number]>) {
       own = blank(own, a, Math.min(b, own.length));
     }
-    if (!staysOwn(text, own, reading, entry)) { kind = "unklar"; side = sideOf(kind); unit = enemyHit?.u ?? ""; }
+    // (MVP 3.5, C5) «H01 Rückzug nach AC5»: eigener Trupp an einen Ort ohne Standortverb – gelb fragen («H01 selbst nach
+    // AC5?»), 2. Enter versetzt; «Gegner zieht sich zurück» bleibt Feind (Feindwort)
+    const nachOrt = where?.kind === "raster" && !!found[0] && /(?<![\p{L}])nach\s+$/iu.test(locText.slice(0, found[0].index));
+    if (!staysOwn(text, own, reading, entry)) {
+      if (nachOrt && melderBekannt && !feindWort && RUECKZUG_RE.test(text)) seiteFrage = { trupp: melder, ort: where!.label };
+      else { kind = "unklar"; side = sideOf(kind); unit = enemyHit?.u ?? ""; }
+    }
   }
   if (!pos) {
     // Ortsname nach einer Präposition, z. B. «angekommen in Wabern», «bei Bümpliz», «Dorfeingang Wabern»
@@ -556,19 +682,35 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
       // «bei Kreuzung», «beim Waldrand»: Gattungswort, kein Ortsname (nicht nachschlagen)
       if (isGenericPlace(placeQuery)) placeQuery = undefined;
     }
+    // (MVP 3.5, C13) genannter Ort ohne Treffer («erreicht Checkpoint 2», «bei der Brücke»): nie der letzte Standort eines
+    // Feindelements als Ersatz; die eigene Lage bleibt offen (gelb «Ort unbekannt»)
+    const ortGenannt = ortSpans.length ? text.slice(ortSpans[0]![0], ortSpans[0]![1]).trim() : ORT_PHRASE_RE.exec(locText)?.[1];
     // genannter, aber (noch) unbekannter Ort («in Wabern», «AK77»): kein Ersatzort – sonst Widerspruch «bei H04» ↔ Ort fehlt
     if (ortProblems.length || namesPlace(locText, placeQuery, kind === "eigen")) {
       // Ort bleibt offen: Ortssuche, Karte oder Korrektur
-    } else if (kind === "eigen") {
+    } else if (kind === "eigen" && !ohneZeichen) {
       // Standort bleibt (Entscheid): Ort = bisheriger Standort des Trupps in Worten («AF12 A»), nie «letzter Standort»
       const last = melder ? ctx.lastPos?.(melder, "blau") : undefined;
-      if (last) { pos = last; where = { kind: "zuletzt", label: lastPlaceLabel(ctx, "blau", melder, last) }; }
-    } else {
-      // Sichtung ohne Ort: beim bekannten Feindelement, sonst beim Melder
-      const lastEnemy = unit ? ctx.lastPos?.(unit, "rot") : undefined;
+      if (ortGenannt) ortUnbekannt = ortGenannt;
+      else if (last) { pos = last; where = { kind: "zuletzt", label: lastPlaceLabel(ctx, "blau", melder, last) }; }
+    } else if (!ohneZeichen) {
+      // (C8) «2 Fz fahren an H02 vorbei», «Drohne über H05»: Ort beim ausdrücklich genannten eigenen Trupp (grün)
+      const nahe = hits.find((h) => (h.side === "blau" || (h.side === null && ctx.units.blau.some((u) => sameUnitName(u, h.u))))
+        && new RegExp(`(?<![\\p{L}])(?:bei|beim|über|an|neben)\\s+$`, "iu").test(text.slice(Math.max(0, h.index - 8), h.index)));
+      const naheName = nahe ? (nahe.side === null ? normalizeMelder(nahe.u, ctx.units.blau) : nahe.u) : "";
+      const atNahe = naheName ? ctx.lastPos?.(naheName, "blau") : undefined;
+      // Sichtung ohne Ort: beim bekannten Feindelement (nicht, wenn ein anderer Ort genannt ist), sonst beim Melder
+      const lastEnemy = unit && !ortGenannt ? ctx.lastPos?.(unit, "rot") : undefined;
       const atMelder = melder ? ctx.lastPos?.(melder, "blau") : undefined;
-      if (lastEnemy) { pos = lastEnemy; where = { kind: "zuletzt", label: lastPlaceLabel(ctx, "rot", unit, lastEnemy) }; }
-      else if (atMelder) { pos = atMelder; where = { kind: "melder", label: `bei ${melder}` }; }
+      if (atNahe) { pos = atNahe; where = { kind: "melder", label: `bei ${naheName}` }; amTrupp = true; }
+      else if (lastEnemy) { pos = lastEnemy; where = { kind: "zuletzt", label: lastPlaceLabel(ctx, "rot", unit, lastEnemy) }; }
+      else if (atMelder) {
+        pos = atMelder; where = { kind: "melder", label: `bei ${melder}` };
+        // (C8) Kontakt, Beschuss, Angriff am meldenden Trupp: der Ort ist sicher – Wahrnehmung («hört Schüsse») bleibt gelb
+        if ((sym === "kontakt" || sym === "beschuss") && KONTAKT_AM_RE.test(text) && !HOER_RE.test(text)) amTrupp = true;
+        // «Drohne über uns», «2 Pers bei uns»: ausdrücklich beim meldenden Trupp
+        if (/(?<![\p{L}])(?:über|bei|beim)\s+uns(?![\p{L}])/iu.test(text) && !HOER_RE.test(text)) amTrupp = true;
+      } else if (ortGenannt) ortUnbekannt = ortGenannt;
     }
   }
 
@@ -576,6 +718,25 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   if (where?.kind === "raster" && (cells?.length ?? 0) > 1 && entry.geometry && entry.geometry !== "punkt") {
     const sh = autoShape({ sym, pos, cells, where: where.label }, { sheets: ctx.sheets, areas: ctx.areas });
     if (sh) { const c = shapeCenter(sh); pos = { e: Math.round(c.e), n: Math.round(c.n) }; }
+  }
+  // (MVP 3.5, C7/C11) eigene Verwundete, Begehren: Trupp bleibt, wo er ist; genannte Orte nur als Text; kein neues Zeichen
+  let orte: string[] | undefined;
+  if (ohneZeichen) {
+    const genannt = [...new Set([...(cells ?? []), ...(nai ? [nai] : [])])];
+    if (genannt.length) orte = genannt;
+    const last = ctx.lastPos?.(melder, "blau");
+    kind = "eigen"; side = "blau"; unit = melder;
+    // Verwundete: kein Ort (nichts auf der Karte, Standort des Trupps bleibt unberührt); Begehren: bisheriger Standort
+    pos = ohneZeichen === "verwundet" ? undefined : last;
+    // Ort: «bei H02», wo Hilfe hin muss (Sanität angefordert, «bei H02»/«bei uns»), sonst der bisherige Standort in Worten
+    const beiTrupp = ohneZeichen === "verwundet" && (!!begehren || /(?<![\p{L}])bei\s+(?:uns|h\s?\d)/iu.test(text));
+    where = beiTrupp ? { kind: "melder", label: `bei ${melder}` } : last ? { kind: "zuletzt", label: lastPlaceLabel(ctx, "blau", melder, last) } : undefined;
+    cells = undefined; nai = undefined; placeQuery = undefined; seiteFrage = undefined; amTrupp = false; ortUnbekannt = undefined;
+  }
+  // (C9) Bewegung «von AK7 nach AM9»: Richtung = Peilung, wenn keine Richtung genannt ist
+  if (vonNach && dir === undefined && !dirLabel) {
+    const s0 = ctx.sheets.find((x) => x.id === vonNach![0].sheetId), s1 = ctx.sheets.find((x) => x.id === vonNach![1].sheetId);
+    if (s0 && s1) dir = peilung(boundsCenter(cellBounds(s0, vonNach[0].col, vonNach[0].row, vonNach[0].quadrant)), boundsCenter(cellBounds(s1, vonNach[1].col, vonNach[1].row, vonNach[1].quadrant)));
   }
   const aff: Affiliation = kind === "eigen" ? "F" : kind === "feind" ? "H" : "U";
   const status: Status = reading?.status ?? "present";
@@ -590,7 +751,12 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
   // unbestimmte Menge («ein paar Soldaten»): keine Anzahl, aber im Sinn behalten
   const vague = count === undefined && !parts ? vagueAmount(text) : undefined;
   const desc1 = vague && desc0 && !desc0.toLowerCase().includes(vague) ? `${vague} ${desc0}` : desc0;
-  const desc = unknown ? `${unknown.count ? `${unknown.count} ` : ""}? («${unknown.token}»)` : desc1;
+  const desc2 = unknown ? `${unknown.count ? `${unknown.count} ` : ""}? («${unknown.token}»)` : desc1;
+  // (C9) Ziel der Bewegung als Zusatz («2 gegnerische Fahrzeuge nach AM9»)
+  const desc = vonNach && !ohneZeichen ? `${desc2 ?? catalogEntry(sym)?.name ?? ""} nach ${vonNach[1].label}`.trim() : desc2;
+  // (C8/C10) Kontakt am eigenen Trupp, Feuerkampf, Gefecht: dringend (Wahrnehmung «hört Schüsse» nicht)
+  const dringend = (sym === "kontakt" || sym === "beschuss") && !HOER_RE.test(text) && GEFECHT_RE.test(text);
+  const { tOffset, zeitFehlt } = zeitLesart(day, minutes, timeFromText, ctx);
   const out: Draft = {
     minutes, day, t: isoOf(day, minutes), timeFromText, ...(dayFromText ? { dayFromText } : {}), ...(timeToken ? { timeToken } : {}), kind, kindFrom, side, melder, unit, sym, aff, sidc, echelon, status, desc, count,
     dir, dirLabel, from, fromLabel, roadHint, pos, where, cells, nai, placeQuery,
@@ -601,8 +767,56 @@ function parseCore(input: string, ctx: JournalContext): CoreParse {
     ...(unknown ? { unknownWord: unknown } : {}),
     art: "meldung",
     artFrom: "standard",
+    // MVP 3.5 (Paket C)
+    ...(unknown?.suggestLabel ? { ersatz: { token: unknown.token, wort: unknown.suggestLabel } } : {}),
+    ...(tOffset ? { tOffset } : {}), ...(zeitFehlt ? { zeitFehlt } : {}),
+    ...(amTrupp ? { amTrupp } : {}), ...(ohneZeichen ? { ohneZeichen } : {}), ...(begehren ? { begehren } : {}), ...(orte ? { orte } : {}),
+    ...(ortUnbekannt ? { ortUnbekannt } : {}), ...(seiteFrage ? { seiteFrage } : {}), ...(dringend ? { dringend } : {}),
   };
-  return { d: out, lead: !!tp.used && tp.lead, start: !!tp.used && tp.lead && tp.used.index <= 2, zeitWahl };
+  const core: CoreParse = { d: out, lead: !!tp.used && tp.lead, start: !!tp.used && tp.lead && tp.used.index <= 2, zeitWahl };
+  return o.teilen === false ? core : zweiOrteTeilen(core, input, text, locText, found, areaHits.map((x) => ({ index: x.m!.index, len: x.m![0].length, label: x.a.name })), vonNach, melder, melderBekannt, ctx);
+}
+
+/**
+ * (MVP 3.5, C6) Zwei Orte in einer Meldung: «H02 wir weichen aus nach AK11, Kontakt mit 4 Pers AK10» – der eigene Trupp
+ * geht «nach PQ1», gesehen wird an PQ2. Der Entwurf wird die Sichtung (2. Enter trägt nur sie ein, der Trupp bleibt),
+ * `teile` = beide Teile (je mit Melder vorne) für «Als zwei Einträge». «von PQ1 nach PQ2» ist eine Bewegung (C9).
+ */
+function zweiOrteTeilen(core: CoreParse, input: string, text: string, locText: string, found: FoundCell[], naiHits: Array<{ index: number; len: number; label: string }>,
+  vonNach: [FoundCell, FoundCell] | undefined, melder: string, melderBekannt: boolean, ctx: JournalContext): CoreParse {
+  if (!melderBekannt || found.length + naiHits.length < 2) return core;
+  const orte = [...found.filter((f) => !vonNach?.includes(f)).map((f) => ({ index: f.index, len: f.raw.length, label: f.label })), ...naiHits].sort((a, b) => a.index - b.index);
+  const ziel = orte.find((x) => /(?<![\p{L}])nach\s+$/iu.test(locText.slice(0, x.index)));
+  const sicht = orte.find((x) => x !== ziel && x.label !== ziel?.label);
+  if (!ziel || !sicht) return core;
+  // Trennstelle zwischen den beiden Orten: Komma, Strichpunkt oder «und»
+  const [a, b] = ziel.index < sicht.index ? [ziel, sicht] : [sicht, ziel];
+  const zwischen = text.slice(a.index + a.len, b.index);
+  const sep = /\s*(?:[,;]|\s(?:und|dann)\s)\s*/iu.exec(zwischen);
+  if (!sep) return core;
+  const cut = a.index + a.len + sep.index;
+  const t1 = text.slice(0, cut).trim(), t2 = text.slice(cut + sep[0].length).trim();
+  const lead = LEAD_DT_RE.exec(input.trim())?.[0] ?? "";
+  const mitMelder = (t: string) => (new RegExp(`(?<![\\p{L}\\d])${melder.replace(/\s/g, "\\s?")}(?![\\p{L}\\d])`, "iu").test(t) ? t : `${melder} ${t}`);
+  const [tz, ts] = ziel === a ? [t1, t2] : [t2, t1];
+  const teilZiel = `${lead}${mitMelder(tz)}`.trim(), teilSicht = `${lead}${mitMelder(ts)}`.trim();
+  const dz = parseCore(teilZiel, ctx, { teilen: false }).d;
+  const sub = parseCore(teilSicht, ctx, { teilen: false });
+  const ds = sub.d;
+  // nur wenn der Ziel-Teil keine Sichtung ist und der andere Teil eine Sichtung mit Ort
+  // nur wenn der Ziel-Teil eine Bewegung des eigenen Trupps ist («wir weichen aus nach AK11») und der andere Teil eine
+  // Sichtung mit Ort («2 Fz AK7, fahren nach AK8» ist der Feind, der fährt – keine zwei Orte)
+  if (dz.count !== undefined || dz.kind !== "eigen" || ds.kind === "eigen" || !ds.pos || ds.where?.kind === "melder") return core;
+  const last = ctx.lastPos?.(melder, "blau");
+  const bleibt = last ? lastPlaceLabel(ctx, "blau", melder, last) : undefined;
+  const seite = ds.kind === "feind" ? "Feind" : "Unklar";
+  return {
+    ...sub,
+    d: {
+      ...ds, text: core.d.text, ...(core.d.normalized ? { normalized: core.d.normalized } : {}), teile: [teilZiel, teilSicht],
+      zweiOrte: { trupp: melder, ziel: ziel.label, sicht: sicht.label, seite, ...(bleibt ? { bleibt } : {}) },
+    },
+  };
 }
 
 /** frühere Ersatzorte (vor MVP 3 Nachbesserung gespeichert) – nie als Ort zeigen */
@@ -724,18 +938,32 @@ export function parseMeldung(input: string, ctx: JournalContext): Draft {
     // es eine gewöhnliche Meldung («2 Pers entfernen sich»), zählt das Wort nicht
     if (wort.unscharf && artFrom !== "vorgabe" && d !== d0) d = { ...d, unscharf: { wort: wort.wort === "weg" ? wort.key![0]!.toUpperCase() + wort.key!.slice(1) : "Aufheben", token: wort.unscharf } };
   }
+  // (MVP 3.5, C3) Verneinung/Abgang ohne Gesehenes («Feind hat AD7 verlassen», «Det 2 Standort unbekannt»): kein neues
+  // Zeichen – gelb «Kein neues Zeichen?», 2. Enter = Notiz. Ein genanntes Element allein ist nichts Gesehenes.
+  if (art === "meldung" && artFrom !== "vorgabe" && !d.hebtAuf && !d.hebtAufKandidaten && !d.notizGrund && !d.bezug && !d.ohneZeichen && KEIN_ZEICHEN_RE.test(ohnePraefix || ohneBezug)) {
+    const gesehen = d.count !== undefined || d.sym !== "einheit" || !!d.unknownWord;
+    if (!gesehen) d = alsNotiz(d, "kein-zeichen", core, ctx);
+  }
   // MVP 3.5 (Phase 0 verdrahtet, Paket D baut `bezugAufloesen` aus): Nummer mit mehreren Einträgen, Abschluss eines
   // Auftrags («H03 erledigt»), «Antwort an Bat» ohne Nummer
-  if (events) {
-    const b = lvzBezugAufloesen(lesung, { events, ex: ctx.ex, melder: d.melder, t: d.t, abschlussAus: ctx.abschlussAus, bezugWahl: ctx.bezugWahl });
-    if (b.bezug) d = { ...d, bezug: b.bezug, ...(b.bezugArt ? { bezugArt: b.bezugArt } : {}) };
-    if (b.kandidaten?.length) d = { ...d, bezugKandidaten: b.kandidaten };
+  // (nur wenn die gelesene Art gilt – bei gewählter anderer Art kein Bezug aus dem Art-Hinweis)
+  if (events && lesung.art === d.art) {
+    const b = lvzBezugAufloesen(lesung, { events, ex: ctx.ex, melder: d.melder, t: d.t, abschlussAus: ctx.abschlussAus, bezugWahl: ctx.bezugWahl, blau });
+    if (b.bezug) d = { ...d, bezug: b.bezug, ...(b.bezugArt ? { bezugArt: b.bezugArt } : {}), bezugFehlt: undefined };
+    // mehrere Kandidaten: noch kein Bezug (gelb mit Wahl-Knöpfen, 2. Enter trägt ohne Bezug ein)
+    if (b.kandidaten?.length) { const { bezug: _b, ...r } = d; d = { ...r, bezugKandidaten: b.kandidaten, ...(b.wahl ? { wahl: b.wahl } : {}) }; }
     if (b.abschluss !== undefined) d = { ...d, abschluss: b.abschluss };
-    if (ctx.abschlussAus) d = { ...d, abschlussAus: true };
   }
+  if (ctx.abschlussAus) d = { ...d, abschlussAus: true };
   const melderEigen = !!d.melder && blau.some((u) => sameUnitName(u, d.melder));
   if (istDringend(les, { eigenerMelder: melderEigen })) d = { ...d, dringend: true };
   if (art !== "meldung" && !artStark) d = { ...d, kindHint: "notiz" };
+  // (MVP 3.5, C12) unbekannter Trupp («H06» in einer Übung ohne H06): weder Melder noch Element – gelb `trupp-neu`, das
+  // zweite Enter trägt ohne Trupp ein; nur der Knopf «H06 als Trupp aufnehmen» legt ihn an (nie still)
+  if (d.melder && !blau.some((u) => sameUnitName(u, d.melder)) && !(d.problems ?? []).some((p) => p.kind === "melder") && !QUELLE_RE.test(d.melder)) {
+    const neu = d.melder;
+    d = { ...d, truppNeu: neu, melder: "", ...(d.unit && sameUnitName(d.unit, neu) ? { unit: "" } : {}) };
+  }
   return d;
 }
 
@@ -766,7 +994,7 @@ function felderOrt(d: Draft, f: MeldeFelder, ctx: JournalContext): Draft {
 function fristIso(day: string, t: string, hhmm: string): string {
   const min = +hhmm.slice(0, 2) * 60 + +hhmm.slice(2);
   const iso = isoOf(day, min);
-  return iso < t ? isoOf(addDays(day, 1), min) : iso;
+  return zeitCmp(iso, t) < 0 ? isoOf(addDays(day, 1), min) : iso;
 }
 
 /** genannte Orte als Text (Nicht-Meldungen, Aufhebungen): Planquadrate, NAI, Ortsname */
@@ -783,7 +1011,7 @@ function offenerBezug(events: LageEvent[], art: "auftrag" | "rueckfrage", trupp:
   const idx = lvzIndex(events);
   let best: LageEvent | undefined;
   for (const e of events) {
-    if (e.deleted || artOf(e) !== art || e.t > t) continue;
+    if (e.deleted || artOf(e) !== art || zeitCmp(e, t) > 0) continue;
     const wer = art === "auftrag" ? e.an : e.an ?? e.melder;
     const wer2 = art === "rueckfrage" ? e.melder : undefined;
     if (!(wer && sameUnitName(wer, trupp)) && !(wer2 && sameUnitName(wer2, trupp))) continue;
@@ -854,7 +1082,7 @@ function asNonLageDraft(d: Draft, l: ArtLesung, core: CoreParse, ctx: JournalCon
   if (d.timeFromText && !lead) {
     const day = d.dayFromText ? d.day : ctx.dayFromClock ? localDay(ctx.now) : ctx.day;
     const minutes = ctx.now.getHours() * 60 + ctx.now.getMinutes();
-    time = { minutes, day, t: isoOf(day, minutes), timeFromText: false, timeToken: undefined };
+    time = { minutes, day, t: isoOf(day, minutes), timeFromText: false, timeToken: undefined, tOffset: undefined, zeitFehlt: undefined, ...zeitLesart(day, minutes, false, ctx) };
   }
   problems = problems.filter((p) => !core.zeitWahl.includes(p));
   const an = same ? lesung.an : undefined;
@@ -863,7 +1091,9 @@ function asNonLageDraft(d: Draft, l: ArtLesung, core: CoreParse, ctx: JournalCon
   else if ((art === "auftrag" || art === "rueckfrage") && an && melder && sameUnitName(an, melder) && !/erhalt/i.test(d.text)) melder = "";
   else if (art === "vbk" && !melder && an) melder = an;
   const e = catalogEntry("einheit")!;
-  const { pos: _p, where: _w, cells: _c, nai: _n, count: _k, dir: _d, dirLabel: _dl, from: _f, fromLabel: _fl, roadHint: _r, placeQuery: _q, echelon: _e, desc: _ds, unknownWord: _u, problems: _pr, kindHint: _kh, ...rest } = d;
+  const { pos: _p, where: _w, cells: _c, nai: _n, count: _k, dir: _d, dirLabel: _dl, from: _f, fromLabel: _fl, roadHint: _r, placeQuery: _q, echelon: _e, desc: _ds, unknownWord: _u, problems: _pr, kindHint: _kh,
+    // MVP 3.5 (C): Gründe der Lage-Erkennung gelten nicht für Nicht-Meldungen (dringend bestimmt parseMeldung danach neu)
+    amTrupp: _at, ohneZeichen: _oz, begehren: _bg, ortUnbekannt: _ou, seiteFrage: _sf, zweiOrte: _zo, teile: _te, ersatz: _er, dringend: _dr, ...rest } = d;
   const t = (time.t ?? d.t);
   const day = time.day ?? d.day;
   let out: Draft = {
@@ -877,6 +1107,8 @@ function asNonLageDraft(d: Draft, l: ArtLesung, core: CoreParse, ctx: JournalCon
     ...(problems.length ? { problems } : {}),
   };
   if (time.timeToken === undefined && "timeToken" in time) delete out.timeToken;
+  if ("tOffset" in time && time.tOffset === undefined) delete out.tOffset;
+  if ("zeitFehlt" in time && time.zeitFehlt === undefined) delete out.zeitFehlt;
   const events = ctx.events ?? ctx.ex?.events;
   // Quittung ohne Nummer → jüngster offener Auftrag an diesen Trupp (Entscheid 5); «Quittung 42» → Nr 42
   if (same && lesung.bezugArt === "quittung") out = bezugAufloesen(out, lesung, ctx, events, "auftrag");
@@ -963,6 +1195,8 @@ function kindOf(text: string, reading: ReturnType<typeof readTactical>, entry: C
   if (STRONG_ENEMY_RE.test(text) || reading?.aff === "H" && reading.status !== "anticipated") return "feind";
   if (reading?.aff === "F") return "eigen";
   if (reading?.status === "anticipated" || MAYBE_RE.test(text)) return entry.hostile || o.enemy ? "feind" : "unklar";
+  // (MVP 3.5, C8) Wahrnehmung ohne Gegenstand («H03 Lärm von Motoren»): Sichtung mit unklarer Zugehörigkeit, nie eigene Lage
+  if (!reading && entry.key === "einheit" && HOER_RE.test(text)) return o.enemy || ENEMY_RE.test(text) ? "feind" : "unklar";
   if (entry.kind === "einheit" || entry.kind === "geraet") {
     if (entry.lean === "unklar" && !o.enemy) return "unklar";
     if (o.enemy || ENEMY_RE.test(text) || o.count !== undefined || entry.lean === "feind") return "feind";
@@ -1028,15 +1262,18 @@ export function situationAt(events: LageEvent[], t: string, maxAgeMin = Infinity
 }
 
 function situationCompute(events: LageEvent[], t: string, maxAgeMin: number): { units: UnitState[]; loose: LageEvent[] } {
-  const live = events.filter((e) => e.t <= t && isLage(e)).sort(compareEvents);
+  // MVP 3.5 (S23): Zeitvergleiche über den Zeitpunkt (`zeitBis`, Lagezeit mit oder ohne Offset) – doppelte Stunde richtig
+  const live = events.filter((e) => isLage(e) && zeitBis(e, t)).sort(compareEvents);
   const lifts = liftMap(events);
-  const lifted = (e: LageEvent) => { const l = lifts.get(e.id); return !!l && l.t <= t; };
+  const byId = lifts.size ? new Map(events.map((e) => [e.id, e])) : undefined;
+  const lifted = (e: LageEvent) => { const l = lifts.get(e.id); if (!l) return false; const by = byId?.get(l.by); return zeitBis(by ?? { t: l.t }, t); };
   const byUnit = new Map<string, UnitState>();
   const loose: LageEvent[] = [];
-  const tMin = Date.parse(t) - maxAgeMin * 60000;
+  const tMin = maxAgeMin === Infinity ? -Infinity : zeitMs(t) - maxAgeMin * 60000;
+  const frisch = (e: LageEvent) => tMin === -Infinity || zeitMs(e) >= tMin;
   for (let e of live) {
     if (!e.unit) {
-      if (e.pos && Date.parse(e.t) >= tMin && !lifted(e)) loose.push(e);
+      if (e.pos && frisch(e) && !lifted(e)) loose.push(e);
       continue;
     }
     const k = unitKey(e.side, e.unit);
@@ -1044,9 +1281,11 @@ function situationCompute(events: LageEvent[], t: string, maxAgeMin: number): { 
     // Tätigkeit / Ereignis (Kontakt, Sperre, Explosion …): als eigenes Zeichen am Ort; das Element behält sein Zeichen.
     // Eigene Meldungen damit verschieben den Melder nicht (nur Einheiten-Meldungen und eigene Lage wie Stellung).
     const cat = catalogEntry(e.sym);
+    // (MVP 3.5, C7) eigene Verwundete: nie ein Zeichen, der Trupp bleibt (Meldung zählt als Lebenszeichen)
+    if (e.side === "blau" && e.sym === "verletzte") continue;
     if (cat ? cat.activity : symbolDef(e.sym).activity) {
       const pos = e.pos ?? cur?.pos;
-      if (pos && Date.parse(e.t) >= tMin && !lifted(e)) loose.push({ ...e, pos });
+      if (pos && frisch(e) && !lifted(e)) loose.push({ ...e, pos });
       // Räume und Linien (Beobachtungsraum, Phasenlinie …) sind nie der Standort des Melders
       if (e.side === "blau" && (cat?.lean !== "eigen" || (cat.geometry && cat.geometry !== "punkt"))) continue;
       if (cur) e = { ...e, sym: cur.event.sym };
@@ -1074,8 +1313,8 @@ export function lastPosition(events: LageEvent[], side: Side, unit: string, befo
   let best: LageEvent | undefined;
   for (const e of events) {
     if (e.deleted || !e.pos || !e.unit || unitKey(e.side, e.unit) !== k) continue;
-    if (before && e.t > before) continue;
-    if (!best || e.t > best.t) best = e;
+    if (before && zeitCmp(e, before) > 0) continue;
+    if (!best || zeitCmp(e, best) > 0) best = e;
   }
   return best?.pos;
 }

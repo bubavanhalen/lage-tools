@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import "./shell.css";
 
-export function Dialog({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+export function Dialog({ title, onClose, children, wide, schliessen = true }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; /** Knopf «Schliessen» im Kopf (false: der Dialog hat selbst genau ein «Abbrechen») */ schliessen?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const id = useId();
   const back = useRef<HTMLElement | null>(null);
@@ -26,7 +26,7 @@ export function Dialog({ title, onClose, children, wide }: { title: string; onCl
       <div ref={box} className={"dlg" + (wide ? " wide" : "")} role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>
         <div className="dlg-h">
           <h2 id={id}>{title}</h2>
-          <button type="button" className="dlg-x" onClick={onClose}>Schliessen</button>
+          {schliessen && <button type="button" className="dlg-x" onClick={onClose}>Schliessen</button>}
         </div>
         <div className="dlg-b">{children}</div>
       </div>

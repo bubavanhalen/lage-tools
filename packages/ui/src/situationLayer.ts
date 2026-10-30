@@ -12,6 +12,11 @@
  *   Linie Melder → Sichtung, ihr Stapel offen,
  * - MVP 1 ruhige Karte (`quiet`, Grundansicht): Beschriftungsregel aus map/quiet.ts – ältere Feind/Unklar 55 % ohne
  *   Fähnchen und Zusatz, eigene Trupps immer mit Namen; Stapel-Zahl bleibt kräftig.
+ * - MVP 3.5 (K3, Variante V4 der Symbolstudie, Spez. 3.2 B1–B6): Grundmass je Massstab und Stufe S/M/L bzw.
+ *   Präsentation (`map/symbolSize.ts`), Linie/Halo 7/8, Nacht-Rand schwarz; Neuaufbau der Zeichen nur beim Wechsel der
+ *   Grössenklasse (Messpunkte `lt:zeichen:start|ende`); ältere 72 % und entsättigt; Feind-PQ 0.22/0.4, Unklar-PQ
+ *   schraffiert; bisherige Wege punktiert; Stapelmarke als Element `.lt-stk` (nur Zahl); Tipp neben Zeichen trifft im
+ *   Radius 24/16 px, bei ≥ 2 verschiedenen Zeichen Auswahlliste (`map/pick.ts`, `map/Auswahlliste.tsx`).
  */
 import L from "leaflet";
 import {
@@ -25,6 +30,11 @@ import { isLocked, subscribeLock, type LayerFlags } from "./layers";
 import { clickSuppressed, longPress, suppressClick, suppressContextMenu } from "./longpress";
 import { dayLabel } from "./Timeline";
 import { quietLook } from "./map/quiet";
+import { beschriftungPx, mPerPxOf, symbolGrundmass, symbolKlasse, ZEICHEN_STRICH } from "./map/symbolSize";
+import { pickAt, pickAktion, istGrob, trefferRadius, type PickTreffer, type PickZiel } from "./map/pick";
+import { auswahlOffen, schliesseAuswahl, zeigeAuswahl, type AuswahlZeile } from "./map/Auswahlliste";
+import { ensureSchraffur, SCHRAFFUR_ID } from "./map/schraffur";
+import { ZEICHEN, PQ_FLAECHE } from "@lage/core";
 import { LAGE_KARTE } from "./colors";
 import "./mapoverlays.css";
 
@@ -69,7 +79,14 @@ function svgClone(svg: string): Node {
   }
   return n.cloneNode(true);
 }
-interface MarkerParts { svg: string; ud: { text: string; x: number; top: number } | null; time: { text: string; x: number; opt: boolean } | null }
+interface MarkerParts {
+  svg: string;
+  ud: { text: string; x: number; top: number } | null;
+  /** Zeit-Fähnchen; `opt` = nur im aufgefächerten Stapel (wird erst dann als Element angelegt, `place`) */
+  time: { text: string; x: number; opt: boolean } | null;
+  /** Grundmass in px ohne «gewählt» (Testhaken `data-groesse`) */
+  groesse: number;
+}
 /**
  * Icon eines Lage-Zeichens: SVG, Zusatz («H04», «2× Det 1»), Zeit-Fähnchen – gleiche Struktur wie früher als HTML-Text
  * (`.lt-ev > svg`, `> .lt-ud`, `> .lt-tl`), aber als DOM gebaut (SVG geklont statt geparst).
@@ -79,7 +96,8 @@ class LageIcon extends L.DivIcon {
   override createIcon(old?: HTMLElement): HTMLElement {
     const div = old && old.tagName === "DIV" ? old : document.createElement("div");
     div.textContent = "";
-    const { svg, ud, time } = this.parts;
+    const { svg, ud, time, groesse } = this.parts;
+    div.dataset.groesse = String(groesse);
     div.appendChild(svgClone(svg));
     if (ud) {
       const sp = document.createElement("span");
@@ -89,16 +107,18 @@ class LageIcon extends L.DivIcon {
       sp.textContent = ud.text;
       div.appendChild(sp);
     }
-    if (time) {
-      const sp = document.createElement("span");
-      sp.className = time.opt ? "lt-tl opt" : "lt-tl";
-      sp.style.setProperty("--x", `${time.x}px`);
-      sp.textContent = time.text;
-      div.appendChild(sp);
-    }
+    if (time && !time.opt) div.appendChild(timeSpan(time));
     (this as unknown as { _setIconStyles(el: HTMLElement, name: string): void })._setIconStyles(div, "icon");
     return div;
   }
+}
+
+function timeSpan(time: { text: string; x: number; opt: boolean }): HTMLSpanElement {
+  const sp = document.createElement("span");
+  sp.className = time.opt ? "lt-tl opt" : "lt-tl";
+  sp.style.setProperty("--x", `${time.x}px`);
+  sp.textContent = time.text;
+  return sp;
 }
 
 /** LatLng je Ort-Objekt der Meldung (gleiche Meldung → gleiches Objekt → Projektion aus dem Zwischenspeicher, swissmap.ts) */
@@ -111,10 +131,9 @@ function latLngOf(p: LV95): L.LatLng {
   return ll;
 }
 
+/** ohne Angabe `groesse` (wie bis MVP 3): feste Grösse */
 const SIZE = 18;
 const SIZE_SEL = 24;
-const TIME_W = 44;
-const TIME_H = 14;
 /** Maus: ab so vielen Pixeln Bewegung wird aus dem Klick ein Verschieben */
 const DRAG_PX = 4;
 /** Finger/Stift: so lange drücken, bis sich das Zeichen anhebt */
@@ -155,7 +174,8 @@ function ctlOf(map: L.Map): Ctl {
   if (have) return have;
   const c: Ctl = { map, openFor: null, stickyUntil: 0, lastSel: undefined, layer: null, pressing: 0, pending: null, focusId: null };
   ctls.set(map, c);
-  map.on("click", () => { if (c.openFor) setOpen(c, null); });
+  // Klick/Tipp auf die Karte neben ein Zeichen: Treffer im Radius (S12), sonst wie bisher (offenen Stapel zuklappen)
+  map.on("click", (e: L.LeafletMouseEvent) => { if (c.layer?.mapClick(e)) return; if (c.openFor) setOpen(c, null); });
   map.on("zoomstart", () => { if (c.openFor && Date.now() > c.stickyUntil) c.openFor = null; });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !c.layer?.fanOpen()) return;
@@ -222,6 +242,7 @@ interface Placed {
   rank: number;
   fanRank: number;
   z: number;
+  parts: MarkerParts;
 }
 
 /** Sammlung der Strassen-Hindernisse: je Gestaltung ein Pfad */
@@ -261,10 +282,18 @@ class SituationLayer extends L.LayerGroup {
   private unbind: Array<() => void> = [];
   private ctl: Ctl;
   private hoverNone = typeof matchMedia === "function" && matchMedia("(hover: none)").matches;
+  /** Grössenklasse (Spalte der Tabelle 3.2.1), mit der die Zeichen gebaut sind; -1 = ohne `groesse` (fest) */
+  private klasse = -1;
+  /** Grundmass und Grösse der gewählten Meldung in px */
+  private base = SIZE;
+  private selSize = SIZE_SEL;
+  /** Zeichen samt Beschriftung (Layer-Pixel) für das Ausweichen der Flächenbeschriftung */
+  private rects: Rects = [];
 
   constructor(map: L.Map, private events: LageEvent[], private o: SituationOptions) {
     super();
     this.ctl = ctlOf(map);
+    this.setSizes(mPerPxOf(map));
     // Auswahl geändert (Liste, Suche, Karte): ihr Stapel öffnet sich (auch nach dem Flug dorthin)
     if (this.ctl.lastSel !== o.selectedId) {
       if (this.ctl.lastSel !== undefined || o.selectedId) {
@@ -283,8 +312,11 @@ class SituationLayer extends L.LayerGroup {
     for (const p of this.placed) { const el = p.marker.getElement(); if (el) this.byEl.set(el, p); }
     this.bindPointer(map);
     this.unbind.push(subscribeLock(() => this.layout()));
+    // Schraffur der Unklar-Planquadrate in der SVG der Vektorebene (einmal je SVG)
+    ensureSchraffur(map.getPanes().overlayPane.querySelector("svg"));
     this.layout();
-    map.on("zoomend viewreset", this.layout, this);
+    map.on("zoomend viewreset", this.onZoomEnd, this);
+    map.on("moveend", this.onMoveEnd, this);
     // Tastatur: Fokus nach dem Neuaufbau (z. B. Auswahl mit Enter) auf dasselbe Zeichen zurück
     const fid = this.ctl.focusId;
     const ae = document.activeElement;
@@ -294,7 +326,9 @@ class SituationLayer extends L.LayerGroup {
   }
 
   override onRemove(map: L.Map): this {
-    map.off("zoomend viewreset", this.layout, this);
+    map.off("zoomend viewreset", this.onZoomEnd, this);
+    map.off("moveend", this.onMoveEnd, this);
+    schliesseAuswahl(map);
     this.endDrag(false, true);
     this.unbind.forEach((f) => f());
     this.unbind = [];
@@ -305,6 +339,80 @@ class SituationLayer extends L.LayerGroup {
   }
 
   relayout(): void { this.layout(); }
+
+  /** Grösse aus Massstab und Einstellung (V4); ohne `groesse` fest 18/24 px wie bisher */
+  private setSizes(mPerPx: number): void {
+    const g = this.o.groesse;
+    if (!g) { this.klasse = -1; this.base = SIZE; this.selSize = SIZE_SEL; return; }
+    this.klasse = symbolKlasse(mPerPx);
+    this.base = symbolGrundmass(mPerPx, g);
+    this.selSize = this.base + ZEICHEN.gewaehlt;
+  }
+
+  /** nach dem Verschieben: Lineal und Randbeschriftung stehen anders – Flächenbeschriftung neu setzen */
+  private onMoveEnd(): void { if (this._map) avoidAreaLabelsSoon(this._map, this.rects); }
+
+  /** Zeichen, Beschriftung und Rahmen einer Meldung in der aktuellen Grösse */
+  private graphic(it: SituationItem): { parts: MarkerParts; core: Box; box: Box; boxFan: Box; anchor: [number, number]; w: number; h: number } {
+    const g = this.o.groesse;
+    const size = it.selected ? this.selSize : this.base;
+    const outline = this.o.nacht ? LAGE_KARTE.haloNacht : undefined;
+    const s = g
+      ? symbolSvg(it.sym, it.aff, size, { dir: it.e.dir, sidc: it.sidc, status: it.status }, outline, ZEICHEN_STRICH)
+      : symbolSvg(it.sym, it.aff, size, { dir: it.e.dir, sidc: it.sidc, status: it.status });
+    const [ax, ay] = s.anchor;
+    // Beschriftung: 12 px (Präsentation 16 px), Plex Mono ≈ 0.6 em je Zeichen; Abstand zum Zeichen wächst mit dem Grundmass
+    const fs = g ? beschriftungPx(g) : 12;
+    const cw = fs * 0.6;
+    const gap = g ? Math.max(2, Math.round(this.base / 12)) : 2;
+    const timeW = Math.ceil(5 * cw + 10), timeH = Math.round(fs * 1.17) + 2;
+    const udW = it.ud ? Math.ceil(it.ud.length * cw) + 6 : 0;
+    const core: Box = [-ax, -ay, s.w - ax, s.h - ay];
+    const boxWith = (time: boolean): Box => [-ax - 2, -ay - 2 - (time ? timeH : 0), s.w - ax + gap + Math.max(udW, time ? timeW : 0), s.h - ay + 2];
+    const showTimes = this.o.flags.zeiten;
+    const parts: MarkerParts = {
+      svg: s.svg, groesse: this.base,
+      ud: it.ud ? { text: it.ud, x: s.w + gap, top: Math.max(0, Math.round(ay - fs * 0.6)) } : null,
+      time: showTimes ? { text: it.e.t.slice(11, 16), x: s.w + gap, opt: !it.showTime } : null,
+    };
+    return { parts, core, box: boxWith(it.showTime), boxFan: boxWith(showTimes), anchor: [ax, ay], w: s.w, h: s.h };
+  }
+
+  private iconFor(it: SituationItem, gr: ReturnType<SituationLayer["graphic"]>, cls: string): LageIcon {
+    return new LageIcon({ className: cls, iconSize: [gr.w, gr.h], iconAnchor: gr.anchor }, gr.parts);
+  }
+
+  /**
+   * Massstab geändert: wechselt die Grössenklasse, die Zeichen in der neuen Grösse aufbauen (an Ort und Stelle: das
+   * Element bleibt, damit Fokus, Tastatur und Zeiger-Bindungen erhalten bleiben), sonst nichts. Danach Stapel neu.
+   */
+  private onZoomEnd(): void {
+    const map = this._map;
+    if (!map) return;
+    const mpp = mPerPxOf(map);
+    if (this.o.groesse && symbolKlasse(mpp) !== this.klasse && !this.drag) {
+      const t0 = performance.now();
+      performance.mark("lt:zeichen:start");
+      this.setSizes(mpp);
+      for (const p of this.placed) {
+        const gr = this.graphic(p.it);
+        p.core = gr.core; p.box = gr.box; p.boxFan = gr.boxFan; p.parts = gr.parts;
+        p.offset = p.it.road ? roadOffset(p.it, gr.core) : undefined;
+        const icon = this.iconFor(p.it, gr, p.marker.options.icon!.options.className ?? "lt-ev");
+        p.marker.options.icon = icon;
+        const el = p.marker.getElement();
+        if (el) { const cls = el.className; icon.createIcon(el); el.className = cls; el.classList.remove("stacktop"); }
+        const tt = p.marker.getTooltip();
+        if (tt) tt.options.offset = L.point(0, -gr.anchor[1] - 2);
+      }
+      this.layout();
+      performance.mark("lt:zeichen:ende");
+      try { performance.measure("lt:zeichen", "lt:zeichen:start", "lt:zeichen:ende"); } catch { /* ältere Browser */ }
+      zeichenMessung(performance.now() - t0);
+      return;
+    }
+    this.layout();
+  }
   fanOpen(): boolean { return this.openStack >= 0; }
   dragging(): boolean { return !!this.drag; }
 
@@ -341,26 +449,38 @@ class SituationLayer extends L.LayerGroup {
     }
     const selected = model.items.find((i) => i.selected);
 
-    // Planquadrate der Sichtungen (Seitenfarbe 12 %, ältere blass), je Farbe/Deckkraft eine Fläche
-    const fills = new Map<string, { line: string; fill: string; o: number; rings: L.LatLng[][][]; seen: Set<string> }>();
+    // Planquadrate der Sichtungen (MVP 3.5, S11): Feind Füllung 0.22, Rahmen 0.4; Unklar schraffiert (Muster
+    // `lt-schraffur-unklar`, kein Gelb), Rahmen 0.4; ältere blass. Je Planquadrat und Art nur die kräftigste Fassung,
+    // je Art/Deckkraft eine Fläche; die kräftigen zuerst (Testhaken liest die erste Fläche).
+    const cellOp = new Map<string, { kind: SituationItem["kind"]; label: string; o: number }>();
     for (const it of model.items) {
       if (it.kind === "eigen" || it.selected || !it.e.cells?.length) continue;
       // Flächen und Linien zeichnen ihre Form selbst – keine zusätzliche Planquadrat-Füllung
       const geo = catalogEntry(it.sym)?.geometry;
       if (geo && geo !== "punkt") continue;
-      const c = KIND_COLOR[it.kind];
-      const key = `${it.kind}|${it.opacity}`;
-      const f = fills.get(key) ?? { ...c, o: it.opacity, rings: [], seen: new Set<string>() };
-      fills.set(key, f);
       for (const label of it.e.cells) {
-        const ring = cellRing(label, o.sheets);
-        if (!ring || f.seen.has(label)) continue;
-        f.seen.add(label);
-        f.rings.push([ring]);
+        const k = `${it.kind}|${label}`;
+        const have = cellOp.get(k);
+        if (!have || have.o < it.opacity) cellOp.set(k, { kind: it.kind, label, o: it.opacity });
       }
     }
-    for (const f of [...fills.values()].sort((a, b) => a.o - b.o)) {
-      if (f.rings.length) L.polygon(f.rings, { color: f.line, weight: 1.2, opacity: 0.8 * f.o, fillColor: f.fill, fillOpacity: (f.fill === f.line ? 0.12 : 0.2) * f.o, interactive: false }).addTo(this);
+    const fills = new Map<string, { kind: SituationItem["kind"]; o: number; rings: L.LatLng[][][] }>();
+    for (const c of cellOp.values()) {
+      const ring = cellRing(c.label, o.sheets);
+      if (!ring) continue;
+      const key = `${c.kind}|${c.o}`;
+      const f = fills.get(key) ?? { kind: c.kind, o: c.o, rings: [] };
+      fills.set(key, f);
+      f.rings.push([ring]);
+    }
+    for (const f of [...fills.values()].sort((a, b) => b.o - a.o)) {
+      const c = KIND_COLOR[f.kind];
+      const unklar = f.kind === "unklar";
+      L.polygon(f.rings, {
+        color: c.line, weight: 1.2, opacity: PQ_FLAECHE.rahmen * f.o, interactive: false,
+        fillColor: unklar ? `url(#${SCHRAFFUR_ID})` : c.fill, fillOpacity: (unklar ? 0.6 : PQ_FLAECHE.feindFuellung) * f.o,
+        className: (unklar ? "lt-pq lt-pq-unklar" : "lt-pq") + (f.o < 1 ? " old" : ""),
+      }).addTo(this);
     }
 
     // gewählte Meldung: Planquadrat(e) mit Tinte 8 % hinterlegt, Rand Tinte mit weissem Saum (inkl. Unterquadrant)
@@ -374,22 +494,23 @@ class SituationLayer extends L.LayerGroup {
       }
     }
 
-    // Spuren der Elemente: gestrichelt, kleine Punkte an früheren Standorten
+    // Spuren der Elemente (MVP 3.5, S13): punktiert «1 6» mit runden Enden – gestrichelt heisst nur «vermutet»;
+    // weisse Punkte als Halo darunter, kleine Ringe an früheren Standorten
     for (const tr of model.tracks) {
       const col = SIDE_COLOR[tr.side];
       const ll = tr.pts.map(toLatLng);
-      L.polyline(ll, { color: "#fff", weight: 4.5, opacity: 0.6, interactive: false }).addTo(this);
-      L.polyline(ll, { color: col, weight: 2, opacity: 0.85, dashArray: "6 5", interactive: false }).addTo(this);
-      for (const p of ll.slice(0, -1)) L.circleMarker(p, { radius: 2.5, color: col, weight: 1.5, fillColor: "#fff", fillOpacity: 1, opacity: 0.9, interactive: false }).addTo(this);
+      L.polyline(ll, { color: LAGE_KARTE.halo, weight: 5.5, opacity: 0.85, dashArray: "1 6", lineCap: "round", interactive: false, className: "lt-weg" }).addTo(this);
+      L.polyline(ll, { color: col, weight: 3, opacity: 0.95, dashArray: "1 6", lineCap: "round", interactive: false, className: "lt-weg" }).addTo(this);
+      for (const p of ll.slice(0, -1)) L.circleMarker(p, { radius: 2.5, color: col, weight: 1.5, fillColor: LAGE_KARTE.halo, fillOpacity: 1, opacity: 0.9, interactive: false }).addTo(this);
     }
 
-    // Sichtung: feine Linie vom Melder zur Sichtung
+    // Sichtung: feine Linie vom Melder zur Sichtung (durchgezogen – gestrichelt heisst nur «vermutet»)
     if (selected && selected.kind !== "eigen" && selected.e.melder) {
       const from = lastPosition(this.events, "blau", selected.e.melder, selected.e.t);
       if (from && (Math.abs(from.e - selected.pos.e) > 1 || Math.abs(from.n - selected.pos.n) > 1)) {
         const ll = [toLatLng(from), toLatLng(selected.pos)];
         L.polyline(ll, { color: "#fff", weight: 4, opacity: 0.8, interactive: false }).addTo(this);
-        L.polyline(ll, { color: SIDE_COLOR.blau, weight: 1.5, opacity: 0.95, dashArray: "5 4", interactive: false }).addTo(this);
+        L.polyline(ll, { color: SIDE_COLOR.blau, weight: 1.5, opacity: 0.95, interactive: false }).addTo(this);
         L.circleMarker(ll[0]!, { radius: 3, color: "#fff", weight: 1.5, fillColor: SIDE_COLOR.blau, fillOpacity: 1, interactive: false }).addTo(this);
       }
     }
@@ -407,39 +528,118 @@ class SituationLayer extends L.LayerGroup {
     const rankOf = new Map([...model.items].sort(cmp(true)).map((it, i) => [it, i]));
     const fanOf = new Map([...model.items].sort(cmp(false)).map((it, i) => [it, i]));
 
-    const showTimes = o.flags.zeiten;
     for (const it of [...model.items].sort((a, b) => rankOf.get(b)! - rankOf.get(a)!)) {
-      const size = it.selected ? SIZE_SEL : SIZE;
-      const s = symbolSvg(it.sym, it.aff, size, { dir: it.e.dir, sidc: it.sidc, status: it.status });
-      const [ax, ay] = s.anchor;
-      const udW = it.ud ? it.ud.length * 7 + 6 : 0;
-      const core: Box = [-ax, -ay, s.w - ax, s.h - ay];
-      const boxWith = (time: boolean): Box => [-ax - 2, -ay - 2 - (time ? TIME_H : 0), s.w - ax + 2 + Math.max(udW, time ? TIME_W : 0), s.h - ay + 2];
+      const gr = this.graphic(it);
+      const { core } = gr;
+      const ay = gr.anchor[1];
       const cls = ["lt-ev", `k-${it.kind}`, it.selected ? "sel" : "", it.opacity < 1 ? "old" : "", it.opacity < 1 && o.quiet ? "q" : "", o.highlight?.has(it.e.id) ? "hl" : ""].filter(Boolean).join(" ");
       // Inhalt als Element statt HTML-Text: das Zeichen-SVG wird pro Gestalt einmal geparst und dann geklont
       // (800 Meldungen: Parsen war der grösste Teil des Neuaufbaus)
-      const parts: MarkerParts = { svg: s.svg, ud: it.ud ? { text: it.ud, x: s.w + 2, top: Math.max(0, ay - 8) } : null,
-        time: showTimes ? { text: it.e.t.slice(11, 16), x: s.w + 2, opt: !it.showTime } : null };
       const ll = latLngOf(it.pos);
       const z = it.selected ? 1000 : (it.fresh ? 200 : 0) + (it.kind !== "eigen" ? 100 : 0);
       const marker = L.marker(ll, {
-        icon: new LageIcon({ className: cls, iconSize: [s.w, s.h], iconAnchor: [ax, ay] }, parts),
+        icon: this.iconFor(it, gr, cls),
         // ältere blass über CSS (.old), damit die Zahl-Marke eines Stapels kräftig bleibt
         zIndexOffset: z,
         keyboard: false,
       });
       const p: Placed = {
-        it, idx: this.placed.length, ll, marker, core, box: boxWith(it.showTime), boxFan: boxWith(showTimes), rank: rankOf.get(it)!, fanRank: fanOf.get(it)!, z,
-        offset: it.road ? roadOffset(it, core) : undefined,
+        it, idx: this.placed.length, ll, marker, core, box: gr.box, boxFan: gr.boxFan, rank: rankOf.get(it)!, fanRank: fanOf.get(it)!, z,
+        offset: it.road ? roadOffset(it, core) : undefined, parts: gr.parts,
       };
       // Hinweis: Einzelzeichen = Meldung; Stapel = kurze Liste (gewählte Meldung: Band zeigt dasselbe)
       marker.bindTooltip(() => this.tooltipFor(p), { direction: "top", offset: [0, -ay - 2], className: "lt-tip", opacity: 1 });
       // gewählte Meldung: das Band zeigt dasselbe – nur der Hinweis zum Ziehen (Maus), sonst kein Tooltip
-      marker.on("tooltipopen", () => { if (this.drag || (it.selected && !this.isClosedStack(p) && (this.hoverNone || !this.canDrag()))) marker.closeTooltip(); });
+      marker.on("tooltipopen", () => { if (this.drag || auswahlOffen(this.ctl.map) || (it.selected && !this.isClosedStack(p) && (this.hoverNone || !this.canDrag()))) marker.closeTooltip(); });
       marker.on("click", () => { marker.closeTooltip(); if (!clickSuppressed()) this.activate(p); });
       marker.addTo(this);
       this.placed.push(p);
     }
+  }
+
+  /**
+   * Klick/Tipp auf die Karte (nicht auf ein Zeichen): Zeichen im Trefferradius suchen (Spez. MVP 3.5, S12) – eines →
+   * wählen bzw. Stapel auffächern, ≥ 2 verschiedene → Auswahlliste. Nicht beim Ziehen, Messen, Zeichnen, «Ort setzen».
+   * @returns true, wenn der Klick ein Zeichen getroffen hat
+   */
+  mapClick(e: L.LeafletMouseEvent): boolean {
+    const hits = this.treffer(e.containerPoint);
+    if (!hits.length) return false;
+    // Flächen (NAI) unter dem Tipp: ihr eigener Klick entfällt (areasLayer, packages/map/src/tools.ts)
+    if (e.originalEvent) (e.originalEvent as MouseEvent & { __ltGetroffen?: boolean }).__ltGetroffen = true;
+    if (pickAktion(hits.length) === "waehlen") { this.activate(hits[0]!.data!); return true; }
+    this.zeigeListe(hits, e.containerPoint);
+    return true;
+  }
+
+  /** Kandidaten im Trefferradius um einen Containerpunkt (leer, wenn ein Werkzeug läuft oder gezogen wird) */
+  private treffer(cp: L.Point): Array<PickTreffer<Placed>> {
+    const map = this._map;
+    if (!map || this.drag || clickSuppressed()) return [];
+    const cl = map.getContainer().classList;
+    if (cl.contains("lt-picking") || cl.contains("lt-drawing") || cl.contains("lt-measuring")) return [];
+    const ziele: Array<PickZiel<Placed>> = this.placed.map((p) => {
+      const el = p.marker.getElement();
+      const pt = map.latLngToContainerPoint(p.marker.getLatLng());
+      const st = this.stackOf(p);
+      const closed = !!st && st.st.members.length > 1 && st.si !== this.openStack;
+      return {
+        id: p.it.e.id, x: pt.x, y: pt.y, data: p,
+        stapel: closed ? st!.si : -1,
+        oben: !closed || st!.st.members[0] === p.idx,
+        verdeckt: !el || el.classList.contains("hid") || el.classList.contains("under"),
+      };
+    });
+    const r = trefferRadius(istGrob());
+    const hits = pickAt(cp, r, ziele);
+    // Testhaken (nur lesen): letzter Treffer auf der Karte
+    (window as unknown as { __ltPick?: unknown }).__ltPick = { x: Math.round(cp.x), y: Math.round(cp.y), r, was: pickAktion(hits.length), ids: hits.map((h) => h.id) };
+    return hits;
+  }
+
+  private zeigeListe(hits: Array<PickTreffer<Placed>>, cp: L.Point): void {
+    const map = this._map;
+    if (!map) return;
+    const zeilen: AuswahlZeile[] = hits.map((h) => this.auswahlZeile(h.data!, h.dist));
+    const byId = new Map(hits.map((h) => [h.id, h.data!]));
+    const stack = hits.find((h) => h.stapel >= 0)?.data;
+    for (const p of this.placed) p.marker.closeTooltip();
+    zeigeAuswahl(map, cp, zeilen, (id) => { const p = byId.get(id); if (p) this.activate(p); },
+      () => { if (stack) this.activate(stack); else map.setZoomAround(cp, map.getZoom() + 1); });
+  }
+
+  /**
+   * Finger/Stift: Der Browser verschiebt einen Tipp auf das nächste antippbare Element (Chromium «touch adjustment») –
+   * liegen zwei verschiedene Zeichen nahe, gewänne still das nächste. Deshalb hier mit dem **ungerückten** Punkt:
+   * liegt er nicht direkt auf einem Zeichen und gibt es ≥ 2 Kandidaten, erscheint die Auswahlliste und der folgende
+   * (verschobene) Klick entfällt. Ein Kandidat oder keiner: wie gewohnt über den Klick.
+   */
+  private tippOhneVersatz(e: PointerEvent, down: { x: number; y: number; ab: number }): void {
+    const map = this._map;
+    if (!map || this.drag) return;
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8 || Date.now() - down.ab > LIFT_MS) return;
+    const cont = map.getContainer();
+    const unter = document.elementFromPoint(e.clientX, e.clientY);
+    if (!unter || !cont.contains(unter) || unter.closest(".lt-ev, .leaflet-control-container, .lt-pick-host")) return;
+    const cp = map.mouseEventToContainerPoint(e as unknown as MouseEvent);
+    const hits = this.treffer(cp);
+    if (pickAktion(hits.length) !== "liste") return;
+    suppressClick();
+    this.zeigeListe(hits, cp);
+  }
+
+  /** Zeile der Auswahlliste: «2× Kpz · 07:12 · von H05» bzw. «H05 · seit 03:30 · AQ11 C»; Stapel «3 Zeichen übereinander» */
+  private auswahlZeile(p: Placed, dist: number): AuswahlZeile {
+    const it = p.it, e = it.e;
+    const st = this.stackOf(p);
+    const n = st && st.si !== this.openStack ? st.st.members.length : 1;
+    const base = { id: e.id, kind: it.kind, dist, sym: it.sym, aff: it.aff, sidc: it.sidc, status: it.status, zeit: e.t.slice(11, 16) };
+    if (n > 1) return { ...base, label: `${n} Zeichen übereinander`, extra: `oben: ${[e.desc || it.name, e.unit].filter(Boolean).join(" ")}` };
+    if (it.kind === "eigen") return { ...base, label: e.unit || e.melder || it.name, zeit: `seit ${e.t.slice(11, 16)}`, extra: e.cells?.[0] ?? e.where };
+    const desc = e.desc || it.name;
+    // Anzahl «2×» vor dem Namen – ausser die Beschreibung beginnt schon mit der Zahl («4 Personen»)
+    const was = [e.count && e.count > 1 && !/^\d/.test(desc) ? `${e.count}×` : "", desc, e.unit && !desc.includes(e.unit) ? e.unit : ""].filter(Boolean).join(" ");
+    return { ...base, label: was, extra: [e.melder ? `von ${e.melder}` : "", e.cells?.[0] ?? ""].filter(Boolean).join(" · ") || undefined };
   }
 
   /** Klick/Tippen/Enter auf ein Zeichen: geschlossener Stapel → auffächern, sonst Meldung wählen */
@@ -476,10 +676,10 @@ class SituationLayer extends L.LayerGroup {
     const rows = ms.slice(0, 8).map((it) => {
       const who = it.kind === "eigen" ? it.e.unit || it.e.melder || "" : [it.e.unit, it.e.melder ? `via ${it.e.melder}` : ""].filter(Boolean).join(" ");
       const sym = iconSvg(it.sym, it.aff, 12, { sidc: it.sidc, status: it.status }).svg;
-      return `<li><b class="tnum">${it.e.t.slice(11, 16)}</b><span class="lt-stk-s">${sym}</span><span class="lt-stk-n">${escapeHtml(it.e.desc || it.name)}</span>${who ? `<span class="lt-stk-w">${escapeHtml(who)}</span>` : ""}</li>`;
+      return `<li><b class="tnum">${it.e.t.slice(11, 16)}</b><span class="lt-stkl-s">${sym}</span><span class="lt-stkl-n">${escapeHtml(it.e.desc || it.name)}</span>${who ? `<span class="lt-stkl-w">${escapeHtml(who)}</span>` : ""}</li>`;
     }).join("");
-    const more = ms.length > 8 ? `<li class="lt-stk-more">… ${ms.length - 8} weitere</li>` : "";
-    return `<div class="lt-tip-h"><b>${ms.length} Meldungen hier</b><span class="lt-stk-hint">Klick fächert auf</span></div><ul class="lt-stk">${rows}${more}</ul>`;
+    const more = ms.length > 8 ? `<li class="lt-stkl-more">… ${ms.length - 8} weitere</li>` : "";
+    return `<div class="lt-tip-h"><b>${ms.length} Meldungen hier</b><span class="lt-stkl-hint">Klick fächert auf</span></div><ul class="lt-stkl">${rows}${more}</ul>`;
   }
 
   /**
@@ -580,8 +780,12 @@ class SituationLayer extends L.LayerGroup {
     const shownPt = this.placed.map((p, i) => (p.offset ? truePt[i]!.add(L.point(p.offset[0], p.offset[1])) : truePt[i]!));
     const n = this.placed.length;
     // Stapel mit der normalen Zeichengrösse bilden: die grössere gewählte Meldung soll keinen neuen Stapel auslösen
-    const k = SIZE / SIZE_SEL;
-    const stackCore = (p: Placed): Box => (p.it.selected ? [p.core[0] * k, p.core[1] * k, p.core[2] * k, p.core[3] * k] : p.core);
+    const k = this.base / this.selSize;
+    // V4: der Halo (outlineWidth, ≈ 2 px je Seite) gehört zum Rahmen von milsymbol, verdeckt aber nichts – sich
+    // berührende Halos bilden keinen Stapel (Ruhe-Kriterium: ≥ 80 % sichtbare Einzelzeichen)
+    const inset = this.o.groesse ? (ZEICHEN.outlineWidth * this.base) / 100 : 0;
+    const shrink = (c: Box): Box => (inset ? [c[0] + inset, c[1] + inset, c[2] - inset, c[3] - inset] : c);
+    const stackCore = (p: Placed): Box => shrink(p.it.selected ? [p.core[0] * k, p.core[1] * k, p.core[2] * k, p.core[3] * k] : p.core);
     this.stacks = buildStacks(this.placed.map((p, i) => ({ x: shownPt[i]!.x, y: shownPt[i]!.y, core: stackCore(p), box: p.box, prio: n - p.rank })));
     this.stackIdx = new Array(n).fill(-1);
     this.stacks.forEach((st, si) => st.members.forEach((i) => { this.stackIdx[i] = si; }));
@@ -589,7 +793,8 @@ class SituationLayer extends L.LayerGroup {
     this.openStack = openFor ? this.stacks.findIndex((st) => st.members.length > 1 && st.members.some((i) => this.placed[i]!.it.e.id === openFor)) : -1;
 
     const rects: Array<readonly [number, number, number, number]> = [];
-    const toCont = (pt: L.Point) => map.layerPointToContainerPoint(pt);
+    // Hindernisse für die Flächenbeschriftung in Layer-Pixeln (bleiben beim Verschieben der Karte gültig)
+    const toCont = (pt: L.Point) => pt;
     this.stacks.forEach((st, si) => {
       if (si === this.openStack) {
         // ---- aufgefächert: Kreis um den gemeinsamen Ort, Linie zum wahren Ort jedes Zeichens, Punkt markiert
@@ -643,6 +848,7 @@ class SituationLayer extends L.LayerGroup {
     this.roving();
     publish(this.stacks.filter((s) => s.members.length > 1).length);
     // Flächenbeschriftungen (NAI, AO, Stao) den Zeichen ausweichen lassen – nach dem Zeichnen (kein erzwungenes Layout)
+    this.rects = rects;
     avoidAreaLabelsSoon(map, rects);
     try { performance.measure("Lage: Stapel", { start: t0, detail: { n } }); } catch { /* ältere Browser */ }
   }
@@ -683,7 +889,7 @@ class SituationLayer extends L.LayerGroup {
   private ariaFor(p: Placed, n: number): string {
     const it = p.it;
     const what = [it.e.t.slice(11, 16), kindText(it.e), it.e.desc || it.name, it.e.unit, it.e.cells?.[0]].filter(Boolean).join(" ");
-    if (n > 1) return `Stapel mit ${n} Meldungen, oberste ${what} – Enter fächert auf`;
+    if (n > 1) return `${n} Zeichen übereinander – antippen zum Auffächern`;
     return `${what}${it.selected ? " (gewählt)" : ""} – Enter wählt`;
   }
 
@@ -702,8 +908,23 @@ class SituationLayer extends L.LayerGroup {
     el.classList.toggle("under", s.under);
     el.classList.toggle("hid", s.hid);
     el.classList.toggle("stacktop", s.n > 1);
-    if (s.n > 1) el.dataset.n = String(s.n);
-    else delete el.dataset.n;
+    // Stapelmarke als Element (Testhaken `.lt-stk`, nur die Zahl; Spez. MVP 3.5, S13)
+    let stk = el.querySelector<HTMLElement>(":scope > .lt-stk");
+    if (s.n > 1) {
+      el.dataset.n = String(s.n);
+      if (!stk) { stk = document.createElement("span"); stk.className = "lt-stk"; stk.setAttribute("aria-hidden", "true"); el.appendChild(stk); }
+      if (stk.textContent !== String(s.n)) stk.textContent = String(s.n);
+    } else {
+      delete el.dataset.n;
+      stk?.remove();
+    }
+    // Zeit-Fähnchen, das nur aufgefächert erscheint: erst dann als Element (ältere Zeichen tragen sonst keine Beschriftung)
+    const t = p.parts.time;
+    if (t?.opt) {
+      const have = el.querySelector(":scope > .lt-tl");
+      if (s.fan && !have) el.appendChild(timeSpan(t));
+      else if (!s.fan && have) have.remove();
+    }
     // nur das gewählte Zeichen lässt sich mit der Maus ziehen (Cursor «grab»)
     el.classList.toggle("movable", !s.under && !s.hid && s.n < 2 && this.movable(p));
     // Tastatur: sichtbare Zeichen und oberste Zeichen der Stapel erreichbar, verdeckte nicht. Die Karte ist EIN
@@ -768,6 +989,14 @@ class SituationLayer extends L.LayerGroup {
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", done);
     };
+    // Finger/Stift: Tipp neben Zeichen mit dem ungerückten Punkt prüfen (S12, `tippOhneVersatz`)
+    const cont = map.getContainer();
+    let tDown: { id: number; x: number; y: number; ab: number } | null = null;
+    const onTDown = (e: PointerEvent) => { tDown = e.pointerType !== "mouse" && e.isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, ab: Date.now() } : null; };
+    const onTUp = (e: PointerEvent) => { const d = tDown; tDown = null; if (d && e.pointerId === d.id) this.tippOhneVersatz(e, d); };
+    cont.addEventListener("pointerdown", onTDown, true);
+    cont.addEventListener("pointerup", onTUp, true);
+    this.unbind.push(() => { cont.removeEventListener("pointerdown", onTDown, true); cont.removeEventListener("pointerup", onTUp, true); });
     // Natives Kontextmenü (langes Drücken mit dem Finger) auf einem Zeichen: nicht das Karten-Menü öffnen
     let touchAt = 0;
     const onAnyDown = (e: PointerEvent) => { if (e.pointerType !== "mouse") touchAt = Date.now(); };
@@ -939,6 +1168,17 @@ class SituationLayer extends L.LayerGroup {
   }
 }
 
+/**
+ * Dauer jedes Neuaufbaus beim Wechsel der Grössenklasse (ms) zusätzlich in `window.__ltZeichen`: unter einer Test-Uhr
+ * (Playwright `clock.install`) legt `performance.mark` nichts ab, `performance.now` läuft aber weiter (wie perf.ts).
+ */
+function zeichenMessung(ms: number): void {
+  if (typeof window === "undefined") return;
+  const w = window as unknown as { __ltZeichen?: number[] };
+  (w.__ltZeichen ??= []).push(Math.round(ms * 10) / 10);
+  if (w.__ltZeichen.length > 50) w.__ltZeichen.shift();
+}
+
 type Rects = ReadonlyArray<readonly [number, number, number, number]>;
 const avoidQueue = new WeakMap<L.Map, { rects: Rects; queued: boolean }>();
 /** `avoidAreaLabels` nach dem nächsten Bild ausführen: dann ist das Layout fertig und das Lesen der Beschriftungen billig */
@@ -955,25 +1195,54 @@ function avoidAreaLabelsSoon(map: L.Map, rects: Rects) {
 }
 
 /**
- * Verschiebt die Beschriftungen der Flächen (aus `areasLayer`), wenn sie auf einem Zeichen liegen:
- * zuerst nach oben, dann seitlich. Wird nach jedem Neuberechnen der Stapel neu gesetzt.
+ * Beschriftungen der Flächen (aus `areasLayer`) ausweichen lassen (Spez. MVP 3.5, B5): Hindernisse sind die Zeichen
+ * samt Beschriftung (`rects`, Layer-Pixel), die Randbeschriftung des Rasters, das Lineal und die schon gesetzten
+ * Etiketten. NAI/Räume (`data-bb`): zuerst am Pol der Unerreichbarkeit, dann innen oben/unten/links/rechts, dann
+ * knapp ausserhalb oben/unten, zuletzt kleine Verschiebungen; passt nichts, wird das Etikett ausgeblendet (Name im
+ * `title` der Fläche). Wird nach jedem Neuberechnen der Stapel und nach jedem Verschieben der Karte neu gesetzt.
  */
-function avoidAreaLabels(map: L.Map, rects: ReadonlyArray<readonly [number, number, number, number]>) {
+function avoidAreaLabels(map: L.Map, rects: Rects) {
   const cont = map.getContainer();
-  const spans = cont.querySelectorAll<HTMLElement>(".lt-area-lbl span");
+  const spans = [...cont.querySelectorAll<HTMLElement>(".lt-area-lbl span")];
   if (!spans.length) return;
   const cr = cont.getBoundingClientRect();
-  const hit = (a: readonly number[]) => rects.some((r) => a[0]! < r[2] && a[2]! > r[0] && a[1]! < r[3] && a[3]! > r[1]);
-  const tries: Array<[number, number]> = [[0, 0], [0, -16], [0, -32], [24, 0], [-24, 0], [48, -16], [-48, -16], [0, -48]];
+  const o0 = map.layerPointToContainerPoint(L.point(0, 0));
+  type R = readonly [number, number, number, number];
+  const busy: R[] = rects.map((r) => [r[0] + o0.x, r[1] + o0.y, r[2] + o0.x, r[3] + o0.y] as const);
+  const rel = (b: DOMRect, m = 1): R => [b.left - cr.left - m, b.top - cr.top - m, b.right - cr.left + m, b.bottom - cr.top + m];
   // erst alle lesen, dann alle schreiben (sonst erzwingt jedes Lesen ein neues Layout der ganzen Seite)
-  spans.forEach((sp) => { sp.style.translate = ""; });
-  const boxes = [...spans].map((sp) => sp.getBoundingClientRect());
+  for (const sp of spans) { sp.style.translate = ""; sp.classList.remove("lt-lbl-aus"); }
+  cont.querySelectorAll<Element>(".lt-raster-lbl .lt-edge-t, .leaflet-lt-lineal-pane > *").forEach((el) => {
+    const b = el.getBoundingClientRect();
+    if (b.width > 0 && b.height > 0) busy.push(rel(b, 1));
+  });
+  const boxes = spans.map((sp) => sp.getBoundingClientRect());
+  const W = cr.width, H = cr.height;
+  const hit = (a: R) => busy.some((r) => a[0] < r[2] && a[2] > r[0] && a[1] < r[3] && a[3] > r[1]);
+  const inMap = (a: R) => a[0] >= 0 && a[1] >= 0 && a[2] <= W && a[3] <= H;
+  const nudges: Array<[number, number]> = [[0, -16], [0, 16], [24, 0], [-24, 0], [0, -32], [48, -16], [-48, -16], [0, -48]];
   spans.forEach((sp, i) => {
     const b = boxes[i]!;
-    const r0 = [b.left - cr.left - 2, b.top - cr.top - 1, b.right - cr.left + 2, b.bottom - cr.top + 1];
-    const ok = tries.find(([dx, dy]) => !hit([r0[0]! + dx, r0[1]! + dy, r0[2]! + dx, r0[3]! + dy]));
-    const v = ok && (ok[0] || ok[1]) ? `${ok[0]}px ${ok[1]}px` : "";
-    if (v) sp.style.translate = v;
+    if (!b.width) return;
+    const r0 = rel(b, 2);
+    const w = r0[2] - r0[0], h = r0[3] - r0[1];
+    const cx = (r0[0] + r0[2]) / 2, cy = (r0[1] + r0[3]) / 2;
+    const tries: Array<[number, number]> = [[0, 0]];
+    const bb = sp.dataset.bb?.split(",").map(Number);
+    if (bb && bb.length === 4 && bb.every(Number.isFinite)) {
+      const a = map.latLngToContainerPoint(toLatLng({ e: bb[0]!, n: bb[3]! })), z = map.latLngToContainerPoint(toLatLng({ e: bb[2]!, n: bb[1]! }));
+      const [L0, T0, R0, B0] = [a.x, a.y, z.x, z.y];
+      // innen oben, unten, links, rechts (nur wenn das Etikett in die Fläche passt), dann aussen oben/unten
+      if (B0 - T0 > h * 2) tries.push([0, T0 + 2 + h / 2 - cy], [0, B0 - 2 - h / 2 - cy]);
+      if (R0 - L0 > w * 1.4) tries.push([L0 + 2 + w / 2 - cx, 0], [R0 - 2 - w / 2 - cx, 0]);
+      tries.push([0, T0 - 2 - h / 2 - cy], [0, B0 + 2 + h / 2 - cy], [L0 - 4 - w / 2 - cx, 0], [R0 + 4 + w / 2 - cx, 0]);
+    }
+    tries.push(...nudges);
+    const ok = tries.map(([dx, dy]) => [Math.round(dx), Math.round(dy)] as const)
+      .find(([dx, dy]) => { const r: R = [r0[0] + dx, r0[1] + dy, r0[2] + dx, r0[3] + dy]; return inMap(r) && !hit(r); });
+    if (!ok) { sp.classList.add("lt-lbl-aus"); return; }
+    if (ok[0] || ok[1]) sp.style.translate = `${ok[0]}px ${ok[1]}px`;
+    busy.push([r0[0] + ok[0], r0[1] + ok[1], r0[2] + ok[0], r0[3] + ok[1]]);
   });
 }
 

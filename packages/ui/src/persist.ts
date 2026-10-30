@@ -405,11 +405,18 @@ let persistAsked = false;
 /**
  * Browser bitten, den Speicher nicht automatisch zu löschen (beim Anlegen/Öffnen einer Übung). Fragt nur einmal pro
  * Sitzung; Ergebnis mit `storagePersistState()` abfragbar (für die spätere Statusanzeige).
+ * MVP 3.5 (A4): `o.geste` = aus einem Klick («Speicher schützen», «Alles für offline laden») – dann wird `persist()`
+ * **sofort** aufgerufen (vor jedem `await`, sonst verfällt die Benutzergeste) und auch ein zweites Mal gefragt.
  */
-export async function requestPersist(): Promise<PersistState> {
+export async function requestPersist(o: { geste?: boolean } = {}): Promise<PersistState> {
   try {
     const st = navigator.storage;
     if (!st?.persisted) return persistState;
+    if (o.geste && st.persist) {
+      persistAsked = true;
+      persistState = (await st.persist()) ? "dauerhaft" : "abgelehnt";
+      return persistState;
+    }
     if (await st.persisted()) return (persistState = "dauerhaft");
     if (persistAsked || !st.persist) return persistState;
     persistAsked = true;

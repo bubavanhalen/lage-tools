@@ -3,11 +3,19 @@
  * Abschnitte 1 Lage Blau · 2 Lage Rot · 3 Von oben (gültig) · 4 Offene Punkte · 5 Neu seit der letzten Übergabe ·
  * 6 Zahlen für den Rapport · 7 Visum. «Als PDF» (dieselben Abschnitte, A4 hoch), «Übergabe abschliessen» (gesperrt ohne «übernommen von»).
  * Testhaken: `role="dialog"` mit `aria-label="Übergabe"`.
+ * MVP 3.5 (Spez. MVP 3.5, Kap. 2.7, D4): «Stand» = Geräteuhr (`tUhr`); «Übergabe abschliessen» schreibt zusätzlich einen
+ * Journaleintrag (`uebergabeEintrag`, S20, laufende Nummer); danach – nur wenn die letzte Datei-Sicherung älter als
+ * 120 min ist oder fehlt – der Schritt «Datei sichern» im selben Dialog (S9); gesperrtes «Übergabe abschliessen» nennt
+ * den Grund daneben. Kürzel ohne stilles Abschneiden (`kuerzelNorm`, eine Regel für Kürzel und Visum).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { uebergabeEintrag, zeitTeile, type SchichtWechsel } from "@lage/core";
 import type { UebergabeProps } from "../shell/contracts";
-import { kuerzelNorm } from "../shell/contracts";
+import { kuerzelHinweis, kuerzelNorm } from "../shell/contracts";
+import { dateiErinnern } from "../betrieb/dateiSichern";
+import { takeNr } from "../commit";
+import { readSchicht } from "./useSchicht";
 import { KiLageberichtButton } from "../ki/KiFeatures";
 import { uebergabeDaten, type UebergabeZeileNeu } from "./uebergabeDaten";
 import { ladeLetzteUebergabe, ladeUebergabePdf, letzteUebergabeText, speichereLetzteUebergabe } from "./letzteUebergabe";
@@ -36,8 +44,8 @@ export interface UebergabeExtra {
 
 export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
   const { ex, tLive, schicht } = p;
-  const d = useMemo(() => uebergabeDaten({ ex, tLive, hints: p.hints, lage: p.lage, items: p.items, kuerzel: schicht.kuerzel, seit: schicht.seit, seitT: p.seitT }),
-    [ex, tLive, p.hints, p.lage, p.items, schicht.kuerzel, schicht.seit, p.seitT]);
+  const d = useMemo(() => uebergabeDaten({ ex, tLive, hints: p.hints, lage: p.lage, items: p.items, kuerzel: schicht.kuerzel, seit: schicht.seit, seitT: p.seitT, tUhr: p.tUhr }),
+    [ex, tLive, p.hints, p.lage, p.items, schicht.kuerzel, schicht.seit, p.seitT, p.tUhr]);
   const [von, setVon] = useState(schicht.kuerzel ?? "");
   const [an, setAn] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -49,6 +57,12 @@ export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
   closeRef.current = p.onClose;
   const anOk = kuerzelNorm(an);
   const vonOk = kuerzelNorm(von);
+  /** Grund, weshalb «Übergabe abschliessen» gesperrt ist (direkt neben dem Knopf, N) */
+  const gesperrt = !an.trim() ? "Kürzel der übernehmenden Person fehlt" : !anOk ? `Kürzel der übernehmenden Person ungültig: ${kuerzelHinweis(an)}` : null;
+  /** nach dem Abschliessen: Schritt «Datei sichern» (S9) – Text «✓ Übergabe 07:31 BSP → MU gespeichert …» */
+  const [fertig, setFertig] = useState<string | null>(null);
+  const sichernRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (fertig) sichernRef.current?.focus(); }, [fertig]);
 
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
@@ -73,15 +87,30 @@ export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
   }, []);
 
   const abschliessen = () => {
-    if (!anOk) return;
+    if (!anOk || fertig) return;
     const v = vonOk ?? schicht.kuerzel ?? "";
     // Inhalt mit beiden Kürzeln merken: «Letzte Übergabe als PDF» bleibt greifbar (Prüfung M1)
     speichereLetzteUebergabe(ex.id, { d, visum: { von: v, an: anOk, um: tLive.slice(11, 16) }, t: tLive });
-    schicht.uebergeben(v, anOk, { offen: d.offenTotal, neu: d.neu.total });
-    p.say(`Übergabe ${tLive.slice(11, 16)} ${v || "–"} → ${anOk} gespeichert. Neu gilt ab jetzt. Das PDF dazu: Menü → «Letzte Übergabe als PDF».`);
+    const stand = { offen: d.offenTotal, neu: d.neu.total };
+    const vorher = readSchicht(ex.id).wechselId;
+    schicht.uebergeben(v, anOk, stand);
+    // S20: Übergabe auch als Journalzeile (suchbar, im PDF und in der CSV); ID des Wechsels aus der Schicht dieses Geräts
+    // (Speicher gesperrt: keine neue ID lesbar → kein Eintrag, die virtuelle Zeile bleibt – nie eine falsche Zuordnung)
+    const wid = readSchicht(ex.id).wechselId;
+    if (wid && wid !== vorher) {
+      const w: SchichtWechsel = { id: wid, art: "uebergabe", at: new Date().toISOString(), t: tLive.slice(0, 16), an: anOk, ...(kuerzelNorm(v) ? { von: kuerzelNorm(v)! } : {}), device: p.device, stand };
+      const ev = uebergabeEintrag(w, { nr: takeNr(ex), device: p.device, tOffset: zeitTeile(p.tUhr ?? tLive).off });
+      p.update((x) => (x.id === ex.id && !(x.events ?? []).some((e) => e.system === "uebergabe" && e.schichtId === wid) ? { ...x, events: [...(x.events ?? []), ev] } : x));
+    }
+    const text = `Übergabe ${tLive.slice(11, 16)} ${v || "–"} → ${anOk} gespeichert. Neu gilt ab jetzt.`;
     toFeld.current = true;
+    // S9: Datei sichern anbieten, wenn die letzte Sicherung älter als 120 min ist oder fehlt; sonst wie bisher schliessen
+    if (dateiErinnern(ex.id)) { setFertig(text); return; }
+    p.say(`${text} Das PDF dazu: Menü → «Letzte Übergabe als PDF».`);
     p.onClose();
   };
+  const dateiSichern = () => { p.onSaveFile(); p.say(fertig ?? "Übergabe gespeichert."); p.onClose(); };
+  const spaeter = () => { p.say(`${fertig ?? "Übergabe gespeichert."} Das PDF dazu: Menü → «Letzte Übergabe als PDF».`); p.onClose(); };
   const pdf = async (alt = false) => {
     setPdfBusy(true);
     try {
@@ -106,6 +135,16 @@ export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
           <p className="ueb-l2">{d.schichtZeile}</p>
         </header>
 
+        {fertig ? (
+          <div className="ueb-body ueb-fertig" role="group" aria-label="Datei sichern">
+            <p className="ueb-ok" role="status">✓ {fertig}</p>
+            <p>Datei sichern (empfohlen): Das Journal liegt sonst nur auf diesem Gerät.</p>
+            <div className="ueb-fertig-acts">
+              <button ref={sichernRef} type="button" className="jl-btn ueb-primary" onClick={dateiSichern}>Datei sichern …</button>
+              <button type="button" className="jl-btn" onClick={spaeter}>Später</button>
+            </div>
+          </div>
+        ) : (<>
         <div className="ueb-body">
           <section className="ueb-s" aria-label="Lage Blau">
             <h3>1 Lage Blau</h3>
@@ -143,7 +182,10 @@ export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
           <section className="ueb-s ueb-oben" aria-label="Von oben (gültig)">
             <h3>3 Von oben (gültig)</h3>
             {d.vonOben.length ? (
-              <ul className="ueb-ul ueb-neu">{d.vonOben.map((z) => <NeuZeile key={z.key} z={z} />)}</ul>
+              <ul className="ueb-ul ueb-neu">
+                {d.vonOben.map((z) => <NeuZeile key={z.key} z={z} />)}
+                {(d.vonObenWeitere ?? 0) > 0 && <li className="ueb-more">+{d.vonObenWeitere} weitere im Journal</li>}
+              </ul>
             ) : <p className="ueb-leer">Keine Orientierung von oben erfasst.</p>}
           </section>
 
@@ -181,13 +223,14 @@ export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
           <section className="ueb-s ueb-visum" aria-label="Visum">
             <h3>7 Visum</h3>
             <div className="ueb-vis">
-              <label>übergeben von <input className="ueb-in mono" value={von} maxLength={6} autoComplete="off" spellCheck={false}
+              {/* kein maxLength: nie still abschneiden (S24); `kuerzelNorm` beim Abschliessen */}
+              <label>übergeben von <input className="ueb-in mono" value={von} autoComplete="off" spellCheck={false}
                 onChange={(e) => setVon(e.target.value.toUpperCase())} /></label>
               <span className="tnum">um {tLive.slice(11, 16)}</span>
-              <label>übernommen von <input className="ueb-in mono" value={an} maxLength={6} autoComplete="off" spellCheck={false} placeholder="z. B. MU"
+              <label>übernommen von <input className="ueb-in mono" value={an} autoComplete="off" spellCheck={false} placeholder="z. B. MU" aria-invalid={!!an.trim() && !anOk}
                 onChange={(e) => setAn(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); abschliessen(); } }} /></label>
             </div>
-            {!anOk && <p className="ueb-fehlt" role="status">Kürzel der übernehmenden Person fehlt</p>}
+            {an.trim() && anOk && anOk !== an.trim() && <p className="ueb-norm">wird zu {anOk}</p>}
           </section>
         </div>
 
@@ -198,9 +241,11 @@ export function UebergabeView(p: UebergabeProps & UebergabeExtra) {
           )}
           <button type="button" className="jl-btn" onClick={() => void pdf()} disabled={pdfBusy}>Als PDF</button>
           {p.ki && <KiLageberichtButton hints={p.hints} coas={p.lage.coas} onNotiz={p.onKiNotiz} />}
-          <button type="button" className="jl-btn ueb-primary" onClick={abschliessen} disabled={!anOk}>Übergabe abschliessen</button>
+          {gesperrt && <span className="ueb-fehlt" role="status" id="ueb-gesperrt">{gesperrt}</span>}
+          <button type="button" className="jl-btn ueb-primary" onClick={abschliessen} disabled={!anOk} aria-describedby={gesperrt ? "ueb-gesperrt" : undefined}>Übergabe abschliessen</button>
           <button type="button" className="jl-btn" onClick={p.onClose}>Schliessen</button>
         </footer>
+        </>)}
       </div>
     </div>,
     document.body,

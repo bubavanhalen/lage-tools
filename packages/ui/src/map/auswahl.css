@@ -1,0 +1,37 @@
+/* Auswahlliste «Welches Zeichen?» (Spez. MVP 3.5, S12): Bedienelement der Oberfläche → Tokens aus theme.css */
+.lt-pick-host { position: absolute; inset: 0; z-index: 900; pointer-events: none; }
+.lt-pick {
+  position: absolute;
+  min-width: 240px;
+  max-width: min(360px, calc(100% - 16px));
+  padding: var(--sp-4) 0;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--r-8);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+  pointer-events: auto;
+  font: 400 var(--fs-14)/1.3 var(--f-body);
+}
+.lt-pick-h { padding: var(--sp-4) var(--sp-12); font-size: var(--fs-12); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.lt-pick-o {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: var(--sp-8);
+  align-items: center;
+  align-content: center;
+  min-height: max(48px, var(--hit));
+  padding: 2px var(--sp-12);
+  cursor: pointer;
+  outline: none;
+}
+.lt-pick-o:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.lt-pick-o:focus-visible { box-shadow: inset 0 0 0 3px var(--focus-ring); }
+.lt-pick-s { grid-row: 1 / 3; display: inline-flex; justify-content: center; }
+.lt-pick-s svg { display: block; max-width: 26px; height: auto; max-height: 22px; }
+.lt-pick-l { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lt-pick-t { font: 600 var(--fs-12) var(--f-mono); color: var(--muted); }
+.lt-pick-x { grid-column: 2 / 4; font-size: var(--fs-12); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lt-pick-mehr .lt-pick-l { grid-column: 1 / 4; font-weight: 500; }
+.lt-pick-o.k-feind .lt-pick-l { color: var(--feind); }

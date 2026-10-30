@@ -13,6 +13,10 @@
  * `li`) statt der 10-Minuten-Marke «neu», gestrichene Einträge an ihrer Zeit (grau, durchgestrichen, «Zurückholen»),
  * Link «Gestrichene zeigen (n)» am Ende, gewählte Zeile mit «Mehr …» (`LvzMenu`). Messpunkt P1 `lt:zeile`.
  *
+ * MVP 3.5 (E3, S22, S25): Nummer als «Nr 56» (aria «Nummer 56»), «von 2 Trupps gesehen» zählt **verschiedene Melder**
+ * (Trupps im `title`), Ausgang «↗ Ausgang an Bat», «4 min nach jetzt» für Meldungen nach der Geräteuhr (bis erreicht),
+ * Zeiten der doppelten Stunde «02:45 MESZ»; alle Zeitvergleiche über `zeitCmp`.
+ *
  * Tastatur (Spez. 3.4): die Liste ist **ein** Tab-Stopp (roving tabindex): nur eine Zeile hat `tabIndex=0` (zuletzt
  * fokussiert, sonst gewählt, sonst die oberste); ↑/↓ (Pos1/Ende) wechseln die Zeile, Entf löscht, danach steht der
  * Fokus auf der nächsten Zeile. Knöpfe in nicht aktiven Zeilen sind aus der Tab-Reihenfolge genommen.
@@ -20,7 +24,7 @@
  * Vorrat) stehen im DOM, gemessene Höhen werden gemerkt, Platzhalter oben/unten halten die Bildlaufleiste richtig.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, type EventQuality, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
+import { artOf, artText, journalStatus, lvzIndex, nrLabel, placeLabel, zeitBis, zeitCmp, zeitText, type EventQuality, type Exercise, type LageEvent, type SchichtWechsel } from "@lage/core";
 import { iconSvg } from "@lage/map";
 import { AttachmentChips } from "../Attachments";
 import { attachmentsOf } from "../attachmentStore";
@@ -31,14 +35,15 @@ import { RueckblickStreifen } from "../time/RueckblickBanner";
 import { PERF_MARK, type JournalListProps, type ZeitApi } from "../shell/contracts";
 import { dayTitle, displayText, eingangText, FORM_ZEICHEN, formOf, hm, missLabel, nichtLageText, vermerkTeile, type ZeilenForm } from "../entry/labels";
 import { LvzMenu } from "./LvzMenu";
+import { nachJetztText } from "../time/useLageZeit";
 import "./journal.css";
 import "./lvz.css";
 
 export interface JournalListExtra {
   /** Meldung, die gerade im Meldungsfeld korrigiert wird (dunkler Rahmen) */
   correcting?: string | null;
-  /** Lagezeit für den Streifen «Liste bis 05:30» (nur Rückblick); `tNow` bei LIVE: Meldungen danach als «nach LIVE» kennzeichnen */
-  zeit?: Pick<ZeitApi, "zeit"> & { tNow?: string };
+  /** Lagezeit für den Streifen «Liste bis 05:30» (nur Rückblick); `tNow` bei LIVE: Meldungen danach als «nach LIVE» kennzeichnen; `tUhr` (MVP 3.5): «4 min nach jetzt» */
+  zeit?: Pick<ZeitApi, "zeit"> & { tNow?: string; tUhr?: string };
   /** Leerzustand «suche»: Suchtext für «Nichts gefunden für «H07».» */
   query?: string;
   /** Leerzustand «zeige-letzte»: Minuten */
@@ -79,8 +84,12 @@ interface RowProps {
   korr: boolean;
   flash: boolean;
   q?: EventQuality;
-  /** Anzahl Trupps, die es gesehen haben (≥ 2 = bestätigt), sonst 0 */
-  zwei: number;
+  /** (MVP 3.5, C14) verschiedene Trupps, die es gesehen haben («H02, H04»; ≥ 2 = bestätigt), sonst "" */
+  gesehen: string;
+  /** (MVP 3.5, S22) «4 min nach jetzt» (Meldung nach der Geräteuhr, in der Toleranz) */
+  nachJetzt?: string;
+  /** Uhrzeit der Zeile («07:25», in der doppelten Stunde «02:45 MESZ») */
+  hm: string;
   open: boolean;
   onSelect(id: string): void;
   onCorrect(id: string): void;
@@ -108,7 +117,7 @@ interface RowProps {
   blau: string[];
 }
 
-const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open, onSelect, onCorrect, onDelete, onToggle, tab, spaeter, nr, artWort, vm, dringend, del, menu, onMenu, onRestore, blau }: RowProps) {
+const Row = memo(function Row({ e, attachments, sel, korr, flash, q, gesehen, nachJetzt, hm: zeitHm, open, onSelect, onCorrect, onDelete, onToggle, tab, spaeter, nr, artWort, vm, dringend, del, menu, onMenu, onRestore, blau }: RowProps) {
   const form = formOf(e);
   const art = artOf(e);
   const lage = art === "meldung" && !e.hebtAuf;
@@ -125,13 +134,14 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open,
   const von = e.melder && !own && (lage || form === "aufheb" || (art === "rueckfrage" && !!e.an) || art === "orientierung" || art === "auftrag" || (art === "notiz" && e.bezugArt !== "quittung")) ? e.melder : "";
   const teile = vm ? vm.split(SEP) : [];
   const eingang = eingangText(e);
+  const truppe = gesehen ? gesehen.split(", ") : [];
   return (
     <li data-id={e.id} data-art={art} data-nr={nr || undefined} className={`jl-row k-${form}${sel ? " sel" : ""}${korr ? " korr" : ""}${flash ? " flash" : ""}${del ? " is-del" : ""}${dringend ? " is-dringend" : ""}`} tabIndex={tab}
       aria-current={sel || undefined}
       onClick={(ev) => { if (!(ev.target as HTMLElement).closest("button")) onSelect(e.id); }}>
       <span className="jl-tcol">
-        <span className="jl-t mono">{e.t.slice(11, 16)}</span>
-        {nr && <span className="jl-nr" aria-label={`Nummer ${nr}`} title={`Nummer ${nr}`}>{nr}</span>}
+        <span className="jl-t mono">{zeitHm}</span>
+        {nr && <span className="jl-nr" aria-label={`Nummer ${nr}`} title={`Nummer ${nr}`}>Nr {nr}</span>}
       </span>
       <span className="jl-body">
         <span className="jl-l1">
@@ -144,11 +154,12 @@ const Row = memo(function Row({ e, attachments, sel, korr, flash, q, zwei, open,
         <span className="jl-l2">
           {del && <span className="jl-del">{del}</span>}
           {spaeter && <span className="jl-spaeter">nach LIVE ({spaeter}) – noch nicht auf der Karte</span>}
+          {nachJetzt && <span className="jl-nachjetzt">{nachJetzt}</span>}
           {von && <span>von {von}</span>}
           {place ? <span className="mono">{place}</span> : lage ? <span className="jl-warn">Ort fehlt</span> : null}
           {teile.map((t) => <span key={t} className={t === "dringend" ? "jl-vm-dringend" : "jl-vm"}>{t}</span>)}
           {eingang && <span>{eingang}</span>}
-          {lage && zwei > 1 && <span>von {zwei} Trupps gesehen</span>}
+          {lage && truppe.length > 1 && <span title={gesehen}>von {truppe.length} Trupps gesehen</span>}
           {missing.length > 0 && <span>Fehlt noch: {missing.join(", ")}</span>}
           {status && !(del && !e.history?.length) && <button type="button" className="jl-hist" aria-expanded={open} onClick={() => onToggle(e.id)}>{status}</button>}
           {e.via === "ki" && <span className="jl-ki"><KiMark size={9} />KI</span>}
@@ -250,7 +261,7 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     const trenner: Item | null = seit ? { k: "t", key: "trenner", text: `Neu in deiner Schicht ↑ · seit ${hm(seit.seit)} (${seit.kuerzel})` } : null;
     if (trenner && lastNew === -1) out.push(trenner);
     // Übergaben (neueste zuerst) an ihrer Lagezeit zwischen den Einträgen
-    const ws = [...(p.wechsel ?? [])].filter((w) => w.art === "uebergabe").sort((a, b) => (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
+    const ws = [...(p.wechsel ?? [])].filter((w) => w.art === "uebergabe").sort((a, b) => zeitCmp(b.t, a.t));
     let wi = 0;
     const head = (t: string) => {
       const h = t.slice(0, 13);
@@ -259,8 +270,8 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     /** Wechsel über dem Eintrag `e`: später, oder gleiche Minute und nach dem Erfassen von `e` */
     const ueber = (w: SchichtWechsel, e: LageEvent | null) => {
       if (!e) return true;
-      const wt = w.t.slice(0, 16), et = e.t.slice(0, 16);
-      return wt > et || (wt === et && w.at >= (e.createdAt ?? e.updatedAt));
+      const c = zeitCmp(w.t.slice(0, 16), e);
+      return c > 0 || (c === 0 && w.at >= (e.createdAt ?? e.updatedAt));
     };
     const wechselBis = (e: LageEvent | null) => {
       while (wi < ws.length && ueber(ws[wi]!, e)) {
@@ -370,11 +381,16 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
   });
 
   const byId = useMemo(() => new Map(all.map((e) => [e.id, e])), [all]);
-  const zweiOf = (e: LageEvent): number => {
-    const q = quality?.get(e.id);
-    if (!q) return 0;
-    const by = (q.confirmedBy ?? []).map((id) => byId.get(id)).filter((x) => x && !x.deleted).length;
-    return q.status === "bestaetigt" || by > 0 ? Math.max(2, by + 1) : 0;
+  /**
+   * (MVP 3.5, C14) «von n Trupps gesehen» = verschiedene Melder, wie `bestaetigtVon` (Kern) – hier aus der schon
+   * gerechneten Qualität (`confirmedBy`), damit nicht jede Zeile die ganze Übung neu prüft
+   */
+  const gesehenVon = (e: LageEvent): string => {
+    const ids = quality?.get(e.id)?.confirmedBy ?? [];
+    if (!ids.length) return "";
+    const out: string[] = e.melder ? [e.melder] : [];
+    for (const id of ids) { const x = byId.get(id); if (x && !x.deleted && x.melder && !out.includes(x.melder)) out.push(x.melder); }
+    return out.length > 1 ? out.join(", ") : "";
   };
   const toggle = useCallback((id: string) => setOpenHist((o) => (o === id ? null : id)), []);
 
@@ -436,11 +452,15 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
     if (li?.dataset.id && li.dataset.id !== rove) setRove(li.dataset.id);
   };
 
-  /** LIVE-Zeit (Minute); Meldungen danach fehlen auf der Karte (Zukunftszeit bestätigt) */
-  const liveT = p.zeit?.zeit.kind === "live" && p.zeit.tNow ? p.zeit.tNow.slice(0, 16) : null;
+  /** LIVE-Zeit (mit Offset); Meldungen danach fehlen auf der Karte (Zukunftszeit bestätigt) */
+  const liveT = p.zeit?.zeit.kind === "live" && p.zeit.tNow ? p.zeit.tNow : null;
+  /** Geräteuhr (MVP 3.5, S22): Meldungen danach, aber in der Lage, zeigen «4 min nach jetzt» */
+  const uhr = p.zeit?.zeit.kind === "live" ? p.zeit.tUhr ?? null : null;
+  /** Umstellungstage dieser Übung (Anzeige «02:45 MESZ» nur dort) */
+  const hmOf = (e: LageEvent) => zeitText(e);
   const strip = p.zeit ? <RueckblickStreifen zeit={p.zeit} days={ex.days} art="liste" /> : null;
   /** «Gestrichene zeigen (n)» am Listenende (nur wenn es gestrichene gibt) */
-  const nDel = p.gestricheneN ?? all.filter((e) => e.deleted && (!liveT || e.t.slice(0, 16) <= liveT)).length;
+  const nDel = p.gestricheneN ?? all.filter((e) => e.deleted && (!liveT || zeitBis(e, liveT))).length;
   const endLink = p.onGestrichene && (nDel > 0 || p.gestrichene) ? (
     <div className="jl-end">
       <button type="button" className="jl-link" aria-pressed={!!p.gestrichene} onClick={() => p.onGestrichene!(!p.gestrichene)}>
@@ -520,11 +540,12 @@ export function JournalList(p: JournalListProps & JournalListExtra) {
               : (
                 <ol key={`o${pi}`} className="jlist">
                   {part.ol.map((e) => {
-                    const spaeter = liveT && !e.deleted && e.t.slice(0, 16) > liveT ? `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 16)}` : undefined;
+                    const spaeter = liveT && !e.deleted && zeitCmp(e, liveT) > 0 ? `${dayLabel(e.t, ex.days)} ${e.t.slice(11, 16)}` : undefined;
+                    const nachJetzt = !spaeter && uhr && !e.deleted ? nachJetztText(e, uhr) ?? undefined : undefined;
                     const teile = vermerkTeile(e, ex, idx);
                     return (
                       <Row key={e.id} e={e} attachments={ex.attachments} sel={e.id === selected} korr={e.id === p.correcting} flash={e.id === flashId}
-                        q={quality?.get(e.id)} zwei={zweiOf(e)} open={openHist === e.id}
+                        q={quality?.get(e.id)} gesehen={gesehenVon(e)} nachJetzt={nachJetzt} hm={hmOf(e)} open={openHist === e.id}
                         onSelect={rowSelect} onCorrect={rowCorrect} onDelete={rowDelete} onToggle={toggle} tab={e.id === active ? 0 : -1} spaeter={spaeter}
                         nr={nrLabel(e, ex)} artWort={artOf(e) === "meldung" ? "" : artText(e)} vm={teile.map((x) => x.t).join(SEP)}
                         dringend={teile.some((x) => x.k === "dringend")}

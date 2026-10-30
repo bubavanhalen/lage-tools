@@ -1,6 +1,21 @@
-/* Service Worker der Lage-Tools: App offline verfügbar, Kartenkacheln aus dem Zwischenspeicher. */
+/*
+ * Service Worker der Lage-Tools: App offline verfügbar, Kartenkacheln aus dem Zwischenspeicher.
+ * MVP 3.5 (S4, A2): Seite «Netz zuerst» mit Zeitlimit (danach index.html aus dem Zwischenspeicher, eine spätere
+ * Netzantwort wird verworfen – kein Neuladen); App-Dateien Zwischenspeicher zuerst; Kacheln Zwischenspeicher zuerst,
+ * Netz mit Zeitlimit, dann 504. Die Zeitlimits setzt `scripts/assemble-site.mjs` aus `packages/core/src/entscheide.ts` ein.
+ */
 const VERSION = "__VERSION__";
 const APP = "__APP__";
+/** Seite aus dem Netz höchstens so lange (ms), dann aus dem Zwischenspeicher (SW_NETZ_TIMEOUT_MS) */
+const NETZ_MS = __NETZ_MS__;
+/** Kachel aus dem Netz höchstens so lange (ms), dann 504 (SW_KACHEL_TIMEOUT_MS) */
+const KACHEL_MS = __KACHEL_MS__;
+
+/** `fetch` mit Zeitlimit: null = Zeit abgelaufen (die Anfrage läuft im Hintergrund weiter, ihre Antwort wird verworfen) */
+function mitZeitlimit(p, ms) {
+  let t;
+  return Promise.race([p.finally(() => clearTimeout(t)), new Promise((ok) => { t = setTimeout(() => ok(null), ms); })]);
+}
 const APP_CACHE = `lt-${APP}-${VERSION}`;
 const TILE_CACHE = "lt-tiles-v1";
 /** erst bei Gebrauch geladen (nicht beim Installieren): Ordner → Zwischenspeicher (gleich wie in der App) */
@@ -49,7 +64,9 @@ self.addEventListener("fetch", (ev) => {
       if (hit) return hit;
       try {
         // ohne Cookies (passt zu COEP «credentialless»; Kacheln brauchen keine)
-        const res = await fetch(req.mode === "cors" ? new Request(req, { credentials: "omit" }) : new Request(req.url, { mode: "no-cors", credentials: "omit" }));
+        const net = fetch(req.mode === "cors" ? new Request(req, { credentials: "omit" }) : new Request(req.url, { mode: "no-cors", credentials: "omit" }));
+        const res = await mitZeitlimit(net, KACHEL_MS);
+        if (!res) return new Response("", { status: 504, statusText: "Zeitlimit" });
         if (res.ok) c.put(req.url, res.clone());
         return res;
       } catch (e) {
@@ -80,12 +97,15 @@ self.addEventListener("fetch", (ev) => {
   ev.respondWith((async () => {
     const c = await caches.open(APP_CACHE);
     if (req.mode === "navigate") {
+      // Netz zuerst, aber höchstens NETZ_MS: bei schwachem Netz startet die App aus dem Zwischenspeicher (≤ 4 s)
       try {
-        const res = await fetch(req);
-        if (res.ok) return isolate(res);
+        const res = await mitZeitlimit(fetch(req), NETZ_MS);
+        if (res && res.ok) return isolate(res);
       } catch { /* offline */ }
       const off = (await c.match("./index.html")) ?? (await c.match("./"));
-      return off ? isolate(off) : Response.error();
+      if (off) return isolate(off);
+      // nichts im Zwischenspeicher (erster Start): doch auf das Netz warten
+      try { return isolate(await fetch(req)); } catch { return Response.error(); }
     }
     const hit = await c.match(req, { ignoreSearch: true });
     if (hit) return isolate(hit);

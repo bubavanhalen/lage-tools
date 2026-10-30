@@ -2,12 +2,16 @@
  * Menü ☰ (Spez. MVP 1, Kap. 1.3, 2.8): Popover rechts oben (320 px), Einträge 44 px, Esc/Klick daneben schliesst,
  * Fokus zurück auf ☰. Pfeiltasten wandern durch die Einträge. Experten-Einträge (Präsentation, KI, Spracherkennung,
  * Hinweise als Tabelle) nur mit Schalter «Experten-Werkzeuge».
+ * MVP 3.5 (Kap. 1.2, Paket A): «Datei für anderes Gerät … zuletzt 07:31 | nie gesichert», Ansicht «Bildschirm bleibt an ✓»
+ * (ohne Unterstützung deaktiviert mit Grund) und «Auf diesem Gerät sicher? … ✓ | ✗» (öffnet das Offline-Popover).
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent as RKeyboardEvent, type ReactNode } from "react";
 import type { Arbeitsweise, Modus } from "./contracts";
+import { wachHinweis } from "../betrieb/wakeLock";
 import "./shell.css";
+import "../betrieb/betrieb.css";
 
-export const APP_VERSION = "MVP 3";
+export const APP_VERSION = "MVP 3.5";
 
 export interface MainMenuProps {
   exName: string;
@@ -125,7 +129,7 @@ export function MainMenu(p: MainMenuProps) {
             </Group>
           )}
           <Group title="Daten">
-            <Item onClick={act(p.onSaveFile)}>Datei für anderes Gerät …</Item>
+            <Item onClick={act(p.onSaveFile)}>Datei für anderes Gerät …{p.dateiNote && <span className="mm-note">{p.dateiNote}</span>}</Item>
             <Item onClick={act(p.onOpenFile)}>Datei öffnen (zusammenführen) …</Item>
             <Item onClick={act(p.onPdf)}>Journal drucken …</Item>
             {p.onLagekarte && <Item onClick={act(p.onLagekarte)}>Lagekarte drucken …</Item>}
@@ -136,6 +140,18 @@ export function MainMenu(p: MainMenuProps) {
               Nacht <Switch on={p.night} />
             </Item>
             {x && <Item onClick={act(p.onPresent)}>Präsentation (Vollbild)</Item>}
+            {p.wach && (() => {
+              const w = p.wach;
+              const note = wachHinweis(w);
+              return (
+                <Item role="menuitemcheckbox" checked={w.unterstuetzt && w.an} disabled={!w.unterstuetzt} onClick={() => w.setAn(!w.an)}>
+                  <Check on={w.unterstuetzt && w.an} /> <span className="mm-wach">Bildschirm bleibt an{note && <span className="mm-sub"> – {note}</span>}</span>
+                </Item>
+              );
+            })()}
+            {p.onSicher && (
+              <Item onClick={act(p.onSicher)}>Auf diesem Gerät sicher? …{p.sicher !== undefined && <span className={"mm-note" + (p.sicher ? " ja" : "")}>{p.sicher ? "✓" : "✗"}</span>}</Item>
+            )}
           </Group>
           <Group title="Arbeitsweise">
             <Item role="menuitemradio" checked={p.aw.modus === "lage"} onClick={act(() => p.setModus("lage"))}>
@@ -174,9 +190,10 @@ function Group({ title, children }: { title: ReactNode; children: ReactNode }) {
   );
 }
 
-function Item({ children, onClick, role = "menuitem", checked }: { children: ReactNode; onClick: () => void; role?: "menuitem" | "menuitemradio" | "menuitemcheckbox"; checked?: boolean }) {
+function Item({ children, onClick, role = "menuitem", checked, disabled }: { children: ReactNode; onClick: () => void; role?: "menuitem" | "menuitemradio" | "menuitemcheckbox"; checked?: boolean; disabled?: boolean }) {
   return (
-    <button type="button" role={role} className="mm-i" aria-checked={role === "menuitem" ? undefined : !!checked} tabIndex={-1} onClick={onClick}>
+    <button type="button" role={role} className={"mm-i" + (disabled ? " aus" : "")} aria-checked={role === "menuitem" ? undefined : !!checked} aria-disabled={disabled || undefined}
+      tabIndex={-1} onClick={disabled ? undefined : onClick}>
       {children}
     </button>
   );

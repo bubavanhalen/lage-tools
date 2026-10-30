@@ -5,11 +5,13 @@
  *
  * Gewählter Punkt: Hauptaktion je Art (Erledigt · Antwort eintragen · Vbk eintragen · Ort setzen · Fassungen ansehen)
  * und «Zur Meldung». Die Punkte sind `.jlist li` (zählen im Inventar nicht). «Offen» zeigt immer den Stand jetzt (LIVE).
+ * MVP 3.5 (Spez. MVP 3.5, Kap. 2.6, D3/D5/D7): Gruppen «Rückfragen von oben» (über den Aufträgen, «Antwort eintragen»
+ * setzt «Antwort an Bat: » mit Art Ausgang) und «Begehren» («Erledigt» sofort, Rückgängig); Nummern «Nr 56»; der
+ * Verweis «Was Rot: n offene Hinweise» zählt mit `offeneHinweise` (eine Zahl wie Reiter und Übergabe).
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as RKeyboardEvent } from "react";
-import { lvzIndex, vermerkeOf, type EntryArt, type Hint, type LageEvent, type OffenArt, type OffenItem } from "@lage/core";
+import { lvzIndex, offeneHinweise as offeneHinweiseVon, vermerkeOf, type EntryArt, type Hint, type LageEvent, type OffenArt, type OffenItem } from "@lage/core";
 import type { OffenPanelProps } from "../shell/contracts";
-import { isOpen } from "../hintsData";
 import { setVermerkUndo } from "../journal/actions";
 import { textMitTag, zeitKurz } from "../entry/labels";
 import { hintLine } from "../red/redText";
@@ -18,8 +20,10 @@ import "./lvzui.css";
 /** Gruppen in der Reihenfolge der Ansicht (Kap. 2.6) */
 const GRUPPEN: Array<{ key: string; titel: string; arten: OffenArt[] }> = [
   { key: "dringend", titel: "Dringend", arten: ["dringend"] },
+  { key: "rueckfrage-oben", titel: "Rückfragen von oben", arten: ["rueckfrage-oben"] },
   { key: "auftrag", titel: "Aufträge", arten: ["auftrag"] },
   { key: "rueckfrage", titel: "Rückfragen", arten: ["rueckfrage"] },
+  { key: "begehren", titel: "Begehren", arten: ["begehren"] },
   { key: "verbindung", titel: "Verbindung", arten: ["verbindung", "still"] },
   { key: "ohne-ort", titel: "Ohne Ort", arten: ["ohne-ort"] },
   { key: "offen", titel: "Als offen markiert", arten: ["offen"] },
@@ -32,7 +36,7 @@ const MARK: Record<OffenArt, string> = { dringend: "!", auftrag: "✎", rueckfra
 /** Hauptaktion je Art (Kap. 2.6) */
 export function hauptAktion(it: Pick<OffenItem, "art">): string {
   switch (it.art) {
-    case "rueckfrage": return "Antwort eintragen";
+    case "rueckfrage": case "rueckfrage-oben": return "Antwort eintragen";
     case "verbindung": case "still": return "Vbk eintragen";
     case "ohne-ort": return "Ort setzen";
     case "konflikt": return "Fassungen ansehen";
@@ -85,7 +89,9 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
   }, [items]);
   const heute = p.tLive ?? null;
 
-  const offeneHinweise: Hint[] = p.tLive ? hints.filter((h) => isOpen(ex, h, p.tLive!)) : hints.filter((h) => h.level !== "info" && !h.until);
+  // eine Zahl (S25): dieselbe Zählung wie Reiter «Was Rot ⚠n» und Übergabe (`offeneHinweise`, zaehlen.ts)
+  const offenIds = new Set(offeneHinweiseVon(hints, ex.hintDecisions, p.tLive).ids);
+  const offeneHinweise: Hint[] = hints.filter((h) => offenIds.has(h.id));
 
   // Rückgängig über die gemeinsame Leiste des Journals (eine Leiste für die ganze Seite, journalUndo.tsx)
   const setStatus = (e: LageEvent, v: "offen" | "erledigt") =>
@@ -114,6 +120,13 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
         if (p.onPrefillArt) p.onPrefillArt(t, "notiz"); else p.onPrefill(t);
         return;
       }
+      case "rueckfrage-oben": {
+        // Antwort nach oben = Ausgang («Antwort an Bat: …», beantwortet die Rückfrage, kein Zeichen)
+        const t = `Antwort an ${e?.quelle ?? "Bat"}: `;
+        if (p.onPrefillArt) p.onPrefillArt(t, "ausgang"); else p.onPrefill(t);
+        return;
+      }
+      // Begehren: «Erledigt» sofort (Rückgängig über die Leiste); eine Massnahme lässt sich an der Zeile «Mehr …» vermerken
       case "verbindung": case "still": p.onPrefill(`${it.unit ?? ""} Vbk `); return;
       case "ohne-ort": if (e) p.onCorrect(e.id); return;
       case "konflikt":
@@ -163,15 +176,20 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
               const t = zeitKurz(it.t, heute, ex.days);
               const text = textMitTag(it.text, it.t, heute, ex.days);
               const ask = askM?.key === it.key ? askM : null;
-              const meta = it.art === "auftrag" ? (it.ueberfaellig ? "⚠ Frist vorbei" : seitLabel(it.seitMin)) : it.art === "rueckfrage" ? seitLabel(it.seitMin) : null;
+              const meta = it.art === "auftrag" ? (it.ueberfaellig ? "⚠ Frist vorbei" : seitLabel(it.seitMin)) : it.art === "rueckfrage" || it.art === "rueckfrage-oben" || it.art === "begehren" ? seitLabel(it.seitMin) : null;
               return (
                 <li key={it.key} data-key={it.key} data-art={it.art} className={"of-row" + (sel ? " sel" : "") + (it.ueberfaellig ? " spaet" : "")}
-                  tabIndex={it.key === tabKey ? 0 : -1} aria-selected={sel} onClick={(ev) => { if ((ev.target as HTMLElement).closest("button, input, label, .of-ask")) return; onSelect(sel ? null : it.key); }}>
+                  tabIndex={it.key === tabKey ? 0 : -1} aria-selected={sel} onClick={(ev) => {
+                    if ((ev.target as HTMLElement).closest("button, input, label, .of-ask")) return;
+                    // «Massnahme?» offen: ein zweiter Klick auf die Zeile klappt sie nicht zu (N)
+                    if (sel && ask) return;
+                    onSelect(sel ? null : it.key);
+                  }}>
                   <span className={"of-mark m-" + it.art} aria-hidden="true">{MARK[it.art]}</span>
                   <span className="of-body">
                     <span className="of-l1">
                       {it.art !== "still" && <span className="of-t mono">{t}</span>}
-                      {it.nr && <span className="of-nr mono" aria-label={`Nummer ${it.nr}`}>{it.nr}</span>}
+                      {it.nr && <span className="of-nr mono" aria-label={`Nummer ${it.nr}`}>Nr {it.nr}</span>}
                       <span className="of-text">{text}</span>
                     </span>
                     {meta && <span className={"of-meta" + (it.ueberfaellig ? " spaet" : "")}>{meta}</span>}
@@ -194,7 +212,7 @@ export function OffenPanel(p: OffenPanelProps & OffenPanelExtra) {
                     {sel && !ask && (
                       <span className="jl-acts of-acts">
                         <button type="button" className="jl-btn" onClick={() => act(it)}>{hauptAktion(it)}</button>
-                        {it.art === "rueckfrage" && it.eventId && <button type="button" className="jl-btn" onClick={() => erledigt(it)}>Erledigt</button>}
+                        {(it.art === "rueckfrage" || it.art === "rueckfrage-oben") && it.eventId && <button type="button" className="jl-btn" onClick={() => erledigt(it)}>Erledigt</button>}
                         {it.eventId && <button type="button" className="jl-btn" onClick={() => p.onEvent(it.eventId!)}>Zur Meldung</button>}
                       </span>
                     )}

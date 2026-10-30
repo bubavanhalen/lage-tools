@@ -103,7 +103,7 @@ export function LagekarteDialog({ ex, map, t, from, live, kuerzel, klassifizieru
 
   const radio = <T extends string>(group: string, v: T, cur: T, set: (v: T) => void) => ({ type: "radio" as const, name: name + group, checked: cur === v, onChange: () => set(v) });
   return (
-    <Dialog title="Lagekarte drucken" onClose={() => { abort.current?.abort(); onClose(); }}>
+    <Dialog title="Lagekarte drucken" schliessen={false} onClose={() => { abort.current?.abort(); onClose(); }}>
       <form className="pr-form" onSubmit={(e) => { e.preventDefault(); void erstellen(); }}>
         <fieldset className="pr-group">
           <legend>Papier</legend>

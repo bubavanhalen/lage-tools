@@ -15,6 +15,7 @@
  * Wird einmal beim Laden angemeldet (Import von hintsData.ts bzw. Workspace); ohne `window`/`performance` tut es nichts.
  */
 import type { jsPDF } from "jspdf";
+import { pdfMeldungen } from "./pdfSafe";
 import { PERF_MARK, type LtPdfInfo, type LtPerf } from "./shell/contracts";
 
 type MarkName = keyof typeof PERF_MARK;
@@ -143,7 +144,9 @@ export function pdfZeilen(doc: jsPDF): string[] {
 
 /** `window.__ltPdfInfo` für das eben erzeugte PDF setzen (vor `doc.output`) */
 export function pdfInfo(doc: jsPDF, format: "a4" | "a3", quer: boolean): LtPdfInfo {
-  const info: LtPdfInfo = { seiten: doc.getNumberOfPages(), format, quer, zeilen: pdfZeilen(doc) };
+  // MVP 3.5 (D8): Textboxen, Füllflächen und Vektorzeichen aus `safePdf` (pdfSafe.ts)
+  const m = pdfMeldungen(doc);
+  const info: LtPdfInfo = { seiten: doc.getNumberOfPages(), format, quer, zeilen: pdfZeilen(doc), boxes: m.boxes, fills: m.fills, glyphen: m.glyphen };
   if (typeof window !== "undefined") window.__ltPdfInfo = info;
   return info;
 }

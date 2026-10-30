@@ -12,11 +12,11 @@ describe("Beschriftungsregel Grundansicht", () => {
       expect(quietLook({ kind, ageMin: 30, selected: false }, basis)).toEqual({ opacity: 1, showTime: true, showUd: true });
     }
   });
-  it("Feind/Unklar älter: 40 %, ohne Fähnchen und Zusatz", () => {
+  it("Feind/Unklar älter: 72 % (V4), ohne Fähnchen und Zusatz", () => {
     for (const kind of ["feind", "unklar", "neutral", "ul"] as const) {
       expect(quietLook({ kind, ageMin: 31, selected: false }, basis)).toEqual({ opacity: QUIET.altDeckkraft, showTime: false, showUd: false });
     }
-    expect(QUIET.altDeckkraft).toBe(0.55);
+    expect(QUIET.altDeckkraft).toBe(0.72); // MVP 3.5, K3 (V4)
   });
   it("gewählt: immer kräftig und beschriftet", () => {
     expect(quietLook({ kind: "feind", ageMin: 300, selected: true }, basis)).toEqual({ opacity: 1, showTime: true, showUd: true });
@@ -36,7 +36,7 @@ describe("Experte wie bisher", () => {
   });
   it("Flächen", () => {
     expect(quietShapeOpacity({ kind: "feind", ageMin: 90, selected: false }, { quiet: false })).toBe(0.55);
-    expect(quietShapeOpacity({ kind: "feind", ageMin: 90, selected: false }, { quiet: true })).toBe(0.55);
+    expect(quietShapeOpacity({ kind: "feind", ageMin: 90, selected: false }, { quiet: true })).toBe(0.72);
     expect(quietShapeOpacity({ kind: "eigen", ageMin: 90, selected: false }, { quiet: true })).toBe(1);
     expect(quietShapeOpacity({ kind: "unklar", ageMin: 10, selected: false }, { quiet: true })).toBe(1);
   });

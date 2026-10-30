@@ -93,3 +93,6 @@
   margin: var(--sp-4) 0; padding: var(--sp-4) var(--sp-8); border-left: 3px solid var(--ink); background: var(--surface);
   font-size: var(--fs-12); font-weight: 600; color: var(--ink);
 }
+.jl-kind.k-ausgang { color: var(--ink); }
+/* MVP 3.5: «Nr 56» unter der Uhrzeit, «4 min nach jetzt» */
+.jl-nachjetzt { color: var(--ink); font-weight: 600; }

@@ -185,7 +185,15 @@ interface Bericht { text: string; model: string; at: string; t: string }
  * (MVP 3, Kap. 3.11) «Als Notiz ins Journal»: Hülle trägt den geprüften Entwurf als Notiz ein (`art: notiz`, `via: ki`,
  * `t` = Lagezeit des Entwurfs) und gibt die Nummer zurück (null = nicht eingetragen). Ohne Anbieter kein Knopf.
  */
-export type KiNotizFn = (text: string, t: string) => string | null;
+export type KiNotizFn = (text: string, t: string, o?: { geprueft: boolean }) => string | null;
+
+/**
+ * (MVP 3.5, D6) Text der KI-Notiz: «Lagebericht (KI-Entwurf, nicht geprüft): …» bzw. nach dem Häkchen «Ich habe den
+ * Entwurf geprüft» «Lagebericht (KI-Entwurf, geprüft BSP): …». Die Hülle (`KiNotizFn`) setzt diesen Text ein.
+ */
+export function kiNotizText(text: string, geprueft: boolean, kuerzel: string | null | undefined): string {
+  return `Lagebericht (KI-Entwurf, ${geprueft ? `geprüft ${kuerzel || "–"}` : "nicht geprüft"}): ${text}`;
+}
 export const KiNotizCtx = createContext<KiNotizFn | null>(null);
 
 /** Knopf «Lagebericht entwerfen» (Lage Rot, Übergabe) mit Dialog */
@@ -221,6 +229,8 @@ function LageberichtDialog({ hints, coas, onClose, onNotiz }: { hints: Hint[]; c
   const [text, setText] = useState(b?.text ?? "");
   const [copied, setCopied] = useState(false);
   const [since, setSince] = useState(60);
+  /** (D6) Standard leer: ohne Häkchen heisst die Notiz «nicht geprüft» */
+  const [geprueft, setGeprueft] = useState(false);
   useEffect(() => { setText(b?.text ?? ""); }, [b?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const k = (ev: KeyboardEvent) => { if (ev.key === "Escape" && !ev.defaultPrevented) { ev.preventDefault(); onClose(); } };
@@ -260,6 +270,7 @@ function LageberichtDialog({ hints, coas, onClose, onNotiz }: { hints: Hint[]; c
                 <span className="ki-draft-m">Lage {dayLabel(b.t, ki.ex.days)} {b.t.slice(11, 16)} · {modelLabel(b.model)} · erstellt {b.at}{b.t !== ki.t ? " · Lagezeit seither geändert" : ""}</span></div>
               <textarea className="ki-lbtext" value={text} onChange={(e) => save(e.target.value)} aria-label="Lagebericht (bearbeitbar)" spellCheck={false} />
               <p className="ki-help">{text.trim().split(/\s+/).filter(Boolean).length} Wörter · bearbeitbar · Einschätzungen sind Hinweise, keine Fakten – der Zfhr entscheidet.</p>
+              {onNotiz && <label className="ki-geprueft" style={{ display: "flex", alignItems: "center", gap: "var(--sp-8)", minHeight: "var(--hit)" }}><input type="checkbox" checked={geprueft} onChange={(e) => setGeprueft(e.target.checked)} /> Ich habe den Entwurf geprüft</label>}
             </div>
           ) : (
             <p className="ki-empty">Noch kein Entwurf.</p>
@@ -268,7 +279,8 @@ function LageberichtDialog({ hints, coas, onClose, onNotiz }: { hints: Hint[]; c
         <footer className="ki-foot">
           {b && <button onClick={copy}>{copied ? "Kopiert ✓" : "Kopieren"}</button>}
           {b && <button onClick={file} title="Als Textdatei speichern">Als Datei</button>}
-          {b && onNotiz && text.trim() && <button onClick={() => { if (onNotiz(text.trim(), b.t) !== null) onClose(); }} title="Geprüften Entwurf als Notiz ins Journal (kein Zeichen, nichts auf der Karte)">Als Notiz ins Journal</button>}
+          {b && onNotiz && text.trim() && <button onClick={() => { if (onNotiz(text.trim(), b.t, { geprueft }) !== null) onClose(); }}
+            title={geprueft ? "Entwurf als Notiz ins Journal: «KI-Entwurf, geprüft» (kein Zeichen, nichts auf der Karte)" : "Entwurf als Notiz ins Journal: «KI-Entwurf, nicht geprüft» (kein Zeichen, nichts auf der Karte)"}>Als Notiz ins Journal</button>}
           <button className={b ? "primary" : ""} onClick={onClose}>Schliessen</button>
         </footer>
       </div>

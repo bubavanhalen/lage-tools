@@ -11,12 +11,12 @@
  *  R5 nichts wird gespeichert: Neuladen und Übungswechsel → LIVE und Standard «Zeige letzte» (alles; MVP 3: ab
  *     200 Meldungen 6 h, Spez. MVP 3 Kap. 3.12/E16 – der Chip «zeigt nur letzte 6 h ✕» macht es sichtbar),
  *  R6 gewählte Zeit ≥ LIVE → LIVE,
- *  Taste L (ausserhalb von Eingabefeldern) → LIVE.
+ *  Alt+L → LIVE (MVP 3.5, E2: die Einzeltaste L ist Text – Tippen springt ins Meldungsfeld).
  *
  * `LageZeitCtl` ist ohne React (Test mit vitest und Fake-Timern), `useLageZeit` hängt ihn an die Seite.
  */
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { jetztLagezeit, localIso, showLastStart, windowStart, zaehleMeldungen, type LageEvent } from "@lage/core";
+import { jetztLagezeit, mitOffset, offsetOf, showLastStart, windowStart, zaehleMeldungen, zeitBis, zeitCmp, zeitMs, zeitTeile, type LageEvent } from "@lage/core";
 import type { GoLiveGrund, LageZeit, ShowLast, ZeitApi } from "../shell/contracts";
 
 /** so lange ohne Bedienung, dann zurück nach LIVE (R1) */
@@ -63,14 +63,19 @@ export class LageZeitCtl {
     this.lastInput = this.now();
   }
 
-  /** Lagezeit zurückstellen (R6: ≥ LIVE → LIVE). Abspielen läuft weiter, wenn es schon lief. */
+  /**
+   * Lagezeit zurückstellen (R6: ≥ LIVE → LIVE). Abspielen läuft weiter, wenn es schon lief. MVP 3.5 (S23): `t` mit oder
+   * ohne Offset; gespeichert wird die Lagezeit **mit** Offset (fehlt er, abgeleitet – doppelte Stunde: Sommerzeit, die
+   * Rückblick-Leiste fragt dort vorher «02:30 MESZ / 02:30 MEZ»).
+   */
   lookBack = (t: string): void => {
     const t16 = t.slice(0, 16);
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(t16)) return;
-    if (t16 >= this.o.tLive().slice(0, 16)) { this.goLive("ende"); return; }
+    const z = mitOffset(t16, zeitTeile(t).off ?? offsetOf({ t: t16 }));
+    if (zeitBis(this.o.tLive(), z)) { this.goLive("ende"); return; }
     const playing = this.zeit.kind === "rueckblick" && this.zeit.playing;
-    if (this.zeit.kind === "rueckblick" && this.zeit.t === t16) { if (!playing) this.touch(); return; }
-    this.zeit = { kind: "rueckblick", t: t16, playing };
+    if (this.zeit.kind === "rueckblick" && this.zeit.t === z) { if (!playing) this.touch(); return; }
+    this.zeit = { kind: "rueckblick", t: z, playing };
     if (!playing) this.lastInput = this.now();
     this.sync(true);
   };
@@ -134,9 +139,9 @@ export class LageZeitCtl {
     if (changed) this.o.onChange();
   };
 
-  /** Lagezeit (ISO lokal) */
+  /** Lagezeit mit Offset (MVP 3.5, S23: «2030-10-27T02:10+01:00»); `slice(0, 16)` = ISO lokal für die Anzeige */
   tNow(): string {
-    return this.zeit.kind === "rueckblick" ? this.zeit.t : this.o.tLive().slice(0, 16);
+    return this.zeit.kind === "rueckblick" ? this.zeit.t : this.o.tLive();
   }
 
   /** Anfang von «Zeige letzte» bzw. des festen Anfangs (Experte), null = alles */
@@ -207,11 +212,12 @@ export function showLastStandard(events: LageEvent[] | undefined): ShowLast {
   return zaehleMeldungen({ events }) >= LANG_AB ? 360 : null;
 }
 
-/** Taste L (ohne Ctrl/Alt/⌘, nicht in Eingabefeldern) */
-export function isLiveKey(ev: KeyboardEvent): boolean {
-  if (ev.ctrlKey || ev.altKey || ev.metaKey || (ev.key !== "l" && ev.key !== "L")) return false;
-  const t = ev.target as HTMLElement | null;
-  return !(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)));
+/**
+ * Alt+L (MVP 3.5, E2): Prüfung über `code` («KeyL»), weil macOS mit Option ein Sonderzeichen liefert («¬»); gilt auch
+ * im Meldungsfeld (Alt ist dort keine Eingabe), ohne Ctrl/⌘.
+ */
+export function isLiveKey(ev: Pick<KeyboardEvent, "ctrlKey" | "altKey" | "metaKey" | "code">): boolean {
+  return ev.altKey && !ev.ctrlKey && !ev.metaKey && ev.code === "KeyL";
 }
 
 /** Meldungen zur Rückkehr nach LIVE (Kap. 3.5) */
@@ -224,52 +230,69 @@ export const GO_LIVE_TEXT: Partial<Record<GoLiveGrund, string>> = {
 export const ZUKUNFT_MS = 10 * 60000;
 
 /**
- * LIVE-Zeit (Entscheid MVP 1-Nachbesserung, K1): solange die Übung läuft (Bezugsmeldung ≤ 12 h vor jetzt), gilt die
- * **Geräteuhr** – eine Meldung höchstens 10 min in der Zukunft (Uhren gehen verschieden) zieht LIVE bis dorthin mit.
- * Eine Meldung weiter in der Zukunft (Tippfehler «1535» statt «0735») verschiebt LIVE nie.
- * Sonst – Übung vorbei (> 12 h her) oder ganz in der Zukunft (Beispiel 2030) – LIVE = Bezugsmeldung, damit das
- * Lagebild nicht leer erscheint. `ref` = Bezugsmeldung, siehe `liveRefOf`.
+ * LIVE-Zeit der **Lage** (Entscheid MVP 1-Nachbesserung, K1; MVP 3.5 S22/S23 mit Offset): solange die Übung läuft
+ * (Bezugsmeldung ≤ 12 h vor jetzt), gilt die **Geräteuhr** – eine Meldung höchstens 10 min in der Zukunft (Uhren gehen
+ * verschieden) zieht die Lage bis dorthin mit (Anzeige bleibt die Uhr, `liveAnzeige`). Eine Meldung weiter in der
+ * Zukunft (Tippfehler «1535» statt «0735») verschiebt LIVE nie. Sonst – Übung vorbei (> 12 h her) oder ganz in der
+ * Zukunft (Beispiel 2030) – LIVE = Bezugsmeldung, damit das Lagebild nicht leer erscheint. `ref` = Bezugsmeldung als
+ * Lagezeit (mit oder ohne Offset), siehe `liveRefOf`. Ergebnis immer mit Offset.
  */
 export function liveIso(ref: string | null, nowMs: number): string {
-  const now = localIso(new Date(nowMs));
+  const now = jetztLagezeit(new Date(nowMs));
   if (!ref) return now;
-  const r = ref.slice(0, 16);
-  const d = nowMs - Date.parse(r);
+  const r = zeitMs(ref);
+  const d = Math.floor(nowMs / 60000) * 60000 - r;
   if (!Number.isFinite(d)) return now;
-  if (d > VORBEI_MS) return r; // Übung vorbei
-  if (d >= -ZUKUNFT_MS) return now > r ? now : r; // läuft (höchstens 10 min Vorsprung)
-  return d >= -VORBEI_MS ? now : r; // läuft, Meldung mit Zeit weit in der Zukunft → Geräteuhr; Übung ganz in der Zukunft → Meldung
+  const refZ = zeitTeile(ref).off ? ref : mitOffset(ref, offsetOf({ t: ref }));
+  if (d > VORBEI_MS) return refZ; // Übung vorbei
+  if (d >= -ZUKUNFT_MS) return d >= 0 ? now : refZ; // läuft (höchstens 10 min Vorsprung)
+  return d >= -VORBEI_MS ? now : refZ; // läuft, Meldung mit Zeit weit in der Zukunft → Geräteuhr; Übung ganz in der Zukunft → Meldung
 }
 
 /**
  * Bezugsmeldung für LIVE: die späteste (nicht gelöschte) Meldung bis höchstens 10 min nach jetzt; liegen alle weiter
- * in der Zukunft (Beispiel 2030), die späteste überhaupt. null = keine Meldung.
+ * in der Zukunft (Beispiel 2030), die späteste überhaupt. Lagezeit mit Offset (Zeitvergleiche über `zeitCmp`); null =
+ * keine Meldung.
  */
 export function liveRefOf(events: LageEvent[] | undefined, nowMs: number): string | null {
-  const lim = localIso(new Date(nowMs + ZUKUNFT_MS));
-  let past = "", any = "";
+  const lim = jetztLagezeit(new Date(nowMs + ZUKUNFT_MS));
+  let past: LageEvent | null = null, any: LageEvent | null = null;
   for (const e of events ?? []) {
     if (e.deleted) continue;
-    const t = e.t.slice(0, 16);
-    if (t > any) any = t;
-    if (t <= lim && t > past) past = t;
+    if (!any || zeitCmp(e, any) > 0) any = e;
+    if (zeitBis(e, lim) && (!past || zeitCmp(e, past) > 0)) past = e;
   }
-  return past || any || null;
+  const r = past ?? any;
+  return r ? mitOffset(r.t.slice(0, 16), offsetOf(r)) : null;
+}
+
+/**
+ * Anzeige «LIVE 07:31» (MVP 3.5, S22): immer die Geräteuhr, solange die Lage der Uhr folgt (Meldungen bis 10 min
+ * voraus ziehen nur die Lage mit); ist die Übung vorbei bzw. ganz in der Zukunft, die LIVE-Zeit der Lage.
+ */
+export function liveAnzeige(tLive: string, tUhr: string): string {
+  const d = zeitMs(tLive) - zeitMs(tUhr);
+  return Number.isFinite(d) && d >= -60000 && d <= ZUKUNFT_MS ? tUhr : tLive;
+}
+
+/** «4 min nach jetzt» (MVP 3.5, S22): Meldung liegt nach der Geräteuhr, aber noch in der Toleranz; sonst null */
+export function nachJetztText(e: Pick<LageEvent, "t" | "tOffset" | "createdAt">, tUhr: string): string | null {
+  const d = Math.round((zeitMs(e) - Math.floor(zeitMs(tUhr) / 60000) * 60000) / 60000);
+  return d > 0 && d * 60000 <= ZUKUNFT_MS ? `${d} min nach jetzt` : null;
 }
 
 /** Zeit der letzten (nicht gelöschten) Meldung oder null */
 export function lastReportOf(events: LageEvent[] | undefined): string | null {
-  let m = "";
-  for (const e of events ?? []) if (!e.deleted && e.t > m) m = e.t;
-  return m ? m.slice(0, 16) : null;
+  let m: LageEvent | null = null;
+  for (const e of events ?? []) if (!e.deleted && (!m || zeitCmp(e, m) > 0)) m = e;
+  return m ? m.t.slice(0, 16) : null;
 }
 
 /** letzte Meldung bis zur Lagezeit `t` (für «letzte Meldung 07:25» im Live-Band: nie eine aus der Zukunft) */
 export function lastReportUntil(events: LageEvent[] | undefined, t: string): string | null {
-  let m = "";
-  const lim = t.slice(0, 16);
-  for (const e of events ?? []) { const x = e.t.slice(0, 16); if (!e.deleted && x <= lim && x > m) m = x; }
-  return m || null;
+  let m: LageEvent | null = null;
+  for (const e of events ?? []) if (!e.deleted && zeitBis(e, t) && (!m || zeitCmp(e, m) > 0)) m = e;
+  return m ? m.t.slice(0, 16) : null;
 }
 
 /** Uhr auf die Minute (springt zu jeder vollen Minute und beim Zurückkehren ins Fenster) */
@@ -316,7 +339,11 @@ export function useLageZeit({ exId, events, say }: UseLageZeitOptions): ZeitApi 
   // Bedienung irgendwo (R1), Taste L, Sichtbarkeit (R4)
   useEffect(() => {
     const on = () => ctl.touch();
-    const key = (ev: KeyboardEvent) => { if (!ev.defaultPrevented && isLiveKey(ev) && ctl.zeit.kind === "rueckblick") ctl.goLive("taste"); };
+    const key = (ev: KeyboardEvent) => {
+      if (ev.defaultPrevented || !isLiveKey(ev)) return;
+      ev.preventDefault();
+      if (ctl.zeit.kind === "rueckblick") ctl.goLive("taste");
+    };
     const vis = () => { if (document.visibilityState === "visible") ctl.visible(); };
     for (const t of BEDIENUNG) window.addEventListener(t, on, { capture: true, passive: true });
     window.addEventListener("keydown", key);
@@ -342,8 +369,9 @@ export function useLageZeit({ exId, events, say }: UseLageZeitOptions): ZeitApi 
 
   return useMemo(() => ({
     zeit: ctl.zeit,
+    // MVP 3.5 (S23): Lagezeiten mit Offset («…T02:10+01:00»); Anzeige mit `slice(11, 16)`, Vergleiche nur `zeitCmp`
     tNow: ctl.tNow(),
-    tLive: tLive.slice(0, 16),
+    tLive,
     from: ctl.from(),
     showLast: ctl.showLast,
     setShowLast: ctl.setShowLast,

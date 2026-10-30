@@ -69,8 +69,13 @@ describe("Suche (Kap. 1.1, 2.5): Nummer, Arten, Gestrichene", () => {
     const d = setVermerk(evs[1]!, "dringend", true, { device: "test", kuerzel: "BSP" });
     const all = [d, ...evs.filter((x) => x.id !== d.id)];
     const ex = { ...ex0, events: all };
-    expect(filterJournal(all, { art: "dringend", ex }).map((x) => x.id)).toEqual([d.id]);
-    expect(filterJournal(all, { art: "offen", ex }).map((x) => x.id)).toEqual([d.id]);
+    // MVP 3.5: das Beispiel hat selbst einen dringenden Eintrag («H04 Kontakt mit Gegner», Vermerk dringend)
+    const dr = filterJournal(all, { art: "dringend", ex });
+    expect(dr.map((x) => x.id)).toContain(d.id);
+    expect(dr.filter((x) => x.id !== d.id).every((x) => !!x.lvz?.dringend?.v)).toBe(true);
+    const offen = filterJournal(all, { art: "offen", ex });
+    expect(offen.map((x) => x.id)).toContain(d.id);
+    expect(offen.filter((x) => x.id !== d.id).every((x) => !!x.lvz?.dringend?.v || !!x.begehren)).toBe(true);
   });
 });
 

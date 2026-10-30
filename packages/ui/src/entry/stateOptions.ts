@@ -3,7 +3,7 @@
  * Eintrage-Weg für mehrere Meldungen (`commitTexts`) rufen `entryState` mit denselben Angaben zur Übung auf.
  * Ohne Browser testbar.
  */
-import { clockDay, entryState, type Draft, type EntryState, type EntryStateOptions, type Exercise } from "@lage/core";
+import { clockDay, entryState, onlineAllowed, zeitCmp, type Draft, type EntryState, type EntryStateOptions, type Exercise } from "@lage/core";
 
 export interface EntryEnv {
   /** Netz vorhanden und Ortssuche erlaubt (Standard: true – betrifft nur «bitte prüfen» bei Ortsnamen) */
@@ -18,17 +18,22 @@ export interface EntryEnv {
   follow?: boolean;
   /** (MVP 3) Zeit der letzten Meldung (Standard: aus `ex.events`) – Vorschlag bei «Tag fremd» */
   lastReport?: string | null;
+  /**
+   * (MVP 3.5, A1.5) Ortsnamen: «an» (Online-Dienst der Übung an), «aus» (aus → gelb `ort-online-aus`), «kein-netz»
+   * (an, aber kein Netz). Standard: aus der Übung (`onlineAllowed`), Netz angenommen.
+   */
+  ortsnamen?: "an" | "aus" | "kein-netz";
 }
 
 /** jüngste Lagezeit der Übung (nicht gestrichen), null ohne Einträge */
 export function lastReportOf(ex: Pick<Exercise, "events">): string | null {
   let m: string | null = null;
-  for (const e of ex.events ?? []) if (!e.deleted && (!m || e.t > m)) m = e.t;
+  for (const e of ex.events ?? []) if (!e.deleted && (!m || zeitCmp(e, m) > 0)) m = e.t;
   return m;
 }
 
 /** Optionen für `entryState` aus der Übung: Raster, NAI, bekannte/vorbereitete Trupps, Übungstage */
-export function entryOptions(ex: Pick<Exercise, "sheets" | "areas" | "units" | "days"> & Partial<Pick<Exercise, "events">>, env: EntryEnv = {}): EntryStateOptions {
+export function entryOptions(ex: Pick<Exercise, "sheets" | "areas" | "units" | "days"> & Partial<Pick<Exercise, "events" | "onlineDienste">>, env: EntryEnv = {}): EntryStateOptions {
   const now = env.now ?? new Date();
   return {
     hasRaster: ex.sheets.length > 0,
@@ -46,10 +51,11 @@ export function entryOptions(ex: Pick<Exercise, "sheets" | "areas" | "units" | "
     // MVP 3 (E17): heute kein Tag der Übung und der Text nennt keinen Tag → gelb «Tag fremd» mit Vorschlag
     follow: env.follow ?? clockDay(ex.days, now).follow,
     lastReport: env.lastReport !== undefined ? env.lastReport : lastReportOf(ex),
+    ortsnamen: env.ortsnamen ?? (onlineAllowed(ex, "ortssuche") ? "an" : "aus"),
   };
 }
 
 /** Zustand einer Meldung wie im Meldungsfeld */
-export function stateOf(d: Draft, ex: Pick<Exercise, "sheets" | "areas" | "units" | "days"> & Partial<Pick<Exercise, "events">>, env: EntryEnv = {}): EntryState {
+export function stateOf(d: Draft, ex: Pick<Exercise, "sheets" | "areas" | "units" | "days"> & Partial<Pick<Exercise, "events" | "onlineDienste">>, env: EntryEnv = {}): EntryState {
   return entryState(d, entryOptions(ex, env));
 }

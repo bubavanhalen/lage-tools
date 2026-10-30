@@ -4,9 +4,11 @@
  * Schrift so gross, wie es auf eine Seite passt (10 → 9 → 8.5 pt, nie unter 8 pt); Zeit · Nr · Text in Spalten, die
  * Nummer grau (nie als Menge gelesen, Prüfung M4).
  * Setzt `window.__ltPdfInfo` (Testhaken, nur lesen, keine Daten nach aussen).
+ * MVP 3.5 (D7/D8): «Nr 56» überall; dringend und Zeichen der offenen Punkte als Vektorzeichen (⚠ dringend/Konflikt,
+ * • offen/Begehren) statt «! »; «Von oben» mit «+n weitere im Journal».
  */
 import { jsPDF } from "jspdf";
-import { safePdf } from "../pdfSafe";
+import { glyphBreite, glyphPunkt, glyphWarn, safePdf } from "../pdfSafe";
 import { pdfInfo } from "../perf";
 import type { UebergabeDaten, UebergabeZeileNeu } from "./uebergabeDaten";
 
@@ -72,13 +74,27 @@ function zeichne(d: UebergabeDaten, visum: { von: string; an: string; um: string
     const xT = M + (mark !== null ? COL.mark : 0), xNr = xT + COL.t, xText = xNr + COL.nr;
     const l = doc.splitTextToSize(inhalt, W - M - xText) as string[];
     platz(l.length * LH);
-    if (mark) { doc.setFont("helvetica", "bold"); text(mark, M, y); normal(); }
+    // Vektorzeichen statt «!»/«•» (D8); übrige Zeichen als Text (✎, ⇄ entfallen in der Standardschrift)
+    if (mark === "!" || mark === "⚠") glyphWarn(doc, M, y);
+    else if (mark === "•" || mark === "●") glyphPunkt(doc, M, y);
+    else if (mark) { doc.setFont("helvetica", "bold"); text(mark, M, y); normal(); }
     if (t) text(t, xT, y);
     if (nr) { doc.setTextColor(GRAU); text(`Nr ${nr}`, xNr, y); doc.setTextColor(0); }
     text(l, xText, y);
     y += l.length * LH;
   };
-  const zeileNeu = (z: UebergabeZeileNeu) => spalten(null, z.t, z.nr, `${z.bang ? "! " : ""}${z.text}${z.meta ? ` · ${z.meta}` : ""}`);
+  /** Zeile «Neu»/«Von oben»; dringend: Vektorzeichen ⚠ vor dem Text (nie «! », D8) */
+  const zeileNeu = (z: UebergabeZeileNeu) => {
+    if (!z.bang) { spalten(null, z.t, z.nr, `${z.text}${z.meta ? ` · ${z.meta}` : ""}`); return; }
+    const xText = M + COL.t + COL.nr;
+    const l = doc.splitTextToSize(`${z.text}${z.meta ? ` · ${z.meta}` : ""}`, W - M - xText - glyphBreite(doc)) as string[];
+    platz(l.length * LH);
+    if (z.t) text(z.t, M, y);
+    if (z.nr) { doc.setTextColor(GRAU); text(`Nr ${z.nr}`, M + COL.t, y); doc.setTextColor(0); }
+    glyphWarn(doc, xText, y);
+    text(l, xText + glyphBreite(doc), y);
+    y += l.length * LH;
+  };
   const tabelle = (cols: Array<{ h: string; w: number }>, rows: string[][], fett = true) => {
     platz(LH * 2);
     doc.setFont("helvetica", "bold");
@@ -115,6 +131,7 @@ function zeichne(d: UebergabeDaten, visum: { von: string; an: string; um: string
   titel("3 Von oben (gültig)");
   if (!d.vonOben.length) absatz("Keine Orientierung von oben erfasst.");
   for (const z of d.vonOben) zeileNeu(z);
+  if (d.vonObenWeitere) absatz(`+${d.vonObenWeitere} weitere im Journal`);
   luecke();
 
   titel(`4 Offene Punkte (${d.offenTotal})`);

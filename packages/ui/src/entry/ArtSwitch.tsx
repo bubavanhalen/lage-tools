@@ -1,11 +1,12 @@
 /**
  * Auswahl «Was ist es?» in der Vorschau (Spez. MVP 3, Entscheid E1, Kap. 2.2): `[◆ Feind][● Eigene][■ Unklar][✎ Andere ▾]`.
  * Feind/Eigene/Unklar = Meldung (zeichnet). «Andere ▾» öffnet ein Menü Auftrag · Orientierung · Rückfrage ·
- * Verbindungskontrolle · Notiz; ist eine Nicht-Meldung gewählt, steht ihr Name im vierten Segment («✎ Auftrag ▾»,
+ * Verbindungskontrolle · Notiz · Ausgang (MVP 3.5); ist eine Nicht-Meldung gewählt, steht ihr Name im vierten Segment («✎ Auftrag ▾»,
  * gedrückt). Eine Gruppe (`data-zaehl="art"`, zählt im Inventar als 1). Menü: Einträge ≥ 44 px, Esc schliesst und gibt
  * den Fokus zurück, ↑/↓ wählen, Anfangsbuchstabe (A, O, R, V, N) wählt direkt. Tastatur im Feld: Alt+1/2/3/4 (EntryBox).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import type { EntryArt, Kind } from "@lage/core";
 import { ART_NAME } from "./labels";
 
@@ -20,6 +21,8 @@ export const ANDERE: Array<[NichtMeldung, string, string, string]> = [
   ["rueckfrage", "✎", "Frage, Antwort offen", "r"],
   ["vbk", "⇄", "Vbk", "v"],
   ["notiz", "✎", "ohne Wirkung", "n"],
+  // MVP 3.5 (E5, S17): Meldung/Weitermeldung/Antwort nach oben – kein Zeichen
+  ["ausgang", "↗", "an Bat/Kp, weitergemeldet", "g"],
 ];
 
 /** kurzer Name im Segment (Platz Tablet 384 px) */
@@ -43,6 +46,27 @@ export function ArtSwitch({ art, kind, neutral, onKind, onArt, open, setOpen, on
   const btn = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const other = art !== "meldung";
+  /**
+   * MVP 3.5 (E1): das Menü liegt fest über allem (Portal), weil die Vorschau selbst scrollen kann und ein Menü darin
+   * abgeschnitten würde; Lage aus dem Knopf, rechtsbündig, unter bzw. über dem Knopf
+   */
+  const [pos, setPos] = useState<CSSProperties | null>(null);
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return; }
+    const place = () => {
+      const r = btn.current?.getBoundingClientRect();
+      if (!r) return;
+      const w = Math.min(320, window.innerWidth - 16);
+      const left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+      const below = window.innerHeight - r.bottom - 8;
+      setPos(below >= 300 || below >= r.top ? { left, top: r.bottom + 4, width: w, maxHeight: below - 4 } : { left, bottom: window.innerHeight - r.top + 4, width: w, maxHeight: r.top - 12 });
+    };
+    place();
+    const close = (e: Event) => { if (!menu.current?.contains(e.target as Node)) setOpen(false); };
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", close, true);
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", close, true); };
+  }, [open, setOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -74,13 +98,14 @@ export function ArtSwitch({ art, kind, neutral, onKind, onArt, open, setOpen, on
           </button>
         ))}
         <button ref={btn} type="button" className={"k-andere" + (other ? " is-art" : "")} aria-pressed={other} aria-haspopup="menu" aria-expanded={open}
-          aria-label={other ? `${ART_NAME[art as NichtMeldung]} – andere Art wählen` : "Andere: Auftrag, Orientierung, Rückfrage, Verbindung, Notiz"}
+          aria-label={other ? `${ART_NAME[art as NichtMeldung]} – andere Art wählen` : "Andere: Auftrag, Orientierung, Rückfrage, Verbindung, Notiz, Ausgang"}
           onClick={() => setOpen(!open)}>
-          <span aria-hidden="true">{art === "vbk" ? "⇄" : "✎"} </span>{other ? SEG_NAME[art as NichtMeldung] : "Andere"} <span aria-hidden="true">▾</span>
+          <span aria-hidden="true">{art === "vbk" ? "⇄" : art === "ausgang" ? "↗" : "✎"} </span>{other ? SEG_NAME[art as NichtMeldung] : "Andere"} <span aria-hidden="true">▾</span>
         </button>
       </span>
-      {open && (
-        <div ref={menu} className="eb-artmenu" role="menu" aria-label="Andere Art" onKeyDown={onMenuKey}>
+      {open && createPortal(
+        <div ref={menu} className="eb-artmenu eb-artmenu-fix" role="menu" aria-label="Andere Art" onKeyDown={onMenuKey}
+          style={pos ?? { visibility: "hidden" }}>
           {ANDERE.map(([a, f, w]) => (
             <button key={a} type="button" role="menuitemradio" aria-checked={art === a} onClick={() => choose(a)}>
               <span className="eb-am-f" aria-hidden="true">{f}</span>
@@ -88,7 +113,7 @@ export function ArtSwitch({ art, kind, neutral, onKind, onArt, open, setOpen, on
               <span className="eb-am-w">{w}</span>
             </button>
           ))}
-        </div>
+        </div>, document.body,
       )}
     </span>
   );
